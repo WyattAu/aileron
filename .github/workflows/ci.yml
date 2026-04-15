@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Cache Nix store
+        uses: actions/cache@v4
+        with:
+          path: |
+            /nix/store
+            ~/.cache/nix
+          key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            nix-${{ runner.os }}-
+
+      - name: Check Nix flake
+        run: nix flake check --no-build --accept-flake-config
+
+      - name: Clippy (zero warnings)
+        run: nix develop --command cargo clippy --lib -- -D warnings
+
+      - name: Run tests
+        run: nix develop --command cargo test -- --test-threads=4
