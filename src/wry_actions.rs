@@ -1,0 +1,402 @@
+//! WryAction dispatch — processes rendering actions against wry panes.
+//!
+//! Extracted from main.rs to reduce the size of the event loop.
+
+use tracing::info;
+
+/// Process a single WryAction against the wry pane manager.
+///
+/// Returns Ok(()) on success, Err(message) on failure.
+pub fn process_wry_action(
+    action: crate::app::WryAction,
+    active_id: uuid::Uuid,
+    wry_panes: &mut crate::servo::WryPaneManager,
+    app_state: &mut Option<crate::app::AppState>,
+    content_scripts: &crate::scripts::ContentScriptManager,
+) -> Result<(), String> {
+    match action {
+        crate::app::WryAction::Navigate(url) => {
+            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                wry_pane.navigate(&url);
+            } else {
+                return Err(format!(
+                    "No pane for navigation: {}",
+                    &active_id.to_string()[..8]
+                ));
+            }
+        }
+        crate::app::WryAction::Back => {
+            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                wry_pane.execute_js(crate::servo::SCROLL_SAVE_JS);
+            }
+            wry_panes.back(&active_id);
+        }
+        crate::app::WryAction::Forward => {
+            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                wry_pane.execute_js(crate::servo::SCROLL_SAVE_JS);
+            }
+            wry_panes.forward(&active_id);
+        }
+        crate::app::WryAction::Reload => {
+            wry_panes.reload(&active_id);
+        }
+        crate::app::WryAction::ToggleBookmark => {
+            if let Some(wry_pane) = wry_panes.get(&active_id) {
+                let url = wry_pane.url().to_string();
+                let title = wry_pane.title().to_string();
+                let display_title = if title.is_empty() { &url } else { &title };
+                if let Some(app_state) = app_state
+                    && let Some(ref conn) = app_state.db
+                {
+                    if crate::db::bookmarks::is_bookmarked(conn, &url) {
+                        let _ = crate::db::bookmarks::remove_bookmark(conn, &url);
+                        app_state.status_message =
+                            format!("Bookmark removed: {}", display_title);
+                    } else {
+                        let _ = crate::db::bookmarks::add_bookmark(conn, &url, display_title);
+                        app_state.status_message = format!("Bookmarked: {}", display_title);
+                    }
+                }
+            }
+        }
+        crate::app::WryAction::Autofill { js } => {
+            if let Some(wry_pane) = wry_panes.get(&active_id) {
+                info!("Auto-filling credentials into active pane");
+                wry_pane.execute_js(&js);
+            }
+        }
+        crate::app::WryAction::ToggleDevTools => {
+            #[cfg(target_os = "linux")]
+            wry_panes.open_devtools(&active_id);
+        }
+        crate::app::WryAction::ScrollBy { x, y } => {
+            if let Some(wry_pane) = wry_panes.get(&active_id) {
+                let js = format!("window.scrollBy({}, {})", x, y);
+                wry_pane.execute_js(&js);
+            }
+        }
+        crate::app::WryAction::ScrollTo { fraction } => {
+            if let Some(wry_pane) = wry_panes.get(&active_id) {
+                let js = format!(
+                    "window.scrollTo(0, document.documentElement.scrollHeight * {})",
+                    fraction
+                );
+                wry_pane.execute_js(&js);
+            }
+        }
+        crate::app::WryAction::RunJs(js) => {
+            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                wry_pane.execute_js(&js);
+            }
+        }
+        crate::app::WryAction::EnterReaderMode => {
+            if let Some(pane) = wry_panes.get_mut(&active_id) {
+                let reader_js = r#"
+(function() {
+    var article = document.querySelector('article') ||
+                  document.querySelector('[role="main"]') ||
+                  document.querySelector('main') ||
+                  document.querySelector('.post-content') ||
+                  document.querySelector('.article-content') ||
+                  document.querySelector('.content') ||
+                  document.querySelector('#content') ||
+                  document.querySelector('.entry-content') ||
+                  document.body;
+    
+    if (!article) return;
+    
+    var title = document.title || '';
+    var metaDesc = document.querySelector('meta[name="description"]');
+    var desc = metaDesc ? metaDesc.getAttribute('content') : '';
+    
+    var text = '';
+    var blocks = article.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, pre, blockquote, td');
+    if (blocks.length > 3) {
+        blocks.forEach(function(block) {
+            var tag = block.tagName.toLowerCase();
+            if (tag === 'p' || tag === 'li' || tag === 'td') {
+                text += block.textContent.trim() + '\n\n';
+            } else if (tag.match(/^h[1-6]$/)) {
+                text += '\n' + '#'.repeat(parseInt(tag[1])) + ' ' + block.textContent.trim() + '\n\n';
+            } else if (tag === 'pre') {
+                text += '\n```\n' + block.textContent.trim() + '\n```\n\n';
+            } else if (tag === 'blockquote') {
+                text += '> ' + block.textContent.trim().replace(/\n/g, '\n> ') + '\n\n';
+            }
+        });
+    } else {
+        text = article.textContent.trim();
+    }
+    
+    if (!window._aileron_original_html) {
+        window._aileron_original_html = document.documentElement.innerHTML;
+        window._aileron_original_title = document.title;
+    }
+    
+    var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + ' (Reader)</title>' +
+        '<style>' +
+        'body { background: #1a1a1a; color: #d4d4d4; font-family: serif; max-width: 680px; margin: 0 auto; padding: 40px 20px; line-height: 1.7; }' +
+        'h1, h2, h3 { color: #e0e0e0; margin-top: 1.5em; }' +
+        'a { color: #4db4ff; }' +
+        'pre { background: #2a2a2a; padding: 12px; border-radius: 4px; overflow-x: auto; font-family: monospace; font-size: 0.9em; }' +
+        'blockquote { border-left: 3px solid #4db4ff; padding-left: 16px; color: #aaa; }' +
+        '.meta { color: #666; margin-bottom: 2em; font-size: 0.9em; }' +
+        '</style></head><body>' +
+        '<h1>' + title + '</h1>' +
+        (desc ? '<p class="meta">' + desc + '</p>' : '') +
+        '<div style="white-space: pre-wrap;">' + text + '</div>' +
+        '</body></html>';
+    
+    document.open();
+    document.write(html);
+    document.close();
+})()
+"#.to_string();
+                pane.execute_js(&reader_js);
+            }
+        }
+        crate::app::WryAction::ExitReaderMode => {
+            if let Some(pane) = wry_panes.get_mut(&active_id) {
+                let restore_js = r#"
+(function() {
+    if (window._aileron_original_html) {
+        document.open();
+        document.write(window._aileron_original_html);
+        document.close();
+        document.title = window._aileron_original_title || '';
+        window._aileron_original_html = null;
+        window._aileron_original_title = null;
+    } else {
+        location.reload();
+    }
+})()
+"#
+                .to_string();
+                pane.execute_js(&restore_js);
+            }
+        }
+        crate::app::WryAction::EnterMinimalMode => {
+            if let Some(pane) = wry_panes.get_mut(&active_id) {
+                let current_url = pane.url().clone();
+                if !current_url.as_str().starts_with("aileron://") {
+                    let minimal_js = format!(
+                        r#"
+(function() {{
+    if (!window._aileron_original_url) {{
+        window._aileron_original_url = '{url}';
+    }}
+    var style = document.createElement('style');
+    style.id = 'aileron-minimal-mode';
+    style.textContent = 'img, video, audio, iframe, svg, canvas, [style*="background-image"], .ad, .banner, .popup, .overlay {{ display: none !important; }}';
+    document.head.appendChild(style);
+    var scripts = document.querySelectorAll('script');
+    scripts.forEach(function(s) {{ s.remove(); }});
+    document.body.setAttribute('onload', '');
+}})()
+"#,
+                        url = current_url.as_str().replace('\'', "\\'")
+                    );
+                    pane.execute_js(&minimal_js);
+                }
+            }
+        }
+        crate::app::WryAction::ExitMinimalMode => {
+            if let Some(pane) = wry_panes.get_mut(&active_id) {
+                let restore_js = r#"
+(function() {
+    var style = document.getElementById('aileron-minimal-mode');
+    if (style) style.remove();
+    if (window._aileron_original_url) {
+        location.href = window._aileron_original_url;
+        window._aileron_original_url = null;
+    }
+})()
+"#
+                .to_string();
+                pane.execute_js(&restore_js);
+            }
+        }
+        crate::app::WryAction::SaveWorkspace { name, .. } => {
+            let pane_urls: std::collections::HashMap<uuid::Uuid, String> = wry_panes
+                .pane_ids()
+                .into_iter()
+                .filter_map(|id| wry_panes.url_for(&id).map(|url| (id, url.to_string())))
+                .collect();
+            if let Some(app_state) = app_state {
+                match app_state.save_workspace_with_urls(&name, &pane_urls) {
+                    Ok(()) => {
+                        app_state.status_message = format!("Workspace saved: {}", name);
+                        info!("Workspace saved: {} ({} panes)", name, pane_urls.len());
+                    }
+                    Err(e) => {
+                        return Err(format!("Save failed: {}", e));
+                    }
+                }
+            }
+        }
+        crate::app::WryAction::ShowPaneError { message } => {
+            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                let encoded = urlencoding::encode(&message);
+                let error_url = url::Url::parse(&format!("aileron://error?msg={}", encoded))
+                    .map_err(|e| format!("Invalid error URL: {}", e))?;
+                wry_pane.navigate(&error_url);
+            } else {
+                return Err(format!(
+                    "No pane to show error: {}",
+                    &active_id.to_string()[..8]
+                ));
+            }
+        }
+        crate::app::WryAction::ListContentScripts => {
+            let count = content_scripts.all_scripts().len();
+            let enabled: usize = content_scripts
+                .all_scripts()
+                .iter()
+                .filter(|s| s.enabled)
+                .count();
+            let names: Vec<&str> = content_scripts
+                .all_scripts()
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect();
+            let msg = format!(
+                "Scripts: {} ({} enabled): {}",
+                count,
+                enabled,
+                if names.is_empty() {
+                    "none".to_string()
+                } else {
+                    names.join(", ")
+                }
+            );
+            if let Some(app_state) = app_state {
+                app_state.status_message = msg;
+            }
+        }
+        crate::app::WryAction::GetNetworkLog => {
+            if let Some(pane) = wry_panes.get_mut(&active_id) {
+                let (tx, rx) = std::sync::mpsc::channel();
+                pane.execute_js_with_callback(crate::servo::NETWORK_LOG_JS, move |json| {
+                    let _ = tx.send(json);
+                });
+                if let Ok(json) = rx.try_recv() {
+                    if let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
+                        let count = entries.len();
+                        let lines: Vec<String> = entries
+                            .iter()
+                            .take(20)
+                            .map(|e| {
+                                let method =
+                                    e.get("method").and_then(|v| v.as_str()).unwrap_or("?");
+                                let url = e.get("url").and_then(|v| v.as_str()).unwrap_or("?");
+                                let status = e
+                                    .get("status")
+                                    .map(|v| {
+                                        if v.is_null() {
+                                            "...".to_string()
+                                        } else {
+                                            v.as_i64()
+                                                .map(|n| n.to_string())
+                                                .or_else(|| v.as_str().map(String::from))
+                                                .unwrap_or_else(|| "?".into())
+                                        }
+                                    })
+                                    .unwrap_or_else(|| "?".to_string());
+                                let short_url = if url.len() > 60 {
+                                    format!("{}...", &url[..57])
+                                } else {
+                                    url.to_string()
+                                };
+                                format!("{} {} [{}]", method, short_url, status)
+                            })
+                            .collect();
+                        if let Some(app_state) = app_state {
+                            app_state.status_message = format!(
+                                "Network ({}): {}",
+                                count,
+                                if lines.is_empty() {
+                                    "empty".into()
+                                } else {
+                                    lines.join(" \u{2502} ")
+                                }
+                            );
+                        }
+                    }
+                } else if let Some(app_state) = app_state {
+                    app_state.status_message = "Network log: collecting...".into();
+                }
+            }
+        }
+        crate::app::WryAction::ClearNetworkLog => {
+            if let Some(pane) = wry_panes.get_mut(&active_id) {
+                pane.execute_js(crate::servo::NETWORK_CLEAR_JS);
+            }
+            if let Some(app_state) = app_state {
+                app_state.status_message = "Network log cleared".into();
+            }
+        }
+        crate::app::WryAction::GetConsoleLog => {
+            if let Some(pane) = wry_panes.get_mut(&active_id) {
+                let (tx, rx) = std::sync::mpsc::channel();
+                pane.execute_js_with_callback(crate::servo::CONSOLE_LOG_JS, move |json| {
+                    let _ = tx.send(json);
+                });
+                if let Ok(json) = rx.try_recv() {
+                    if let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
+                        let count = entries.len();
+                        let lines: Vec<String> = entries
+                            .iter()
+                            .take(20)
+                            .map(|e| {
+                                let level = e.get("level").and_then(|v| v.as_str()).unwrap_or("?");
+                                let msg = e.get("msg").and_then(|v| v.as_str()).unwrap_or("?");
+                                let short_msg = if msg.len() > 50 {
+                                    format!("{}...", &msg[..47])
+                                } else {
+                                    msg.to_string()
+                                };
+                                format!("[{}] {}", level, short_msg)
+                            })
+                            .collect();
+                        if let Some(app_state) = app_state {
+                            app_state.status_message = format!(
+                                "Console ({}): {}",
+                                count,
+                                if lines.is_empty() {
+                                    "empty".into()
+                                } else {
+                                    lines.join(" \u{2502} ")
+                                }
+                            );
+                        }
+                    }
+                } else if let Some(app_state) = app_state {
+                    app_state.status_message = "Console log: collecting...".into();
+                }
+            }
+        }
+        crate::app::WryAction::ClearConsoleLog => {
+            if let Some(pane) = wry_panes.get_mut(&active_id) {
+                pane.execute_js(crate::servo::CONSOLE_CLEAR_JS);
+            }
+            if let Some(app_state) = app_state {
+                app_state.status_message = "Console log cleared".into();
+            }
+        }
+        crate::app::WryAction::SaveConfig => {
+            match crate::config::Config::save(&app_state.as_ref().unwrap().config) {
+                Ok(()) => {
+                    if let Some(app_state) = app_state {
+                        app_state.status_message = "Config saved".into();
+                    }
+                }
+                Err(e) => {
+                    if let Some(app_state) = app_state {
+                        app_state.status_message = format!("Save failed: {}", e);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
