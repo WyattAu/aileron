@@ -1,0 +1,52 @@
+[metadata]
+domain = "Input & Event Handling"
+derivation_date = "2026-04-11"
+confidence = 0.93
+sources = ["YP-INPUT-MODES-001", "Neovim source code", "winit documentation"]
+
+[constraints.timing]
+[[constraints.timing.item]]
+id = "TC-INPUT-001"
+name = "Event processing latency"
+description = "Maximum time to process a single input event"
+value = 1.0
+unit = "ms"
+type = "hard"
+source = "Frame budget allocation"
+derivation = "Must not cause frame drops; leave 15ms+ for rendering"
+margin_percent = 50
+
+[[constraints.timing.item]]
+id = "TC-INPUT-002"
+name = "Keybinding lookup latency"
+description = "Maximum time to look up a keybinding"
+value = 0.1
+unit = "ms"
+type = "hard"
+source = "HashMap performance"
+derivation = "HashMap lookup is O(1) expected; worst case with collisions"
+margin_percent = 100
+
+[constraints.numerical]
+[[constraints.numerical.item]]
+id = "NC-INPUT-001"
+name = "Maximum keybinding registry size"
+description = "Maximum number of keybindings"
+value = 500
+unit = "entries"
+source = "Practical limit"
+derivation = "Neovim default + common plugins typically register < 500 bindings"
+validation_method = "Registry size check on load"
+
+[[constraints.numerical.item]]
+id = "NC-INPUT-002"
+name = "Mode count"
+description = "Number of supported modes"
+value = 3
+unit = "modes"
+source = "DEF-MODE-001"
+derivation = "Normal, Insert, Command — extensible via Lua in future"
+validation_method = "Enum size assertion"
+
+[conflicts]
+# No conflicts identified

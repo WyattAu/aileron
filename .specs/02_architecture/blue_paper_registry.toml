@@ -1,0 +1,203 @@
+[metadata]
+last_updated = "2026-04-11T00:00:00Z"
+total_papers = 8
+
+[[blue_paper]]
+id = "BP-APP-CORE-001"
+title = "Application Core & Main Loop"
+status = "DRAFT"
+version = "1.0.0"
+ieee_1016_compliant = true
+created = "2026-04-11"
+author = "Construct"
+
+[blue_paper.scope]
+component_id = "COMP-APP-001"
+component_type = "Module"
+interfaces = ["IF-APP-INIT-001", "IF-APP-LIFECYCLE-001"]
+
+[blue_paper.dependencies]
+yellow_papers = ["YP-GFX-COMPOSITE-001", "YP-INPUT-MODES-001"]
+blue_papers = ["BP-WM-TILING-001", "BP-GFX-COMPOSITOR-001", "BP-INPUT-ROUTER-001"]
+external_libs = ["winit", "tokio", "tracing"]
+
+[blue_paper.verification]
+proof_file = "proof_app_core.lean"
+proof_status = "PENDING"
+test_coverage_critical = 0.80
+test_coverage_overall = 0.70
+
+[[blue_paper]]
+id = "BP-WM-TILING-001"
+title = "Window Manager & BSP Tiling"
+status = "DRAFT"
+version = "1.0.0"
+ieee_1016_compliant = true
+created = "2026-04-11"
+author = "Construct"
+
+[blue_paper.scope]
+component_id = "COMP-WM-001"
+component_type = "Module"
+interfaces = ["IF-WM-TREE-001", "IF-WM-PANE-001", "IF-WM-NAV-001"]
+
+[blue_paper.dependencies]
+yellow_papers = ["YP-WM-BSP-001"]
+blue_papers = ["BP-SERVO-INTEGRATION-001"]
+external_libs = ["egui_tiles"]
+
+[blue_paper.verification]
+proof_file = "proof_bsp.lean"
+proof_status = "VERIFIED"
+test_coverage_critical = 0.95
+test_coverage_overall = 0.85
+
+[[blue_paper]]
+id = "BP-GFX-COMPOSITOR-001"
+title = "GPU Compositor"
+status = "DRAFT"
+version = "1.0.0"
+ieee_1016_compliant = true
+created = "2026-04-11"
+author = "Construct"
+
+[blue_paper.scope]
+component_id = "COMP-GFX-001"
+component_type = "Module"
+interfaces = ["IF-GFX-COMPOSITE-001", "IF-GFX-TEXTURE-001"]
+
+[blue_paper.dependencies]
+yellow_papers = ["YP-GFX-COMPOSITE-001"]
+blue_papers = ["BP-SERVO-INTEGRATION-001"]
+external_libs = ["wgpu", "egui-wgpu", "egui-winit"]
+
+[blue_paper.verification]
+proof_file = "proof_compositor.lean"
+proof_status = "PENDING"
+test_coverage_critical = 0.90
+test_coverage_overall = 0.80
+
+[[blue_paper]]
+id = "BP-INPUT-ROUTER-001"
+title = "Input Event Router"
+status = "DRAFT"
+version = "1.0.0"
+ieee_1016_compliant = true
+created = "2026-04-11"
+author = "Construct"
+
+[blue_paper.scope]
+component_id = "COMP-INPUT-001"
+component_type = "Module"
+interfaces = ["IF-INPUT-ROUTE-001", "IF-INPUT-MODE-001", "IF-INPUT-KEYBIND-001"]
+
+[blue_paper.dependencies]
+yellow_papers = ["YP-INPUT-MODES-001"]
+blue_papers = ["BP-LUA-ENGINE-001"]
+external_libs = ["winit"]
+
+[blue_paper.verification]
+proof_file = "proof_modes.lean"
+proof_status = "VERIFIED"
+test_coverage_critical = 0.95
+test_coverage_overall = 0.90
+
+[[blue_paper]]
+id = "BP-SERVO-INTEGRATION-001"
+title = "Servo Engine Integration"
+status = "DRAFT"
+version = "1.0.0"
+ieee_1016_compliant = true
+created = "2026-04-11"
+author = "Construct"
+
+[blue_paper.scope]
+component_id = "COMP-SERVO-001"
+component_type = "Module"
+interfaces = ["IF-SERVO-EMBEDDER-001", "IF-SERVO-EVENT-001", "IF-SERVO-JS-001"]
+
+[blue_paper.dependencies]
+yellow_papers = ["YP-GFX-COMPOSITE-001"]
+blue_papers = ["BP-GFX-COMPOSITOR-001"]
+external_libs = ["servo", "servo_embedder_traits", "crossbeam-channel"]
+
+[blue_paper.verification]
+proof_file = null
+proof_status = "SKIPPED"
+test_coverage_critical = 0.80
+test_coverage_overall = 0.70
+
+[[blue_paper]]
+id = "BP-MCP-SERVER-001"
+title = "MCP Server"
+status = "DRAFT"
+version = "1.0.0"
+ieee_1016_compliant = true
+created = "2026-04-11"
+author = "Construct"
+
+[blue_paper.scope]
+component_id = "COMP-MCP-001"
+component_type = "Service"
+interfaces = ["IF-MCP-TRANSPORT-001", "IF-MCP-TOOLS-001"]
+
+[blue_paper.dependencies]
+yellow_papers = ["YP-MCP-PROTOCOL-001"]
+blue_papers = ["BP-SERVO-INTEGRATION-001"]
+external_libs = ["tokio", "serde_json"]
+
+[blue_paper.verification]
+proof_file = null
+proof_status = "SKIPPED"
+test_coverage_critical = 0.85
+test_coverage_overall = 0.75
+
+[[blue_paper]]
+id = "BP-UI-CMD-PALETTE-001"
+title = "Command Palette"
+status = "DRAFT"
+version = "1.0.0"
+ieee_1016_compliant = true
+created = "2026-04-11"
+author = "Construct"
+
+[blue_paper.scope]
+component_id = "COMP-CP-001"
+component_type = "Module"
+interfaces = ["IF-CP-SEARCH-001", "IF-CP-DISPLAY-001"]
+
+[blue_paper.dependencies]
+yellow_papers = ["YP-FUZZY-MATCH-001"]
+blue_papers = ["BP-DB-STORAGE-001"]
+external_libs = ["egui", "nucleo"]
+
+[blue_paper.verification]
+proof_file = null
+proof_status = "SKIPPED"
+test_coverage_critical = 0.80
+test_coverage_overall = 0.75
+
+[[blue_paper]]
+id = "BP-ADBLOCK-001"
+title = "Ad-Blocking Engine"
+status = "DRAFT"
+version = "1.0.0"
+ieee_1016_compliant = true
+created = "2026-04-11"
+author = "Construct"
+
+[blue_paper.scope]
+component_id = "COMP-AD-001"
+component_type = "Module"
+interfaces = ["IF-AD-FILTER-001", "IF-AD-RULES-001"]
+
+[blue_paper.dependencies]
+yellow_papers = ["YP-NET-ADBLOCK-001"]
+blue_papers = ["BP-SERVO-INTEGRATION-001"]
+external_libs = ["adblock"]
+
+[blue_paper.verification]
+proof_file = null
+proof_status = "SKIPPED"
+test_coverage_critical = 0.85
+test_coverage_overall = 0.75

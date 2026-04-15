@@ -1,0 +1,340 @@
+# Master Execution Plan
+# Topologically sorted build tasks for Aileron V1.0 MVP
+# Generated: 2026-04-11
+
+[metadata]
+version = "1.0.0"
+total_tasks = 24
+estimated_weeks = 12
+
+# ============================================================
+# PHASE A: Hello World Compositor (Weeks 1-2)
+# ============================================================
+
+[[task]]
+id = "TASK-001"
+title = "Project scaffolding: module structure"
+phase = "A"
+week = 1
+priority = "critical"
+description = "Create src/ module structure: main.rs, gfx/, wm/, input/, servo/, mcp/, lua/, db/"
+prerequisites = []
+outputs = ["src/lib.rs", "src/gfx/mod.rs", "src/wm/mod.rs", "src/input/mod.rs"]
+verification = ["cargo check passes", "All modules declared"]
+estimated_hours = 2
+cpr = "None"
+
+[[task]]
+id = "TASK-002"
+title = "winit window creation with wgpu surface"
+phase = "A"
+week = 1
+priority = "critical"
+description = "Create winit event loop, initialize wgpu device/queue/surface"
+prerequisites = ["TASK-001"]
+outputs = ["src/gfx/state.rs", "src/main.rs updated"]
+verification = ["Window opens on Wayland", "wgpu surface created", "No panic on resize"]
+estimated_hours = 8
+cpr = "CPR-002: wgpu version compat"
+
+[[task]]
+id = "TASK-003"
+title = "egui-wgpu-winit integration"
+phase = "A"
+week = 1
+priority = "critical"
+description = "Integrate egui with wgpu and winit; render a basic egui window"
+prerequisites = ["TASK-002"]
+outputs = ["src/gfx/egui_renderer.rs"]
+verification = ["egui window renders", "FPS counter visible", "Mouse interaction works"]
+estimated_hours = 6
+cpr = "None"
+
+[[task]]
+id = "TASK-004"
+title = "Servo Embedder API initialization"
+phase = "A"
+week = 2
+priority = "critical"
+description = "Implement Servo Embedder traits; initialize SpiderMonkey on background thread"
+prerequisites = ["TASK-001"]
+outputs = ["src/servo/mod.rs", "src/servo/embedder.rs"]
+verification = ["Servo initializes without panic", "Background thread starts"]
+estimated_hours = 16
+cpr = "CPR-001: Servo Embedder API stability"
+
+[[task]]
+id = "TASK-005"
+title = "Servo renders to off-screen wgpu texture"
+phase = "A"
+week = 2
+priority = "critical"
+description = "Configure Servo to render web content into a wgpu::Texture"
+prerequisites = ["TASK-002", "TASK-004"]
+outputs = ["src/gfx/texture.rs"]
+verification = ["Servo renders google.com to texture", "Texture format correct"]
+estimated_hours = 12
+cpr = "CPR-003: GPU texture sharing"
+
+[[task]]
+id = "TASK-006"
+title = "Compositor: blit Servo texture into egui"
+phase = "A"
+week = 2
+priority = "critical"
+description = "Register Servo texture with egui; render in egui::Image; composite frame"
+prerequisites = ["TASK-003", "TASK-005"]
+outputs = ["src/gfx/compositor.rs"]
+verification = ["Web page visible in egui window", "Mouse clicks pass through to Servo", "AC-GFX-002"]
+estimated_hours = 12
+cpr = "CPR-003: GPU texture sharing"
+
+# ============================================================
+# PHASE B: Modality & Tiling (Weeks 3-4)
+# ============================================================
+
+[[task]]
+id = "TASK-007"
+title = "BSP tree data structure"
+phase = "B"
+week = 3
+priority = "critical"
+description = "Implement BspNode, split, close, resize, navigate operations"
+prerequisites = ["TASK-001"]
+outputs = ["src/wm/tree.rs", "src/wm/rect.rs", "src/wm/navigation.rs"]
+verification = ["All BSP test vectors pass (TV-BSP-001 to TV-BSP-008)", "THM-BSP-001, THM-BSP-002 verified"]
+estimated_hours = 10
+cpr = "None"
+
+[[task]]
+id = "TASK-008"
+title = "Modal state machine (Normal/Insert/Command)"
+phase = "B"
+week = 3
+priority = "critical"
+description = "Implement Mode enum, transition function, event routing"
+prerequisites = ["TASK-001"]
+outputs = ["src/input/mode.rs", "src/input/router.rs"]
+verification = ["All mode test vectors pass (TV-MODE-001 to TV-MODE-008)", "THM-MODE-001, THM-MODE-002 verified"]
+estimated_hours = 6
+cpr = "None"
+
+[[task]]
+id = "TASK-009"
+title = "Keybinding registry"
+phase = "B"
+week = 3
+priority = "high"
+description = "Implement KeyCombo, KeybindingRegistry with HashMap"
+prerequisites = ["TASK-008"]
+outputs = ["src/input/keybindings.rs"]
+verification = ["Default keybindings work", "Custom keybindings register", "Lookup < 0.1ms"]
+estimated_hours = 4
+cpr = "None"
+
+[[task]]
+id = "TASK-010"
+title = "Integrate tiling with Servo (multi-pane)"
+phase = "B"
+week = 4
+priority = "critical"
+description = "Each BSP leaf has an independent Servo webview; split creates new webview"
+prerequisites = ["TASK-006", "TASK-007"]
+outputs = ["src/wm/pane.rs"]
+verification = ["Split creates new Servo pane", "Navigate between panes", "Close removes pane", "AC-WM-001 to AC-WM-005"]
+estimated_hours = 16
+cpr = "CPR-001, CPR-003"
+
+[[task]]
+id = "TASK-011"
+title = "Event routing integration with winit"
+phase = "B"
+week = 4
+priority = "critical"
+description = "Wire winit events through InputRouter to Servo/egui/command handler"
+prerequisites = ["TASK-008", "TASK-009", "TASK-006"]
+outputs = ["src/input/mod.rs updated"]
+verification = ["Normal mode: j/k scrolls", "Insert mode: typing works in web forms", "Mode indicator in status bar", "AC-MODE-001 to AC-MODE-005"]
+estimated_hours = 8
+cpr = "None"
+
+[[task]]
+id = "TASK-012"
+title = "Ctrl+E fallback to system browser"
+phase = "B"
+week = 4
+priority = "medium"
+description = "Use `open` crate to open current URL in default OS browser"
+prerequisites = ["TASK-010"]
+outputs = ["src/servo/fallback.rs"]
+verification = ["AC-SERVO-004"]
+estimated_hours = 2
+cpr = "None"
+
+# ============================================================
+# PHASE C: History & Command Palette (Weeks 5-6)
+# ============================================================
+
+[[task]]
+id = "TASK-013"
+title = "SQLite database setup (history, bookmarks)"
+phase = "C"
+week = 5
+priority = "high"
+description = "Initialize rusqlite DB; create history/bookmarks tables; XDG-compliant path"
+prerequisites = ["TASK-001"]
+outputs = ["src/db/mod.rs", "src/db/schema.rs"]
+verification = ["DB created in XDG path", "Tables created", "AC-DB-003"]
+estimated_hours = 6
+cpr = "None"
+
+[[task]]
+id = "TASK-014"
+title = "Navigation callbacks: track history"
+phase = "C"
+week = 5
+priority = "high"
+description = "Listen to Servo LoadComplete/TitleChanged events; insert into history DB"
+prerequisites = ["TASK-010", "TASK-013"]
+outputs = ["src/db/history.rs"]
+verification = ["History recorded after navigation", "AC-DB-001"]
+estimated_hours = 4
+cpr = "None"
+
+[[task]]
+id = "TASK-015"
+title = "Fuzzy finder integration (nucleo)"
+phase = "C"
+week = 5
+priority = "high"
+description = "Implement fuzzy search over history/bookmarks using nucleo"
+prerequisites = ["TASK-014"]
+outputs = ["src/ui/search.rs"]
+verification = ["10K items search < 5ms", "100K items search < 50ms", "AC-CP-002"]
+estimated_hours = 6
+cpr = "None"
+
+[[task]]
+id = "TASK-016"
+title = "Command palette UI (egui overlay)"
+phase = "C"
+week = 6
+priority = "high"
+description = "Build egui overlay for command palette; trigger via keybinding; display results"
+prerequisites = ["TASK-003", "TASK-015"]
+outputs = ["src/ui/palette.rs"]
+verification = ["Palette opens < 100ms", "Search results display", "Enter navigates to selected", "AC-CP-001, AC-CP-003, AC-CP-004"]
+estimated_hours = 8
+cpr = "None"
+
+# ============================================================
+# PHASE D: Extensibility (Weeks 7-8)
+# ============================================================
+
+[[task]]
+id = "TASK-017"
+title = "Lua engine integration (mlua)"
+phase = "D"
+week = 7
+priority = "high"
+description = "Initialize mlua with Lua 5.4; load init.lua; expose aileron.* API"
+prerequisites = ["TASK-001"]
+outputs = ["src/lua/mod.rs", "src/lua/api.rs"]
+verification = ["init.lua loads without error", "AC-LUA-001"]
+estimated_hours = 10
+cpr = "None"
+
+[[task]]
+id = "TASK-018"
+title = "Lua keybinding and theme API"
+phase = "D"
+week = 7
+priority = "high"
+description = "Expose aileron.keymap.set, aileron.theme.set to Lua"
+prerequisites = ["TASK-017", "TASK-009"]
+outputs = ["src/lua/keymap.rs", "src/lua/theme.rs"]
+verification = ["Custom keybindings from init.lua work", "Theme changes apply", "AC-LUA-002, AC-LUA-003"]
+estimated_hours = 6
+cpr = "None"
+
+[[task]]
+id = "TASK-019"
+title = "Lua custom commands API"
+phase = "D"
+week = 8
+priority = "medium"
+description = "Expose aileron.cmd.create to Lua for user-defined commands"
+prerequisites = ["TASK-017", "TASK-016"]
+outputs = ["src/lua/commands.rs"]
+verification = ["Custom command appears in palette", "AC-LUA-004"]
+estimated_hours = 4
+cpr = "None"
+
+[[task]]
+id = "TASK-020"
+title = "Lua sandboxing and error handling"
+phase = "D"
+week = 8
+priority = "high"
+description = "Restrict Lua stdlib (no os.execute, io.open); catch Lua errors gracefully"
+prerequisites = ["TASK-017"]
+outputs = ["src/lua/sandbox.rs"]
+verification = ["ST-SEC-008: os.execute blocked", "ST-SEC-009: io.open blocked", "AC-LUA-004"]
+estimated_hours = 6
+cpr = "T-TAMP-001"
+
+# ============================================================
+# PHASE E: Killer Features (Weeks 9-10)
+# ============================================================
+
+[[task]]
+id = "TASK-021"
+title = "Native ad-blocking (Brave adblock crate)"
+phase = "E"
+week = 9
+priority = "high"
+description = "Load filter lists; intercept Servo network requests; block matching domains"
+prerequisites = ["TASK-004"]
+outputs = ["src/net/adblock.rs", "src/net/mod.rs"]
+verification = ["Ad domains blocked", "Normal domains allowed", "EasyList loads < 2s", "AC-AD-001 to AC-AD-003"]
+estimated_hours = 10
+cpr = "None"
+
+[[task]]
+id = "TASK-022"
+title = "MCP server (stdio transport)"
+phase = "E"
+week = 9
+priority = "high"
+description = "Implement MCP server on tokio background thread; stdio JSON-RPC; tools/list, tools/call"
+prerequisites = ["TASK-010"]
+outputs = ["src/mcp/server.rs", "src/mcp/transport.rs"]
+verification = ["MCP handshake succeeds", "read_active_pane returns Markdown", "AC-MCP-001, AC-MCP-002, AC-MCP-003"]
+estimated_hours = 12
+cpr = "REQ-MCP-003"
+
+[[task]]
+id = "TASK-023"
+title = "MCP tools: search_web, run_js, browser_navigate"
+phase = "E"
+week = 10
+priority = "high"
+description = "Implement remaining MCP tools with timeout enforcement"
+prerequisites = ["TASK-022"]
+outputs = ["src/mcp/tools.rs"]
+verification = ["search_web returns results", "run_js executes in pane", "AC-MCP-002, AC-MCP-004"]
+estimated_hours = 8
+cpr = "T-INFO-002, T-ELEV-002"
+
+[[task]]
+id = "TASK-024"
+title = "Password manager CLI integration"
+phase = "E"
+week = 10
+priority = "medium"
+description = "Integrate bitwarden-cli via std::process::Command; command palette UI for vault search; JS injection"
+prerequisites = ["TASK-016", "TASK-022"]
+outputs = ["src/passwords/mod.rs", "src/passwords/bitwarden.rs"]
+verification = ["Vault search works", "Password injects into DOM", "Credentials zeroized after use", "ST-SEC-001, ST-SEC-002"]
+estimated_hours = 10
+cpr = "T-INFO-001"

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#141414"/>
+    </linearGradient>
+    <linearGradient id="wing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4db4ff"/>
+      <stop offset="100%" style="stop-color:#2d8bcf"/>
+    </linearGradient>
+  </defs>
+  <!-- Background rounded square -->
+  <rect x="4" y="4" width="120" height="120" rx="24" ry="24" fill="url(#bg)" stroke="#333" stroke-width="2"/>
+  <!-- Wing shape (simplified aileron/airfoil cross-section) -->
+  <path d="M 24 64 Q 64 28, 104 64 Q 64 100, 24 64 Z" fill="url(#wing)" opacity="0.9"/>
+  <!-- Center line (chord) -->
+  <line x1="24" y1="64" x2="104" y2="64" stroke="#1a1a2e" stroke-width="2" opacity="0.5"/>
+  <!-- Terminal cursor blink -->
+  <rect x="42" y="56" width="12" height="16" rx="1" fill="#141414" opacity="0.7"/>
+  <!-- Subtle grid lines (tiling hint) -->
+  <line x1="64" y1="24" x2="64" y2="104" stroke="#4db4ff" stroke-width="0.5" opacity="0.2"/>
+  <line x1="24" y1="64" x2="104" y2="64" stroke="#4db4ff" stroke-width="0.5" opacity="0.2"/>
+</svg>

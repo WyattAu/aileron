@@ -1,0 +1,150 @@
+# Yellow Paper Registry
+# Tracks all Yellow Papers and their relationships
+
+[metadata]
+last_updated = "2026-04-11T00:00:00Z"
+total_papers = 5
+
+[[yellow_paper]]
+id = "YP-WM-BSP-001"
+title = "Binary Space Partitioning Tree for Tiling Window Management"
+status = "DRAFT"
+version = "1.0.0"
+created = "2026-04-11"
+author = "DeepThought"
+confidence_level = 0.92
+tqa_level = 3
+
+[yellow_paper.scope]
+domain = "Window Management"
+algorithms = ["ALG-BSP-001", "ALG-BSP-002", "ALG-BSP-003"]
+theorems = ["THM-BSP-001", "THM-BSP-002", "THM-BSP-003"]
+test_vector_file = "test_vectors_bsp.toml"
+constraints_file = "domain_constraints_wm.toml"
+
+[yellow_paper.dependencies]
+axioms_from = []
+lemmas_from = []
+
+[yellow_paper.consumers]
+blue_papers = ["BP-WM-TILING-001", "BP-WM-BSP-NODE-001"]
+
+[[yellow_paper]]
+id = "YP-GFX-COMPOSITE-001"
+title = "GPU Texture Compositing Pipeline"
+status = "DRAFT"
+version = "1.0.0"
+created = "2026-04-11"
+author = "DeepThought"
+confidence_level = 0.85
+tqa_level = 3
+
+[yellow_paper.scope]
+domain = "Graphics & Rendering"
+algorithms = ["ALG-GFX-001", "ALG-GFX-002"]
+theorems = ["THM-GFX-001", "THM-GFX-002"]
+test_vector_file = "test_vectors_gfx.toml"
+constraints_file = "domain_constraints_gfx.toml"
+
+[yellow_paper.dependencies]
+axioms_from = []
+lemmas_from = []
+
+[yellow_paper.consumers]
+blue_papers = ["BP-GFX-COMPOSITOR-001", "BP-GFX-TEXTURE-MGR-001"]
+
+[[yellow_paper]]
+id = "YP-INPUT-MODES-001"
+title = "Modal Input State Machine & Event Routing"
+status = "DRAFT"
+version = "1.0.0"
+created = "2026-04-11"
+author = "DeepThought"
+confidence_level = 0.93
+tqa_level = 3
+
+[yellow_paper.scope]
+domain = "Input & Event Handling"
+algorithms = ["ALG-MODE-001"]
+theorems = ["THM-MODE-001", "THM-MODE-002", "THM-MODE-003"]
+test_vector_file = "test_vectors_modes.toml"
+constraints_file = "domain_constraints_input.toml"
+
+[yellow_paper.dependencies]
+axioms_from = []
+lemmas_from = []
+
+[yellow_paper.consumers]
+blue_papers = ["BP-INPUT-ROUTER-001", "BP-INPUT-KEYBINDINGS-001"]
+
+[[yellow_paper]]
+id = "YP-MCP-PROTOCOL-001"
+title = "Model Context Protocol Server"
+status = "DRAFT"
+version = "1.0.0"
+created = "2026-04-11"
+author = "DeepThought"
+confidence_level = 0.88
+tqa_level = 3
+
+[yellow_paper.scope]
+domain = "AI Integration"
+algorithms = ["ALG-MCP-001", "ALG-MCP-002"]
+theorems = ["THM-MCP-001", "THM-MCP-002"]
+test_vector_file = "test_vectors_mcp.toml"
+constraints_file = "domain_constraints_mcp.toml"
+
+[yellow_paper.dependencies]
+axioms_from = []
+lemmas_from = []
+
+[yellow_paper.consumers]
+blue_papers = ["BP-MCP-SERVER-001", "BP-MCP-TOOLS-001"]
+
+[[yellow_paper]]
+id = "YP-NET-ADBLOCK-001"
+title = "Native Network-Level Ad-Blocking"
+status = "DRAFT"
+version = "1.0.0"
+created = "2026-04-11"
+author = "DeepThought"
+confidence_level = 0.90
+tqa_level = 3
+
+[yellow_paper.scope]
+domain = "Network & Security"
+algorithms = ["ALG-AD-001", "ALG-AD-002"]
+theorems = ["THM-AD-001", "THM-AD-002"]
+test_vector_file = "test_vectors_adblock.toml"
+constraints_file = "domain_constraints_net.toml"
+
+[yellow_paper.dependencies]
+axioms_from = []
+lemmas_from = []
+
+[yellow_paper.consumers]
+blue_papers = ["BP-NET-FILTER-001", "BP-NET-RESOURCE-LOADER-001"]
+
+[[yellow_paper]]
+id = "YP-FUZZY-MATCH-001"
+title = "Fuzzy String Matching for Command Palette"
+status = "DRAFT"
+version = "1.0.0"
+created = "2026-04-11"
+author = "DeepThought"
+confidence_level = 0.90
+tqa_level = 3
+
+[yellow_paper.scope]
+domain = "User Interface"
+algorithms = ["ALG-FZ-001"]
+theorems = ["THM-FZ-001", "THM-FZ-002", "THM-FZ-003"]
+test_vector_file = "test_vectors_fuzzy.toml"
+constraints_file = "domain_constraints_ui.toml"
+
+[yellow_paper.dependencies]
+axioms_from = []
+lemmas_from = []
+
+[yellow_paper.consumers]
+blue_papers = ["BP-UI-CMD-PALETTE-001"]

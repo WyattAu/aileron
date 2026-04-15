@@ -1,0 +1,169 @@
+# Interface Contracts: Window Manager
+
+[[interface]]
+id = "IF-WM-TREE-001"
+name = "BSP Tree Operations"
+version = "1.0.0"
+provider = "COMP-WM-001"
+consumers = ["COMP-APP-001", "COMP-GFX-001"]
+description = "Core BSP tree manipulation: split, close, resize, navigate"
+
+[[interface.operation]]
+name = "new"
+description = "Create a new BSP tree with a single root leaf"
+
+[[interface.operation.parameter]]
+name = "viewport"
+type = "Rect"
+description = "Initial viewport rectangle"
+direction = "in"
+
+[[interface.operation.return]]
+type = "BspTree"
+description = "New tree with one leaf"
+
+[interface.operation.precondition]
+id = "PRE-WM-NEW-001"
+expression = "viewport.w > 0 && viewport.h > 0"
+enforcement = "assert"
+error_code = "INVALID_VIEWPORT"
+
+[interface.operation.complexity]
+time = "O(1)"
+space = "O(1)"
+derivation = "Constant allocation"
+
+[[interface.operation]]
+name = "split"
+description = "Split a leaf pane into two sub-panes"
+
+[[interface.operation.parameter]]
+name = "pane_id"
+type = "Uuid"
+description = "ID of the pane to split"
+direction = "in"
+
+[[interface.operation.parameter]]
+name = "direction"
+type = "SplitDirection"
+description = "Horizontal or Vertical split"
+direction = "in"
+
+[[interface.operation.parameter]]
+name = "ratio"
+type = "f64"
+description = "Split ratio in (0.1, 0.9)"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Result<Uuid, TileError>"
+description = "ID of new pane or error"
+
+[interface.operation.precondition]
+id = "PRE-WM-SPLIT-001"
+expression = "0.1 < ratio && ratio < 0.9"
+enforcement = "validate"
+error_code = "INVALID_RATIO"
+
+[interface.operation.precondition]
+id = "PRE-WM-SPLIT-002"
+expression = "tree.contains(pane_id)"
+enforcement = "validate"
+error_code = "PANE_NOT_FOUND"
+
+[interface.operation.precondition]
+id = "PRE-WM-SPLIT-003"
+expression = "leaf_count > 0 && child_rects_meet_minimum_size"
+enforcement = "validate"
+error_code = "PANE_TOO_SMALL"
+
+[interface.operation.postcondition]
+id = "POST-WM-SPLIT-001"
+expression = "sum(leaf_areas) == viewport_area"
+enforcement = "assert"
+
+[interface.operation.postcondition]
+id = "POST-WM-SPLIT-002"
+expression = "no_two_leaf_rects_overlap"
+enforcement = "assert"
+
+[interface.operation.complexity]
+time = "O(d) where d = tree depth"
+space = "O(1)"
+derivation = "YP-WM-BSP-001 LEM-BSP-001"
+
+[[interface.operation]]
+name = "close"
+description = "Close a pane; sibling takes parent's space"
+
+[[interface.operation.parameter]]
+name = "pane_id"
+type = "Uuid"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Result<(), TileError>"
+
+[interface.operation.precondition]
+id = "PRE-WM-CLOSE-001"
+expression = "leaf_count > 1"
+enforcement = "validate"
+error_code = "LAST_PANE"
+
+[interface.operation.complexity]
+time = "O(d)"
+space = "O(1)"
+
+[[interface.operation]]
+name = "navigate"
+description = "Navigate to adjacent pane"
+
+[[interface.operation.parameter]]
+name = "current"
+type = "Uuid"
+direction = "in"
+
+[[interface.operation.parameter]]
+name = "direction"
+type = "Direction"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Option<Uuid>"
+
+[interface.operation.complexity]
+time = "O(n) where n = leaf count"
+space = "O(1)"
+derivation = "YP-WM-BSP-001 ALG-BSP-003"
+
+[[interface.operation]]
+name = "resize"
+description = "Propagate new viewport dimensions to all nodes"
+
+[[interface.operation.parameter]]
+name = "new_viewport"
+type = "Rect"
+direction = "in"
+
+[interface.operation.postcondition]
+id = "POST-WM-RESIZE-001"
+expression = "sum(leaf_areas) == new_viewport.area"
+enforcement = "assert"
+
+[interface.operation.complexity]
+time = "O(n)"
+space = "O(1)"
+derivation = "YP-WM-BSP-001 THM-BSP-003"
+
+[interface.operation.thread_safety]
+safe = false
+synchronization = "none"
+notes = "Must be called from main thread only"
+
+[[interface]]
+id = "IF-WM-PANE-001"
+name = "Pane Metadata"
+version = "1.0.0"
+provider = "COMP-WM-001"
+consumers = ["COMP-SERVO-001", "COMP-MCP-001"]
+description = "Pane state: URL, title, session, Servo handle"

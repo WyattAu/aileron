@@ -1,0 +1,182 @@
+[metadata]
+algorithm_id = "ALG-BSP-001,ALG-BSP-002,ALG-BSP-003"
+algorithm_version = "1.0.0"
+generation_date = "2026-04-11T00:00:00Z"
+generator = "manual"
+verification_status = "verified"
+
+[precision_requirements]
+floating_point_type = "f64"
+absolute_tolerance = 1e-6
+relative_tolerance = 1e-8
+
+[[test_vector]]
+id = "TV-BSP-001"
+name = "Initial single pane fills viewport"
+category = "nominal"
+priority = "critical"
+description = "A tree with one leaf node should assign the full viewport rectangle"
+
+[test_vector.input]
+viewport_width = { type = "f64", value = 1920.0 }
+viewport_height = { type = "f64", value = 1080.0 }
+
+[test_vector.expected_output]
+leaf_count = { type = "integer", value = 1 }
+leaf_rect = { type = "string", value = "[0.0, 0.0, 1920.0, 1080.0]" }
+
+[test_vector.verification]
+source = "Axiom AX-BSP-003 (Space Coverage)"
+method = "Analytical"
+confidence = 0.99
+verifier = "DeepThought"
+
+[[test_vector]]
+id = "TV-BSP-002"
+name = "Horizontal split creates two equal panes"
+category = "nominal"
+priority = "critical"
+description = "Splitting the root leaf horizontally with ratio 0.5 creates two 960x1080 panes"
+
+[test_vector.input]
+viewport_width = { type = "f64", value = 1920.0 }
+viewport_height = { type = "f64", value = 1080.0 }
+split_direction = { type = "string", value = "H" }
+split_ratio = { type = "f64", value = 0.5 }
+
+[test_vector.expected_output]
+leaf_count = { type = "integer", value = 2 }
+left_rect = { type = "string", value = "[0.0, 0.0, 1920.0, 540.0]" }
+right_rect = { type = "string", value = "[0.0, 540.0, 1920.0, 540.0]" }
+
+[test_vector.verification]
+source = "Theorem THM-BSP-001"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-BSP-003"
+name = "Vertical split creates two equal panes"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+viewport_width = { type = "f64", value = 1920.0 }
+viewport_height = { type = "f64", value = 1080.0 }
+split_direction = { type = "string", value = "V" }
+split_ratio = { type = "f64", value = 0.5 }
+
+[test_vector.expected_output]
+leaf_count = { type = "integer", value = 2 }
+left_rect = { type = "string", value = "[0.0, 0.0, 960.0, 1080.0]" }
+right_rect = { type = "string", value = "[960.0, 0.0, 960.0, 1080.0]" }
+
+[test_vector.verification]
+source = "Theorem THM-BSP-001"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-BSP-004"
+name = "Close pane rebalances to single pane"
+category = "nominal"
+priority = "critical"
+description = "Closing one of two panes returns to single full-viewport pane"
+
+[test_vector.input]
+viewport_width = { type = "f64", value = 1920.0 }
+viewport_height = { type = "f64", value = 1080.0 }
+split_direction = { type = "string", value = "V" }
+split_ratio = { type = "f64", value = 0.5 }
+close_pane = { type = "string", value = "sibling" }
+
+[test_vector.expected_output]
+leaf_count = { type = "integer", value = 1 }
+remaining_rect = { type = "string", value = "[0.0, 0.0, 1920.0, 1080.0]" }
+
+[test_vector.verification]
+source = "Theorem THM-BSP-002"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-BSP-005"
+name = "Reject split below minimum pane size"
+category = "boundary"
+priority = "high"
+description = "Splitting a 150x150 pane with ratio 0.9 should fail (child would be 150x15)"
+
+[test_vector.input]
+pane_width = { type = "f64", value = 150.0 }
+pane_height = { type = "f64", value = 150.0 }
+split_direction = { type = "string", value = "H" }
+split_ratio = { type = "f64", value = 0.9 }
+
+[test_vector.expected_output]
+success = { type = "boolean", value = false }
+expected_error = { type = "exception", error_code = "PANE_TOO_SMALL" }
+
+[test_vector.verification]
+source = "Definition DEF-BSP-003"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-BSP-006"
+name = "Reject closing last pane"
+category = "adversarial"
+priority = "high"
+
+[test_vector.input]
+leaf_count = { type = "integer", value = 1 }
+close_pane = { type = "string", value = "only_pane" }
+
+[test_vector.expected_output]
+success = { type = "boolean", value = false }
+expected_error = { type = "exception", error_code = "LAST_PANE" }
+
+[test_vector.verification]
+source = "ALG-BSP-002 preconditions"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-BSP-007"
+name = "Resize preserves coverage axiom"
+category = "regression"
+priority = "high"
+description = "After resizing viewport, sum of leaf areas equals new viewport area"
+
+[test_vector.input]
+original_viewport = { type = "string", value = "[0.0, 0.0, 1920.0, 1080.0]" }
+new_viewport = { type = "string", value = "[0.0, 0.0, 1280.0, 720.0]" }
+
+[test_vector.expected_output]
+area_sum = { type = "f64", value = 921600.0 }
+viewport_area = { type = "f64", value = 921600.0 }
+areas_equal = { type = "boolean", value = true }
+
+[test_vector.verification]
+source = "Theorem THM-BSP-003"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-BSP-008"
+name = "Four-pane grid from alternating splits"
+category = "nominal"
+priority = "high"
+
+[test_vector.input]
+viewport_width = { type = "f64", value = 1920.0 }
+viewport_height = { type = "f64", value = 1080.0 }
+splits = { type = "string", value = "[V:0.5, V:0.5_on_child1, V:0.5_on_child2]" }
+
+[test_vector.expected_output]
+leaf_count = { type = "integer", value = 4 }
+expected_area_sum = { type = "f64", value = 2073600.0 }
+
+[test_vector.verification]
+source = "Axioms AX-BSP-001, AX-BSP-002, AX-BSP-003"
+method = "Analytical"
+confidence = 0.95

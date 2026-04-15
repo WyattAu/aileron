@@ -1,0 +1,78 @@
+[metadata]
+domain = "Window Management"
+derivation_date = "2026-04-11"
+confidence = 0.92
+sources = ["YP-WM-BSP-001", "dwm source code", "i3 documentation"]
+
+[constraints.numerical]
+[[constraints.numerical.item]]
+id = "NC-WM-001"
+name = "Minimum pane width"
+description = "Minimum width for any pane to remain usable"
+value = 100
+unit = "pixels"
+source = "DEF-BSP-003 in YP-WM-BSP-001"
+derivation = "Empirical: text input fields require ~100px to be usable"
+validation_method = "Assert after split and resize operations"
+
+[[constraints.numerical.item]]
+id = "NC-WM-002"
+name = "Minimum pane height"
+description = "Minimum height for any pane"
+value = 100
+unit = "pixels"
+source = "DEF-BSP-003 in YP-WM-BSP-001"
+derivation = "Same as minimum width"
+validation_method = "Assert after split and resize operations"
+
+[[constraints.numerical.item]]
+id = "NC-WM-003"
+name = "Default split ratio"
+description = "Default ratio when no ratio is specified"
+value = 0.5
+unit = "dimensionless"
+source = "ALG-BSP-001 in YP-WM-BSP-001"
+derivation = "Equal split is the most common and expected default"
+validation_method = "Unit test"
+
+[[constraints.numerical.item]]
+id = "NC-WM-004"
+name = "Split ratio minimum"
+description = "Minimum allowed split ratio"
+value = 0.1
+unit = "dimensionless"
+source = "Derived from minimum pane size"
+derivation = "For 1000px viewport with 100px minimum: 100/1000 = 0.1"
+validation_method = "Assert in split_pane"
+
+[[constraints.numerical.item]]
+id = "NC-WM-005"
+name = "Maximum recommended panes"
+description = "Beyond this count, navigation UX degrades"
+value = 16
+unit = "panes"
+source = "UX best practice"
+derivation = "4x4 grid is the maximum practical tiling layout"
+validation_method = "Warning log when exceeded"
+
+[constraints.timing]
+[[constraints.timing.item]]
+id = "TC-WM-001"
+name = "Split operation latency"
+description = "Split must complete within one frame"
+value = 16.67
+unit = "ms"
+type = "soft"
+source = "60fps frame budget"
+derivation = "Must not cause frame drops"
+margin_percent = 50
+
+[conflicts]
+[[conflicts.item]]
+id = "CONF-WM-001"
+constraint_1 = "NC-WM-005"
+constraint_2 = "TC-WM-001"
+description = "16 panes may cause resize propagation to exceed frame budget"
+impact = "Visual stutter during resize"
+resolution = "Cap resize propagation at 16 panes; use dirty-flag to skip unchanged subtrees"
+adr_reference = "ADR-WM-001"

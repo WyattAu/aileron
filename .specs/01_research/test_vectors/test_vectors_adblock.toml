@@ -1,0 +1,104 @@
+[metadata]
+algorithm_id = "ALG-AD-001,ALG-AD-002"
+algorithm_version = "1.0.0"
+generation_date = "2026-04-11T00:00:00Z"
+generator = "manual"
+verification_status = "verified"
+
+[precision_requirements]
+floating_point_type = "f64"
+
+[[test_vector]]
+id = "TV-AD-001"
+name = "Block known ad domain"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+filter_rules = { type = "string", value = ["||doubleclick.net^"] }
+url = { type = "string", value = "https://doubleclick.net/ad.js" }
+request_type = { type = "string", value = "script" }
+
+[test_vector.expected_output]
+blocked = { type = "boolean", value = true }
+
+[test_vector.verification]
+source = "DEF-AD-002"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-AD-002"
+name = "Allow normal domain"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+filter_rules = { type = "string", value = ["||doubleclick.net^"] }
+url = { type = "string", value = "https://example.com/page.html" }
+request_type = { type = "string", value = "document" }
+
+[test_vector.expected_output]
+blocked = { type = "boolean", value = false }
+
+[test_vector.verification]
+source = "AX-AD-001"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-AD-003"
+name = "Exception rule overrides block"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+filter_rules = { type = "string", value = ["||ads.example.com^", "@@||ads.example.com/whitelisted^"] }
+url = { type = "string", value = "https://ads.example.com/whitelisted/banner.js" }
+request_type = { type = "string", value = "script" }
+
+[test_vector.expected_output]
+blocked = { type = "boolean", value = false }
+
+[test_vector.verification]
+source = "AX-AD-002"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-AD-004"
+name = "Type-restricted rule"
+category = "nominal"
+priority = "high"
+
+[test_vector.input]
+filter_rules = { type = "string", value = ["||tracker.com^$image"] }
+url = { type = "string", value = "https://tracker.com/pixel.gif" }
+request_type = { type = "string", value = "image" }
+
+[test_vector.expected_output]
+blocked = { type = "boolean", value = true }
+
+[test_vector.verification]
+source = "DEF-AD-001"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-AD-005"
+name = "Type restriction mismatch allows"
+category = "nominal"
+priority = "high"
+
+[test_vector.input]
+filter_rules = { type = "string", value = ["||tracker.com^$image"] }
+url = { type = "string", value = "https://tracker.com/api/data" }
+request_type = { type = "string", value = "xmlhttprequest" }
+
+[test_vector.expected_output]
+blocked = { type = "boolean", value = false }
+
+[test_vector.verification]
+source = "DEF-AD-001"
+method = "Analytical"
+confidence = 0.99

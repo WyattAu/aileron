@@ -1,0 +1,109 @@
+[metadata]
+algorithm_id = "ALG-GFX-001,ALG-GFX-002"
+algorithm_version = "1.0.0"
+generation_date = "2026-04-11T00:00:00Z"
+generator = "manual"
+verification_status = "verified"
+
+[precision_requirements]
+floating_point_type = "f64"
+absolute_tolerance = 1e-3
+relative_tolerance = 1e-2
+
+[[test_vector]]
+id = "TV-GFX-001"
+name = "Single pane texture creation"
+category = "nominal"
+priority = "critical"
+description = "Create a 1920x1080 texture for a Servo pane"
+
+[test_vector.input]
+width = { type = "integer", value = 1920 }
+height = { type = "integer", value = 1080 }
+format = { type = "string", value = "Bgra8Unorm" }
+
+[test_vector.expected_output]
+texture_created = { type = "boolean", value = true }
+texture_size_bytes = { type = "integer", value = 8294400 }
+
+[test_vector.verification]
+source = "ALG-GFX-002"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-GFX-002"
+name = "Frame compositing within budget"
+category = "nominal"
+priority = "critical"
+description = "Compositing 4 panes at 1080p must complete within 5ms"
+
+[test_vector.input]
+pane_count = { type = "integer", value = 4 }
+pane_resolution = { type = "string", value = "1920x1080" }
+target_budget_ms = { type = "f64", value = 5.0 }
+
+[test_vector.expected_output]
+compositing_time_ms = { type = "f64", value = 2.0 }
+within_budget = { type = "boolean", value = true }
+
+[test_vector.verification]
+source = "Theorem THM-GFX-001"
+method = "Benchmark"
+confidence = 0.90
+
+[[test_vector]]
+id = "TV-GFX-003"
+name = "Zero panes renders empty frame"
+category = "boundary"
+priority = "high"
+
+[test_vector.input]
+pane_count = { type = "integer", value = 0 }
+
+[test_vector.expected_output]
+frame_rendered = { type = "boolean", value = true }
+no_panels_visible = { type = "boolean", value = true }
+
+[test_vector.verification]
+source = "ALG-GFX-001"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-GFX-004"
+name = "16 panes at 1080p within 120fps budget"
+category = "boundary"
+priority = "high"
+
+[test_vector.input]
+pane_count = { type = "integer", value = 16 }
+pane_resolution = { type = "string", value = "1920x1080" }
+target_budget_ms = { type = "f64", value = 8.33 }
+
+[test_vector.expected_output]
+within_budget = { type = "boolean", value = true }
+
+[test_vector.verification]
+source = "Theorem THM-GFX-001 (extended)"
+method = "Benchmark"
+confidence = 0.80
+
+[[test_vector]]
+id = "TV-GFX-005"
+name = "Reject zero-size texture creation"
+category = "adversarial"
+priority = "high"
+
+[test_vector.input]
+width = { type = "integer", value = 0 }
+height = { type = "integer", value = 0 }
+
+[test_vector.expected_output]
+texture_created = { type = "boolean", value = false }
+expected_error = { type = "exception", error_code = "INVALID_DIMENSIONS" }
+
+[test_vector.verification]
+source = "wgpu specification"
+method = "Analytical"
+confidence = 0.99

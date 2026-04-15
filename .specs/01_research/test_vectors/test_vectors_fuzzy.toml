@@ -1,0 +1,118 @@
+[metadata]
+algorithm_id = "ALG-FZ-001"
+algorithm_version = "1.0.0"
+generation_date = "2026-04-11T00:00:00Z"
+generator = "manual"
+verification_status = "verified"
+
+[[test_vector]]
+id = "TV-FZ-001"
+name = "Exact match scores highest"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+query = { type = "string", value = "hello" }
+candidate = { type = "string", value = "hello" }
+
+[test_vector.expected_output]
+matched = { type = "boolean", value = true }
+score_gt = { type = "integer", value = 10 }
+
+[test_vector.verification]
+source = "DEF-FZ-002"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-FZ-002"
+name = "Fuzzy subsequence match"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+query = { type = "string", value = "abc" }
+candidate = { type = "string", value = "aXbYcZ" }
+
+[test_vector.expected_output]
+matched = { type = "boolean", value = true }
+match_indices = { type = "string", value = "[0, 2, 4]" }
+
+[test_vector.verification]
+source = "DEF-FZ-001"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-FZ-003"
+name = "Non-subsequence fails"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+query = { type = "string", value = "abc" }
+candidate = { type = "string", value = "cba" }
+
+[test_vector.expected_output]
+matched = { type = "boolean", value = false }
+
+[test_vector.verification]
+source = "DEF-FZ-001"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-FZ-004"
+name = "Case insensitive"
+category = "nominal"
+priority = "high"
+
+[test_vector.input]
+query = { type = "string", value = "HELLO" }
+candidate = { type = "string", value = "hello world" }
+
+[test_vector.expected_output]
+matched = { type = "boolean", value = true }
+
+[test_vector.verification]
+source = "AX-FZ-001"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-FZ-005"
+name = "Word boundary bonus"
+category = "nominal"
+priority = "high"
+
+[test_vector.input]
+query = { type = "string", value = "fp" }
+candidate_word_boundary = { type = "string", value = "file_picker" }
+candidate_mid_word = { type = "string", value = "grapefruit_pie" }
+
+[test_vector.expected_output]
+both_match = { type = "boolean", value = true }
+word_boundary_score_gt = { type = "boolean", value = true }
+
+[test_vector.verification]
+source = "DEF-FZ-002"
+method = "Analytical"
+confidence = 0.95
+
+[[test_vector]]
+id = "TV-FZ-006"
+name = "Empty query matches everything"
+category = "boundary"
+priority = "medium"
+
+[test_vector.input]
+query = { type = "string", value = "" }
+candidate = { type = "string", value = "anything" }
+
+[test_vector.expected_output]
+matched = { type = "boolean", value = true }
+
+[test_vector.verification]
+source = "ALG-FZ-001"
+method = "Analytical"
+confidence = 0.99

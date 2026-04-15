@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Aileron
+Comment=Keyboard-Driven Web Environment
+Exec=aileron
+Icon=aileron
+Terminal=false
+Categories=Network;WebBrowser;Development;
+Keywords=browser;web;tiling;keyboard;developer;
+StartupWMClass=aileron
+StartupNotify=true
+MimeType=x-scheme-handler/http;x-scheme-handler/https;

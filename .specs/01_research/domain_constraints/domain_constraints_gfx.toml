@@ -1,0 +1,78 @@
+[metadata]
+domain = "Graphics & Rendering"
+derivation_date = "2026-04-11"
+confidence = 0.85
+sources = ["YP-GFX-COMPOSITE-001", "WebGPU specification", "wgpu crate docs"]
+
+[constraints.numerical]
+[[constraints.numerical.item]]
+id = "NC-GFX-001"
+name = "Frame budget at 60fps"
+description = "Total frame time budget for compositing"
+value = 16.67
+unit = "ms"
+source = "Display refresh rate standard"
+derivation = "1000ms / 60Hz = 16.67ms per frame"
+validation_method = "Frame timing overlay"
+
+[[constraints.numerical.item]]
+id = "NC-GFX-002"
+name = "Compositing time budget"
+description = "Compositing must use less than 30% of frame budget"
+value = 5.0
+unit = "ms"
+source = "THM-GFX-001 in YP-GFX-COMPOSITE-001"
+derivation = "Leave headroom for Servo rendering and vsync"
+validation_method = "GPU timer queries"
+
+[[constraints.numerical.item]]
+id = "NC-GFX-003"
+name = "Maximum pane texture width"
+description = "Maximum width for a single pane texture"
+value = 3840
+unit = "pixels"
+source = "4K resolution"
+derivation = "Support up to 4K displays"
+validation_method = "Assert in create_pane_texture"
+
+[[constraints.numerical.item]]
+id = "NC-GFX-004"
+name = "Maximum pane texture height"
+description = "Maximum height for a single pane texture"
+value = 2160
+unit = "pixels"
+source = "4K resolution"
+derivation = "Support up to 4K displays"
+validation_method = "Assert in create_pane_texture"
+
+[[constraints.numerical.item]]
+id = "NC-GFX-005"
+name = "Maximum concurrent pane textures"
+description = "GPU memory limit for pane textures"
+value = 16
+unit = "textures"
+source = "GPU memory constraints"
+derivation = "16 × 4K RGBA = 16 × 33.2MB ≈ 531MB, within 2GB GPU VRAM budget"
+validation_method = "Resource count tracker"
+
+[constraints.timing]
+[[constraints.timing.item]]
+id = "TC-GFX-001"
+name = "Swapchain present latency"
+description = "Time from present() call to vsync"
+value = 16.67
+unit = "ms"
+type = "hard"
+source = "VSync requirement"
+derivation = "Must not miss vsync"
+margin_percent = 0
+
+[conflicts]
+[[conflicts.item]]
+id = "CONF-GFX-001"
+constraint_1 = "NC-GFX-005"
+constraint_2 = "TC-GFX-001"
+description = "Many large textures may cause compositing to exceed frame budget"
+impact = "Frame drops, visual stutter"
+resolution = "Limit maximum pane textures; use texture pooling and reuse"
+adr_reference = "ADR-GFX-001"

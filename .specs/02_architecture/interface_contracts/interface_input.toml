@@ -1,0 +1,157 @@
+# Interface Contracts: Input Event Router
+
+[[interface]]
+id = "IF-INPUT-MODE-001"
+name = "Mode Management"
+version = "1.0.0"
+provider = "COMP-INPUT-001"
+consumers = ["COMP-APP-001", "COMP-LUA-001"]
+description = "Modal state management"
+
+[[interface.operation]]
+name = "current_mode"
+description = "Get the current input mode"
+
+[[interface.operation.return]]
+type = "Mode"
+description = "Normal, Insert, or Command"
+
+[interface.operation.complexity]
+time = "O(1)"
+space = "O(1)"
+
+[[interface.operation]]
+name = "set_mode"
+description = "Set the current input mode"
+
+[[interface.operation.parameter]]
+name = "mode"
+type = "Mode"
+direction = "in"
+
+[interface.operation.complexity]
+time = "O(1)"
+space = "O(1)"
+
+[[interface.operation]]
+name = "transition"
+description = "Apply a key event and transition mode if applicable"
+
+[[interface.operation.parameter]]
+name = "event"
+type = "KeyEvent"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Option<Mode>"
+description = "New mode if transition occurred"
+
+[interface.operation.postcondition]
+id = "POST-INP-TRANS-001"
+expression = "result is deterministic: same event always produces same mode"
+enforcement = "property_test"
+
+[interface.operation.complexity]
+time = "O(1)"
+space = "O(1)"
+derivation = "YP-INPUT-MODES-001 LEM-MODE-001"
+
+[[interface]]
+id = "IF-INPUT-ROUTE-001"
+name = "Event Routing"
+version = "1.0.0"
+provider = "COMP-INPUT-001"
+consumers = ["COMP-APP-001"]
+description = "Route events to correct subsystem based on mode"
+
+[[interface.operation]]
+name = "route_event"
+description = "Determine which subsystem should handle an event"
+
+[[interface.operation.parameter]]
+name = "event"
+type = "winit::Event"
+direction = "in"
+
+[[interface.operation.return]]
+type = "EventDestination"
+
+[interface.operation.postcondition]
+id = "POST-INP-ROUTE-001"
+expression = "exactly one destination returned (no duplicates)"
+enforcement = "assert"
+
+[interface.operation.complexity]
+time = "O(1)"
+space = "O(1)"
+derivation = "YP-INPUT-MODES-001 LEM-MODE-001"
+
+[[interface]]
+id = "IF-INPUT-KEYBIND-001"
+name = "Keybinding Registry"
+version = "1.0.0"
+provider = "COMP-INPUT-001"
+consumers = ["COMP-LUA-001"]
+description = "Keybinding registration and lookup"
+
+[[interface.operation]]
+name = "register"
+description = "Register a keybinding for a mode"
+
+[[interface.operation.parameter]]
+name = "mode"
+type = "Mode"
+direction = "in"
+
+[[interface.operation.parameter]]
+name = "combo"
+type = "KeyCombo"
+direction = "in"
+
+[[interface.operation.parameter]]
+name = "action"
+type = "Action"
+direction = "in"
+
+[interface.operation.complexity]
+time = "O(1) amortized"
+space = "O(1)"
+
+[[interface.operation]]
+name = "lookup"
+description = "Look up action for a key combo in current mode"
+
+[[interface.operation.parameter]]
+name = "mode"
+type = "Mode"
+direction = "in"
+
+[[interface.operation.parameter]]
+name = "combo"
+type = "KeyCombo"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Option<Action>"
+
+[interface.operation.complexity]
+time = "O(1) expected"
+space = "O(1)"
+derivation = "YP-INPUT-MODES-001 LEM-MODE-002"
+
+[[interface.operation]]
+name = "load_from_lua"
+description = "Load keybindings from a Lua table"
+
+[[interface.operation.parameter]]
+name = "lua_table"
+type = "mlua::Table"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Result<(), LuaError>"
+
+[interface.operation.thread_safety]
+safe = false
+synchronization = "none"
+notes = "Called from main thread during init"

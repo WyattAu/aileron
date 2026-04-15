@@ -1,0 +1,123 @@
+[metadata]
+algorithm_id = "ALG-MCP-001,ALG-MCP-002"
+algorithm_version = "1.0.0"
+generation_date = "2026-04-11T00:00:00Z"
+generator = "manual"
+verification_status = "verified"
+
+[precision_requirements]
+floating_point_type = "f64"
+absolute_tolerance = 1e-3
+
+[[test_vector]]
+id = "TV-MCP-001"
+name = "Initialize handshake succeeds"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+method = { type = "string", value = "initialize" }
+params = { type = "string", value = '{"protocolVersion":"2024-11-05","capabilities":{}}' }
+
+[test_vector.expected_output]
+status = { type = "string", value = "success" }
+server_name = { type = "string", value = "aileron" }
+
+[test_vector.verification]
+source = "MCP Specification"
+method = "Analytical"
+confidence = 0.95
+
+[[test_vector]]
+id = "TV-MCP-002"
+name = "tools/list returns all exposed tools"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+method = { type = "string", value = "tools/list" }
+
+[test_vector.expected_output]
+tool_count = { type = "integer", value = 5 }
+tool_names = { type = "string", value = "['browser_search','browser_navigate','read_active_pane','browser_click','run_js']" }
+
+[test_vector.verification]
+source = "DEF-MCP-002"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-MCP-003"
+name = "read_active_pane returns Markdown"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+method = { type = "string", value = "tools/call" }
+params = { type = "string", value = '{"name":"read_active_pane","arguments":{}}' }
+
+[test_vector.expected_output]
+result_type = { type = "string", value = "text/markdown" }
+result_not_empty = { type = "boolean", value = true }
+
+[test_vector.verification]
+source = "ALG-MCP-002"
+method = "Analytical"
+confidence = 0.90
+
+[[test_vector]]
+id = "TV-MCP-004"
+name = "Unknown method returns error"
+category = "adversarial"
+priority = "high"
+
+[test_vector.input]
+method = { type = "string", value = "nonexistent/method" }
+
+[test_vector.expected_output]
+error_code = { type = "integer", value = -32601 }
+error_message = { type = "string", value = "Method not found" }
+
+[test_vector.verification]
+source = "JSON-RPC 2.0 spec"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-MCP-005"
+name = "Tool timeout after 500ms"
+category = "boundary"
+priority = "high"
+
+[test_vector.input]
+method = { type = "string", value = "tools/call" }
+params = { type = "string", value = '{"name":"browser_search","arguments":{"query":""}}' }
+mock_delay_ms = { type = "f64", value = 600.0 }
+
+[test_vector.expected_output]
+error_code = { type = "integer", value = -1 }
+error_message_contains = { type = "string", value = "timeout" }
+
+[test_vector.verification]
+source = "Theorem THM-MCP-002"
+method = "Benchmark"
+confidence = 0.95
+
+[[test_vector]]
+id = "TV-MCP-006"
+name = "DOM with XSS content is sanitized"
+category = "adversarial"
+priority = "critical"
+description = "DOM containing <script>alert(1)</script> must be converted to safe Markdown"
+
+[test_vector.input]
+dom_content = { type = "string", value = "<html><body><script>alert(1)</script><h1>Hello</h1><p>World</p></body></html>" }
+
+[test_vector.expected_output]
+markdown = { type = "string", value = "# Hello\n\nWorld\n" }
+no_script_tags = { type = "boolean", value = true }
+
+[test_vector.verification]
+source = "ALG-MCP-002"
+method = "Analytical"
+confidence = 0.99

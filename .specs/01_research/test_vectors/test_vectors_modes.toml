@@ -1,0 +1,153 @@
+[metadata]
+algorithm_id = "ALG-MODE-001"
+algorithm_version = "1.0.0"
+generation_date = "2026-04-11T00:00:00Z"
+generator = "manual"
+verification_status = "verified"
+
+[precision_requirements]
+floating_point_type = "f64"
+absolute_tolerance = 1e-6
+
+[[test_vector]]
+id = "TV-MODE-001"
+name = "Initial mode is Normal"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+events = { type = "string", value = "[]" }
+
+[test_vector.expected_output]
+mode = { type = "string", value = "Normal" }
+
+[test_vector.verification]
+source = "Definition DEF-MODE-001"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-MODE-002"
+name = "Press 'i' enters Insert mode"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+events = { type = "string", value = "[Key('i')]" }
+
+[test_vector.expected_output]
+mode = { type = "string", value = "Insert" }
+
+[test_vector.verification]
+source = "DEF-MODE-002"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-MODE-003"
+name = "Esc returns to Normal from Insert"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+events = { type = "string", value = "[Key('i'), Key('Esc')]" }
+
+[test_vector.expected_output]
+mode = { type = "string", value = "Normal" }
+
+[test_vector.verification]
+source = "DEF-MODE-002"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-MODE-004"
+name = "Insert mode routes keystrokes to Servo"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+events = { type = "string", value = "[Key('i'), Key('h'), Key('e'), Key('l'), Key('l'), Key('o')]" }
+servo_received = { type = "string", value = "[]" }
+
+[test_vector.expected_output]
+mode = { type = "string", value = "Insert" }
+servo_events = { type = "string", value = "['h', 'e', 'l', 'l', 'o']" }
+
+[test_vector.verification]
+source = "DEF-MODE-003"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-MODE-005"
+name = "Normal mode does not pass keystrokes to Servo"
+category = "nominal"
+priority = "critical"
+
+[test_vector.input]
+events = { type = "string", value = "[Key('j'), Key('k'), Key('h'), Key('l')]" }
+
+[test_vector.expected_output]
+mode = { type = "string", value = "Normal" }
+servo_events = { type = "string", value = "[]" }
+
+[test_vector.verification]
+source = "DEF-MODE-003"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-MODE-006"
+name = "Rapid mode switching 1000 times"
+category = "boundary"
+priority = "high"
+description = "Alternate i/Esc 1000 times, verify mode is Normal"
+
+[test_vector.input]
+events = { type = "string", value = "repeat([Key('i'), Key('Esc')], 1000)" }
+
+[test_vector.expected_output]
+mode = { type = "string", value = "Normal" }
+event_processing_time_ms = { type = "f64", value = 10.0 }
+
+[test_vector.verification]
+source = "Theorem THM-MODE-002"
+method = "Benchmark"
+confidence = 0.95
+
+[[test_vector]]
+id = "TV-MODE-007"
+name = "Global shortcut works in any mode"
+category = "nominal"
+priority = "high"
+
+[test_vector.input]
+events = { type = "string", value = "[Key('i'), Ctrl+Key('e')]" }
+global_shortcut = { type = "string", value = "Ctrl+E => open_external" }
+
+[test_vector.expected_output]
+external_browser_opened = { type = "boolean", value = true }
+
+[test_vector.verification]
+source = "ALG-MODE-001 Step 1"
+method = "Analytical"
+confidence = 0.99
+
+[[test_vector]]
+id = "TV-MODE-008"
+name = "Command mode routes to command palette"
+category = "nominal"
+priority = "high"
+
+[test_vector.input]
+events = { type = "string", value = "[Key(':'), Key('q')]" }
+
+[test_vector.expected_output]
+mode = { type = "string", value = "Command" }
+palette_input = { type = "string", value = "q" }
+
+[test_vector.verification]
+source = "DEF-MODE-003"
+method = "Analytical"
+confidence = 0.99
