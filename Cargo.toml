@@ -78,6 +78,7 @@ base64 = "0.22"
 wry = { version = "0.55.0", default-features = false, features = [
   "os-webview",
   "protocol",
+  "devtools",
 ] }
 
 # GTK (required by wry on Linux for WebKitGTK event loop)
