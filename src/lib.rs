@@ -7,6 +7,7 @@ pub mod input;
 pub mod lua;
 pub mod mcp;
 pub mod net;
+pub mod offscreen_webview;
 pub mod passwords;
 pub mod popup;
 pub mod scripts;
