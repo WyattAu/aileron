@@ -264,7 +264,7 @@ pub fn spawn_mcp_server(mcp_bridge: &McpBridge) {
     }
     let transport = aileron::mcp::McpTransport::new(mcp_server);
     info!("MCP server starting on background thread (stdio transport)");
-    tokio::task::spawn_blocking(move || {
+    std::thread::spawn(move || {
         if let Err(e) = transport.run_stdio() {
             warn!("MCP server error: {}", e);
         }
