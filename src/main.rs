@@ -987,6 +987,21 @@ fn main() -> anyhow::Result<()> {
     info!("Aileron v0.1.0-pre-alpha");
     info!("Keyboard-Driven Web Environment");
 
+    // On Wayland, wry's GTK fallback creates a standalone gtk::Window which
+    // conflicts with winit's Wayland surface (Error 71: Protocol error).
+    // wry needs an X11 window handle for build_as_child, so we force winit
+    // to use XWayland by unsetting WAYLAND_DISPLAY (winit 0.29+ removed
+    // WINIT_UNIX_BACKEND and uses WAYLAND_DISPLAY/DISPLAY to pick backend).
+    // We also force GDK to use X11 so gtk::init() creates an X11 display.
+    // TODO: Remove when wry supports embedding into a winit Wayland surface.
+    if std::env::var("WAYLAND_DISPLAY").is_ok() {
+        info!("Wayland detected — using XWayland for wry build_as_child compatibility");
+        unsafe {
+            std::env::remove_var("WAYLAND_DISPLAY");
+            std::env::set_var("GDK_BACKEND", "x11");
+        }
+    }
+
     // Initialize GTK BEFORE creating the event loop (required by wry on Linux)
     init_gtk();
 
