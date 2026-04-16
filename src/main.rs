@@ -19,6 +19,29 @@ use aileron::wm::Rect;
 
 mod frame_tasks;
 
+/// Custom X11 error handler that swallows GLXBadWindow errors.
+///
+/// wry's build_as_child creates X11 child windows that winit doesn't own.
+/// When winit's IME tries to unfocus these windows, it triggers GLXBadWindow
+/// (error code 170) which winit's event processor .expect()s on, crashing the app.
+/// This handler intercepts GLXBadWindow and returns 0 (ignored) to prevent the crash.
+#[cfg(target_os = "linux")]
+unsafe extern "C" fn x11_error_handler(
+    _display: *mut x11_dl::xlib::Display,
+    event: *mut x11_dl::xlib::XErrorEvent,
+) -> std::os::raw::c_int {
+    // SAFETY: This is an X11 error handler callback. We only read the error_code
+    // field from the XErrorEvent struct, which is always valid when called by Xlib.
+    if !event.is_null() {
+        let error = unsafe { &*event };
+        if error.error_code == 170 {
+            // Swallow GLXBadWindow — this is from wry's child windows
+            return 0;
+        }
+    }
+    1 // Return non-zero for unhandled errors (triggers Xlib's default handler)
+}
+
 /// Heights (in logical pixels) for the egui panels.
 const STATUS_BAR_HEIGHT: f64 = 32.0;
 const URL_BAR_HEIGHT: f64 = 32.0;
@@ -1006,6 +1029,18 @@ fn main() -> anyhow::Result<()> {
     init_gtk();
 
     let event_loop = EventLoop::builder().build()?;
+
+    // Workaround: wry's build_as_child creates X11 child windows that winit doesn't
+    // track. When winit processes FocusOut events for these stale windows, the IME
+    // unfocus call produces GLXBadWindow (X error 170) which winit .expect()s on,
+    // crashing the app. Install a custom X error handler that swallows GLXBadWindow.
+    #[cfg(target_os = "linux")]
+    unsafe {
+        if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
+            (xlib.XSetErrorHandler)(Some(x11_error_handler));
+        }
+    }
+
     info!("Entering event loop...");
     let mut app = AileronApp::new();
     event_loop.run_app(&mut app)?;

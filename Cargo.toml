@@ -85,6 +85,7 @@ wry = { version = "0.55.0", default-features = false, features = [
 # GTK (required by wry on Linux for WebKitGTK event loop)
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
+x11-dl = "2"
 
 [dev-dependencies]
 # Testing
