@@ -2,6 +2,40 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.3.1 (2026-04-18)
+
+### Search
+- **Nucleo fuzzy search** — replaced substring matcher with nucleo pattern-based fuzzy matching for better command palette and URL bar results
+
+### Scrolling
+- **Smooth scrolling** — keyboard scrolls (j/k, Ctrl+D/U, gg/G) now use CSS smooth behavior; mouse wheel remains instant
+
+### Tab Management
+- **Tab pinning** — `Ctrl+Shift+P` or `:pin` to pin/unpin panes; pinned panes cannot be accidentally closed; 📌 indicator in sidebar
+
+### Terminal
+- **Visual bell** — terminal bell triggers a 200ms white flash overlay instead of audio
+
+### Privacy & Settings
+- **Per-site zoom on page load** — zoom override from site_settings DB now applied automatically when pages load
+
+### Usability
+- **Middle-click link following** — middle-click on web panes opens link under cursor in new tab
+- **Did-you-mean suggestions** — unknown commands suggest closest match via Levenshtein distance (e.g., "Unknown command: qit (did you mean :quit?)")
+
+### Architecture D Preparation
+- **ServoPane skeleton** — stub implementation of PaneRenderer trait for future Servo integration
+- **EngineType enum** — `WebKit`/`Servo` on PaneState for per-pane engine tracking
+- **`:engine` command** — query and plan engine selection
+
+### Code Quality
+- Fixed 3 concerning `unwrap()` calls with safe early-return patterns
+- Updated welcome page with all current keybindings and commands
+
+### Stats
+- 428 total tests (388 lib + 26 integration + 13 startup + 1 offscreen)
+- Zero clippy warnings
+
 ## v0.3.0 (2026-04-17)
 
 ### Native Terminal (Phase G)

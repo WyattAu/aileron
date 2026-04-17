@@ -1,11 +1,11 @@
 # Aileron — Version & State Tracking
 
 ## Current State
-- **Phase:** v0.3.0 (Complete)
-- **Version:** 0.3.0
+- **Phase:** v0.3.1 (Complete)
+- **Version:** 0.3.1
 - **Status:** Complete
-- **Last Updated:** 2026-04-17
-- **Test Count:** 386 lib + 26 integration + 13 startup + 1 offscreen = 426 total
+- **Last Updated:** 2026-04-18
+- **Test Count:** 388 lib + 26 integration + 13 startup + 1 offscreen = 428 total
 - **Zero clippy warnings**
 
 ## Implementation Phases
@@ -25,6 +25,7 @@
 | K | Complete | Test the Testable + Hardening: keymap extraction, action queue, TOCTOU fix |
 | L | Complete | Pure action dispatch: ActionEffect enum, 30 dispatch tests |
 | M | Complete | Daily Driver Minimum: find-in-page, URL bar editing, download handler, link hints |
+| J.0 | Complete | Polish: nucleo search, smooth scroll, tab pinning, visual bell, Servo stub |
 
 ## Benchmark Results
 | Benchmark | Time |
