@@ -1,0 +1,816 @@
+# Master Execution Plan v2
+# Phase K: Architecture D Preparation + Competitive Parity
+# Phases A-I: ALL COMPLETE (see master_plan.toml)
+# Generated: 2026-04-18
+
+[metadata]
+version = "4.0.0"
+phase = "K"
+total_tasks = 42
+estimated_weeks = "8-10 (Phase K)"
+total_estimated_hours = 274
+start_prerequisite = "All Phase A-I tasks complete"
+
+# ============================================================
+# PHASE K: Architecture D Preparation + Competitive Parity
+# ============================================================
+# Phase K prepares the ground for Architecture D (Servo-based
+# rendering, full WebExtensions support) while achieving
+# competitive parity with mainstream browsers on key features.
+#
+# Sub-phases:
+#   K.1  WebExtensions API design (trait surface, no impl)
+#   K.2  Cross-platform abstraction
+#   K.3  Advanced ad blocking
+#   K.4  Password manager native integration
+#   K.5  Sync protocol design (spec-only)
+#   K.6  Performance optimization
+#   K.7  Servo embedder integration
+#   K.8  Accessibility (WCAG 2.1 AA)
+#   K.9  i18n/l10n framework
+#   K.10 Developer documentation and examples
+
+# --- K.1: WebExtensions API Design ---
+# Design Rust traits for WebExtensions-compatible API surface.
+# No implementation — purely design/spec work.
+
+[[task]]
+id = "TASK-K01"
+title = "Design browser.tabs API trait surface"
+phase = "K"
+subphase = "K.1"
+priority = "critical"
+description = """Define TabsApi trait with query, create, update, remove, duplicate,
+sendMessage, captureVisibleTab methods. Define TabInfo, TabQuery, CreateProperties,
+UpdateProperties, TabUpdateEvent structs. Map to chrome.tabs / browser.tabs.
+Include TabStatus (loading, complete), Tab (id, url, title, status, active,
+windowId, favIconUrl, incognito)."""
+prerequisites = []
+outputs = [".specs/02_architecture/webextensions_api_design.md — TabsApi section"]
+verification = ["All chrome.tabs MVP methods covered", "Type definitions complete", "Doc comments on every method"]
+estimated_hours = 6
+status = "pending"
+
+[[task]]
+id = "TASK-K02"
+title = "Design browser.storage API trait surface"
+phase = "K"
+subphase = "K.1"
+priority = "critical"
+description = """Define StorageApi trait with local, sync, managed areas.
+Methods: get, set, remove, clear, onChanged listener.
+Define StorageArea trait with get/set/remove/clear/getBytesInUse.
+Support structured clone serialization (JSON-compatible values).
+Map to chrome.storage / browser.storage."""
+prerequisites = []
+outputs = [".specs/02_architecture/webextensions_api_design.md — StorageApi section"]
+verification = ["local, sync, managed areas defined", "onChanged event with change info", "Type-safe get/set with generics"]
+estimated_hours = 4
+status = "pending"
+
+[[task]]
+id = "TASK-K03"
+title = "Design browser.runtime API trait surface"
+phase = "K"
+subphase = "K.1"
+priority = "critical"
+description = """Define RuntimeApi trait with sendMessage, connect, getManifest,
+getURL, onMessage, onConnect, onInstalled, onStartup listeners.
+Define RuntimeMessage, Port, ExtensionManifest types.
+Message passing supports JSON-serializable payloads.
+Map to chrome.runtime / browser.runtime."""
+prerequisites = []
+outputs = [".specs/02_architecture/webextensions_api_design.md — RuntimeApi section"]
+verification = ["One-shot messaging and long-lived ports", "Extension manifest access", "URL resolution for extension resources"]
+estimated_hours = 4
+status = "pending"
+
+[[task]]
+id = "TASK-K04"
+title = "Design browser.webRequest API trait surface"
+phase = "K"
+subphase = "K.1"
+priority = "critical"
+description = """Define WebRequestApi trait with onBeforeRequest, onBeforeSendHeaders,
+onSendHeaders, onHeadersReceived, onAuthRequired, onBeforeRedirect,
+onCompleted, onErrorOccurred. Define RequestFilter (urls, types, tabId),
+BlockingResponse (cancel, redirectUrl, requestHeaders, responseHeaders),
+RequestDetails, HeadersReceivedDetails, CompletedDetails structs.
+This is the primary hook for ad/tracking blocking in WebExtensions."""
+prerequisites = []
+outputs = [".specs/02_architecture/webextensions_api_design.md — WebRequestApi section"]
+verification = ["All lifecycle hooks defined", "Blocking and non-blocking modes", "Header modification support", "URL filtering"]
+estimated_hours = 8
+status = "pending"
+
+[[task]]
+id = "TASK-K05"
+title = "Design browser.scripting API trait surface"
+phase = "K"
+subphase = "K.1"
+priority = "critical"
+description = """Define ScriptingApi trait with executeScript, insertCSS, removeCSS,
+registerContentScripts, getRegisteredContentScripts, unregisterContentScripts.
+Define InjectionTarget (tabId, frameIds, allFrames), ScriptInjection (func, args, files),
+CSSInjection (css, files, origin). Map to chrome.scripting / browser.scripting.
+Define relationship to existing Lua content script system."""
+prerequisites = []
+outputs = [".specs/02_architecture/webextensions_api_design.md — ScriptingApi section"]
+verification = ["Script injection with files and function", "CSS injection", "Content script registration API", "Migration path from Lua scripts documented"]
+estimated_hours = 6
+status = "pending"
+
+[[task]]
+id = "TASK-K06"
+title = "Design top-level ExtensionApi trait and integration model"
+phase = "K"
+subphase = "K.1"
+priority = "critical"
+description = """Define ExtensionApi as the top-level trait exposing tabs, storage,
+runtime, web_request, scripting sub-APIs. Define ExtensionContext (extension ID,
+manifest, permissions, registered listeners). Define extension loading lifecycle
+(discovery, manifest parse, permission check, registration).
+Document how extensions are packaged, loaded, and sandboxed.
+Create the full webextensions_api_design.md document combining K01-K05."""
+prerequisites = ["TASK-K01", "TASK-K02", "TASK-K03", "TASK-K04", "TASK-K05"]
+outputs = [".specs/02_architecture/webextensions_api_design.md"]
+verification = ["Complete design document", "All traits compile as trait objects", "Integration with existing content scripts explained", "Ad blocking via webRequest documented"]
+estimated_hours = 12
+status = "pending"
+
+# --- K.2: Cross-Platform Abstraction ---
+
+[[task]]
+id = "TASK-K07"
+title = "Audit platform-specific code paths"
+phase = "K"
+subphase = "K.2"
+priority = "high"
+description = """Audit entire codebase for platform-specific code:
+- Linux: WebKitGTK, GDK, secret-service, XDG paths
+- macOS: WKWebView (via wry), Keychain, ~/Library paths
+- Windows: WebView2 (via wry), Credential Manager, %APPDATA% paths
+Catalog each platform-specific path with file:line references."""
+prerequisites = []
+outputs = [".specs/02_architecture/platform_audit.md"]
+verification = ["All platform-specific code cataloged", "Each entry has file:line, platform, purpose"]
+estimated_hours = 4
+status = "pending"
+
+[[task]]
+id = "TASK-K08"
+title = "Create platform module with trait abstraction"
+phase = "K"
+subphase = "K.2"
+priority = "high"
+description = """Create src/platform/ module with:
+- mod.rs: Platform trait + compile-time detection
+- linux.rs: PlatformLinux impl (WebKitGTK paths, secret-service, XDG)
+- macos.rs: PlatformMacos impl (Keychain, ~/Library)
+- windows.rs: PlatformWindows impl (Credential Manager, %APPDATA%)
+- common.rs: Shared logic (config dirs, data dirs)
+Traits: PlatformPaths (config_dir, data_dir, cache_dir),
+PlatformKeyring, PlatformNotification, PlatformClipboard."""
+prerequisites = ["TASK-K07"]
+outputs = ["src/platform/mod.rs", "src/platform/linux.rs", "src/platform/macos.rs", "src/platform/windows.rs", "src/platform/common.rs"]
+verification = ["Compiles on Linux", "Conditional compilation with cfg(target_os)", "All existing platform code refactored to use traits"]
+estimated_hours = 10
+status = "pending"
+
+[[task]]
+id = "TASK-K09"
+title = "Abstract window management per platform"
+phase = "K"
+subphase = "K.2"
+priority = "high"
+description = """Abstract platform window creation and event handling:
+- Linux: gtk::ApplicationWindow (via winit/glfw)
+- macOS: NSWindow (via winit)
+- Windows: HWND (via winit)
+Handle platform-specific window chrome, title bar behavior,
+and system integration (tray, notifications, file associations)."""
+prerequisites = ["TASK-K08"]
+outputs = ["src/platform/window.rs"]
+verification = ["Window creation abstracted", "Platform-specific behaviors isolated"]
+estimated_hours = 6
+status = "pending"
+
+[[task]]
+id = "TASK-K10"
+title = "Cross-platform build and test matrix"
+phase = "K"
+subphase = "K.2"
+priority = "high"
+description = """Set up CI/CD for Linux (x86_64, aarch64), macOS (aarch64), Windows (x86_64).
+Fix any compilation issues found. Test on at least 2 platforms.
+Document platform support matrix."""
+prerequisites = ["TASK-K09"]
+outputs = ["CI configuration", "Platform support matrix"]
+verification = ["Builds on 2+ platforms", "Tests pass on 2+ platforms"]
+estimated_hours = 10
+status = "pending"
+
+# --- K.3: Advanced Ad Blocking ---
+
+[[task]]
+id = "TASK-K11"
+title = "Add $CSP filter rule type"
+phase = "K"
+subphase = "K.3"
+priority = "medium"
+description = """Implement $CSP modifier for filter rules.
+Example: ||domain.com^$csp=script-src 'none'
+Injects Content-Security-Policy headers to block inline scripts,
+images, or other resource types on matching URLs.
+Requires integration with onHeadersReceived in webview."""
+prerequisites = []
+outputs = ["src/net/filter_list.rs — $CSP parsing", "Header injection logic"]
+verification = ["$CSP rules parsed correctly", "CSP headers injected on matching requests", "adblock-testpages.com CSP tests pass"]
+estimated_hours = 4
+status = "pending"
+
+[[task]]
+id = "TASK-K12"
+title = "Add $redirect filter rule type"
+phase = "K"
+subphase = "K.3"
+priority = "medium"
+description = """Implement $redirect modifier: redirect matching requests to
+built-in resource stubs (empty 1x1 gif, empty mp3, empty css, etc.)
+Uses uBlock Origin resource library format.
+Example: ||ads.example.com^$redirect=1x1-transparent.gif"""
+prerequisites = []
+outputs = ["src/net/filter_list.rs — $redirect parsing", "Built-in resource stubs"]
+verification = ["$redirect rules parsed", "Matching requests redirected to stubs", "No network requests for redirected resources"]
+estimated_hours = 4
+status = "pending"
+
+[[task]]
+id = "TASK-K13"
+title = "Add $removeheader filter rule type"
+phase = "K"
+subphase = "K.3"
+priority = "medium"
+description = """Implement $removeheader modifier: strip specified response headers.
+Example: ||domain.com^$removeheader=x-ad-header
+Supports removing request and response headers.
+Comma-separated for multiple headers."""
+prerequisites = []
+outputs = ["src/net/filter_list.rs — $removeheader parsing", "Header stripping logic"]
+verification = ["$removeheader rules parsed", "Headers stripped from matching responses"]
+estimated_hours = 3
+status = "pending"
+
+[[task]]
+id = "TASK-K14"
+title = "Add uBlock Origin filter list support"
+phase = "K"
+subphase = "K.3"
+priority = "medium"
+description = """Add support for uBlock-specific filter syntax:
+- $document, $doc modifier
+- $all modifier
+- $badfilter exception
+- Important: priority modifier (!)
+- 1p/3p block/allow lists
+- Add Peter Lowe's list and uBlock filters as default lists."""
+prerequisites = ["TASK-K11", "TASK-K12", "TASK-K13"]
+outputs = ["Enhanced filter parser", "Additional default filter lists"]
+verification = ["uBlock filter syntax parsed correctly", "Peter Lowe's list loads and works"]
+estimated_hours = 3
+status = "pending"
+
+[[task]]
+id = "TASK-K15"
+title = "Add filter list update mechanism"
+phase = "K"
+subphase = "K.3"
+priority = "medium"
+description = """Auto-update filter lists on startup (check ETag/Last-Modified).
+Background update every 24 hours.
+Fallback to cached list if update fails.
+Show last-updated timestamp in settings.
+:addblock-update command for manual refresh."""
+prerequisites = ["TASK-K14"]
+outputs = ["Filter list updater", "Settings UI for last-updated"]
+verification = ["Lists update automatically", "Cached fallback works", "Manual update command works"]
+estimated_hours = 2
+status = "pending"
+
+# --- K.4: Password Manager Native Integration ---
+
+[[task]]
+id = "TASK-K16"
+title = "Implement save-on-submit content script"
+phase = "K"
+subphase = "K.4"
+priority = "medium"
+description = """Content script detects form submission on pages with password fields.
+Prompts user to save credentials (username + password + URL).
+Stores in system keyring via Bitwarden CLI or direct keyring integration.
+Deduplication: don't re-prompt if credentials already exist for URL."""
+prerequisites = []
+outputs = ["Save-on-submit content script", "Credential save flow"]
+verification = ["Login form submission triggers save prompt", "Credentials saved to keyring", "No duplicate prompts"]
+estimated_hours = 6
+status = "pending"
+
+[[task]]
+id = "TASK-K17"
+title = "System keyring integration"
+phase = "K"
+subphase = "K.4"
+priority = "medium"
+description = """Direct system keyring integration (no Bitwarden CLI dependency):
+- Linux: secret-service via zbus (gnome-keyring, kwallet)
+- macOS: Security.framework Keychain
+- Windows: Windows Credential Manager via winapi
+Store: service=aileron, username=url, password=encrypted blob.
+Auto-lock on session end. Unlock on first access."""
+prerequisites = []
+outputs = ["src/keyring.rs (or src/platform/keyring.rs)"]
+verification = ["Credentials stored in system keyring", "Credentials retrieved on demand", "Works on at least Linux"]
+estimated_hours = 6
+status = "pending"
+
+[[task]]
+id = "TASK-K18"
+title = "Improve login form auto-detection"
+phase = "K"
+subphase = "K.4"
+priority = "medium"
+description = """Improve form detection heuristics:
+- Detect password fields by type=password, autocomplete=current-password
+- Detect username fields by type=email, type=text, autocomplete=username
+- Handle multi-step login flows
+- Handle hidden/JS-rendered forms
+- Detect OAuth/SSO flows (offer to skip save)"""
+prerequisites = ["TASK-K16"]
+outputs = ["Enhanced form detection content script"]
+verification = ["Detects login forms on top 50 sites", "Handles multi-step flows", "Skips OAuth flows"]
+estimated_hours = 4
+status = "pending"
+
+[[task]]
+id = "TASK-K19"
+title = "Credential search from palette"
+phase = "K"
+subphase = "K.4"
+priority = "medium"
+description = """Search credentials directly from command palette (no manual bw-search).
+Filter by current page URL. Show username + domain.
+Select to auto-fill credentials. Option to copy password.
+:credentials command for full credential list."""
+prerequisites = ["TASK-K17"]
+outputs = ["Credential palette integration"]
+verification = ["Credentials searchable from palette", "Auto-fill on selection", "URL filtering works"]
+estimated_hours = 4
+status = "pending"
+
+# --- K.5: Sync Protocol Design (spec-only) ---
+
+[[task]]
+id = "TASK-K20"
+title = "Design sync protocol requirements"
+phase = "K"
+subphase = "K.5"
+priority = "low"
+description = """Define what data needs to sync:
+- Bookmarks (tree structure, folders, tags)
+- History (URL, title, timestamp, visit count)
+- Settings (config.toml key-value pairs)
+- Themes (custom theme TOML)
+- Open tabs/workspaces (optional, session restore)
+- Passwords (keyring entries, encrypted)
+
+Define sync requirements: conflict resolution, bandwidth,
+offline support, partial sync, delta sync."""
+prerequisites = []
+outputs = [".specs/02_architecture/sync_protocol_design.md — Requirements"]
+verification = ["All data types enumerated", "Conflict resolution strategy defined"]
+estimated_hours = 4
+status = "pending"
+
+[[task]]
+id = "TASK-K21"
+title = "Evaluate sync transport options"
+phase = "K"
+subphase = "K.5"
+priority = "low"
+description = """Evaluate and document transport options:
+1. WebDAV: Simple, self-hostable (Nextcloud, Apache), no server code needed
+2. Git-based: Version history, diff-based sync, GitHub/Gitea hosting
+3. Custom server: REST API, WebSocket for real-time, most flexibility
+4. Dropbox/Drive API: Cloud storage, but adds external dependency
+
+Evaluate on: complexity, reliability, offline support, self-hosting,
+conflict resolution, bandwidth efficiency, security."""
+prerequisites = ["TASK-K20"]
+outputs = [".specs/02_architecture/sync_protocol_design.md — Transport Evaluation"]
+verification = ["Each option evaluated against criteria", "Recommendation with rationale"]
+estimated_hours = 4
+status = "pending"
+
+[[task]]
+id = "TASK-K22"
+title = "Design end-to-end encryption for sync"
+phase = "K"
+subphase = "K.5"
+priority = "low"
+description = """Design E2E encryption scheme for sync data:
+- X25519 key exchange, AES-256-GCM for data encryption
+- Key derivation from user passphrase (Argon2id)
+- Per-device key pairs for multi-device support
+- Passwords encrypted with separate key
+- Key rotation mechanism
+- Recovery flow (seed phrase or recovery key)"""
+prerequisites = ["TASK-K21"]
+outputs = [".specs/02_architecture/sync_protocol_design.md — Encryption"]
+verification = ["Encryption scheme fully specified", "Key management documented", "Recovery flow documented"]
+estimated_hours = 4
+status = "pending"
+
+[[task]]
+id = "TASK-K23"
+title = "Write complete sync protocol specification"
+phase = "K"
+subphase = "K.5"
+priority = "low"
+description = """Combine K20-K22 into complete sync protocol spec.
+Include: data model, transport layer, encryption, conflict resolution,
+API endpoints/methods, error handling, versioning.
+No implementation — pure specification."""
+prerequisites = ["TASK-K22"]
+outputs = [".specs/02_architecture/sync_protocol_design.md"]
+verification = ["Complete, reviewable specification", "Protocol diagrams", "Example sync flows"]
+estimated_hours = 4
+status = "pending"
+
+# --- K.6: Performance Optimization ---
+
+[[task]]
+id = "TASK-K24"
+title = "Frame budget enforcement (60fps target)"
+phase = "K"
+subphase = "K.6"
+priority = "medium"
+description = """Add frame time budget enforcement:
+- Target 16.67ms per frame (60fps)
+- Log warnings when frame budget exceeded
+- Adaptive quality: reduce texture capture rate when over budget
+- Priority rendering: active pane > visible panes > hidden panes
+- Frame time histogram for analysis"""
+prerequisites = []
+outputs = ["src/frame_tasks.rs — budget enforcement", "Frame time logging"]
+verification = ["60fps maintained with 2 panes", "Adaptive quality kicks in at 4+ panes", "Frame time logged"]
+estimated_hours = 6
+status = "pending"
+
+[[task]]
+id = "TASK-K25"
+title = "Frame time profiling and logging infrastructure"
+phase = "K"
+subphase = "K.6"
+priority = "medium"
+description = """Add profiling infrastructure:
+- Per-phase timing: event processing, input forwarding, texture capture,
+  egui layout, egui render, compositing
+- Configurable log level for profiling
+- :perf command to toggle profiling
+- Frame time stats: min/max/p50/p95/p99
+- Export profiling data as JSON for analysis"""
+prerequisites = []
+outputs = ["src/profiling.rs", ":perf command"]
+verification = ["Per-phase timing visible", "Stats computed correctly", "JSON export works"]
+estimated_hours = 4
+status = "pending"
+
+[[task]]
+id = "TASK-K26"
+title = "Memory usage monitoring and optimization"
+phase = "K"
+subphase = "K.6"
+priority = "medium"
+description = """Add memory monitoring:
+- Track per-pane memory usage (webview, texture, terminal)
+- Global memory usage tracking
+- :memory command for current stats
+- Automatic tab discarding when memory exceeds threshold
+- Texture pool reuse (avoid repeated alloc/free)
+- Target: <100MB per web pane, <5MB per terminal pane"""
+prerequisites = []
+outputs = ["src/memory.rs", ":memory command", "Tab discard logic"]
+verification = ["Memory stats accurate", "Tab discarding works", "Per-pane targets met"]
+estimated_hours = 4
+status = "pending"
+
+[[task]]
+id = "TASK-K27"
+title = "Lazy pane initialization"
+phase = "K"
+subphase = "K.6"
+priority = "medium"
+description = """Defer webview creation until pane is first visible:
+- New panes start as placeholder (no webview)
+- Create webview on first focus/visibility
+- Restore saved URL from history on initialization
+- Preload frequently-used panes in background
+- Reduces startup time and initial memory usage"""
+prerequisites = []
+outputs = ["Lazy initialization in create_wry_pane_for"]
+verification = ["Startup time reduced", "Memory at startup reduced", "Panes work correctly after lazy init"]
+estimated_hours = 3
+status = "pending"
+
+[[task]]
+id = "TASK-K28"
+title = "Texture caching optimization"
+phase = "K"
+subphase = "K.6"
+priority = "medium"
+description = """Optimize wgpu texture handling:
+- Texture pool: reuse textures of same size instead of create/destroy
+- Partial update: only upload dirty regions of texture
+- Format optimization: use Rgba8UnormSrgb to skip color space conversion
+- Mipmapped textures for downscaled tab previews
+- Target: <1ms per texture upload"""
+prerequisites = []
+outputs = ["Texture pool in offscreen_webview.rs"]
+verification = ["Texture reuse verified", "Partial upload works", "Upload time <1ms"]
+estimated_hours = 3
+status = "pending"
+
+# --- K.7: Servo Embedder Integration ---
+
+[[task]]
+id = "TASK-K29"
+title = "Evaluate Servo embedder API stability"
+phase = "K"
+subphase = "K.7"
+priority = "high"
+description = """Evaluate current Servo embedder API (servo/embedder):
+- API surface: window creation, page loading, event handling
+- wgpu texture sharing capabilities
+- CSS/JS compatibility vs WebKitGTK
+- Platform support (Linux, macOS, Windows)
+- Build requirements and binary size
+- Stability assessment: ready for integration or needs more time
+- Timeline: Q3 2026 target from ADR-002"""
+prerequisites = []
+outputs = [".specs/02_architecture/servo_embedder_evaluation.md"]
+verification = ["API surface documented", "Compatibility assessment", "Risk assessment", "Go/no-go recommendation"]
+estimated_hours = 8
+status = "pending"
+
+[[task]]
+id = "TASK-K30"
+title = "Design ServoPane architecture"
+phase = "K"
+subphase = "K.7"
+priority = "high"
+description = """Design ServoPane as alternative to OffscreenWebView:
+- Servo renders directly to wgpu texture (no CPU readback)
+- Shared wgpu device/context with egui
+- ServoPane trait: same interface as OffscreenWebView
+- Engine selection: config flag or heuristic (Servo for supported pages, WebKit fallback)
+- Resource loading: custom protocol handler (aileron://)
+- Event loop integration: Servo on same thread as egui or separate?"""
+prerequisites = ["TASK-K29"]
+outputs = [".specs/02_architecture/servo_pane_design.md"]
+verification = ["Architecture documented", "wgpu sharing strategy defined", "Thread model decided"]
+estimated_hours = 8
+status = "pending"
+
+[[task]]
+id = "TASK-K31"
+title = "Implement wgpu texture sharing between Servo and egui"
+phase = "K"
+subphase = "K.7"
+priority = "high"
+description = """Implement shared wgpu context:
+- Servo creates wgpu texture for page content
+- egui reads texture directly (no CPU copy)
+- May need wgpu::Device shared between Servo and egui renderers
+- Fallback: DMA-BUF sharing on Linux, texture ID sharing on other platforms
+- This is the key performance win: eliminates 5-8ms CPU readback per pane"""
+prerequisites = ["TASK-K30"]
+outputs = ["src/servo/texture_share.rs"]
+verification = ["Servo renders to shared texture", "egui displays shared texture", "No CPU readback in happy path"]
+estimated_hours = 16
+status = "pending"
+
+[[task]]
+id = "TASK-K32"
+title = "Implement ServoPane with basic page loading"
+phase = "K"
+subphase = "K.7"
+priority = "high"
+description = """Implement ServoPane wrapping Servo embedder:
+- Create Servo window/panel
+- Load HTML pages (http:// and aileron://)
+- Handle navigation events
+- Render to shared wgpu texture
+- Basic mouse/keyboard forwarding (reuse offscreen_webview patterns)
+- Integrate into create_wry_pane_for() as engine option"""
+prerequisites = ["TASK-K31"]
+outputs = ["src/servo/servo_pane.rs", "src/servo/mod.rs"]
+verification = ["Servo loads and displays web pages", "Mouse/keyboard work", "Texture sharing functional"]
+estimated_hours = 20
+status = "pending"
+
+[[task]]
+id = "TASK-K33"
+title = "Engine selection heuristic"
+phase = "K"
+subphase = "K.7"
+priority = "high"
+description = """Implement automatic engine selection:
+- Default to Servo for most pages (better performance)
+- Fall back to WebKit for pages requiring features Servo doesn't support
+- Per-site engine override in site settings
+- :engine command to switch engines for current tab
+- Status bar indicator showing which engine is active
+- engine_selection config option: auto, servo, webkit"""
+prerequisites = ["TASK-K32"]
+outputs = ["Engine selection logic", ":engine command", "Config option"]
+verification = ["Auto selection works", "Manual override works", "Fallback to WebKit when needed"]
+estimated_hours = 8
+status = "pending"
+
+[[task]]
+id = "TASK-K34"
+title = "CSS/JS compatibility testing for Servo"
+phase = "K"
+subphase = "K.7"
+priority = "high"
+description = """Test Servo compatibility against real-world sites:
+- Top 100 websites: layout correctness, JS functionality
+- CSS features: Grid, Flexbox, custom properties, container queries
+- JS features: ES2024+, async/await, Web APIs
+- Document known incompatibilities
+- Create compatibility override list for sites that need WebKit"""
+prerequisites = ["TASK-K32"]
+outputs = ["Compatibility test report", "Override list"]
+verification = ["Top 100 sites tested", "Incompatibilities documented", "Override list functional"]
+estimated_hours = 20
+status = "pending"
+
+# --- K.8: Accessibility ---
+
+[[task]]
+id = "TASK-K35"
+title = "Screen reader support for internal pages"
+phase = "K"
+subphase = "K.8"
+priority = "low"
+description = """Ensure internal pages (settings, welcome, new tab) are screen reader
+accessible: proper heading hierarchy, landmarks, form labels, live regions.
+Add AccessibleKit integration for egui UI chrome (tab bar, URL bar, status bar).
+Test with Orca (Linux), VoiceOver (macOS), NVDA (Windows)."""
+prerequisites = []
+outputs = ["ARIA attributes on internal pages", "egui accessibility layer"]
+verification = ["Orca navigates tab bar", "VoiceOver reads status bar", "Settings page fully keyboard/screen-reader navigable"]
+estimated_hours = 6
+status = "pending"
+
+[[task]]
+id = "TASK-K36"
+title = "Keyboard accessibility audit and fixes"
+phase = "K"
+subphase = "K.8"
+priority = "low"
+description = """Full keyboard accessibility audit:
+- Tab order through all UI elements
+- Focus indicators visible on all interactive elements
+- No keyboard traps
+- Skip navigation links
+- All functionality available without mouse
+- Document keyboard shortcuts comprehensively
+Fix any issues found."""
+prerequisites = []
+outputs = ["Keyboard audit report", "Fixes applied"]
+verification = ["All UI accessible via keyboard only", "Focus indicators present", "No keyboard traps"]
+estimated_hours = 4
+status = "pending"
+
+[[task]]
+id = "TASK-K37"
+title = "Focus management and ARIA labels"
+phase = "K"
+subphase = "K.8"
+priority = "low"
+description = """Add ARIA labels and roles to egui UI elements:
+- Tab bar: role=tablist, role=tab, aria-selected
+- URL bar: role=search, aria-label
+- Status bar: role=status, aria-live=polite
+- Command palette: role=dialog, role=listbox
+- Panels: role=region, aria-label
+Implement focus management: focus follows mode changes,
+focus restoration on pane switch."""
+prerequisites = ["TASK-K35", "TASK-K36"]
+outputs = ["ARIA attributes on all UI chrome", "Focus management logic"]
+verification = ["Screen reader announces UI state changes", "Focus moves logically", "WCAG 2.1 AA focus criteria met"]
+estimated_hours = 6
+status = "pending"
+
+# --- K.9: i18n/l10n Framework ---
+
+[[task]]
+id = "TASK-K38"
+title = "String externalization framework"
+phase = "K"
+subphase = "K.9"
+priority = "low"
+description = """Create i18n framework:
+- Extract all user-visible strings to translation files
+- Format: TOML key-value pairs (e.g., status_bar.welcome = "Welcome")
+- Support string interpolation (e.g., "Tab {n} of {total}")
+- Support pluralization rules
+- Create English (en) base translation
+- Fluent (Mozilla) format as alternative option (evaluate in task)"""
+prerequisites = []
+outputs = ["src/i18n/mod.rs", "locales/en.toml"]
+verification = ["All UI strings externalized", "String interpolation works", "Pluralization works"]
+estimated_hours = 8
+status = "pending"
+
+[[task]]
+id = "TASK-K39"
+title = "Locale detection and language switching"
+phase = "K"
+subphase = "K.9"
+priority = "low"
+description = """Detect system locale at startup (LANGUAGE env, locale -a on Linux,
+NSLocale on macOS, GetUserPreferredUILanguages on Windows).
+Map to nearest available translation.
+:language command to switch language at runtime.
+Persist language preference in config.toml.
+Date/number formatting per locale."""
+prerequisites = ["TASK-K38"]
+outputs = ["Locale detection", ":language command", "Date/number formatting"]
+verification = ["System locale detected correctly", "Language switches at runtime", "Dates/numbers formatted per locale"]
+estimated_hours = 6
+status = "pending"
+
+[[task]]
+id = "TASK-K40"
+title = "Create initial translation files"
+phase = "K"
+subphase = "K.9"
+priority = "low"
+description = """Create translation files for common languages:
+- English (en) — base, complete
+- Simplified Chinese (zh-CN)
+- Japanese (ja)
+- Spanish (es)
+- French (fr)
+- German (de)
+Use machine translation as starting point, mark as needing review.
+Document translation contribution process."""
+prerequisites = ["TASK-K38"]
+outputs = ["locales/zh-CN.toml", "locales/ja.toml", "locales/es.toml", "locales/fr.toml", "locales/de.toml"]
+verification = ["All locale files valid TOML", "All keys present in each locale"]
+estimated_hours = 6
+status = "pending"
+
+# --- K.10: Developer Documentation and Examples ---
+
+[[task]]
+id = "TASK-K41"
+title = "Developer guide: adding features and keybindings"
+phase = "K"
+subphase = "K.10"
+priority = "medium"
+description = """Write comprehensive developer guide:
+- Project architecture overview (compositor, tiling, input, panes)
+- How to add a new command (keybinding, palette entry, implementation)
+- How to add a new UI panel
+- How to add a new content script
+- Lua scripting API reference
+- Keybinding system internals (mode-based, context-sensitive)
+- Testing guide (unit tests, integration tests)
+Build on existing code, don't create from scratch."""
+prerequisites = []
+outputs = ["docs/developer-guide.md"]
+verification = ["Guide covers all major extension points", "Examples compile and run"]
+estimated_hours = 6
+status = "pending"
+
+[[task]]
+id = "TASK-K42"
+title = "Architecture overview and contributing guide update"
+phase = "K"
+subphase = "K.10"
+priority = "medium"
+description = """Create/update:
+- Architecture overview: system diagram, module dependency graph,
+  data flow for key operations (page load, input event, command execution)
+- API documentation for content scripts (JS bridge, IPC)
+- Contributing guide update: build requirements, dev workflow,
+  code style, PR process, architecture decision records index
+- Example content scripts (2-3 practical examples)"""
+prerequisites = []
+outputs = ["docs/architecture.md", "docs/contributing.md update", "examples/ directory"]
+verification = ["Architecture document complete", "Contributing guide current", "Examples work"]
+estimated_hours = 10
+status = "pending"

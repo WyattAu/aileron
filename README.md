@@ -1,65 +1,93 @@
 # Aileron
 
-A keyboard-driven, tiling web environment for developers. Built in Rust with wry (WebKitGTK) for web rendering and egui for the UI overlay.
+**The terminal for the web.** A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals. Written in Rust with wry (WebKitGTK) for web rendering and egui for the UI overlay.
 
 ## Features
 
+### Core
+
 - **Vim-style keybindings** — modal editing (Normal, Insert, Command) with `h/j/k/l` navigation
 - **Tiling pane management** — BSP tree layout with vertical/horizontal splits, pane navigation, and close
-- **Command palette** — `Ctrl+P` fuzzy search across history, bookmarks, commands, and custom Lua commands
+- **Command palette** — `Ctrl+P` fuzzy search (Nucleo engine) across history, bookmarks, commands, and custom Lua commands
 - **Lua scripting** — `init.lua` for custom keybindings, commands, URL redirect rules, and themes
-- **Workspace persistence** — save/restore pane layouts with URLs via `:ws-save` / `:ws-load`
+- **Workspace persistence** — save/restore pane layouts with URLs via `:ws-save` / `:ws-load`; auto-save every 30s for crash recovery
 - **MCP bridge** — built-in Model Context Protocol server (stdio transport) so LLMs can browse the web
-- **Ad blocking** — domain blocking + cosmetic CSS rules (no external extension needed)
+
+### Browsing
+
+- **Ad blocking** — EasyList parser with network + cosmetic CSS rules, per-site toggle (`:adblock-toggle`)
+- **HTTPS upgrade** — auto-upgrade HTTP for known-safe domains (EasyList HTTPS list)
+- **Tracking protection** — blocks known tracker domains, sends DNT/GPC headers, strict referrer policy
+- **Popup blocker** — blocks unwanted `window.open()` calls, configurable via `:popups`
+- **Cookie management** — view (`:cookies`), clear (`:cookies-clear`), per-site allow/block
+- **Per-site settings** — zoom, adblock, JS, cookies, autoplay per domain (exact/wildcard/regex patterns)
+- **Download manager** — progress tracking, open file, open directory
+- **Browser import** — `:import-firefox` / `:import-chrome` for bookmarks and history
+- **Multiple search engines** — pre-configured Google, DuckDuckGo, GitHub, YouTube, Wikipedia; switch with `:engine <name>`
 - **Link hints** — press `f` to reveal clickable hints on all links, type digits to follow
 - **Find in page** — `Ctrl+F` incremental search with next/previous navigation
-- **Bitwarden integration** — `bw-unlock` / `bw-search` to autofill credentials from your vault
-- **Developer tools** — `F12` to open WebKit inspector on the active pane
-- **Embedded terminal** — press `` ` `` to open a terminal pane with full PTY, rendered via xterm.js with Aileron dark theme, resizes with pane repositioning
-- **File browser** — `files` or `browse` in the command palette (or `:files` in ex-command mode); navigate with `j`/`k`, Enter to open, Backspace to go up
-- **Git integration** — status bar shows current branch with dirty indicator (yellow) and modified file count, auto-detected from cwd
-- **SSH quick-connect** — `ssh user@host` in the command palette or `:ssh user@host` in ex-command mode; opens a terminal pane and auto-connects
-- **Web search** — search from the command palette (`Ctrl+P`, type a query and press Enter) or from the new tab page search bar; uses DuckDuckGo by default, configurable via `search_engine` in config.toml
-- **Tab system** — switch between open panes via a sidebar (default) or topbar; sidebar shows page title, URL, and pane type (🌐 web / ⌨ terminal), with × to close and drag to resize
-- **Vim-style marks** — `m` then a letter (a-z) to set a mark on the current URL, `'` then a letter to jump back to it
-- **Command chaining** — use `&&` to chain ex-commands: `:open github.com && m g`
-- **Pane swap** — `:swap` or `:tab-swap` swaps URLs between the active and previously active pane
-- **Lua hooks** — `aileron.on("navigate", fn(url) ...)` and `aileron.on("mode_change", fn(mode) ...)` in init.lua
-- **Popup windows** — `Ctrl+N` opens a standalone webview window (no tiling, no egui overlay) for content that needs its own window
-- **Reader mode** — `Ctrl+Shift+R` strips CSS and extracts article text for clean reading; toggle per pane
-- **Minimal mode** — `Ctrl+Shift+M` hides images/media and removes scripts for lightweight browsing; toggle per pane
-- **Auto-save workspace** — saves layout every 30 seconds for crash recovery; auto-restores on startup when `restore_session = true`
-- **Omnibox URL bar** — click the URL bar or focus it to search across bookmarks, history, and search engines as you type
-- **Content scripts** — place `.lua` files in `~/.config/aileron/scripts/` with `@match` URL patterns to inject custom JavaScript on matching pages (like Greasemonkey)
-- **Multiple search engines** — pre-configured Google, DuckDuckGo, GitHub, YouTube, Wikipedia; switch with `:engine <name>`
-- **Detach pane** — `Ctrl+Shift+D` detaches the current pane to a standalone popup window
-- **Clear browsing data** — `:clear history|bookmarks|workspaces|all` to clear stored data
-- **Network request log** — `Ctrl+Shift+N` or `:network` shows intercepted fetch/XHR requests with status codes
-- **Console capture** — `Ctrl+Shift+J` or `:console` shows captured console.log/warn/error output
-- **Error recovery** — pane crashes show an error page instead of killing the app
-- **Config migration** — config format changes are handled automatically; old configs get upgraded
-- **Download history** — `:downloads` shows recent downloads, tracked in database
-- **Proxy support** — configure SOCKS5/HTTP proxy in config or `:proxy <url>` command
-- **Cookie management** — `:cookies-clear` to clear cookies for the active pane
-- **Project search** — `:grep <pattern>` searches codebase via ripgrep, falls back to grep
-- **Git integration** — `:git-status`/`:gs`, `:git-log`/`:gl`, `:git-diff`/`:gd` for quick git info
-- **File browser** — `:files` opens project root (auto-detects git root); click files to open via `xdg-open`
+- **Smooth scrolling** — native smooth scroll behavior
+- **Print support** — `:print` triggers system print dialog
+- **PDF viewer** — `:pdf <path>` opens PDFs via system viewer (WebEngine PDF planned)
+- **Reader mode** — `Ctrl+Shift+R` strips CSS and extracts article text; toggle per pane
+- **Minimal mode** — `Ctrl+Shift+M` hides images/media and removes scripts; toggle per pane
+
+### Terminal
+
+- **Native terminal** — press `` ` `` to open a terminal pane using `alacritty_terminal` + `portable_pty` + egui rendering (no xterm.js, ~2-5MB/pane)
+- **Terminal mouse selection** — click and drag to select text, copy to clipboard
+- **Visual bell** — terminal bell triggers a 200ms visual flash
+- **SSH quick-connect** — `ssh user@host` in command palette opens terminal pane and auto-connects
 - **Terminal search** — `:terminal-search <pattern>` searches scrollback buffer
-- **Layout presets** — `:layout-save <name>` and `:layout-load <name>` for window arrangements
+
+### Tabs & Panes
+
+- **Tab system** — sidebar (default), topbar, or none; shows title, URL, pane type, audio/mute/pin indicators
+- **Tab pinning** — `Ctrl+Shift+P` or `:pin` pins a pane (prevents accidental close)
+- **Audio mute** — `:mute` / `:unmute` to silence a pane
+- **Pane swap** — `:swap` swaps URLs between active and previously active pane
+- **Detach pane** — `Ctrl+Shift+D` detaches pane to standalone popup window
+- **Popup windows** — `Ctrl+N` opens standalone webview (no tiling, no egui overlay)
+
+### Theming
+
+- **7 built-in themes** — dark, light, gruvbox-dark, nord, dracula, solarized-dark, solarized-light
+- **Custom themes** — define themes in `config.toml` under `[themes.<name>]`
+- **Runtime switching** — `:theme <name>` to switch instantly
+
+### Privacy & Settings
+
+- **Settings GUI** — `aileron://settings` page for keyboard-navigable configuration
+- **Privacy dashboard** — `:privacy` shows HTTPS upgrade, tracking protection, adblock status
+- **Bitwarden integration** — `bw-unlock` / `bw-search` / `bw-autofill` / `bw-detect` for credential management
+
+### Developer Tools
+
+- **DevTools** — `F12` opens WebKit inspector
+- **Network request log** — `Ctrl+Shift+N` or `:network` shows intercepted fetch/XHR with status codes
+- **Console capture** — `Ctrl+Shift+J` or `:console` shows console.log/warn/error output
+- **Git integration** — status bar shows branch with dirty indicator; `:gs`, `:gl`, `:gd`, `:grep`
+- **Project search** — `:grep <pattern>` via ripgrep/grep
+- **File browser** — `:files` opens project root (auto-detects git root)
+- **Shell commands** — `:! <command>` runs shell commands from the command line
+
+### Scripting & Extensibility
+
+- **Content scripts** — `.lua` files in `~/.config/aileron/scripts/` with `@match` and `@match-regexp` patterns, `@run-at` (document_start/end/idle)
+- **Lua hooks** — `aileron.on("navigate", fn)` and `aileron.on("mode_change", fn)` in init.lua
+- **Command chaining** — `:open github.com && mg` chains ex-commands
+- **Did-you-mean** — fuzzy Levenshtein suggestions for mistyped commands
+- **Custom protocols** — `aileron://` for internal pages (welcome, settings, files, error)
 
 ## Prerequisites
 
-- **Nix** (with flakes enabled) — [install guide](https://nixos.org/download)
 - **Linux** (x86_64) — tested on CachyOS (Wayland + NVIDIA), should work on any distro with WebKitGTK 4.1
 - **Vulkan-capable GPU** — required by wgpu for egui rendering
+- **Rust toolchain** — `rustc`, `cargo`, `pkg-config`
 
 ## Build
 
 ```bash
-# Enter the Nix dev shell (installs all build dependencies)
-nix develop
-
-# Build
 cargo build
 
 # Run (with runtime library path for WebKitGTK)
@@ -69,38 +97,34 @@ LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH" ./target/debug/aileron
 ## Test
 
 ```bash
-# Unit tests (307 tests)
-nix develop --command cargo test --lib -- --test-threads=4
+# Unit tests (428 tests)
+cargo test --lib -- --test-threads=4
 
 # Integration tests (26 tests)
-nix develop --command cargo test --test integration_smoke
+cargo test --test integration_smoke
 
 # All tests + clippy (zero warnings)
-nix develop --command cargo clippy --lib -- -D warnings
-nix develop --command cargo test -- --test-threads=4
+cargo clippy --lib -- -D warnings
+cargo test -- --test-threads=4
 ```
 
 ## Install
 
-### Nix (recommended)
+### Cargo
 
 ```bash
-nix build
-./result/bin/aileron
+cargo install --path .
 ```
-
-The Nix build produces a wrapper script that sets `LD_LIBRARY_PATH`, `WINIT_UNIX_BACKEND`, and `VK_ICD_FILENAMES` automatically.
 
 ### AUR
 
 ```bash
-# Build from source (uses nix)
 paru -S aileron-git
 ```
 
 ### Flatpak (experimental)
 
-A Flatpak manifest is provided at `com.github.WyattAu.aileron.yaml`. Build with:
+A Flatpak manifest is provided at `com.github.WyattAu.aileron.yaml`:
 
 ```bash
 flatpak-builder build-dir com.github.WyattAu.aileron.yaml --force-clean
@@ -108,7 +132,7 @@ flatpak-builder --user --install build-dir com.github.WyattAu.aileron.yaml
 flatpak run com.github.WyattAu.aileron
 ```
 
-> **Note:** Flatpak support is experimental. The manifest targets Freedesktop 23.08 with Rust and LLVM SDK extensions.
+> **Note:** Flatpak support is experimental. Targets Freedesktop 23.08 with Rust and LLVM SDK extensions.
 
 ## Key Bindings
 
@@ -133,131 +157,151 @@ flatpak run com.github.WyattAu.aileron
 | `F12` | Normal | Toggle dev tools |
 | `y` | Normal | Copy current URL to clipboard |
 | `` ` `` | Normal | Open terminal pane |
-| `Ctrl+=` | Normal | Zoom in |
-| `Ctrl+-` | Normal | Zoom out |
-| `Ctrl+0` | Normal | Reset zoom |
+| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Normal | Zoom in / out / reset |
 | `Ctrl+N` | Normal | Open popup window (standalone webview) |
-| `Ctrl+Shift+R` | Normal | Toggle reader mode (extract article text) |
-| `Ctrl+Shift+M` | Normal | Toggle minimal mode (hide images/scripts) |
+| `Ctrl+Shift+R` | Normal | Toggle reader mode |
+| `Ctrl+Shift+M` | Normal | Toggle minimal mode |
 | `Ctrl+Shift+N` | Normal | Show network request log |
 | `Ctrl+Shift+J` | Normal | Show captured console output |
 | `Ctrl+Shift+D` | Normal | Detach pane to popup window |
-| `files` / `browse` | Palette | Open file browser |
-| `ssh <host>` | Palette | SSH to remote host |
-| `:url` | Palette | Navigate to URL |
-| `:ws-save <name>` | Palette | Save workspace |
-| `:ws-load <name>` | Palette | Restore workspace |
-| `:ws-list` | Palette | List saved workspaces |
-| `:files` / `:browse` | Ex-command | Open file browser |
-| `:ssh <host>` | Ex-command | SSH connection in terminal pane |
-| `:open <url>` | Ex-command | Navigate to a URL explicitly |
-| `:! <command>` | Ex-command | Run shell command, show output in status bar |
-| `:set <key> <value>` | Ex-command | Change config at runtime (search_engine, homepage, adblock) |
-| `:m<letter> <url>` | Ex-command | Set a quickmark (e.g., `:mg https://github.com`) |
-| `:g<letter>` | Ex-command | Go to quickmark (e.g., `:gg` opens the URL saved in mark `g`) |
-| `m` + letter | Normal | Set a mark on current pane URL (a-z) |
+| `Ctrl+Shift+P` | Normal | Pin/unpin active pane |
+| `m` + letter | Normal | Set a scroll mark (a-z) |
 | `'` + letter | Normal | Jump to mark (a-z) |
-| `:swap` / `:tab-swap` | Ex-command | Swap URLs between active and previously active pane |
-| `:cmd1 && :cmd2` | Ex-command | Chain two ex-commands (e.g., `:open github.com && m g`) |
-| `:reader` | Ex-command | Toggle reader mode (strip CSS, show article text) |
-| `:minimal` | Ex-command | Toggle minimal mode (hide images, remove scripts) |
-| `:network` | Ex-command | Show intercepted network requests |
-| `:network-clear` | Ex-command | Clear network request log |
-| `:console` | Ex-command | Show captured console output |
-| `:console-clear` | Ex-command | Clear console capture |
-| `:scripts` | Ex-command | List loaded content scripts |
-| `:config-save` | Ex-command | Save current config to disk |
-| `:only` | Ex-command | Close all panes except current |
-| `:back` | Ex-command | Go back in history |
-| `:forward` | Ex-command | Go forward in history |
-| `:reload` | Ex-command | Reload current page |
-| `:engine <name>` | Ex-command | Switch search engine (google, ddg, gh, yt, wiki) |
-| `:clear history` | Ex-command | Clear browsing history |
-| `:clear bookmarks` | Ex-command | Clear all bookmarks |
-| `:clear workspaces` | Ex-command | Clear all saved workspaces |
-| `:clear all` | Ex-command | Clear all stored data |
-| `:downloads` | Ex-command | Show recent downloads |
-| `:downloads-clear` | Ex-command | Clear download history |
-| `:cookies-clear` | Ex-command | Clear cookies for current pane |
-| `:inspect` | Ex-command | Open WebKit inspector |
-| `:proxy <url>` | Ex-command | Set proxy (socks5://, http://) |
-| `:grep <pattern>` | Ex-command | Search project with ripgrep/grep |
-| `:git-status` / `:gs` | Ex-command | Show git status |
-| `:git-log` / `:gl` | Ex-command | Show recent commits |
-| `:git-diff` / `:gd` | Ex-command | Show diff summary |
-| `:terminal-clear` / `:cls` | Ex-command | Clear terminal pane |
-| `:terminal-search <pat>` | Ex-command | Search terminal scrollback |
-| `:layout-save <name>` | Ex-command | Save window layout preset |
-| `:layout-load <name>` | Ex-command | Load window layout preset |
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `:open <url>` | Navigate to URL |
+| `:! <command>` | Run shell command, show output |
+| `:set <key> <value>` | Change config at runtime (search_engine, homepage, adblock, https_upgrade, tracking_protection, popup_blocker) |
+| `:m<letter> <url>` | Set quickmark |
+| `:g<letter>` | Go to quickmark |
+| `:swap` / `:tab-swap` | Swap URLs between active and previously active pane |
+| `:only` | Close all panes except current |
+| `:back` / `:forward` / `:reload` | History navigation |
+| `:reader` / `:minimal` | Toggle reader/minimal mode |
+| `:settings` | Open aileron://settings |
+| `:site-settings` | View per-site settings for current URL |
+| `:site-settings set <key> <value>` | Set per-site setting (zoom, adblock, js, cookies, autoplay) |
+| `:site-settings list` | List all per-site settings |
+| `:site-settings delete <id>` | Delete a site setting |
+| `:site-settings clear <domain>` | Clear all settings for a domain |
+| `:theme <name>` | Switch theme |
+| `:theme list` | List available themes |
+| `:pin` | Pin/unpin active pane |
+| `:mute` / `:unmute` | Mute/unmute active pane |
+| `:print` | Print current page |
+| `:pdf <path>` | Open PDF |
+| `:popups [on\|off]` | Toggle popup blocker |
+| `:cookies` | View cookies for current site |
+| `:cookies-clear` | Clear cookies for current pane |
+| `:cookies-block <domain>` | Block cookies for a domain |
+| `:cookies-allow <domain>` | Allow cookies for a domain |
+| `:adblock-toggle` | Toggle adblock for current site |
+| `:adblock-count` | Show blocked request count |
+| `:privacy` | Show privacy settings (HTTPS, tracking, adblock) |
+| `:https-toggle` | Check HTTPS upgrade status for current domain |
+| `:engine <name>` | Switch search engine (google, ddg, gh, yt, wiki) |
+| `:bw-unlock <password>` | Unlock Bitwarden vault |
+| `:bw-search <query>` | Search vault for credentials |
+| `:bw-autofill` | Auto-fill credentials for current site |
+| `:bw-detect` | Detect login forms on current page |
+| `:bw-lock` | Lock Bitwarden vault |
+| `:network` / `:network-clear` | Show/clear network request log |
+| `:console` / `:console-clear` | Show/clear console output |
+| `:downloads` / `:downloads-clear` | Show/clear download history |
+| `:downloads-open [id]` | Open downloaded file |
+| `:downloads-dir` | Open downloads directory |
+| `:import-firefox` / `:import-chrome` | Import bookmarks/history from browser |
+| `:inspect` | Open WebKit inspector |
+| `:proxy <url>` | Set proxy (socks5://, http://) |
+| `:clear history\|bookmarks\|workspaces\|cookies\|all` | Clear stored data |
+| `:grep <pattern>` | Search project with ripgrep/grep |
+| `:gs` / `:gl` / `:gd` | Git status/log/diff |
+| `:files` / `:browse` | Open file browser |
+| `:ssh <host>` | SSH in terminal pane |
+| `:scripts` | List loaded content scripts |
+| `:config-save` | Save config to disk |
+| `:terminal-clear` / `:cls` | Clear terminal pane |
+| `:terminal-search <pattern>` | Search terminal scrollback |
+| `:layout-save <name>` / `:layout-load <name>` | Save/load window layout preset |
+| `:ws-save <name>` / `:ws-load <name>` / `:ws-list` | Workspace management |
+| `:cmd1 && :cmd2` | Chain commands |
 
 ## Configuration
 
-### Config file
+### config.toml
 
 Aileron looks for `~/.config/aileron/config.toml`:
 
 ```toml
-homepage = "https://example.com"
+homepage = "aileron://welcome"
 window_width = 1280
 window_height = 800
+
+# Privacy
 adblock_enabled = true
-palette_max_results = 20
-search_engine = "https://duckduckgo.com/?q={query}"
+adblock_filter_lists = ["https://easylist.to/easylist/easylist.txt", "https://easylist.to/easylist/easyprivacy.txt"]
+adblock_cosmetic_filtering = true
+https_upgrade_enabled = true
+tracking_protection_enabled = true
+popup_blocker_enabled = true
 
-# Tab bar layout: "sidebar", "topbar", or "none"
+# Appearance
+theme = "dark"
 tab_layout = "sidebar"
-
-# Tab sidebar width in pixels (sidebar layout only)
 tab_sidebar_width = 180.0
-
-# Show tab sidebar on the right side instead of left
 tab_sidebar_right = false
 
-# Search engines — use :engine <name> to switch
-# Pre-configured: google, ddg, gh, yt, wiki
+# Rendering
+render_mode = "offscreen"
 
-# Auto-save workspace for crash recovery
+# Search
+search_engine = "https://duckduckgo.com/?q={query}"
+palette_max_results = 20
+
+# Session
+restore_session = false
 auto_save = true
 auto_save_interval = 30
 
-# Proxy URL (supports http, https, socks5)
+# Proxy
 # proxy = "socks5://127.0.0.1:1080"
+
+# Custom themes
+[themes.mytheme]
+bg = "#1a1a2e"
+fg = "#e0e0e0"
+accent = "#4db4ff"
 ```
 
 ### init.lua
 
-Place `~/.config/aileron/init.lua` for custom keybindings and commands:
-
 ```lua
--- Custom keybinding
 aileron.keymap.set("normal", "Ctrl+Shift+R", "reload")
 
--- Custom command (appears in palette with category "Custom")
 aileron.cmd.create("open-rust", "Open Rust documentation", function()
     aileron.navigate("https://doc.rust-lang.org")
 end)
 
--- URL redirect rule (case-insensitive host matching)
 aileron.url.add_redirect("github.com", "ghproxy.com")
 
--- Lifecycle hooks
 aileron.on("navigate", function(url)
     print("Navigating to: " .. url)
-end)
-
-aileron.on("mode_change", function(mode)
-    print("Mode changed to: " .. mode)
 end)
 ```
 
 ### Content Scripts
 
-Place `.lua` files in `~/.config/aileron/scripts/` to inject JavaScript on matching pages:
+Place `.lua` files in `~/.config/aileron/scripts/`:
 
 ```lua
 -- ==UserScript==
 -- @name        Dark Mode for GitHub
 -- @match       https://*.github.com/*
+-- @match-regexp    ^https://.*\.github\.com/.*
+-- @run-at      document_idle
 -- @grant       none
 -- ==/UserScript==
 
@@ -267,34 +311,38 @@ return [[
 ]]
 ```
 
-The `@match` patterns use `*` as a wildcard. Scripts are loaded at startup and injected automatically on matching page loads. Use `:scripts` to list loaded scripts.
+Use `:scripts` to list loaded scripts.
 
 ## Architecture
 
 ```
 src/
-  main.rs          — Event loop, wry pane management, egui UI
-  app/mod.rs       — AppState (mode machine, palette, keybindings, dispatch bridge)
-  app/dispatch.rs  — Pure action dispatch (Action → ActionEffect), 36 tests
-  input/           — Key mapping, mode transitions, keybinding registry
-  wm/              — BSP tree (tiling), rectangle math, pane metadata
-  servo/           — WryPaneManager (wry webview), PaneRenderer trait, PaneState (metadata), xterm.js terminal (PTY + IPC bridge)
-  ui/              — Command palette, fuzzy search, search items
-  db/              — SQLite: history, bookmarks, workspaces
-  lua/             — Lua sandbox, API bindings (cmd, keymap, theme, url)
-  mcp/             — MCP JSON-RPC server, tools, stdio transport
-  net/             — Ad blocker (domain blocking + cosmetic CSS)
-  scripts/         — Content script manager (Lua → JS injection, @match URL patterns)
-  gfx/             — wgpu surface + egui renderer setup
-  passwords/       — Bitwarden client (credential fetch + autofill JS)
-  config.rs        — Config struct (TOML)
+  main.rs              — Event loop, wry pane management, egui UI
+  app/mod.rs           — AppState (mode machine, palette, keybindings, dispatch bridge)
+  app/dispatch.rs      — Pure action dispatch (Action → ActionEffect)
+  input/               — Key mapping, mode transitions, keybinding registry, event router
+  wm/                  — BSP tree (tiling), rectangle math, pane metadata
+  servo/               — PaneStateManager, PaneRenderer trait, WryPaneManager, ServoPane (skeleton)
+  terminal/            — Native terminal (alacritty_terminal + portable_pty + egui painter)
+  ui/                  — Command palette (Nucleo fuzzy search), panels, omnibox, find bar
+  db/                  — SQLite: history, bookmarks, workspaces, downloads, site_settings
+  lua/                 — Lua sandbox, API bindings (cmd, keymap, theme, url)
+  mcp/                 — MCP JSON-RPC server, tools, stdio transport
+  net/                 — AdBlocker (EasyList parser), filter_list (network/cosmetic), privacy (HTTPS upgrade, tracking protection)
+  scripts/             — Content script manager (Lua → JS injection, @match/@match-regexp, @run-at)
+  gfx/                 — wgpu surface + egui renderer setup
+  passwords/           — Bitwarden client (credential fetch, autofill, login form detection)
+  config.rs            — Config struct (TOML), theme system, migration
+  git.rs               — Git repo detection, status bar integration
+  popup.rs             — Standalone popup window management
+  frame_tasks.rs       — Frame-level task execution
+  offscreen_webview.rs — Offscreen webview texture compositing
+  wry_actions.rs       — WryAction queue utilities
 tests/
-  integration_smoke.rs  — 26 cross-module integration tests
+  integration_smoke.rs — 26 cross-module integration tests
 ```
 
 ### Action Dispatch Pattern
-
-All user input flows through a pure dispatch function:
 
 ```
 Key event → AppState.process_key_event()
