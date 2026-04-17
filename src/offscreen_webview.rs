@@ -406,6 +406,11 @@ a {{ color: #4db4ff; }}
         let _ = self.webview.evaluate_script("window.location.reload()");
     }
 
+    /// Print the current page using window.print().
+    pub fn print(&self) {
+        let _ = self.webview.evaluate_script("window.print()");
+    }
+
     /// Whether the content has changed since last capture.
     pub fn is_dirty(&self) -> bool {
         self.dirty

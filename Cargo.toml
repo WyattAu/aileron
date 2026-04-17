@@ -85,6 +85,9 @@ wry = { version = "0.55.0", default-features = false, features = [
 # HTTP client (for downloading filter/privacy lists)
 attohttpc = "0.28"
 
+# Regex (for site settings pattern matching)
+regex = "1"
+
 # GTK (required by wry on Linux for WebKitGTK event loop)
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

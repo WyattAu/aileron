@@ -75,6 +75,8 @@ pub enum Action {
     DetachPane,
     /// Close all panes except the current one.
     CloseOtherPanes,
+    /// Print the current page.
+    Print,
 }
 
 /// Registry of keybindings, organized by mode.

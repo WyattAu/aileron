@@ -89,6 +89,8 @@ pub enum ActionEffect {
     DetachPane,
     /// Close all panes except the current one.
     CloseOtherPanes,
+    /// Print the current page.
+    Print,
 }
 
 /// Pure dispatch: map an `Action` to a list of effects.
@@ -272,6 +274,7 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
         }
         Action::DetachPane => vec![ActionEffect::DetachPane],
         Action::CloseOtherPanes => vec![ActionEffect::CloseOtherPanes],
+        Action::Print => vec![ActionEffect::Print],
     }
 }
 

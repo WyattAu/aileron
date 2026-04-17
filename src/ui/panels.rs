@@ -1,4 +1,5 @@
 use crate::app::{AppState, WryAction};
+use crate::config::ThemeColors;
 use crate::git::GitStatus;
 use crate::input::Mode;
 use crate::servo::WryPaneManager;
@@ -17,6 +18,17 @@ pub fn build_ui(
     terminal_manager: &NativeTerminalManager,
 ) {
     let tab_layout = app_state.config.tab_layout.as_str();
+    let theme = app_state.config.active_theme();
+    let tab_bg = ThemeColors::resolve(&theme.tab_bar_bg, "#19191e");
+    let tab_fg = ThemeColors::resolve(&theme.tab_bar_fg, "#cccccc");
+    let _status_bg = ThemeColors::resolve(&theme.status_bar_bg, "#1a1a20");
+    let _status_fg = ThemeColors::resolve(&theme.status_bar_fg, "#cccccc");
+    let _url_bg = ThemeColors::resolve(&theme.url_bar_bg, "#1a1a20");
+    let _url_fg = ThemeColors::resolve(&theme.url_bar_fg, "#e0e0e0");
+    let accent = ThemeColors::resolve(&theme.accent, "#4db4ff");
+    let bg = ThemeColors::resolve(&theme.bg, "#191920");
+    let border_color_default = ThemeColors::resolve(&theme.border, "#3c3c3c");
+
     if tab_layout == "sidebar" {
         let panel = if app_state.config.tab_sidebar_right {
             egui::SidePanel::right("tab-sidebar")
@@ -26,13 +38,13 @@ pub fn build_ui(
         panel
             .default_width(app_state.config.tab_sidebar_width)
             .resizable(true)
-            .frame(egui::Frame::new().fill(egui::Color32::from_rgb(25, 25, 30)))
+            .frame(egui::Frame::new().fill(tab_bg))
             .show(ctx, |ui| {
-                build_tab_list(ui, app_state, wry_panes, false);
+                build_tab_list(ui, app_state, wry_panes, false, &theme);
             });
     } else if tab_layout == "topbar" {
         egui::TopBottomPanel::top("tab-bar").show(ctx, |ui| {
-            build_tab_list(ui, app_state, wry_panes, true);
+            build_tab_list(ui, app_state, wry_panes, true, &theme);
         });
     }
 
@@ -41,7 +53,7 @@ pub fn build_ui(
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 let mode_color = match app_state.mode {
                     Mode::Normal => egui::Color32::from_rgb(100, 200, 100),
-                    Mode::Insert => egui::Color32::from_rgb(100, 150, 255),
+                    Mode::Insert => accent,
                     Mode::Command => egui::Color32::from_rgb(255, 200, 100),
                 };
                 ui.colored_label(mode_color, app_state.mode.as_str());
@@ -57,7 +69,7 @@ pub fn build_ui(
                     let git_color = if git_status.is_dirty {
                         egui::Color32::from_rgb(255, 200, 100)
                     } else {
-                        egui::Color32::from_rgb(150, 150, 150)
+                        tab_fg
                     };
                     ui.colored_label(git_color, git_text);
                 }
@@ -78,10 +90,7 @@ pub fn build_ui(
                 ui.separator();
 
                 if app_state.hint_mode {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(77, 180, 255),
-                        format!("hint: {}", app_state.hint_buffer),
-                    );
+                    ui.colored_label(accent, format!("hint: {}", app_state.hint_buffer));
                 } else if !app_state.status_message.is_empty() {
                     ui.label(&app_state.status_message);
                 }
@@ -112,7 +121,7 @@ pub fn build_ui(
                 );
                 response.request_focus();
             } else if app_state.url_bar_focused {
-                ui.colored_label(egui::Color32::from_rgb(77, 180, 255), "URL>");
+                ui.colored_label(accent, "URL>");
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut app_state.url_bar_input)
                         .desired_width(f32::INFINITY)
@@ -211,7 +220,7 @@ pub fn build_ui(
             } else {
                 let (mode_label, mode_color) = match app_state.mode {
                     Mode::Normal => ("NORMAL", egui::Color32::from_rgb(100, 200, 100)),
-                    Mode::Insert => ("INSERT", egui::Color32::from_rgb(77, 180, 255)),
+                    Mode::Insert => ("INSERT", accent),
                     Mode::Command => ("COMMAND", egui::Color32::from_rgb(200, 200, 100)),
                 };
                 ui.colored_label(mode_color, mode_label);
@@ -243,11 +252,15 @@ pub fn build_ui(
             .order(egui::Order::Foreground);
         area.show(ctx, |ui| {
             egui::Frame::new()
-                .fill(egui::Color32::from_rgb(40, 40, 40))
+                .fill(egui::Color32::from_rgb(
+                    bg.r().saturating_add(20),
+                    bg.g().saturating_add(20),
+                    bg.b().saturating_add(20),
+                ))
                 .inner_margin(4.0)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.colored_label(egui::Color32::from_rgb(77, 180, 255), "Find:");
+                        ui.colored_label(accent, "Find:");
                         let response = ui.add(
                             egui::TextEdit::singleline(&mut app_state.find_query)
                                 .desired_width(300.0)
@@ -307,7 +320,11 @@ pub fn build_ui(
                 .order(egui::Order::Foreground);
             area.show(ctx, |ui| {
                 egui::Frame::new()
-                    .fill(egui::Color32::from_rgb(30, 30, 30))
+                    .fill(egui::Color32::from_rgb(
+                        bg.r().saturating_add(10),
+                        bg.g().saturating_add(10),
+                        bg.b().saturating_add(10),
+                    ))
                     .inner_margin(8.0)
                     .corner_radius(4.0)
                     .show(ui, |ui| {
@@ -379,9 +396,9 @@ pub fn build_ui(
 
                 let is_active = *id == active_id;
                 let border_color = if is_active {
-                    egui::Color32::from_rgb(80, 180, 255)
+                    accent
                 } else {
-                    egui::Color32::from_rgb(60, 60, 60)
+                    border_color_default
                 };
 
                 if offscreen {
@@ -400,11 +417,7 @@ pub fn build_ui(
                                 &metrics,
                             );
                         } else {
-                            ui.painter().rect_filled(
-                                screen_rect,
-                                0.0,
-                                egui::Color32::from_rgb(20, 20, 20),
-                            );
+                            ui.painter().rect_filled(screen_rect, 0.0, bg);
                         }
                     } else if let Some(&tex_id) = webview_textures.get(id) {
                         // Web content: show captured webview texture
@@ -414,11 +427,7 @@ pub fn build_ui(
                         ));
                         ui.put(screen_rect, image);
                     } else {
-                        ui.painter().rect_filled(
-                            screen_rect,
-                            0.0,
-                            egui::Color32::from_rgb(20, 20, 20),
-                        );
+                        ui.painter().rect_filled(screen_rect, 0.0, bg);
                         ui.painter().rect_stroke(
                             screen_rect,
                             0.0,
@@ -437,11 +446,10 @@ pub fn build_ui(
             }
         } else if wry_panes.is_empty() && (!offscreen || webview_textures.is_empty()) {
             let available = ui.available_rect_before_wrap();
-            let border_color = egui::Color32::from_rgb(80, 180, 255);
             ui.painter().rect_stroke(
                 available,
                 0.0,
-                egui::Stroke::new(2.0, border_color),
+                egui::Stroke::new(2.0, accent),
                 egui::epaint::StrokeKind::Middle,
             );
 
@@ -470,9 +478,14 @@ pub fn build_tab_list(
     app_state: &mut AppState,
     wry_panes: &WryPaneManager,
     horizontal: bool,
+    theme: &ThemeColors,
 ) {
     let panes = app_state.wm.panes();
     let active_id = app_state.wm.active_pane_id();
+    let _accent = ThemeColors::resolve(&theme.accent, "#4db4ff");
+    let _tab_fg = ThemeColors::resolve(&theme.tab_bar_fg, "#cccccc");
+    let tab_bar_bg = ThemeColors::resolve(&theme.tab_bar_bg, "#19191e");
+    let border_color = ThemeColors::resolve(&theme.border, "#3c3c3c");
 
     if horizontal {
         ui.horizontal(|ui| {
@@ -506,7 +519,7 @@ pub fn build_tab_list(
                 let frame_color = if is_active {
                     egui::Color32::from_rgb(40, 60, 90)
                 } else {
-                    egui::Color32::from_rgb(30, 30, 35)
+                    tab_bar_bg
                 };
 
                 egui::Frame::new().fill(frame_color).show(ui, |ui| {
@@ -516,7 +529,16 @@ pub fn build_tab_list(
                         let icon = if is_terminal { "\u{2328} " } else { "  " };
                         ui.label(icon);
 
-                        let response = ui.selectable_label(is_active, display_title);
+                        let muted_prefix = if app_state.muted_pane_ids.contains(pane_id) {
+                            "\u{1f507} "
+                        } else {
+                            ""
+                        };
+
+                        let response = ui.selectable_label(
+                            is_active,
+                            format!("{}{}", muted_prefix, display_title),
+                        );
                         if response.clicked() && !is_active {
                             app_state.wm.set_active_pane(*pane_id);
                             app_state.update_status();
@@ -562,7 +584,7 @@ pub fn build_tab_list(
                 let frame_color = if is_active {
                     egui::Color32::from_rgb(40, 60, 90)
                 } else {
-                    egui::Color32::from_rgb(30, 30, 35)
+                    tab_bar_bg
                 };
 
                 egui::Frame::new().fill(frame_color).show(ui, |ui| {
@@ -570,7 +592,16 @@ pub fn build_tab_list(
                         let icon = if is_terminal { "\u{2328}" } else { "\u{1f310}" };
                         ui.label(icon);
 
-                        let response = ui.selectable_label(is_active, display_title);
+                        let muted_prefix = if app_state.muted_pane_ids.contains(pane_id) {
+                            "\u{1f507} "
+                        } else {
+                            ""
+                        };
+
+                        let response = ui.selectable_label(
+                            is_active,
+                            format!("{}{}", muted_prefix, display_title),
+                        );
                         if response.clicked() && !is_active {
                             app_state.wm.set_active_pane(*pane_id);
                             app_state.update_status();
@@ -587,17 +618,9 @@ pub fn build_tab_list(
                         } else {
                             url
                         };
-                        ui.label(
-                            egui::RichText::new(display_url)
-                                .small()
-                                .color(egui::Color32::from_rgb(100, 100, 100)),
-                        );
+                        ui.label(egui::RichText::new(display_url).small().color(border_color));
                     } else {
-                        ui.label(
-                            egui::RichText::new("Terminal")
-                                .small()
-                                .color(egui::Color32::from_rgb(100, 100, 100)),
-                        );
+                        ui.label(egui::RichText::new("Terminal").small().color(border_color));
                     }
                 });
                 ui.add_space(2.0);

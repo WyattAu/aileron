@@ -93,6 +93,181 @@ pub struct Config {
     /// Config format version. Used for migrations.
     #[serde(default)]
     pub config_version: u32,
+
+    /// Enable popup blocking (blocks window.open() except from user gestures).
+    pub popup_blocker_enabled: bool,
+
+    /// UI theme: "dark", "light", or a custom theme name.
+    pub theme: String,
+
+    /// Custom theme definitions. Key is theme name, value is color overrides.
+    #[serde(default)]
+    pub themes: std::collections::HashMap<String, ThemeColors>,
+}
+
+/// Color overrides for a custom theme.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ThemeColors {
+    #[serde(default)]
+    pub bg: Option<String>,
+    #[serde(default)]
+    pub fg: Option<String>,
+    #[serde(default)]
+    pub accent: Option<String>,
+    #[serde(default)]
+    pub tab_bar_bg: Option<String>,
+    #[serde(default)]
+    pub tab_bar_fg: Option<String>,
+    #[serde(default)]
+    pub status_bar_bg: Option<String>,
+    #[serde(default)]
+    pub status_bar_fg: Option<String>,
+    #[serde(default)]
+    pub url_bar_bg: Option<String>,
+    #[serde(default)]
+    pub url_bar_fg: Option<String>,
+    #[serde(default)]
+    pub border: Option<String>,
+}
+
+impl ThemeColors {
+    /// Resolve a color field, falling back to the provided default.
+    pub fn resolve(field: &Option<String>, default: &str) -> egui::Color32 {
+        field
+            .as_deref()
+            .and_then(parse_hex_color)
+            .unwrap_or_else(|| parse_hex_color(default).unwrap_or(egui::Color32::WHITE))
+    }
+}
+
+/// Parse a hex color string like "#1a1a2e" into egui::Color32.
+fn parse_hex_color(s: &str) -> Option<egui::Color32> {
+    let s = s.trim().trim_start_matches('#');
+    if s.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+    Some(egui::Color32::from_rgb(r, g, b))
+}
+
+fn built_in_themes() -> std::collections::HashMap<String, ThemeColors> {
+    let mut m = std::collections::HashMap::new();
+
+    m.insert(
+        "dark".into(),
+        ThemeColors {
+            bg: Some("#191920".into()),
+            fg: Some("#e0e0e0".into()),
+            accent: Some("#4db4ff".into()),
+            tab_bar_bg: Some("#19191e".into()),
+            tab_bar_fg: Some("#cccccc".into()),
+            status_bar_bg: Some("#1a1a20".into()),
+            status_bar_fg: Some("#cccccc".into()),
+            url_bar_bg: Some("#1a1a20".into()),
+            url_bar_fg: Some("#e0e0e0".into()),
+            border: Some("#3c3c3c".into()),
+        },
+    );
+
+    m.insert(
+        "light".into(),
+        ThemeColors {
+            bg: Some("#ffffff".into()),
+            fg: Some("#1a1a1a".into()),
+            accent: Some("#0066cc".into()),
+            tab_bar_bg: Some("#f0f0f0".into()),
+            tab_bar_fg: Some("#333333".into()),
+            status_bar_bg: Some("#e8e8e8".into()),
+            status_bar_fg: Some("#333333".into()),
+            url_bar_bg: Some("#ffffff".into()),
+            url_bar_fg: Some("#1a1a1a".into()),
+            border: Some("#cccccc".into()),
+        },
+    );
+
+    m.insert(
+        "gruvbox-dark".into(),
+        ThemeColors {
+            bg: Some("#282828".into()),
+            fg: Some("#ebdbb2".into()),
+            accent: Some("#fe8019".into()),
+            tab_bar_bg: Some("#1d2021".into()),
+            tab_bar_fg: Some("#ebdbb2".into()),
+            status_bar_bg: Some("#1d2021".into()),
+            status_bar_fg: Some("#ebdbb2".into()),
+            url_bar_bg: Some("#282828".into()),
+            url_bar_fg: Some("#ebdbb2".into()),
+            border: Some("#504945".into()),
+        },
+    );
+
+    m.insert(
+        "nord".into(),
+        ThemeColors {
+            bg: Some("#2e3440".into()),
+            fg: Some("#d8dee9".into()),
+            accent: Some("#88c0d0".into()),
+            tab_bar_bg: Some("#2e3440".into()),
+            tab_bar_fg: Some("#d8dee9".into()),
+            status_bar_bg: Some("#3b4252".into()),
+            status_bar_fg: Some("#d8dee9".into()),
+            url_bar_bg: Some("#2e3440".into()),
+            url_bar_fg: Some("#d8dee9".into()),
+            border: Some("#4c566a".into()),
+        },
+    );
+
+    m.insert(
+        "dracula".into(),
+        ThemeColors {
+            bg: Some("#282a36".into()),
+            fg: Some("#f8f8f2".into()),
+            accent: Some("#bd93f9".into()),
+            tab_bar_bg: Some("#21222c".into()),
+            tab_bar_fg: Some("#f8f8f2".into()),
+            status_bar_bg: Some("#21222c".into()),
+            status_bar_fg: Some("#f8f8f2".into()),
+            url_bar_bg: Some("#282a36".into()),
+            url_bar_fg: Some("#f8f8f2".into()),
+            border: Some("#44475a".into()),
+        },
+    );
+
+    m.insert(
+        "solarized-dark".into(),
+        ThemeColors {
+            bg: Some("#002b36".into()),
+            fg: Some("#839496".into()),
+            accent: Some("#268bd2".into()),
+            tab_bar_bg: Some("#073642".into()),
+            tab_bar_fg: Some("#93a1a1".into()),
+            status_bar_bg: Some("#073642".into()),
+            status_bar_fg: Some("#93a1a1".into()),
+            url_bar_bg: Some("#002b36".into()),
+            url_bar_fg: Some("#839496".into()),
+            border: Some("#586e75".into()),
+        },
+    );
+
+    m.insert(
+        "solarized-light".into(),
+        ThemeColors {
+            bg: Some("#fdf6e3".into()),
+            fg: Some("#657b83".into()),
+            accent: Some("#268bd2".into()),
+            tab_bar_bg: Some("#eee8d5".into()),
+            tab_bar_fg: Some("#657b83".into()),
+            status_bar_bg: Some("#eee8d5".into()),
+            status_bar_fg: Some("#657b83".into()),
+            url_bar_bg: Some("#fdf6e3".into()),
+            url_bar_fg: Some("#657b83".into()),
+            border: Some("#93a1a1".into()),
+        },
+    );
+
+    m
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -149,6 +324,9 @@ impl Default for Config {
             https_upgrade_enabled: true,
             tracking_protection_enabled: true,
             config_version: 2,
+            popup_blocker_enabled: true,
+            theme: "dark".into(),
+            themes: built_in_themes(),
         }
     }
 }
@@ -363,6 +541,23 @@ wiki = "https://en.wikipedia.org/w/index.php?search={query}"
     /// Whether Architecture B offscreen rendering is enabled.
     pub fn is_offscreen(&self) -> bool {
         self.render_mode == "offscreen"
+    }
+
+    /// Get the resolved ThemeColors for the current theme.
+    /// Falls back to built-in "dark" theme if the configured theme is not found.
+    pub fn active_theme(&self) -> ThemeColors {
+        if let Some(colors) = self.themes.get(&self.theme) {
+            colors.clone()
+        } else {
+            built_in_themes().get("dark").cloned().unwrap_or_default()
+        }
+    }
+
+    /// List available theme names (built-in + custom).
+    pub fn available_themes(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.themes.keys().cloned().collect();
+        names.sort();
+        names
     }
 }
 

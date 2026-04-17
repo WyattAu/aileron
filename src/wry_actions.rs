@@ -527,6 +527,37 @@ pub fn process_wry_action(
                 }
             }
         }
+        crate::app::WryAction::Print => {
+            if let Some(pane) = offscreen_panes.get_mut(&active_id) {
+                pane.print();
+            } else if wry_panes.get(&active_id).is_some() {
+                info!("Print requested for native pane (not supported)");
+                if let Some(app_state) = app_state {
+                    app_state.status_message = "Print: use :print in offscreen mode".into();
+                }
+            } else if let Some(app_state) = app_state {
+                app_state.status_message = "No active pane to print".into();
+            }
+        }
+        crate::app::WryAction::ToggleMute => {
+            let js = if let Some(app_state) = app_state {
+                let active_id = app_state.wm.active_pane_id();
+                if app_state.muted_pane_ids.contains(&active_id) {
+                    app_state.muted_pane_ids.remove(&active_id);
+                    "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = false; });"
+                } else {
+                    app_state.muted_pane_ids.insert(active_id);
+                    "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = true; el.pause(); });"
+                }
+            } else {
+                "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = true; });"
+            };
+            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                wry_pane.execute_js(js);
+            } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
+                pane.execute_js(js);
+            }
+        }
     }
     Ok(())
 }

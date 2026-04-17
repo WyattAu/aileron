@@ -69,6 +69,10 @@ pub enum WryAction {
     ClearConsoleLog,
     /// Save current config to disk.
     SaveConfig,
+    /// Print the current page.
+    Print,
+    /// Toggle mute on the active pane (pause/mute media elements).
+    ToggleMute,
 }
 
 pub struct AppState {
@@ -163,6 +167,9 @@ pub struct AppState {
     /// Whether the user has interacted with this session.
     /// Prevents auto-saving a fresh session (just the homepage).
     pub session_dirty: bool,
+
+    /// Set of pane IDs that are muted (media paused + muted).
+    pub muted_pane_ids: std::collections::HashSet<uuid::Uuid>,
 }
 
 impl AppState {
@@ -314,6 +321,7 @@ impl AppState {
             last_active_pane_id: None,
             last_auto_save: std::time::Instant::now(),
             session_dirty: false,
+            muted_pane_ids: std::collections::HashSet::new(),
         })
     }
 
@@ -767,6 +775,10 @@ impl AppState {
                         self.status_message = format!("Closed {} other pane(s)", other_ids.len());
                     }
                 }
+                ActionEffect::Print => {
+                    self.pending_wry_actions.push_back(WryAction::Print);
+                    self.status_message = "Printing...".into();
+                }
             }
         }
     }
@@ -926,28 +938,37 @@ impl AppState {
                                     self.config.https_upgrade_enabled
                                 );
                             }
-                            "tracking_protection" | "tracking-protection" => {
-                                self.config.tracking_protection_enabled = !value.contains("off")
-                                    && !value.contains("false")
-                                    && !value.contains("0");
-                                self.status_message = format!(
-                                    "tracking_protection = {}",
-                                    self.config.tracking_protection_enabled
-                                );
-                            }
-                            _ => {
-                                self.status_message = format!(
-                                    "Unknown setting: {} (try: search_engine, homepage, adblock, https_upgrade, tracking_protection)",
-                                    key
-                                );
-                            }
-                        }
+                    "tracking_protection" | "tracking-protection" => {
+                        self.config.tracking_protection_enabled = !value.contains("off")
+                            && !value.contains("false")
+                            && !value.contains("0");
+                        self.status_message = format!(
+                            "tracking_protection = {}",
+                            self.config.tracking_protection_enabled
+                        );
                     }
-                    return;
+                    "popup_blocker" | "popup-blocker" | "popups" => {
+                        self.config.popup_blocker_enabled = !value.contains("off")
+                            && !value.contains("false")
+                            && !value.contains("0");
+                        self.status_message = format!(
+                            "popup_blocker = {}",
+                            self.config.popup_blocker_enabled
+                        );
+                    }
+                    _ => {
+                        self.status_message = format!(
+                            "Unknown setting: {} (try: search_engine, homepage, adblock, https_upgrade, tracking_protection, popup_blocker)",
+                            key
+                        );
+                    }
                 }
+            }
+            return;
+        }
 
-                // Explicit navigate: open <url>
-                if let Some(url_str) = cmd.strip_prefix("open ") {
+        // Explicit navigate: open <url>
+        if let Some(url_str) = cmd.strip_prefix("open ") {
                     let url_str = url_str.trim();
                     if url_str.is_empty() {
                         self.status_message = "Usage: open <url>".into();
@@ -1587,9 +1608,18 @@ impl AppState {
                             self.config.tracking_protection_enabled
                         );
                     }
+                    "popup_blocker" | "popup-blocker" | "popups" => {
+                        self.config.popup_blocker_enabled = !value.contains("off")
+                            && !value.contains("false")
+                            && !value.contains("0");
+                        self.status_message = format!(
+                            "popup_blocker = {}",
+                            self.config.popup_blocker_enabled
+                        );
+                    }
                     _ => {
                         self.status_message = format!(
-                            "Unknown setting: {} (try: search_engine, homepage, adblock, https_upgrade, tracking_protection)",
+                            "Unknown setting: {} (try: search_engine, homepage, adblock, https_upgrade, tracking_protection, popup_blocker)",
                             key
                         );
                     }
@@ -1762,6 +1792,261 @@ if (window._terminal && window._terminal.buffer) {{
                 ));
             } else {
                 self.status_message = "Not a terminal pane".into();
+            }
+            return;
+        }
+
+        // Print command
+        if query == "print" {
+            self.pending_wry_actions.push_back(WryAction::Print);
+            self.status_message = "Printing...".into();
+            return;
+        }
+
+        // Popup blocker toggle
+        if query == "popups" {
+            self.config.popup_blocker_enabled = !self.config.popup_blocker_enabled;
+            self.status_message = format!(
+                "Popup blocker: {}",
+                if self.config.popup_blocker_enabled { "on" } else { "off" }
+            );
+            return;
+        }
+        if let Some(val) = query.strip_prefix("popups ") {
+            let val = val.trim();
+            self.config.popup_blocker_enabled =
+                !val.contains("off") && !val.contains("false") && !val.contains("0");
+            self.status_message = format!(
+                "Popup blocker: {}",
+                if self.config.popup_blocker_enabled { "on" } else { "off" }
+            );
+            return;
+        }
+
+        // Cookie management
+        if query == "cookies" {
+            self.pending_wry_actions.push_back(WryAction::RunJs(
+                "document.cookie || '(no cookies for this site)'".into(),
+            ));
+            self.status_message = "Showing cookies...".into();
+            return;
+        }
+        if let Some(domain) = query.strip_prefix("cookies-block ") {
+            let domain = domain.trim();
+            if domain.is_empty() {
+                self.status_message = "Usage: :cookies-block <domain>".into();
+                return;
+            }
+            if let Some(db) = self.db.as_ref() {
+                match crate::db::site_settings::set_site_field(
+                    db,
+                    domain,
+                    "exact",
+                    "cookies",
+                    Some("off"),
+                ) {
+                    Ok(()) => self.status_message = format!("Cookies blocked for {}", domain),
+                    Err(e) => self.status_message = format!("Failed: {}", e),
+                }
+            }
+            return;
+        }
+        if let Some(domain) = query.strip_prefix("cookies-allow ") {
+            let domain = domain.trim();
+            if domain.is_empty() {
+                self.status_message = "Usage: :cookies-allow <domain>".into();
+                return;
+            }
+            if let Some(db) = self.db.as_ref() {
+                match crate::db::site_settings::set_site_field(
+                    db,
+                    domain,
+                    "exact",
+                    "cookies",
+                    Some("on"),
+                ) {
+                    Ok(()) => self.status_message = format!("Cookies allowed for {}", domain),
+                    Err(e) => self.status_message = format!("Failed: {}", e),
+                }
+            }
+            return;
+        }
+
+        // Mute / unmute
+        if query == "mute" {
+            let active_id = self.wm.active_pane_id();
+            self.muted_pane_ids.insert(active_id);
+            self.pending_wry_actions.push_back(WryAction::RunJs(
+                "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = true; el.pause(); });"
+                    .into(),
+            ));
+            self.status_message = "Muted".into();
+            return;
+        }
+        if query == "unmute" {
+            let active_id = self.wm.active_pane_id();
+            self.muted_pane_ids.remove(&active_id);
+            self.pending_wry_actions.push_back(WryAction::RunJs(
+                "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = false; });"
+                    .into(),
+            ));
+            self.status_message = "Unmuted".into();
+            return;
+        }
+
+        // Theme commands
+        if query == "theme" {
+            self.status_message = format!("Theme: {}", self.config.theme);
+            return;
+        }
+        if query == "theme list" {
+            let themes = self.config.available_themes();
+            self.status_message = format!("Themes: {}", themes.join(", "));
+            return;
+        }
+        if let Some(name) = query.strip_prefix("theme ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.status_message = format!("Theme: {}", self.config.theme);
+                return;
+            }
+            if self.config.themes.contains_key(name) {
+                self.config.theme = name.to_string();
+                self.status_message = format!("Theme: {}", name);
+            } else {
+                let available = self.config.available_themes();
+                self.status_message = format!(
+                    "Unknown theme '{}'. Available: {}",
+                    name,
+                    available.join(", ")
+                );
+            }
+            return;
+        }
+
+        // Site settings commands
+        if query == "site-settings" {
+            let active_id = self.wm.active_pane_id();
+            if let Some(engine) = self.engines.get(&active_id)
+                && let Some(url) = engine.current_url()
+            {
+                if let Some(db) = self.db.as_ref() {
+                    match crate::db::site_settings::get_site_settings_for_url(db, url.as_str()) {
+                        Ok(settings) => {
+                            if settings.is_empty() {
+                                self.status_message = "No per-site settings for current URL".into();
+                            } else {
+                                let items: Vec<String> = settings
+                                    .iter()
+                                    .map(|s| {
+                                        let mut parts = vec![format!("{}[{}]", s.pattern, s.pattern_type)];
+                                        if let Some(z) = s.zoom_level {
+                                            parts.push(format!("zoom={}", z));
+                                        }
+                                        if let Some(b) = s.adblock_enabled {
+                                            parts.push(format!("adblock={}", if b { "on" } else { "off" }));
+                                        }
+                                        if let Some(b) = s.javascript_enabled {
+                                            parts.push(format!("js={}", if b { "on" } else { "off" }));
+                                        }
+                                        if let Some(b) = s.cookies_enabled {
+                                            parts.push(format!("cookies={}", if b { "on" } else { "off" }));
+                                        }
+                                        if let Some(b) = s.autoplay_enabled {
+                                            parts.push(format!("autoplay={}", if b { "on" } else { "off" }));
+                                        }
+                                        parts.join(" ")
+                                    })
+                                    .collect();
+                                self.status_message = format!("Site settings: {}", items.join(" | "));
+                            }
+                        }
+                        Err(e) => self.status_message = format!("Error: {}", e),
+                    }
+                }
+            } else {
+                self.status_message = "No active URL".into();
+            }
+            return;
+        }
+        if let Some(rest) = query.strip_prefix("site-settings set ") {
+            let rest = rest.trim();
+            let mut parts = rest.splitn(2, ' ');
+            if let (Some(key), Some(value)) = (parts.next(), parts.next()) {
+                let value = value.trim();
+                let active_id = self.wm.active_pane_id();
+                let host = self
+                    .engines
+                    .get(&active_id)
+                    .and_then(|e| e.current_url())
+                    .and_then(|u| u.host_str())
+                    .map(|h| h.to_lowercase())
+                    .unwrap_or_default();
+
+                if host.is_empty() {
+                    self.status_message = "No active URL for site settings".into();
+                } else if let Some(db) = self.db.as_ref() {
+                    match crate::db::site_settings::set_site_field(db, &host, "exact", key, Some(value)) {
+                        Ok(()) => self.status_message = format!("Set {}={} for {}", key, value, host),
+                        Err(e) => self.status_message = format!("Failed: {}", e),
+                    }
+                }
+            } else {
+                self.status_message = "Usage: :site-settings set <key> <value> (zoom, adblock, js, cookies, autoplay)".into();
+            }
+            return;
+        }
+        if query == "site-settings list" {
+            if let Some(db) = self.db.as_ref() {
+                match crate::db::site_settings::list_site_settings(db) {
+                    Ok(settings) => {
+                        if settings.is_empty() {
+                            self.status_message = "No site settings".into();
+                        } else {
+                            let items: Vec<String> = settings
+                                .iter()
+                                .take(10)
+                                .map(|s| format!("[{}] {} (id:{})", s.pattern_type, s.pattern, s.id))
+                                .collect();
+                            let suffix = if settings.len() > 10 {
+                                format!(" (+{} more)", settings.len() - 10)
+                            } else {
+                                String::new()
+                            };
+                            self.status_message = format!("{}{}", items.join(" | "), suffix);
+                        }
+                    }
+                    Err(e) => self.status_message = format!("Error: {}", e),
+                }
+            }
+            return;
+        }
+        if let Some(id_str) = query.strip_prefix("site-settings delete ") {
+            let id_str = id_str.trim();
+            if let Ok(id) = id_str.parse::<i64>() {
+                if let Some(db) = self.db.as_ref() {
+                    match crate::db::site_settings::delete_site_setting(db, id) {
+                        Ok(true) => self.status_message = format!("Deleted site setting {}", id),
+                        Ok(false) => self.status_message = format!("No site setting with id {}", id),
+                        Err(e) => self.status_message = format!("Failed: {}", e),
+                    }
+                }
+            } else {
+                self.status_message = "Usage: :site-settings delete <id>".into();
+            }
+            return;
+        }
+        if let Some(domain) = query.strip_prefix("site-settings clear ") {
+            let domain = domain.trim();
+            if domain.is_empty() {
+                self.status_message = "Usage: :site-settings clear <domain>".into();
+                return;
+            }
+            if let Some(db) = self.db.as_ref() {
+                match crate::db::site_settings::delete_site_settings_for_domain(db, domain) {
+                    Ok(count) => self.status_message = format!("Cleared {} setting(s) for {}", count, domain),
+                    Err(e) => self.status_message = format!("Failed: {}", e),
+                }
             }
             return;
         }

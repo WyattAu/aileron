@@ -1,6 +1,7 @@
 pub mod bookmarks;
 pub mod downloads;
 pub mod history;
+pub mod site_settings;
 pub mod workspaces;
 
 use anyhow::Result;
@@ -53,7 +54,20 @@ fn init_schema(conn: &Connection) -> Result<()> {
             total_bytes INTEGER NOT NULL DEFAULT 0,
             received_bytes INTEGER NOT NULL DEFAULT 0,
             mime_type TEXT NOT NULL DEFAULT ''
-        );",
+        );
+
+        CREATE TABLE IF NOT EXISTS site_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pattern TEXT NOT NULL,
+            pattern_type TEXT NOT NULL DEFAULT 'exact',
+            zoom_level REAL,
+            adblock_enabled INTEGER,
+            javascript_enabled INTEGER,
+            cookies_enabled INTEGER,
+            autoplay_enabled INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_site_settings_pattern ON site_settings(pattern, pattern_type);",
     )?;
     migrate_downloads_table(conn)?;
     Ok(())

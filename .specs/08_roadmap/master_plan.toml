@@ -740,7 +740,7 @@ prerequisites = ["TASK-I03"]
 outputs = ["site_settings DB table"]
 verification = ["Settings persist per site"]
 estimated_hours = 12
-status = "complete"
+status = "pending"
 
 [[task]]
 id = "TASK-I07"
@@ -769,7 +769,7 @@ prerequisites = []
 outputs = [":print command"]
 verification = ["Current page prints"]
 estimated_hours = 4
-status = "complete"
+status = "pending"
 
 [[task]]
 id = "TASK-I09"
@@ -798,7 +798,7 @@ prerequisites = []
 outputs = ["Popup blocking"]
 verification = ["Unwanted popups blocked"]
 estimated_hours = 4
-status = "complete"
+status = "pending"
 
 [[task]]
 id = "TASK-I11"
@@ -813,7 +813,7 @@ prerequisites = ["TASK-I06"]
 outputs = ["Cookie management"]
 verification = ["Per-site cookie control"]
 estimated_hours = 6
-status = "complete"
+status = "pending"
 
 [[task]]
 id = "TASK-I12"
@@ -828,7 +828,7 @@ prerequisites = []
 outputs = ["Audio indicator in tabs"]
 verification = ["Audio indicator appears; mute works"]
 estimated_hours = 4
-status = "complete"
+status = "pending"
 
 [[task]]
 id = "TASK-I13"
@@ -844,7 +844,7 @@ prerequisites = []
 outputs = ["Theme system"]
 verification = ["Multiple themes switchable"]
 estimated_hours = 8
-status = "complete"
+status = "pending"
 
 [[task]]
 id = "TASK-I14"
