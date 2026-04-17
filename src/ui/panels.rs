@@ -411,6 +411,7 @@ pub fn build_ui(
                             let metrics = CellMetrics::from_egui(ctx, 14.0);
                             let selection = pane.selection();
                             let damage = pane.damage_info();
+                            let bell_flashing = pane.is_bell_flashing();
                             render_terminal(
                                 ui.painter(),
                                 pane.term(),
@@ -419,6 +420,7 @@ pub fn build_ui(
                                 &metrics,
                                 Some(selection),
                                 &damage,
+                                bell_flashing,
                             );
                         } else {
                             ui.painter().rect_filled(screen_rect, 0.0, bg);

@@ -440,7 +440,10 @@ impl BspTree {
             None => return Err("Empty tree".into()),
         };
 
-        let pane = Self::find_pane_by_id(self.root.as_ref().unwrap(), pane_id)
+        let Some(root) = self.root.as_ref() else {
+            return Err("Empty tree".into());
+        };
+        let pane = Self::find_pane_by_id(root, pane_id)
             .ok_or_else(|| format!("Pane not found: {}", &pane_id.to_string()[..8]))?;
 
         self.root = Some(BspNode::Leaf {

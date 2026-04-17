@@ -137,7 +137,8 @@ impl AdBlocker {
                 if let Some(selector) = line.split("##").nth(1)
                     && !selector.is_empty()
                 {
-                    let domain_part = &line[..line.find("##").unwrap()];
+                    let Some(pos) = line.find("##") else { continue; };
+                    let domain_part = &line[..pos];
                     let rule = format!("{} {{ display: none !important; }}", selector);
                     if !domain_part.is_empty() {
                         for domain in domain_part.split(',') {

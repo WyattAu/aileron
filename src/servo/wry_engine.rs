@@ -910,16 +910,19 @@ pub(crate) fn aileron_welcome_page() -> String {
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #141414; color: #aaa; font-family: 'SF Mono', 'Fira Code', monospace;
          display: flex; align-items: center; justify-content: center; height: 100vh; }
-  .container { text-align: center; max-width: 600px; padding: 2em; }
+  .container { text-align: center; max-width: 680px; padding: 2em; }
   h1 { color: #4db4ff; font-size: 2.5em; margin-bottom: 0.3em; letter-spacing: 0.05em; }
-  .subtitle { color: #888; font-size: 1.1em; margin-bottom: 2em; }
+  .subtitle { color: #888; font-size: 1.1em; margin-bottom: 1.5em; }
+  .section-title { color: #4db4ff; font-size: 0.85em; text-transform: uppercase;
+                   letter-spacing: 0.1em; margin: 1em 0 0.4em; border-bottom: 1px solid #2a2a2a;
+                   padding-bottom: 0.3em; }
   .keys { text-align: left; display: inline-block; background: #1a1a1a;
           border-radius: 8px; padding: 1.2em 1.8em; border: 1px solid #2a2a2a; }
-  .key-row { display: flex; justify-content: space-between; padding: 0.3em 0; }
+  .key-row { display: flex; justify-content: space-between; padding: 0.25em 0; }
   .key-row kbd { color: #4db4ff; background: #222; padding: 2px 8px; border-radius: 3px;
                  font-family: inherit; font-size: 0.9em; border: 1px solid #333; }
   .key-row span { color: #888; }
-  .footer { margin-top: 2em; color: #444; font-size: 0.85em; }
+  .footer { margin-top: 1.5em; color: #444; font-size: 0.85em; }
 </style>
 </head>
 <body>
@@ -927,28 +930,64 @@ pub(crate) fn aileron_welcome_page() -> String {
   <h1>Aileron</h1>
   <p class="subtitle">Keyboard-Driven Web Environment</p>
   <div class="keys">
-    <div class="key-row"><span>Navigate</span><kbd>i</kbd></div>
-    <div class="key-row"><span>Command palette</span><kbd>Ctrl+P</kbd></div>
-    <div class="key-row"><span>Split vertical</span><kbd>Ctrl+W</kbd></div>
-    <div class="key-row"><span>Split horizontal</span><kbd>Ctrl+S</kbd></div>
-    <div class="key-row"><span>Switch panes</span><kbd>Ctrl+H/J/K/L</kbd></div>
-    <div class="key-row"><span>Scroll</span><kbd>j</kbd> / <kbd>k</kbd> / <kbd>Ctrl+D</kbd> / <kbd>Ctrl+U</kbd></div>
+    <div class="section-title">Navigation</div>
+    <div class="key-row"><span>Scroll down / up</span><kbd>j</kbd> / <kbd>k</kbd></div>
+    <div class="key-row"><span>Scroll left / right</span><kbd>h</kbd> / <kbd>l</kbd></div>
+    <div class="key-row"><span>Half page down / up</span><kbd>Ctrl+D</kbd> / <kbd>Ctrl+U</kbd></div>
+    <div class="key-row"><span>Top of page</span><kbd>Ctrl+G</kbd></div>
+    <div class="key-row"><span>Bottom of page</span><kbd>G</kbd></div>
     <div class="key-row"><span>Back / Forward</span><kbd>H</kbd> / <kbd>L</kbd></div>
     <div class="key-row"><span>Reload</span><kbd>r</kbd></div>
-    <div class="key-row"><span>Bookmark</span><kbd>Ctrl+B</kbd></div>
-    <div class="key-row"><span>Find</span><kbd>Ctrl+F</kbd></div>
-    <div class="key-row"><span>Link hints</span><kbd>f</kbd></div>
-    <div class="key-row"><span>External browser</span><kbd>Ctrl+E</kbd></div>
-    <div class="key-row"><span>DevTools</span><kbd>F12</kbd></div>
-    <div class="key-row"><span>Password manager</span><kbd>bw-unlock</kbd> / <kbd>bw-search</kbd></div>
+
+    <div class="section-title">Modes</div>
+    <div class="key-row"><span>Enter Insert mode</span><kbd>i</kbd></div>
+    <div class="key-row"><span>Return to Normal mode</span><kbd>Esc</kbd></div>
+    <div class="key-row"><span>Command palette</span><kbd>:</kbd> / <kbd>Ctrl+P</kbd></div>
     <div class="key-row"><span>Open terminal</span><kbd>`</kbd></div>
+
+    <div class="section-title">Tiling</div>
+    <div class="key-row"><span>Split vertical</span><kbd>Ctrl+W</kbd></div>
+    <div class="key-row"><span>Split horizontal</span><kbd>Ctrl+S</kbd></div>
+    <div class="key-row"><span>Switch panes</span><kbd>Ctrl+H</kbd> / <kbd>J</kbd> / <kbd>K</kbd> / <kbd>L</kbd></div>
+    <div class="key-row"><span>Resize panes</span><kbd>Ctrl+Alt+H</kbd> / <kbd>J</kbd> / <kbd>K</kbd> / <kbd>L</kbd></div>
+    <div class="key-row"><span>Close pane</span><kbd>q</kbd></div>
+    <div class="key-row"><span>New tab</span><kbd>Ctrl+T</kbd></div>
+    <div class="key-row"><span>New window</span><kbd>Ctrl+N</kbd></div>
+
+    <div class="section-title">Tools</div>
+    <div class="key-row"><span>DevTools</span><kbd>F12</kbd></div>
+    <div class="key-row"><span>Find in page</span><kbd>Ctrl+F</kbd></div>
+    <div class="key-row"><span>Link hints</span><kbd>f</kbd></div>
+    <div class="key-row"><span>Copy URL</span><kbd>y</kbd></div>
+    <div class="key-row"><span>Reload</span><kbd>r</kbd></div>
+    <div class="key-row"><span>Bookmark</span><kbd>Ctrl+B</kbd></div>
+    <div class="key-row"><span>External browser</span><kbd>Ctrl+E</kbd></div>
+    <div class="key-row"><span>Zoom in / out / reset</span><kbd>Ctrl+=</kbd> / <kbd>-</kbd> / <kbd>0</kbd></div>
+    <div class="key-row"><span>Reader mode</span><kbd>Ctrl+Shift+R</kbd></div>
+    <div class="key-row"><span>Minimal mode</span><kbd>Ctrl+Shift+M</kbd></div>
+    <div class="key-row"><span>Network log</span><kbd>Ctrl+Shift+N</kbd></div>
+    <div class="key-row"><span>Console log</span><kbd>Ctrl+Shift+J</kbd></div>
+    <div class="key-row"><span>Detach pane to window</span><kbd>Ctrl+Shift+D</kbd></div>
+    <div class="key-row"><span>Password manager</span><kbd>bw-unlock</kbd> / <kbd>bw-search</kbd></div>
+    <div class="key-row"><span>Quickmark</span><kbd>:m</kbd><kbd>a</kbd> <kbd>url</kbd> / <kbd>:g</kbd><kbd>a</kbd></div>
+
+    <div class="section-title">Commands (:palette)</div>
+    <div class="key-row"><span>Shell command</span><kbd>:!</kbd> <kbd>cmd</kbd></div>
+    <div class="key-row"><span>Print page</span><kbd>:print</kbd></div>
+    <div class="key-row"><span>Mute / unmute</span><kbd>:mute</kbd> / <kbd>:unmute</kbd></div>
+    <div class="key-row"><span>Theme</span><kbd>:theme</kbd> <kbd>name</kbd></div>
+    <div class="key-row"><span>Site settings</span><kbd>:site-settings</kbd></div>
+    <div class="key-row"><span>PDF export</span><kbd>:pdf</kbd></div>
+    <div class="key-row"><span>Popups</span><kbd>:popups</kbd></div>
+    <div class="key-row"><span>Cookies</span><kbd>:cookies</kbd></div>
     <div class="key-row"><span>File browser</span><kbd>files</kbd> in palette</div>
     <div class="key-row"><span>SSH connect</span><kbd>ssh</kbd> <kbd>host</kbd></div>
-    <div class="key-row"><span>Copy URL</span><kbd>y</kbd></div>
-    <div class="key-row"><span>Zoom in/out</span><kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>-</kbd></div>
-    <div class="key-row"><span>Shell cmd</span><kbd>:!</kbd> <kbd>cmd</kbd></div>
-    <div class="key-row"><span>Resize pane</span><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>H/J/K/L</kbd></div>
-    <div class="key-row"><span>Quickmark</span><kbd>:m</kbd><kbd>a</kbd> <kbd>url</kbd> / <kbd>:g</kbd><kbd>a</kbd></div>
+
+    <div class="section-title">Terminal</div>
+    <div class="key-row"><span>Position cursor</span>click</div>
+    <div class="key-row"><span>Select text</span>drag</div>
+    <div class="key-row"><span>Clear selection</span>right-click</div>
+    <div class="key-row"><span>Paste</span>middle-click</div>
   </div>
   <p class="footer">Type a URL in the command palette and press Enter to navigate. Use <kbd style="color:#4db4ff;background:#222;padding:2px 8px;border-radius:3px;border:1px solid #333">`</kbd> for a terminal, <kbd style="color:#4db4ff;background:#222;padding:2px 8px;border-radius:3px;border:1px solid #333">files</kbd> to browse, or <kbd style="color:#4db4ff;background:#222;padding:2px 8px;border-radius:3px;border:1px solid #333">ssh user@host</kbd> to connect remotely</p>
 </div>

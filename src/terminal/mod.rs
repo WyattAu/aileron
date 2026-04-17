@@ -75,10 +75,33 @@ use crate::terminal::pty::PtyHandle;
 
 /// Event listener for alacritty_terminal.
 /// Routes terminal events (PtyWrite, Title, Bell) back to the PTY or app state.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct TermEventListener {
     pty_write_tx: Arc<Mutex<Vec<u8>>>,
     title_tx: Arc<Mutex<Option<String>>>,
+    bell_flash: Arc<AtomicBool>,
+    bell_flash_time: Arc<Mutex<std::time::Instant>>,
+}
+
+impl TermEventListener {
+    pub fn new() -> Self {
+        Self {
+            pty_write_tx: Arc::new(Mutex::new(Vec::new())),
+            title_tx: Arc::new(Mutex::new(None)),
+            bell_flash: Arc::new(AtomicBool::new(false)),
+            bell_flash_time: Arc::new(Mutex::new(std::time::Instant::now())),
+        }
+    }
+
+    pub fn bell_flash_state(&self) -> (Arc<AtomicBool>, Arc<Mutex<std::time::Instant>>) {
+        (self.bell_flash.clone(), self.bell_flash_time.clone())
+    }
+}
+
+impl Default for TermEventListener {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EventListener for TermEventListener {
@@ -100,7 +123,10 @@ impl EventListener for TermEventListener {
                 }
             }
             Event::Bell => {
-                // TODO: visual bell support
+                self.bell_flash.store(true, Ordering::Relaxed);
+                if let Ok(mut t) = self.bell_flash_time.lock() {
+                    *t = std::time::Instant::now();
+                }
             }
             _ => {
                 // ClipboardStore, ClipboardLoad, etc. — handle later
@@ -159,6 +185,8 @@ pub struct NativeTerminalPane {
     shutdown: Arc<AtomicBool>,
     title: Arc<Mutex<Option<String>>>,
     dirty: Arc<AtomicBool>,
+    bell_flash: Arc<AtomicBool>,
+    bell_flash_time: Arc<Mutex<std::time::Instant>>,
     selection: Selection,
     selecting: bool,
     damage_lines: Vec<(usize, usize, usize)>,
@@ -177,6 +205,8 @@ impl NativeTerminalPane {
         let event_listener = TermEventListener {
             pty_write_tx: pty_write_tx.clone(),
             title_tx: title_tx.clone(),
+            bell_flash: Arc::new(AtomicBool::new(false)),
+            bell_flash_time: Arc::new(Mutex::new(std::time::Instant::now())),
         };
 
         let config = Config {
@@ -188,6 +218,8 @@ impl NativeTerminalPane {
         let term = Term::new(config, &dimensions, event_listener.clone());
         let parser = Processor::new();
 
+        let (bell_flash, bell_flash_time) = event_listener.bell_flash_state();
+
         Ok(Self {
             pty,
             term,
@@ -196,6 +228,8 @@ impl NativeTerminalPane {
             shutdown: Arc::new(AtomicBool::new(false)),
             title: title_tx,
             dirty: Arc::new(AtomicBool::new(true)),
+            bell_flash,
+            bell_flash_time,
             selection: Selection::new(),
             selecting: false,
             damage_lines: Vec::new(),
@@ -388,6 +422,19 @@ impl NativeTerminalPane {
 
     pub fn is_selecting(&self) -> bool {
         self.selecting
+    }
+
+    pub fn is_bell_flashing(&self) -> bool {
+        if !self.bell_flash.load(Ordering::Relaxed) {
+            return false;
+        }
+        let elapsed = self.bell_flash_time.lock().unwrap().elapsed();
+        if elapsed > std::time::Duration::from_millis(200) {
+            self.bell_flash.store(false, Ordering::Relaxed);
+            false
+        } else {
+            true
+        }
     }
 
     pub fn pixel_to_grid(

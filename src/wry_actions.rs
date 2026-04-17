@@ -514,16 +514,15 @@ pub fn process_wry_action(
             }
         }
         crate::app::WryAction::SaveConfig => {
-            match crate::config::Config::save(&app_state.as_ref().unwrap().config) {
+            let Some(app_state) = app_state.as_mut() else {
+                return Err("No app state for SaveConfig".into());
+            };
+            match crate::config::Config::save(&app_state.config) {
                 Ok(()) => {
-                    if let Some(app_state) = app_state {
-                        app_state.status_message = "Config saved".into();
-                    }
+                    app_state.status_message = "Config saved".into();
                 }
                 Err(e) => {
-                    if let Some(app_state) = app_state {
-                        app_state.status_message = format!("Save failed: {}", e);
-                    }
+                    app_state.status_message = format!("Save failed: {}", e);
                 }
             }
         }

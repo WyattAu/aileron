@@ -10,6 +10,7 @@ use alacritty_terminal::vte::ansi::{Color, NamedColor};
 use super::grid::{CellMetrics, TerminalColors};
 use super::DamageInfo;
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_terminal(
     painter: &egui::Painter,
     term: &alacritty_terminal::term::Term<super::TermEventListener>,
@@ -18,6 +19,7 @@ pub fn render_terminal(
     metrics: &CellMetrics,
     selection: Option<&super::Selection>,
     damage: &DamageInfo,
+    bell_flashing: bool,
 ) {
     if !damage.full && damage.lines.is_empty() {
         return;
@@ -68,6 +70,10 @@ pub fn render_terminal(
 
     draw_cursor(painter, term, screen_rect, metrics, colors, display_offset);
     draw_selection(painter, term, screen_rect, metrics, selection, cols, screen_lines);
+
+    if bell_flashing {
+        painter.rect_filled(screen_rect, 0.0, egui::Color32::from_rgba_premultiplied(255, 255, 255, 30));
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
