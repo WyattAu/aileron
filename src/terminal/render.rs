@@ -8,8 +8,8 @@ use alacritty_terminal::term::cell::Cell;
 use alacritty_terminal::vte::ansi::{Color, NamedColor};
 
 use super::grid::{CellMetrics, TerminalColors};
+use super::DamageInfo;
 
-/// Render the terminal grid into an egui area.
 pub fn render_terminal(
     painter: &egui::Painter,
     term: &alacritty_terminal::term::Term<super::TermEventListener>,
@@ -17,29 +17,82 @@ pub fn render_terminal(
     colors: &TerminalColors,
     metrics: &CellMetrics,
     selection: Option<&super::Selection>,
+    damage: &DamageInfo,
 ) {
-    // Fill background
+    if !damage.full && damage.lines.is_empty() {
+        return;
+    }
+
     painter.rect_filled(screen_rect, 0.0, colors.background);
 
     let cols = term.columns();
     let screen_lines = term.screen_lines();
     let display_offset = term.grid().display_offset();
-
     let font_id = egui::FontId::monospace(metrics.font_size);
 
-    // Iterate visible lines
-    for row in 0..screen_lines {
+    if damage.full {
+        render_cells(
+            painter,
+            term,
+            screen_rect,
+            colors,
+            metrics,
+            display_offset,
+            &font_id,
+            0..screen_lines,
+            0..cols,
+        );
+    } else {
+        for &(line, left, right) in damage.lines {
+            if line < display_offset {
+                continue;
+            }
+            let viewport_row = line - display_offset;
+            if viewport_row >= screen_lines {
+                continue;
+            }
+            let col_end = (right + 1).min(cols);
+            render_cells(
+                painter,
+                term,
+                screen_rect,
+                colors,
+                metrics,
+                display_offset,
+                &font_id,
+                viewport_row..viewport_row + 1,
+                left..col_end,
+            );
+        }
+    }
+
+    draw_cursor(painter, term, screen_rect, metrics, colors, display_offset);
+    draw_selection(painter, term, screen_rect, metrics, selection, cols, screen_lines);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_cells(
+    painter: &egui::Painter,
+    term: &alacritty_terminal::term::Term<super::TermEventListener>,
+    screen_rect: egui::Rect,
+    colors: &TerminalColors,
+    metrics: &CellMetrics,
+    display_offset: usize,
+    font_id: &egui::FontId,
+    rows: std::ops::Range<usize>,
+    cols_range: std::ops::Range<usize>,
+) {
+    for row in rows {
         let grid_line_i32 = (display_offset + row) as i32;
         let y = screen_rect.min.y + row as f32 * metrics.cell_height;
 
-        for col in 0..cols {
+        for col in cols_range.clone() {
             let cell = &term.grid()[Line(grid_line_i32)][Column(col)];
             let fg_color = resolve_fg_color(cell, colors);
             let bg_color = resolve_bg_color(cell, colors);
 
             let x = screen_rect.min.x + col as f32 * metrics.cell_width;
 
-            // Draw cell background if different from default
             if bg_color != colors.background {
                 let cell_rect = egui::Rect::from_min_size(
                     egui::pos2(x, y),
@@ -48,12 +101,9 @@ pub fn render_terminal(
                 painter.rect_filled(cell_rect, 0.0, bg_color);
             }
 
-            // Draw the character (skip empty cells)
             if cell.c != ' ' && cell.c != '\0' {
                 let text_pos = egui::pos2(x, y + (metrics.cell_height - metrics.font_size) * 0.5);
-
                 let text_color = apply_cell_flags(fg_color, cell.flags);
-
                 painter.text(
                     text_pos,
                     egui::Align2::LEFT_TOP,
@@ -64,19 +114,26 @@ pub fn render_terminal(
             }
         }
     }
+}
 
-    // Draw cursor (bar style)
+fn draw_cursor(
+    painter: &egui::Painter,
+    term: &alacritty_terminal::term::Term<super::TermEventListener>,
+    screen_rect: egui::Rect,
+    metrics: &CellMetrics,
+    colors: &TerminalColors,
+    display_offset: usize,
+) {
     let cursor_point = term.grid().cursor.point;
     let cursor_line = cursor_point.line.0;
     let cursor_col = cursor_point.column.0;
+    let screen_lines = term.screen_lines();
 
-    if cursor_line >= display_offset as i32 && cursor_line < (display_offset + screen_lines) as i32
-    {
+    if cursor_line >= display_offset as i32 && cursor_line < (display_offset + screen_lines) as i32 {
         let visible_row = (cursor_line - display_offset as i32) as usize;
         let cursor_x = screen_rect.min.x + cursor_col as f32 * metrics.cell_width;
         let cursor_y = screen_rect.min.y + visible_row as f32 * metrics.cell_height;
 
-        // Bar cursor: thin vertical line
         painter.rect_filled(
             egui::Rect::from_min_size(
                 egui::pos2(cursor_x, cursor_y),
@@ -86,45 +143,54 @@ pub fn render_terminal(
             colors.cursor,
         );
     }
+}
 
-    // Draw selection overlay
+fn draw_selection(
+    painter: &egui::Painter,
+    term: &alacritty_terminal::term::Term<super::TermEventListener>,
+    screen_rect: egui::Rect,
+    metrics: &CellMetrics,
+    selection: Option<&super::Selection>,
+    cols: usize,
+    screen_lines: usize,
+) {
     if let Some(sel) = selection
         && sel.active
     {
-            let ((start_line, start_col), (end_line, end_col)) = sel.normalized();
-            let display_offset = term.grid().display_offset() as i32;
+        let ((start_line, start_col), (end_line, end_col)) = sel.normalized();
+        let display_offset = term.grid().display_offset() as i32;
 
-            for grid_line in start_line..=end_line {
-                let screen_row = (grid_line - display_offset) as isize;
-                if screen_row < 0 || screen_row as usize >= screen_lines {
-                    continue;
-                }
-
-                let row_start = if grid_line == start_line {
-                    start_col
-                } else {
-                    0
-                };
-                let row_end = if grid_line == end_line {
-                    end_col
-                } else {
-                    cols.saturating_sub(1)
-                };
-
-                for col in row_start..=row_end {
-                    let x = screen_rect.min.x + col as f32 * metrics.cell_width;
-                    let y = screen_rect.min.y + screen_row as f32 * metrics.cell_height;
-                    let cell_rect = egui::Rect::from_min_size(
-                        egui::pos2(x, y),
-                        egui::vec2(metrics.cell_width, metrics.cell_height),
-                    );
-                    painter.rect_filled(
-                        cell_rect,
-                        0.0,
-                        egui::Color32::from_rgba_premultiplied(77, 180, 255, 60),
-                    );
-                }
+        for grid_line in start_line..=end_line {
+            let screen_row = (grid_line - display_offset) as isize;
+            if screen_row < 0 || screen_row as usize >= screen_lines {
+                continue;
             }
+
+            let row_start = if grid_line == start_line {
+                start_col
+            } else {
+                0
+            };
+            let row_end = if grid_line == end_line {
+                end_col
+            } else {
+                cols.saturating_sub(1)
+            };
+
+            for col in row_start..=row_end {
+                let x = screen_rect.min.x + col as f32 * metrics.cell_width;
+                let y = screen_rect.min.y + screen_row as f32 * metrics.cell_height;
+                let cell_rect = egui::Rect::from_min_size(
+                    egui::pos2(x, y),
+                    egui::vec2(metrics.cell_width, metrics.cell_height),
+                );
+                painter.rect_filled(
+                    cell_rect,
+                    0.0,
+                    egui::Color32::from_rgba_premultiplied(77, 180, 255, 60),
+                );
+            }
+        }
     }
 }
 

@@ -410,6 +410,7 @@ pub fn build_ui(
                             let colors = TerminalColors::default();
                             let metrics = CellMetrics::from_egui(ctx, 14.0);
                             let selection = pane.selection();
+                            let damage = pane.damage_info();
                             render_terminal(
                                 ui.painter(),
                                 pane.term(),
@@ -417,6 +418,7 @@ pub fn build_ui(
                                 &colors,
                                 &metrics,
                                 Some(selection),
+                                &damage,
                             );
                         } else {
                             ui.painter().rect_filled(screen_rect, 0.0, bg);

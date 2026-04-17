@@ -18,6 +18,13 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use alacritty_terminal::term::TermDamage;
+
+pub struct DamageInfo<'a> {
+    pub full: bool,
+    pub lines: &'a [(usize, usize, usize)],
+}
+
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line};
@@ -154,6 +161,8 @@ pub struct NativeTerminalPane {
     dirty: Arc<AtomicBool>,
     selection: Selection,
     selecting: bool,
+    damage_lines: Vec<(usize, usize, usize)>,
+    damage_full: bool,
 }
 
 impl NativeTerminalPane {
@@ -189,6 +198,8 @@ impl NativeTerminalPane {
             dirty: Arc::new(AtomicBool::new(true)),
             selection: Selection::new(),
             selecting: false,
+            damage_lines: Vec::new(),
+            damage_full: true,
         })
     }
 
@@ -221,6 +232,9 @@ impl NativeTerminalPane {
         // Feed bytes through VTE parser → Term state machine
         self.parser.advance(&mut self.term, &bytes);
 
+        self.collect_damage();
+        self.term.reset_damage();
+
         // Drain any PtyWrite responses (e.g., device attribute replies)
         let pty_write = {
             let mut buf = self.event_listener.pty_write_tx.lock().unwrap();
@@ -244,12 +258,37 @@ impl NativeTerminalPane {
         self.dirty.store(false, Ordering::Relaxed);
     }
 
+    fn collect_damage(&mut self) {
+        self.damage_lines.clear();
+        self.damage_full = false;
+        match self.term.damage() {
+            TermDamage::Full => {
+                self.damage_full = true;
+            }
+            TermDamage::Partial(iter) => {
+                for bounds in iter {
+                    self.damage_lines
+                        .push((bounds.line, bounds.left, bounds.right));
+                }
+            }
+        }
+    }
+
+    pub fn damage_info(&self) -> DamageInfo<'_> {
+        DamageInfo {
+            full: self.damage_full,
+            lines: &self.damage_lines,
+        }
+    }
+
     /// Resize the terminal grid and PTY.
     pub fn resize(&mut self, cols: u16, rows: u16) {
         let dimensions = TermDimensions::new(cols, rows, 10_000);
         self.term.resize(dimensions);
         self.pty.resize(cols, rows);
         self.dirty.store(true, Ordering::Relaxed);
+        self.damage_full = true;
+        self.damage_lines.clear();
     }
 
     /// Get the terminal title (if set by the child process).
@@ -281,6 +320,8 @@ impl NativeTerminalPane {
     pub fn scroll(&mut self, delta: i32) {
         self.term.grid_mut().scroll_display(Scroll::Delta(delta));
         self.dirty.store(true, Ordering::Relaxed);
+        self.damage_full = true;
+        self.damage_lines.clear();
     }
 
     /// Get the current scrollback offset (0 = bottom of screen).
