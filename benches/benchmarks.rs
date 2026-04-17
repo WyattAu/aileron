@@ -8,6 +8,11 @@ criterion_group!(
     bench_fuzzy_search,
     bench_pane_state,
     bench_dispatch,
+    bench_filter_list_parsing,
+    bench_site_settings_url_matching,
+    bench_content_script_matching,
+    bench_adblock_domain_check,
+    bench_dispatch_with_selection,
 );
 
 fn bench_bsp_tree_operations(c: &mut Criterion) {
@@ -146,3 +151,95 @@ fn bench_dispatch(c: &mut Criterion) {
 }
 
 criterion_main!(benches);
+
+fn bench_filter_list_parsing(c: &mut Criterion) {
+    let easylist_sample = r#"
+! Title: EasyList
+! Last modified: 2026-04-17
+||ads.example.com^
+||tracker.example.com^$third-party
+##.ad-banner
+@@||safe.example.com^
+example.com##.sponsored
+*.cdn.example.com^$image
+"#;
+
+    c.bench_function("filter_list_parse_easylist", |b| {
+        b.iter(|| {
+            let _list = aileron::net::filter_list::FilterList::parse(easylist_sample);
+        });
+    });
+}
+
+fn bench_site_settings_url_matching(c: &mut Criterion) {
+    c.bench_function("site_settings_url_match_exact", |b| {
+        b.iter(|| {
+            aileron::db::site_settings::url_matches_pattern(
+                "https://github.com/user/repo",
+                "github.com",
+                "exact",
+            );
+        });
+    });
+
+    c.bench_function("site_settings_url_match_wildcard", |b| {
+        b.iter(|| {
+            aileron::db::site_settings::url_matches_pattern(
+                "https://api.github.com/v1/users",
+                "*.github.com",
+                "wildcard",
+            );
+        });
+    });
+
+    c.bench_function("site_settings_url_match_regex", |b| {
+        b.iter(|| {
+            aileron::db::site_settings::url_matches_pattern(
+                "https://github.com/user/repo/issues/42",
+                r#"github\.com"#,
+                "regex",
+            );
+        });
+    });
+}
+
+fn bench_content_script_matching(c: &mut Criterion) {
+    let mut manager = aileron::scripts::ContentScriptManager::new();
+    for i in 0..100 {
+        manager.add_script(aileron::scripts::ContentScript {
+            name: format!("script_{}", i),
+            match_patterns: vec![format!("https://*.example{}.com/*", i)],
+            grants: vec![],
+            js_code: "console.log('bench')".into(),
+            enabled: true,
+            run_at: aileron::scripts::RunAt::DocumentIdle,
+            match_regex: None,
+        });
+    }
+
+    c.bench_function("content_script_match_100_scripts", |b| {
+        b.iter(|| {
+            manager.scripts_for_url(
+                "https://api.example50.com/path",
+                aileron::scripts::RunAt::DocumentIdle,
+            );
+        });
+    });
+}
+
+fn bench_adblock_domain_check(c: &mut Criterion) {
+    let mut adblocker = aileron::net::AdBlocker::new();
+
+    c.bench_function("adblock_check_allowed", |b| {
+        let url = url::Url::parse("https://github.com").unwrap();
+        b.iter(|| adblocker.should_block(&url));
+    });
+}
+
+fn bench_dispatch_with_selection(c: &mut Criterion) {
+    use aileron::input::Action;
+
+    c.bench_function("dispatch_print_action", |b| {
+        b.iter(|| aileron::app::dispatch::dispatch_action(&Action::Print));
+    });
+}

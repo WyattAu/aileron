@@ -2,6 +2,55 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.3.0 (2026-04-17)
+
+### Native Terminal (Phase G)
+- Native Rust terminal using alacritty_terminal + portable_pty
+- ~1-2ms keystroke latency, ~2-5MB per pane
+- 256-color ANSI, mouse selection, clipboard copy
+- Dirty-region rendering optimization
+
+### Architecture B (Phase F)
+- Offscreen webview rendering via GTK OffscreenWindow
+- CPU readback → wgpu texture → egui Image widget
+- 7 critical/medium bug fixes
+
+### Privacy & Security (Phase I.1)
+- Hardened ad blocking with EasyList parser
+- HTTPS upgrade + tracking protection
+- DNT/GPC headers, referrer policy
+
+### Settings & UI (Phase I.2)
+- Settings GUI (aileron://settings)
+- Download manager with progress
+- Browser import (Firefox/Chrome)
+- Session auto-complete with crash recovery
+
+### Per-Site & Advanced (Phase I.3-I.4)
+- Per-site settings (zoom, adblock, JS, cookies, autoplay)
+- Print support (:print)
+- Popup blocker
+- Cookie management
+- Tab audio mute
+- Theme system (7 built-in themes + custom TOML)
+- Enhanced content scripts (@run-at, @match-regexp)
+
+### Password Manager (Phase I.3)
+- Login form auto-detection
+- URL-based credential search
+- :bw-autofill and :bw-detect commands
+
+### PDF Viewer
+- :pdf command for system PDF viewer
+
+### New Commands
+`:print`, `:pdf`, `:settings`, `:import-firefox`, `:import-chrome`, `:mute`, `:unmute`, `:popup-block`, `:cookies-manage`, `:site-settings`, `:theme`, `:bw-autofill`, `:bw-detect`, `:https-upgrade`, `:tracking-protect`
+
+### Stats
+- 426 total tests (386 lib + 26 integration + 13 startup + 1 offscreen)
+- 16,423 lines of Rust
+- Zero clippy warnings
+
 ## v0.2.0 (2026-04-15)
 
 ### Architecture

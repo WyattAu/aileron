@@ -207,6 +207,10 @@ impl ContentScriptManager {
         true
     }
 
+    pub fn add_script(&mut self, script: ContentScript) {
+        self.scripts.push(script);
+    }
+
     pub fn all_scripts(&self) -> &[ContentScript] {
         &self.scripts
     }

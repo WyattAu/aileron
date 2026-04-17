@@ -258,6 +258,33 @@ pub fn list_site_settings(conn: &Connection) -> Result<Vec<SiteSettings>> {
     Ok(settings)
 }
 
+/// Check if a URL matches a pattern of the given type.
+pub fn url_matches_pattern(url: &str, pattern: &str, pattern_type: &str) -> bool {
+    let host = extract_host(url);
+    match pattern_type {
+        "exact" => host == pattern,
+        "wildcard" => {
+            let sql_pattern = pattern.replace('*', "%");
+            host == pattern || pattern_like_match(&host, &sql_pattern)
+        }
+        "regex" => regex::Regex::new(pattern)
+            .map(|re| re.is_match(&host))
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
+fn pattern_like_match(host: &str, sql_pattern: &str) -> bool {
+    if sql_pattern.contains('%') {
+        let parts: Vec<&str> = sql_pattern.split('%').collect();
+        parts.iter().all(|p| p.is_empty() || host.contains(p))
+            && host.starts_with(parts.first().unwrap_or(&""))
+            && host.ends_with(parts.last().unwrap_or(&""))
+    } else {
+        host == sql_pattern
+    }
+}
+
 /// Extract the host from a URL string.
 fn extract_host(url: &str) -> String {
     url::Url::parse(url)
