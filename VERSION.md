@@ -27,16 +27,32 @@
 | M | Complete | Daily Driver Minimum: find-in-page, URL bar editing, download handler, link hints |
 | J.0 | Complete | Polish: nucleo search, smooth scroll, tab pinning, visual bell, Servo stub |
 
-## Benchmark Results
-| Benchmark | Time |
-|-----------|------|
-| bsp_create | ~1.5 µs |
-| bsp_split_vertical | ~3 µs |
-| bsp_split_horizontal | ~3 µs |
-| fuzzy_search_short | ~15 µs |
-| fuzzy_search_long | ~25 µs |
-| pane_state_create | ~5 µs |
-| dispatch_all_actions | ~2 µs |
+## Benchmark Results (criterion --quick)
+| Benchmark | Time | Notes |
+|-----------|------|-------|
+| bsp_create | 137 ns | BSP tree creation |
+| bsp_split_vertical | 406 ns | Vertical pane split |
+| bsp_split_horizontal | 331 ns | Horizontal pane split |
+| bsp_navigate_4pane_grid | 61 ns | 4-pane grid iteration |
+| bsp_close | 890 ns | Pane close (cleanup) |
+| bsp_resize | 60 ns | Pane resize |
+| fuzzy_search_short | 42 µs | Nucleo pattern match (100 items) |
+| fuzzy_search_long | 132 µs | Nucleo pattern match (100 items) |
+| fuzzy_search_no_match | 18 µs | Nucleo no-match (100 items) |
+| pane_state_create | 1.38 µs | Pane state creation |
+| pane_state_navigate | 98 ns | Pane URL navigation |
+| dispatch_all_actions | 524 ns | Dispatch 10 actions |
+| filter_list_parse_easylist | 1.17 µs | EasyList filter parse |
+| site_settings_url_match_exact | 673 ns | Exact URL pattern match |
+| site_settings_url_match_wildcard | 495 ns | Wildcard pattern match |
+| site_settings_url_match_regex | 8.36 µs | Regex URL pattern match |
+| content_script_match_100 | 19 µs | 100 scripts URL match |
+| adblock_check_allowed | 53 ns | Domain block check |
+| dispatch_print_action | 14 ns | Single action dispatch |
+
+## Binary Size
+- **Release binary:** 24 MB (stripped)
+- **Target architecture:** x86_64 Linux
 
 ## Key Discoveries
 1. wry cannot render to wgpu texture — always paints to its own native surface
