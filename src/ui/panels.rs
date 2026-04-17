@@ -409,12 +409,14 @@ pub fn build_ui(
                         if let Some(pane) = terminal_manager.get(id) {
                             let colors = TerminalColors::default();
                             let metrics = CellMetrics::from_egui(ctx, 14.0);
+                            let selection = pane.selection();
                             render_terminal(
                                 ui.painter(),
                                 pane.term(),
                                 screen_rect,
                                 &colors,
                                 &metrics,
+                                Some(selection),
                             );
                         } else {
                             ui.painter().rect_filled(screen_rect, 0.0, bg);

@@ -20,10 +20,49 @@ use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::{Dimensions, Scroll};
+use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::{Config, Term};
 use alacritty_terminal::vte::ansi::Processor;
 use tracing::{info, warn};
 use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Selection {
+    pub start: (i32, usize),
+    pub end: (i32, usize),
+    pub active: bool,
+}
+
+impl Selection {
+    pub fn new() -> Self {
+        Self {
+            start: (0, 0),
+            end: (0, 0),
+            active: false,
+        }
+    }
+
+    pub fn normalized(&self) -> ((i32, usize), (i32, usize)) {
+        if !self.active {
+            return ((0, 0), (0, 0));
+        }
+        if (self.start.0, self.start.1) <= (self.end.0, self.end.1) {
+            (self.start, self.end)
+        } else {
+            (self.end, self.start)
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.active = false;
+    }
+}
+
+impl Default for Selection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 use crate::terminal::pty::PtyHandle;
 
@@ -113,6 +152,8 @@ pub struct NativeTerminalPane {
     shutdown: Arc<AtomicBool>,
     title: Arc<Mutex<Option<String>>>,
     dirty: Arc<AtomicBool>,
+    selection: Selection,
+    selecting: bool,
 }
 
 impl NativeTerminalPane {
@@ -146,6 +187,8 @@ impl NativeTerminalPane {
             shutdown: Arc::new(AtomicBool::new(false)),
             title: title_tx,
             dirty: Arc::new(AtomicBool::new(true)),
+            selection: Selection::new(),
+            selecting: false,
         })
     }
 
@@ -243,6 +286,82 @@ impl NativeTerminalPane {
     /// Get the current scrollback offset (0 = bottom of screen).
     pub fn scroll_offset(&self) -> usize {
         self.term.grid().display_offset()
+    }
+
+    pub fn start_selection(&mut self, line: i32, col: usize) {
+        self.selection.start = (line, col);
+        self.selection.end = (line, col);
+        self.selection.active = true;
+        self.selecting = true;
+    }
+
+    pub fn extend_selection(&mut self, line: i32, col: usize) {
+        if self.selecting {
+            self.selection.end = (line, col);
+        }
+    }
+
+    pub fn end_selection(&mut self) {
+        self.selecting = false;
+    }
+
+    pub fn selection_text(&self) -> Option<String> {
+        if !self.selection.active {
+            return None;
+        }
+        let ((start_line, start_col), (end_line, end_col)) = self.selection.normalized();
+        let mut text = String::new();
+        let cols = self.term.columns();
+        for line in start_line..=end_line {
+            let row_start = if line == start_line { start_col } else { 0 };
+            let row_end = if line == end_line {
+                end_col.min(cols.saturating_sub(1))
+            } else {
+                cols.saturating_sub(1)
+            };
+            for col in row_start..=row_end {
+                let cell = &self.term.grid()[Line(line)][Column(col)];
+                if cell.c != '\0' {
+                    text.push(cell.c);
+                }
+            }
+            if line < end_line {
+                text.push('\n');
+            }
+        }
+        if text.is_empty() {
+            None
+        } else {
+            Some(text.trim_end().to_string())
+        }
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selection.clear();
+        self.selecting = false;
+    }
+
+    pub fn selection(&self) -> &Selection {
+        &self.selection
+    }
+
+    pub fn is_selecting(&self) -> bool {
+        self.selecting
+    }
+
+    pub fn pixel_to_grid(
+        &self,
+        pixel_x: f32,
+        pixel_y: f32,
+        cell_width: f32,
+        cell_height: f32,
+    ) -> (i32, usize) {
+        let col = (pixel_x / cell_width).floor().max(0.0) as usize;
+        let row = (pixel_y / cell_height).floor().max(0.0) as usize;
+        let display_offset = self.term.grid().display_offset() as i32;
+        let grid_line = display_offset + row as i32;
+        let clamped_col = col.min(self.term.columns().saturating_sub(1));
+        (grid_line, clamped_col)
     }
 }
 
@@ -401,5 +520,64 @@ mod tests {
         assert_eq!(dims.screen_lines(), 24);
         assert_eq!(dims.total_lines(), 10_024);
         assert_eq!(dims.history_size(), 10_000);
+    }
+
+    #[test]
+    fn test_selection_normalized_forward() {
+        let sel = Selection {
+            start: (2, 5),
+            end: (4, 10),
+            active: true,
+        };
+        let (top, bottom) = sel.normalized();
+        assert_eq!(top, (2, 5));
+        assert_eq!(bottom, (4, 10));
+    }
+
+    #[test]
+    fn test_selection_normalized_backward() {
+        let sel = Selection {
+            start: (4, 10),
+            end: (2, 5),
+            active: true,
+        };
+        let (top, bottom) = sel.normalized();
+        assert_eq!(top, (2, 5));
+        assert_eq!(bottom, (4, 10));
+    }
+
+    #[test]
+    fn test_selection_normalized_inactive() {
+        let sel = Selection {
+            start: (4, 10),
+            end: (2, 5),
+            active: false,
+        };
+        let (top, bottom) = sel.normalized();
+        assert_eq!(top, (0, 0));
+        assert_eq!(bottom, (0, 0));
+    }
+
+    #[test]
+    fn test_selection_clear() {
+        let mut sel = Selection {
+            start: (1, 2),
+            end: (3, 4),
+            active: true,
+        };
+        sel.clear();
+        assert!(!sel.active);
+    }
+
+    #[test]
+    fn test_selection_same_point() {
+        let sel = Selection {
+            start: (5, 10),
+            end: (5, 10),
+            active: true,
+        };
+        let (top, bottom) = sel.normalized();
+        assert_eq!(top, (5, 10));
+        assert_eq!(bottom, (5, 10));
     }
 }

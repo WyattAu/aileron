@@ -1054,53 +1054,118 @@ impl ApplicationHandler for AileronApp {
                 {
                     self.offscreen_mouse_pressed = *state == winit::event::ElementState::Pressed;
 
-                    let forward_info = (|| {
-                        let ws = self.egui_winit.as_ref()?;
-                        let ctx = ws.egui_ctx();
-                        let pos = ctx.pointer_latest_pos()?;
-                        let active_id = app_state.wm.active_pane_id();
-                        let panes = app_state.wm.panes();
-                        let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                        let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
-                        let top_offset = URL_BAR_HEIGHT as f32;
-                        let sidebar_offset =
-                            if app_state.config.tab_layout == "sidebar"
-                                && !app_state.config.tab_sidebar_right
-                            {
-                                app_state.config.tab_sidebar_width
-                            } else {
-                                0.0
-                            };
-                        let local_x = pos.x - rect.x as f32 - sidebar_offset;
-                        let local_y = pos.y - rect.y as f32 - top_offset;
-                        if local_x >= 0.0 && local_y >= 0.0 && local_x < pw as f32 && local_y < ph as f32 {
-                            let event_type = match state {
-                                winit::event::ElementState::Pressed => "mousedown",
-                                winit::event::ElementState::Released => "mouseup",
-                            };
-                            let btn = match button {
-                                winit::event::MouseButton::Left => "0",
-                                winit::event::MouseButton::Middle => "1",
-                                winit::event::MouseButton::Right => "2",
-                                winit::event::MouseButton::Back => "3",
-                                winit::event::MouseButton::Forward => "4",
-                                _ => "0",
-                            };
-                            Some((active_id, event_type, local_x as f64, local_y as f64, btn))
-                        } else {
-                            None
-                        }
-                    })();
+                    let active_id = app_state.wm.active_pane_id();
 
-                    if let Some((active_id, event_type, local_x, local_y, btn)) = forward_info {
-                        let mods = aileron::offscreen_webview::modifiers_js(
-                            self.modifiers.ctrl,
-                            self.modifiers.alt,
-                            self.modifiers.shift,
-                            self.modifiers.super_key,
-                        );
-                        if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                            pane.forward_mouse_event(event_type, local_x, local_y, btn, &mods);
+                    if self.terminal_manager.is_terminal(&active_id) {
+                        let terminal_info = (|| {
+                            let ws = self.egui_winit.as_ref()?;
+                            let ctx = ws.egui_ctx();
+                            let pos = ctx.pointer_latest_pos()?;
+                            let panes = app_state.wm.panes();
+                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
+                            let top_offset = URL_BAR_HEIGHT as f32;
+                            let sidebar_offset =
+                                if app_state.config.tab_layout == "sidebar"
+                                    && !app_state.config.tab_sidebar_right
+                                {
+                                    app_state.config.tab_sidebar_width
+                                } else {
+                                    0.0
+                                };
+                            let local_x = pos.x - rect.x as f32 - sidebar_offset;
+                            let local_y = pos.y - rect.y as f32 - top_offset;
+                            if local_x >= 0.0 && local_y >= 0.0 {
+                                Some((local_x, local_y))
+                            } else {
+                                None
+                            }
+                        })();
+
+                        if let Some((local_x, local_y)) = terminal_info {
+                            use aileron::terminal::grid::CellMetrics;
+                            if let Some(ws) = self.egui_winit.as_ref() {
+                                let metrics = CellMetrics::from_egui(ws.egui_ctx(), 14.0);
+                                if let Some(pane) = self.terminal_manager.get_mut(&active_id) {
+                                    let (line, col) = pane.pixel_to_grid(
+                                        local_x,
+                                        local_y,
+                                        metrics.cell_width,
+                                        metrics.cell_height,
+                                    );
+                                    match (state, button) {
+                                        (winit::event::ElementState::Pressed, winit::event::MouseButton::Left) => {
+                                            pane.start_selection(line, col);
+                                        }
+                                        (winit::event::ElementState::Released, winit::event::MouseButton::Left) => {
+                                            pane.end_selection();
+                                            if let Some(text) = pane.selection_text() {
+                                                ws.egui_ctx()
+                                            .copy_text(text);
+                                            }
+                                        }
+                                        (winit::event::ElementState::Pressed, winit::event::MouseButton::Right) => {
+                                            pane.clear_selection();
+                                        }
+                                        (winit::event::ElementState::Pressed, winit::event::MouseButton::Middle) => {
+                                            if let Some(pane_ref) = self.terminal_manager.get(&active_id)
+                                                && let Some(text) = pane_ref.selection_text()
+                                            {
+                                                self.terminal_manager.write_input(&active_id, &text);
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        let forward_info = (|| {
+                            let ws = self.egui_winit.as_ref()?;
+                            let ctx = ws.egui_ctx();
+                            let pos = ctx.pointer_latest_pos()?;
+                            let panes = app_state.wm.panes();
+                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
+                            let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
+                            let top_offset = URL_BAR_HEIGHT as f32;
+                            let sidebar_offset =
+                                if app_state.config.tab_layout == "sidebar"
+                                    && !app_state.config.tab_sidebar_right
+                                {
+                                    app_state.config.tab_sidebar_width
+                                } else {
+                                    0.0
+                                };
+                            let local_x = pos.x - rect.x as f32 - sidebar_offset;
+                            let local_y = pos.y - rect.y as f32 - top_offset;
+                            if local_x >= 0.0 && local_y >= 0.0 && local_x < pw as f32 && local_y < ph as f32 {
+                                let event_type = match state {
+                                    winit::event::ElementState::Pressed => "mousedown",
+                                    winit::event::ElementState::Released => "mouseup",
+                                };
+                                let btn = match button {
+                                    winit::event::MouseButton::Left => "0",
+                                    winit::event::MouseButton::Middle => "1",
+                                    winit::event::MouseButton::Right => "2",
+                                    winit::event::MouseButton::Back => "3",
+                                    winit::event::MouseButton::Forward => "4",
+                                    _ => "0",
+                                };
+                                Some((event_type, local_x as f64, local_y as f64, btn))
+                            } else {
+                                None
+                            }
+                        })();
+
+                        if let Some((event_type, local_x, local_y, btn)) = forward_info {
+                            let mods = aileron::offscreen_webview::modifiers_js(
+                                self.modifiers.ctrl,
+                                self.modifiers.alt,
+                                self.modifiers.shift,
+                                self.modifiers.super_key,
+                            );
+                            if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                                pane.forward_mouse_event(event_type, local_x, local_y, btn, &mods);
+                            }
                         }
                     }
                 }
@@ -1116,32 +1181,72 @@ impl ApplicationHandler for AileronApp {
                     if let Some(app_state) = &self.app_state
                         && app_state.mode == aileron::input::Mode::Insert
                     {
-                        let forward_info = (|| {
-                            let active_id = app_state.wm.active_pane_id();
-                            let panes = app_state.wm.panes();
-                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
-                            let top_offset = URL_BAR_HEIGHT as f32;
-                            let sidebar_offset =
-                                if app_state.config.tab_layout == "sidebar"
-                                    && !app_state.config.tab_sidebar_right
-                                {
-                                    app_state.config.tab_sidebar_width
-                                } else {
-                                    0.0
-                                };
-                            let local_x = logical_pos.x - rect.x as f32 - sidebar_offset;
-                            let local_y = logical_pos.y - rect.y as f32 - top_offset;
-                            if local_x >= 0.0 && local_y >= 0.0 && local_x < pw as f32 && local_y < ph as f32 {
-                                Some((active_id, local_x as f64, local_y as f64))
-                            } else {
-                                None
-                            }
-                        })();
+                        let active_id = app_state.wm.active_pane_id();
 
-                        if let Some((active_id, local_x, local_y)) = forward_info {
-                            let is_web_pane = !self.terminal_manager.is_terminal(&active_id);
-                            if self.offscreen_mouse_pressed || is_web_pane {
+                        if self.terminal_manager.is_terminal(&active_id) {
+                            let terminal_info = (|| {
+                                let panes = app_state.wm.panes();
+                                let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
+                                let top_offset = URL_BAR_HEIGHT as f32;
+                                let sidebar_offset =
+                                    if app_state.config.tab_layout == "sidebar"
+                                        && !app_state.config.tab_sidebar_right
+                                    {
+                                        app_state.config.tab_sidebar_width
+                                    } else {
+                                        0.0
+                                    };
+                                let local_x = logical_pos.x - rect.x as f32 - sidebar_offset;
+                                let local_y = logical_pos.y - rect.y as f32 - top_offset;
+                                if local_x >= 0.0 && local_y >= 0.0 {
+                                    Some((local_x, local_y))
+                                } else {
+                                    None
+                                }
+                            })();
+
+                            if let Some((local_x, local_y)) = terminal_info {
+                                use aileron::terminal::grid::CellMetrics;
+                                if let Some(ws) = self.egui_winit.as_ref()
+                                    && let Some(pane) = self.terminal_manager.get_mut(&active_id)
+                                    && pane.is_selecting()
+                                {
+                                    let metrics = CellMetrics::from_egui(ws.egui_ctx(), 14.0);
+                                    let (line, col) = pane.pixel_to_grid(
+                                        local_x,
+                                        local_y,
+                                        metrics.cell_width,
+                                        metrics.cell_height,
+                                    );
+                                    pane.extend_selection(line, col);
+                                }
+                            }
+                        } else {
+                            let forward_info = (|| {
+                                let panes = app_state.wm.panes();
+                                let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
+                                let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
+                                let top_offset = URL_BAR_HEIGHT as f32;
+                                let sidebar_offset =
+                                    if app_state.config.tab_layout == "sidebar"
+                                        && !app_state.config.tab_sidebar_right
+                                    {
+                                        app_state.config.tab_sidebar_width
+                                    } else {
+                                        0.0
+                                    };
+                                let local_x = logical_pos.x - rect.x as f32 - sidebar_offset;
+                                let local_y = logical_pos.y - rect.y as f32 - top_offset;
+                                if local_x >= 0.0 && local_y >= 0.0 && local_x < pw as f32 && local_y < ph as f32 {
+                                    Some((local_x as f64, local_y as f64))
+                                } else {
+                                    None
+                                }
+                            })();
+
+                            if let Some((local_x, local_y)) = forward_info
+                                && self.offscreen_mouse_pressed
+                            {
                                 let mods = aileron::offscreen_webview::modifiers_js(
                                     self.modifiers.ctrl,
                                     self.modifiers.alt,

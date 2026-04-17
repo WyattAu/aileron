@@ -16,6 +16,7 @@ pub fn render_terminal(
     screen_rect: egui::Rect,
     colors: &TerminalColors,
     metrics: &CellMetrics,
+    selection: Option<&super::Selection>,
 ) {
     // Fill background
     painter.rect_filled(screen_rect, 0.0, colors.background);
@@ -84,6 +85,46 @@ pub fn render_terminal(
             0.0,
             colors.cursor,
         );
+    }
+
+    // Draw selection overlay
+    if let Some(sel) = selection
+        && sel.active
+    {
+            let ((start_line, start_col), (end_line, end_col)) = sel.normalized();
+            let display_offset = term.grid().display_offset() as i32;
+
+            for grid_line in start_line..=end_line {
+                let screen_row = (grid_line - display_offset) as isize;
+                if screen_row < 0 || screen_row as usize >= screen_lines {
+                    continue;
+                }
+
+                let row_start = if grid_line == start_line {
+                    start_col
+                } else {
+                    0
+                };
+                let row_end = if grid_line == end_line {
+                    end_col
+                } else {
+                    cols.saturating_sub(1)
+                };
+
+                for col in row_start..=row_end {
+                    let x = screen_rect.min.x + col as f32 * metrics.cell_width;
+                    let y = screen_rect.min.y + screen_row as f32 * metrics.cell_height;
+                    let cell_rect = egui::Rect::from_min_size(
+                        egui::pos2(x, y),
+                        egui::vec2(metrics.cell_width, metrics.cell_height),
+                    );
+                    painter.rect_filled(
+                        cell_rect,
+                        0.0,
+                        egui::Color32::from_rgba_premultiplied(77, 180, 255, 60),
+                    );
+                }
+            }
     }
 }
 
