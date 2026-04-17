@@ -1,14 +1,13 @@
 //! Workspace restore logic — rebuild panes from saved workspace data.
 
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::collections::HashSet;
 
 use tracing::{info, warn};
 use url::Url;
 
 use crate::db::workspaces;
 use crate::servo::PaneStateManager;
-use crate::terminal::TerminalManager;
+use crate::terminal::NativeTerminalManager;
 use crate::wm::{BspTree, Rect};
 
 pub struct RestoreResult {
@@ -31,8 +30,7 @@ pub fn restore_workspace(
     terminal_pane_ids: &mut HashSet<uuid::Uuid>,
     engines: &mut PaneStateManager,
     wm: &mut BspTree,
-    terminal_input_tx: &Arc<Mutex<HashMap<uuid::Uuid, std::sync::mpsc::Sender<String>>>>,
-    terminal_manager: &mut TerminalManager,
+    terminal_manager: &mut NativeTerminalManager,
 ) -> RestoreOutcome {
     let load_result = db.and_then(|conn| workspaces::load_workspace(conn, workspace_name).ok());
 
@@ -42,10 +40,9 @@ pub fn restore_workspace(
         None => return RestoreOutcome::NoDatabase,
     };
 
-    for tid in terminal_manager.terminal_pane_ids() {
+    for tid in terminal_manager.pane_ids() {
         terminal_manager.remove(&tid);
     }
-    terminal_input_tx.lock().unwrap().clear();
 
     for pid in engines.pane_ids() {
         engines.remove_pane(&pid);

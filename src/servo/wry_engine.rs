@@ -18,7 +18,7 @@
 #[cfg(target_os = "linux")]
 use gtk::prelude::{ContainerExt, GtkWindowExt, WidgetExt};
 use std::collections::HashMap;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::mpsc;
 use tracing::{info, warn};
 use url::Url;
 use uuid::Uuid;
@@ -27,9 +27,6 @@ use wry::raw_window_handle::HasWindowHandle;
 #[cfg(target_os = "linux")]
 use wry::WebViewBuilderExtUnix;
 use wry::{PageLoadEvent, Rect, WebView, WebViewBuilder};
-
-type TerminalInputMap = Arc<Mutex<HashMap<Uuid, mpsc::Sender<String>>>>;
-type TerminalResizeTx = mpsc::Sender<(Uuid, u16, u16)>;
 
 /// Whether the webview is embedded as a child or in a standalone GTK window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +74,10 @@ pub enum WryEvent {
     DownloadStarted { pane_id: Uuid, url: String, filename: String },
     /// Request to open a file (from file browser).
     OpenFile { path: String },
+    /// HTTP URL was upgraded to HTTPS.
+    HttpsUpgraded { pane_id: Uuid, from: String, to: String },
+    /// IPC message from a webview page.
+    IpcMessage { pane_id: Uuid, message: String },
 }
 
 impl WryPane {
@@ -95,8 +96,6 @@ impl WryPane {
         initial_url: Url,
         bounds: Rect,
         blocked_domains: Vec<String>,
-        terminal_input_tx: TerminalInputMap,
-        terminal_resize_tx: TerminalResizeTx,
     ) -> Result<Self, wry::Error>
     where
         W: HasWindowHandle,
@@ -107,7 +106,7 @@ impl WryPane {
 
         // === Path 1: Try build_as_child (X11) ===
         // Builder is built inline so event_tx isn't lost if this path fails.
-        match Self::make_builder(&url_str, pid, event_tx.clone(), blocked_domains.clone(), terminal_input_tx.clone(), terminal_resize_tx.clone())
+        match Self::make_builder(&url_str, pid, event_tx.clone(), blocked_domains.clone())
             .with_bounds(bounds)
             .build_as_child(parent)
         {
@@ -142,7 +141,7 @@ impl WryPane {
         // === Path 2: GTK window fallback (Wayland) ===
         #[cfg(target_os = "linux")]
         {
-            Self::create_gtk_pane(pid, initial_url, bounds, event_tx, event_rx, terminal_input_tx, terminal_resize_tx)
+            Self::create_gtk_pane(pid, initial_url, bounds, event_tx, event_rx)
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -162,8 +161,6 @@ impl WryPane {
         bounds: Rect,
         event_tx: mpsc::Sender<WryEvent>,
         event_rx: mpsc::Receiver<WryEvent>,
-        terminal_input_tx: TerminalInputMap,
-        terminal_resize_tx: TerminalResizeTx,
     ) -> Result<Self, wry::Error> {
         let url_str = initial_url.as_str().to_string();
 
@@ -188,7 +185,7 @@ impl WryPane {
         gtk_window.set_child(Some(&fixed));
 
         // Build the webview inside the GTK container using the SAME event_tx
-        let builder = Self::make_builder(&url_str, pane_id, event_tx, Vec::new(), terminal_input_tx, terminal_resize_tx);
+        let builder = Self::make_builder(&url_str, pane_id, event_tx, Vec::new());
 
         let webview = builder.build_gtk(&fixed)?;
 
@@ -219,15 +216,38 @@ impl WryPane {
         pid: Uuid,
         event_tx: mpsc::Sender<WryEvent>,
         blocked_domains: Vec<String>,
-        terminal_input_tx: TerminalInputMap,
-        terminal_resize_tx: TerminalResizeTx,
     ) -> WebViewBuilder<'static> {
-        // Devtools: enabled in debug builds by default, can be overridden via config
+        Self::make_builder_with_privacy(url_str, pid, event_tx, blocked_domains, true, true)
+    }
+
+    /// Build a WebViewBuilder with common configuration and privacy settings.
+    /// The event_tx is moved into the builder's closures.
+    pub(crate) fn make_builder_with_privacy(
+        url_str: &str,
+        pid: Uuid,
+        event_tx: mpsc::Sender<WryEvent>,
+        blocked_domains: Vec<String>,
+        https_upgrade_enabled: bool,
+        tracking_protection_enabled: bool,
+    ) -> WebViewBuilder<'static> {
+        let https_safe_list = if https_upgrade_enabled {
+            crate::net::privacy::load_https_safe_list()
+        } else {
+            std::collections::HashSet::new()
+        };
+        let https_upgrade = https_upgrade_enabled;
+
+        let upgrade_tx = event_tx.clone();
+
+        let privacy_script =
+            crate::net::privacy::privacy_initialization_script(tracking_protection_enabled);
+
         let devtools = cfg!(debug_assertions);
 
         WebViewBuilder::new()
             .with_url(url_str)
             .with_devtools(devtools)
+            .with_initialization_script(&privacy_script)
             // Custom protocol for aileron:// internal pages
             .with_custom_protocol("aileron".into(), {
                 let open_tx = event_tx.clone();
@@ -236,7 +256,7 @@ impl WryPane {
                     let path = req.uri().path().trim_start_matches('/');
                     let html = match path {
                         "new" => aileron_new_tab_page(),
-                        "terminal" => crate::terminal::terminal_html(),
+                        "terminal" => r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Terminal</title><style>body{background:#141414;color:#4db4ff;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}</style></head><body><p>Native terminal active</p></body></html>"#.into(),
                         "open" => {
                             if let Some(query) = req.uri().query()
                                 && let Some(path_param) = query.split('&')
@@ -272,6 +292,7 @@ a {{ color: #4db4ff; }}
                                 html_escape(&msg)
                             )
                         }
+                        "settings" => aileron_settings_page(),
                         _ => aileron_welcome_page(), // "welcome" and anything else
                     };
                     wry::http::Response::builder()
@@ -280,45 +301,46 @@ a {{ color: #4db4ff; }}
                         .unwrap()
                 }
             })
-            // IPC handler for terminal input from JS
             .with_ipc_handler({
-                let input_map = terminal_input_tx;
-                let resize_tx = terminal_resize_tx;
-                move |message: wry::http::Request<String>| {
-                    let body = message.into_body();
-                    if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&body) {
-                        let msg_type = msg.get("t").and_then(|v| v.as_str()).unwrap_or("");
-                        match msg_type {
-                            "i" => {
-                                if let Some(data) = msg.get("d").and_then(|v| v.as_str())
-                                    && let Ok(map) = input_map.lock()
-                                    && let Some(tx) = map.get(&pid)
-                                {
-                                    let _ = tx.send(data.to_string());
-                                }
-                            }
-                            "r" => {
-                                if let (Some(rows), Some(cols)) = (
-                                    msg.get("rows").and_then(|v| v.as_u64()),
-                                    msg.get("cols").and_then(|v| v.as_u64()),
-                                ) {
-                                    let _ = resize_tx.send((pid, cols as u16, rows as u16));
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
+                let ipc_tx = event_tx.clone();
+                let ipc_pid = pid;
+                move |req: wry::http::Request<String>| {
+                    let _ = ipc_tx.send(WryEvent::IpcMessage {
+                        pane_id: ipc_pid,
+                        message: req.into_body(),
+                    });
                 }
             })
-            // Block navigation to ad/tracker URLs
+            // Block navigation to ad/tracker URLs and upgrade HTTP to HTTPS
             .with_navigation_handler(move |url: String| {
                 if let Ok(parsed) = url::Url::parse(&url)
                     && let Some(host) = parsed.host_str() {
                         let host_lower = host.to_lowercase();
-                        return !blocked_domains.iter().any(|d: &String| {
+
+                        if blocked_domains.iter().any(|d: &String| {
                             let d_lower = d.to_lowercase();
                             host_lower == d_lower || host_lower.ends_with(&format!(".{}", d_lower))
-                        });
+                        }) {
+                            return false;
+                        }
+
+                        if https_upgrade
+                            && parsed.scheme() == "http"
+                            && crate::net::privacy::is_https_safe(host, &https_safe_list)
+                        {
+                            if let Some(https_url) =
+                                crate::net::privacy::should_upgrade_to_https(
+                                    &url, &https_safe_list,
+                                )
+                            {
+                                let _ = upgrade_tx.send(WryEvent::HttpsUpgraded {
+                                    pane_id: pid,
+                                    from: url,
+                                    to: https_url,
+                                });
+                            }
+                            return false;
+                        }
                     }
                 true
             })
@@ -495,6 +517,12 @@ a {{ color: #4db4ff; }}
                         win.set_title(&format!("Aileron - {}", title));
                     }
                 }
+                WryEvent::HttpsUpgraded { to, .. } => {
+                    if let Ok(https_url) = Url::parse(to) {
+                        self.url = https_url;
+                        let _ = self.webview.load_url(to);
+                    }
+                }
                 _ => {}
             }
             events.push(event);
@@ -594,7 +622,6 @@ impl WryPaneManager {
     }
 
     /// Create a new WryPane. Tries X11 child first, falls back to GTK window.
-    #[allow(clippy::too_many_arguments)]
     pub fn create_pane<W>(
         &mut self,
         parent: &W,
@@ -602,13 +629,11 @@ impl WryPaneManager {
         initial_url: Url,
         bounds: Rect,
         blocked_domains: Vec<String>,
-        terminal_input_tx: TerminalInputMap,
-        terminal_resize_tx: TerminalResizeTx,
     ) -> Result<(), wry::Error>
     where
         W: HasWindowHandle,
     {
-        let pane = WryPane::new(parent, pane_id, initial_url, bounds, blocked_domains, terminal_input_tx, terminal_resize_tx)?;
+        let pane = WryPane::new(parent, pane_id, initial_url, bounds, blocked_domains)?;
         self.panes.insert(pane_id, pane);
         Ok(())
     }
@@ -710,6 +735,12 @@ impl Default for WryPaneManager {
 }
 
 /// Convert a BSP Rect (f64) to a wry Rect for positioning a child window.
+///
+/// The top offset uses `status_bar_height` (the status bar sits at the very top
+/// of the window). The URL bar is rendered below the status bar by egui, so
+/// it is accounted for by reducing the available height — not by shifting the
+/// y position. Both `status_bar_height` and `url_bar_height` happen to be 32.0
+/// in the current UI, but they represent distinct UI elements.
 pub fn bsp_rect_to_wry_rect(
     rect: &crate::wm::Rect,
     status_bar_height: f64,
@@ -869,7 +900,7 @@ pub const SCROLL_RESTORE_JS: &str = r#"
 // ─── Internal page HTML generators ───────────────────────────────────
 
 /// Welcome page shown at `aileron://welcome` (default homepage).
-fn aileron_welcome_page() -> String {
+pub(crate) fn aileron_welcome_page() -> String {
     r#"<!DOCTYPE html>
 <html>
 <head>
@@ -926,7 +957,7 @@ fn aileron_welcome_page() -> String {
 }
 
 /// New tab page shown at `aileron://new`.
-fn aileron_new_tab_page() -> String {
+pub(crate) fn aileron_new_tab_page() -> String {
     r#"<!DOCTYPE html>
 <html>
 <head>
@@ -1008,7 +1039,7 @@ pub fn percent_encode_path(s: &str) -> String {
     out
 }
 
-fn percent_decode(s: &str) -> String {
+pub(crate) fn percent_decode(s: &str) -> String {
     let mut result = Vec::new();
     let bytes = s.as_bytes();
     let mut i = 0;
@@ -1041,7 +1072,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-fn html_escape(s: &str) -> String {
+pub(crate) fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -1087,7 +1118,7 @@ fn file_browser_error_page(path: &str, error: &str) -> String {
     )
 }
 
-fn file_browser_page(uri: &wry::http::Uri) -> String {
+pub(crate) fn file_browser_page(uri: &wry::http::Uri) -> String {
     use std::path::Path;
 
     let dir_path = uri
@@ -1290,6 +1321,163 @@ fn file_browser_page(uri: &wry::http::Uri) -> String {
         breadcrumb_html,
         rows_html
     )
+}
+
+pub(crate) fn aileron_settings_page() -> String {
+    r#"<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Aileron Settings</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: 'SF Mono', 'Fira Code', monospace; padding: 2em; max-width: 700px; }
+  h1 { color: #4db4ff; margin-bottom: 0.5em; font-size: 1.8em; }
+  .subtitle { color: #666; margin-bottom: 1.5em; font-size: 0.85em; }
+  h2 { color: #4db4ff; margin: 1.5em 0 0.5em; font-size: 1.1em; border-bottom: 1px solid #333; padding-bottom: 0.3em; }
+  .field { margin: 0.6em 0; }
+  label { display: block; margin-bottom: 0.2em; color: #999; font-size: 0.85em; }
+  input[type="text"], input[type="url"], select {
+    background: #16213e; border: 1px solid #333; color: #e0e0e0;
+    padding: 7px 10px; font-family: inherit; font-size: 13px;
+    width: 100%; max-width: 480px; border-radius: 4px; outline: none;
+  }
+  input:focus, select:focus { border-color: #4db4ff; }
+  .toggle-row { display: flex; align-items: center; margin: 0.5em 0; gap: 8px; }
+  .toggle-row label { margin: 0; color: #e0e0e0; font-size: 0.95em; cursor: pointer; }
+  button {
+    background: #4db4ff; color: #000; border: none; padding: 9px 22px;
+    font-family: inherit; font-size: 13px; font-weight: bold;
+    border-radius: 4px; cursor: pointer; margin-top: 1.2em;
+  }
+  button:hover { background: #3a9fe0; }
+  button:focus { outline: 2px solid #4db4ff; outline-offset: 2px; }
+  #status { color: #888; margin-top: 0.6em; font-size: 0.85em; min-height: 1.2em; }
+  #status.ok { color: #4caf50; }
+</style>
+</head>
+<body>
+<h1>Settings</h1>
+<p class="subtitle">aileron://settings</p>
+
+<h2>General</h2>
+<div class="field">
+  <label for="homepage">Homepage URL</label>
+  <input type="url" id="homepage" tabindex="1" />
+</div>
+<div class="field">
+  <label for="search_engine">Search Engine</label>
+  <select id="search_engine" tabindex="2">
+    <option value="https://duckduckgo.com/?q={query}">DuckDuckGo</option>
+    <option value="https://www.google.com/search?q={query}">Google</option>
+  </select>
+</div>
+<div class="toggle-row">
+  <input type="checkbox" id="restore_session" tabindex="3" />
+  <label for="restore_session">Restore previous session on startup</label>
+</div>
+
+<h2>Appearance</h2>
+<div class="field">
+  <label for="tab_layout">Tab Layout</label>
+  <select id="tab_layout" tabindex="4">
+    <option value="sidebar">Sidebar</option>
+    <option value="topbar">Top Bar</option>
+    <option value="none">None</option>
+  </select>
+</div>
+<div class="field">
+  <label for="tab_sidebar_width">Sidebar Width (px)</label>
+  <input type="text" id="tab_sidebar_width" tabindex="5" />
+</div>
+<div class="toggle-row">
+  <input type="checkbox" id="tab_sidebar_right" tabindex="6" />
+  <label for="tab_sidebar_right">Sidebar on right</label>
+</div>
+
+<h2>Privacy</h2>
+<div class="toggle-row">
+  <input type="checkbox" id="adblock_enabled" tabindex="7" />
+  <label for="adblock_enabled">Block ads</label>
+</div>
+<div class="toggle-row">
+  <input type="checkbox" id="https_upgrade_enabled" tabindex="8" />
+  <label for="https_upgrade_enabled">Automatic HTTPS upgrade</label>
+</div>
+<div class="toggle-row">
+  <input type="checkbox" id="tracking_protection_enabled" tabindex="9" />
+  <label for="tracking_protection_enabled">Tracking protection</label>
+</div>
+
+<h2>Advanced</h2>
+<div class="toggle-row">
+  <input type="checkbox" id="devtools" tabindex="10" />
+  <label for="devtools">Enable DevTools</label>
+</div>
+<div class="field">
+  <label for="proxy">Proxy URL</label>
+  <input type="text" id="proxy" tabindex="11" placeholder="socks5://127.0.0.1:1080" />
+</div>
+<div class="field">
+  <label for="custom_css">Custom CSS Path</label>
+  <input type="text" id="custom_css" tabindex="12" placeholder="/path/to/custom.css" />
+</div>
+
+<button id="save-btn" tabindex="13">Save Settings</button>
+<div id="status"></div>
+
+<script>
+(function() {
+  window._onConfigLoaded = function(cfg) {
+    document.getElementById('homepage').value = cfg.homepage || '';
+    document.getElementById('search_engine').value = cfg.search_engine || '';
+    document.getElementById('restore_session').checked = !!cfg.restore_session;
+    document.getElementById('tab_layout').value = cfg.tab_layout || 'sidebar';
+    document.getElementById('tab_sidebar_width').value = cfg.tab_sidebar_width || 180;
+    document.getElementById('tab_sidebar_right').checked = !!cfg.tab_sidebar_right;
+    document.getElementById('adblock_enabled').checked = !!cfg.adblock_enabled;
+    document.getElementById('https_upgrade_enabled').checked = !!cfg.https_upgrade_enabled;
+    document.getElementById('tracking_protection_enabled').checked = !!cfg.tracking_protection_enabled;
+    document.getElementById('devtools').checked = !!cfg.devtools;
+    document.getElementById('proxy').value = cfg.proxy || '';
+    document.getElementById('custom_css').value = cfg.custom_css || '';
+  };
+  window._onConfigSaved = function() {
+    var s = document.getElementById('status');
+    s.textContent = 'Settings saved';
+    s.className = 'ok';
+    setTimeout(function() { s.textContent = ''; s.className = ''; }, 3000);
+  };
+  function collectConfig() {
+    return {
+      homepage: document.getElementById('homepage').value,
+      search_engine: document.getElementById('search_engine').value,
+      restore_session: document.getElementById('restore_session').checked,
+      tab_layout: document.getElementById('tab_layout').value,
+      tab_sidebar_width: parseFloat(document.getElementById('tab_sidebar_width').value) || 180,
+      tab_sidebar_right: document.getElementById('tab_sidebar_right').checked,
+      adblock_enabled: document.getElementById('adblock_enabled').checked,
+      https_upgrade_enabled: document.getElementById('https_upgrade_enabled').checked,
+      tracking_protection_enabled: document.getElementById('tracking_protection_enabled').checked,
+      devtools: document.getElementById('devtools').checked,
+      proxy: document.getElementById('proxy').value || null,
+      custom_css: document.getElementById('custom_css').value || null
+    };
+  }
+  document.getElementById('save-btn').addEventListener('click', function() {
+    window.ipc.postMessage(JSON.stringify({t:'set-config', config: collectConfig()}));
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') {
+      e.preventDefault();
+      document.getElementById('save-btn').click();
+    }
+  });
+  window.ipc.postMessage(JSON.stringify({t:'get-config'}));
+})();
+</script>
+</body>
+</html>"#.to_string()
 }
 
 #[cfg(test)]

@@ -1,340 +1,862 @@
 # Master Execution Plan
-# Topologically sorted build tasks for Aileron V1.0 MVP
+# Topologically sorted build tasks for Aileron
 # Generated: 2026-04-11
+# Updated: 2026-04-17 (Native terminal + bug fixes)
 
 [metadata]
-version = "1.0.0"
-total_tasks = 24
-estimated_weeks = 12
+version = "3.0.0"
+total_tasks = 24 + 18 + 8 + 7 = 57
+estimated_weeks = "12 (original) + 4-5 (Architecture B) + 1 (Native Terminal) + 1 (Bug Fixes)"
 
 # ============================================================
-# PHASE A: Hello World Compositor (Weeks 1-2)
+# PHASE A-E: Original MVP (ALL COMPLETE)
 # ============================================================
+# TASK-001 through TASK-024: completed 2026-04-11
+# See git history for details.
+# All original phases (A: Compositor, B: Tiling, C: History,
+# D: Extensibility, E: Killer Features) are shipped in v0.2.0.
+
+# ============================================================
+# PHASE F: Architecture B — Offscreen Webview Migration
+# ============================================================
+# Replaces visible wry windows (XWayland hacks) with offscreen
+# rendering via gtk::OffscreenWindow → pixel capture → wgpu
+# texture → egui Image widget. See ADR-003 for full context.
+#
+# Texture sharing research (2026-04-16):
+# - GL context sharing: BLOCKED (NVIDIA EGL on Wayland broken)
+# - DMA-BUF import: BLOCKED (WebKitGTK has no texture export API)
+# - CPU readback: ADEQUATE (~5-8ms/pane at 1080p, within 30fps budget)
+# - BGRA→RGBA conversion: KEEP (egui is RGBA-only, <1ms, not a bottleneck)
+# - Long-term fix: Servo ADR-002 (Oct 2026) renders to wgpu texture directly
+#
+# IME research (2026-04-16):
+# - OffscreenWindow cannot receive native IME (no wl_surface)
+# - JS synthetic composition events are ignored by WebKitGTK
+# - Hybrid approach: Ime::Commit → JS execCommand, Ime::Preedit → egui status bar
+# - Candidate popup positioned via window.set_ime_cursor_area()
+
+# --- Phase F.1: Foundation (wiring + visibility) ---
 
 [[task]]
-id = "TASK-001"
-title = "Project scaffolding: module structure"
-phase = "A"
-week = 1
+id = "TASK-F01"
+title = "Add render_mode config flag"
+phase = "F"
+subphase = "F.1"
 priority = "critical"
-description = "Create src/ module structure: main.rs, gfx/, wm/, input/, servo/, mcp/, lua/, db/"
+description = """Add `render_mode` field to Config struct: "native" (default, current XWayland behavior) or "offscreen" (Architecture B path).
+When "native": create_wry_pane_for() uses WryPaneManager as today.
+When "offscreen": create_wry_pane_for() creates OffscreenWebView panes, displays textures in egui."""
 prerequisites = []
-outputs = ["src/lib.rs", "src/gfx/mod.rs", "src/wm/mod.rs", "src/input/mod.rs"]
-verification = ["cargo check passes", "All modules declared"]
+outputs = ["src/config.rs updated", "config.toml.example updated"]
+verification = ["Config parses render_mode field", "Default is 'native'", "Clippy clean", "Tests pass"]
+estimated_hours = 1
+cpr = "None"
+
+[[task]]
+id = "TASK-F02"
+title = "Wire up full wry builder in OffscreenWebView"
+phase = "F"
+subphase = "F.1"
+priority = "critical"
+description = """Replicate WryPane::make_builder() configuration in OffscreenWebView::new():
+- Custom protocol handler (aileron:// pages: new, terminal, files, error, welcome, open)
+- IPC handler (terminal input from JS: 'i' type, terminal resize: 'r' type)
+- Navigation handler (ad-block domain filtering)
+- Page load handler (LoadStarted, LoadComplete events)
+- Title change handler
+- Download started handler (save to ~/Downloads/)
+- Devtools (from config or debug_assertions)"""
+prerequisites = ["TASK-F01"]
+outputs = ["src/offscreen_webview.rs updated"]
+verification = ["Clippy clean", "Tests pass", "aileron://new page loads", "IPC messages forwarded", "Navigation blocked for ad domains"]
+estimated_hours = 4
+cpr = "CPR: IPC handler Fn closure lifetime (known pattern, use Arc<Mutex>)"
+
+[[task]]
+id = "TASK-F03"
+title = "Add event channel to OffscreenWebView"
+phase = "F"
+subphase = "F.1"
+priority = "critical"
+description = """Add mpsc channel for WryEvent (LoadStarted, LoadComplete, TitleChanged, DownloadStarted, OpenFile).
+OffscreenWebView stores event_rx, callers can poll/drain events each frame.
+WryPaneManager equivalent: iter_panes_mut() for event polling."""
+prerequisites = ["TASK-F02"]
+outputs = ["src/offscreen_webview.rs updated"]
+verification = ["Events flow from wry callbacks through channel", "Clippy clean"]
 estimated_hours = 2
 cpr = "None"
 
 [[task]]
-id = "TASK-002"
-title = "winit window creation with wgpu surface"
-phase = "A"
-week = 1
+id = "TASK-F04"
+title = "Display webview textures as egui::Image in CentralPanel"
+phase = "F"
+subphase = "F.1"
 priority = "critical"
-description = "Create winit event loop, initialize wgpu device/queue/surface"
-prerequisites = ["TASK-001"]
-outputs = ["src/gfx/state.rs", "src/main.rs updated"]
-verification = ["Window opens on Wayland", "wgpu surface created", "No panic on resize"]
-estimated_hours = 8
-cpr = "CPR-002: wgpu version compat"
-
-[[task]]
-id = "TASK-003"
-title = "egui-wgpu-winit integration"
-phase = "A"
-week = 1
-priority = "critical"
-description = "Integrate egui with wgpu and winit; render a basic egui window"
-prerequisites = ["TASK-002"]
-outputs = ["src/gfx/egui_renderer.rs"]
-verification = ["egui window renders", "FPS counter visible", "Mouse interaction works"]
-estimated_hours = 6
+description = """Modify src/ui/panels.rs CentralPanel to:
+- For each pane that has a webview_texture in AileronApp.webview_textures:
+  - Draw an egui::Image widget sized to the BSP rect
+  - Show active pane border highlight
+- For panes without textures (loading, error): show placeholder
+- Access webview_textures HashMap from panels.rs (pass as parameter)"""
+prerequisites = ["TASK-F03"]
+outputs = ["src/ui/panels.rs updated"]
+verification = ["Webview content visible as egui Image", "Correct sizing per BSP rect", "Active pane highlighted", "Clippy clean"]
+estimated_hours = 3
 cpr = "None"
 
 [[task]]
-id = "TASK-004"
-title = "Servo Embedder API initialization"
-phase = "A"
-week = 2
+id = "TASK-F05"
+title = "Wire create_wry_pane_for() for offscreen mode"
+phase = "F"
+subphase = "F.1"
 priority = "critical"
-description = "Implement Servo Embedder traits; initialize SpiderMonkey on background thread"
-prerequisites = ["TASK-001"]
-outputs = ["src/servo/mod.rs", "src/servo/embedder.rs"]
-verification = ["Servo initializes without panic", "Background thread starts"]
-estimated_hours = 16
-cpr = "CPR-001: Servo Embedder API stability"
-
-[[task]]
-id = "TASK-005"
-title = "Servo renders to off-screen wgpu texture"
-phase = "A"
-week = 2
-priority = "critical"
-description = "Configure Servo to render web content into a wgpu::Texture"
-prerequisites = ["TASK-002", "TASK-004"]
-outputs = ["src/gfx/texture.rs"]
-verification = ["Servo renders google.com to texture", "Texture format correct"]
-estimated_hours = 12
-cpr = "CPR-003: GPU texture sharing"
-
-[[task]]
-id = "TASK-006"
-title = "Compositor: blit Servo texture into egui"
-phase = "A"
-week = 2
-priority = "critical"
-description = "Register Servo texture with egui; render in egui::Image; composite frame"
-prerequisites = ["TASK-003", "TASK-005"]
-outputs = ["src/gfx/compositor.rs"]
-verification = ["Web page visible in egui window", "Mouse clicks pass through to Servo", "AC-GFX-002"]
-estimated_hours = 12
-cpr = "CPR-003: GPU texture sharing"
-
-# ============================================================
-# PHASE B: Modality & Tiling (Weeks 3-4)
-# ============================================================
-
-[[task]]
-id = "TASK-007"
-title = "BSP tree data structure"
-phase = "B"
-week = 3
-priority = "critical"
-description = "Implement BspNode, split, close, resize, navigate operations"
-prerequisites = ["TASK-001"]
-outputs = ["src/wm/tree.rs", "src/wm/rect.rs", "src/wm/navigation.rs"]
-verification = ["All BSP test vectors pass (TV-BSP-001 to TV-BSP-008)", "THM-BSP-001, THM-BSP-002 verified"]
-estimated_hours = 10
-cpr = "None"
-
-[[task]]
-id = "TASK-008"
-title = "Modal state machine (Normal/Insert/Command)"
-phase = "B"
-week = 3
-priority = "critical"
-description = "Implement Mode enum, transition function, event routing"
-prerequisites = ["TASK-001"]
-outputs = ["src/input/mode.rs", "src/input/router.rs"]
-verification = ["All mode test vectors pass (TV-MODE-001 to TV-MODE-008)", "THM-MODE-001, THM-MODE-002 verified"]
-estimated_hours = 6
-cpr = "None"
-
-[[task]]
-id = "TASK-009"
-title = "Keybinding registry"
-phase = "B"
-week = 3
-priority = "high"
-description = "Implement KeyCombo, KeybindingRegistry with HashMap"
-prerequisites = ["TASK-008"]
-outputs = ["src/input/keybindings.rs"]
-verification = ["Default keybindings work", "Custom keybindings register", "Lookup < 0.1ms"]
+description = """Modify AileronApp::create_wry_pane_for() to check config.render_mode:
+- "native": existing WryPaneManager path (unchanged)
+- "offscreen": create OffscreenWebView via offscreen_panes manager
+  - Pass adblocker domains, terminal_input_tx, terminal_resize_tx
+  - Wire up terminal creation for terminal panes
+  - Log creation with mode info
+Also modify remove_wry_pane_for() to clean up offscreen panes.
+Also modify reposition_all_panes() to resize offscreen panes."""
+prerequisites = ["TASK-F04"]
+outputs = ["src/main.rs updated"]
+verification = ["render_mode=offscreen creates OffscreenWebView panes", "render_mode=native unchanged", "Terminal panes work in both modes", "Clippy clean", "All tests pass"]
 estimated_hours = 4
 cpr = "None"
 
 [[task]]
-id = "TASK-010"
-title = "Integrate tiling with Servo (multi-pane)"
-phase = "B"
-week = 4
-priority = "critical"
-description = "Each BSP leaf has an independent Servo webview; split creates new webview"
-prerequisites = ["TASK-006", "TASK-007"]
-outputs = ["src/wm/pane.rs"]
-verification = ["Split creates new Servo pane", "Navigate between panes", "Close removes pane", "AC-WM-001 to AC-WM-005"]
-estimated_hours = 16
-cpr = "CPR-001, CPR-003"
+id = "TASK-F06"
+title = "Wire WryEvent processing for offscreen panes"
+phase = "F"
+subphase = "F.1"
+priority = "high"
+description = """In about_to_wait(), drain WryEvents from offscreen panes (same as existing wry_panes event processing):
+- TitleChanged → update tab title
+- LoadComplete → mark dirty for frame capture, record history
+- LoadStarted → update status bar
+- DownloadStarted → save to DB
+- OpenFile → launch xdg-open"""
+prerequisites = ["TASK-F05"]
+outputs = ["src/main.rs updated", "src/frame_tasks.rs updated"]
+verification = ["Page titles update in tabs", "History recorded", "Downloads work", "Clippy clean"]
+estimated_hours = 3
+cpr = "None"
+
+# --- Phase F.2: Input Forwarding ---
 
 [[task]]
-id = "TASK-011"
-title = "Event routing integration with winit"
-phase = "B"
-week = 4
+id = "TASK-F07"
+title = "Mouse forwarding (click, drag, scroll)"
+phase = "F"
+subphase = "F.2"
 priority = "critical"
-description = "Wire winit events through InputRouter to Servo/egui/command handler"
-prerequisites = ["TASK-008", "TASK-009", "TASK-006"]
-outputs = ["src/input/mod.rs updated"]
-verification = ["Normal mode: j/k scrolls", "Insert mode: typing works in web forms", "Mode indicator in status bar", "AC-MODE-001 to AC-MODE-005"]
+description = """When in Insert mode and user interacts with a webview egui::Image:
+- Detect which pane the mouse is over (hit test against BSP rects)
+- mousedown → JS MouseEvent('mousedown') via elementFromPoint
+- mousemove → JS MouseEvent('mousemove')
+- mouseup → JS MouseEvent('mouseup')
+- click → JS MouseEvent('click')
+- wheel → JS WheelEvent or window.scrollBy()
+- Pass correct clientX/clientY relative to webview dimensions
+- Only forward when pointer is over the active pane's image"""
+prerequisites = ["TASK-F06"]
+outputs = ["src/offscreen_webview.rs updated", "src/main.rs updated"]
+verification = ["Clicking links navigates", "Scrolling works", "Drag selection works", "Clippy clean"]
+estimated_hours = 6
+cpr = "CPR: event coordinate translation accuracy"
+
+[[task]]
+id = "TASK-F08"
+title = "Keyboard forwarding"
+phase = "F"
+subphase = "F.2"
+priority = "critical"
+description = """When in Insert mode, forward keyboard events to active webview:
+- keydown → JS KeyboardEvent('keydown', {key, code, ctrlKey, shiftKey, altKey, metaKey})
+- keyup → JS KeyboardEvent('keyup', ...)
+- Printable characters → document.execCommand('insertText', false, char)
+- Don't forward keys that are bound to egui shortcuts or Aileron commands
+- Handle Ctrl+C/V/X/Z (copy/paste/cut/undo) via JS"""
+prerequisites = ["TASK-F07"]
+outputs = ["src/offscreen_webview.rs updated", "src/main.rs updated"]
+verification = ["Typing in forms works", "Backspace/Delete work", "Ctrl+C/V work", "Tab key works", "Clippy clean"]
+estimated_hours = 6
+cpr = "CPR: keyboard event mapping completeness"
+
+[[task]]
+id = "TASK-F09"
+title = "IME forwarding (CJK support)"
+phase = "F"
+subphase = "F.2"
+priority = "critical"
+description = """Hybrid IME approach for multinational CJK users:
+- Intercept WindowEvent::Ime in main.rs before egui processes it
+- Ime::Preedit(text, cursor) → display composing text in egui status bar
+  (shows "composing: 你好" so user knows IME is active)
+- Ime::Commit(text) → webview.evaluate_script("document.execCommand('insertText', false, text)")
+- window.set_ime_allowed(true) when active pane is in Insert mode
+- window.set_ime_cursor_area() with pane's screen-space rect for candidate popup positioning
+- Ime::Enabled/Disabled → track state, update status bar
+- Suppress egui IME consumption when webview should receive input (no egui TextEdit focused in Insert mode)"""
+prerequisites = ["TASK-F08"]
+outputs = ["src/main.rs updated", "src/ui/panels.rs updated (status bar preedit display)"]
+verification = ["fcitx5 Chinese input commits correctly", "ibus Japanese input commits correctly", "Preedit shown in status bar", "Candidate popup positioned near pane", "Clippy clean"]
 estimated_hours = 8
+cpr = "CPR: IME composition reliability across input methods"
+
+[[task]]
+id = "TASK-F10"
+title = "Focus management"
+phase = "F"
+subphase = "F.2"
+priority = "high"
+description = """- Click on a pane's egui::Image → set that pane as active in BSP tree
+- Active pane gets input forwarding, others don't
+- set_ime_allowed(true/false) based on active pane and mode
+- When switching panes (Ctrl+H/J/K/L), transfer focus
+- Blur active element in old pane via JS: document.activeElement.blur()
+- Focus body in new pane via JS: document.body.focus()"""
+prerequisites = ["TASK-F09"]
+outputs = ["src/main.rs updated"]
+verification = ["Clicking pane activates it", "Keyboard goes to correct pane", "IME follows focus", "Clippy clean"]
+estimated_hours = 3
 cpr = "None"
 
 [[task]]
-id = "TASK-012"
-title = "Ctrl+E fallback to system browser"
-phase = "B"
-week = 4
+id = "TASK-F11"
+title = "Context menu suppression and text selection basics"
+phase = "F"
+subphase = "F.2"
 priority = "medium"
-description = "Use `open` crate to open current URL in default OS browser"
-prerequisites = ["TASK-010"]
-outputs = ["src/servo/fallback.rs"]
-verification = ["AC-SERVO-004"]
+description = """- Suppress right-click context menu (or show custom egui menu later)
+  via JS: document.addEventListener('contextmenu', e => e.preventDefault())
+- Double-click word selection works via forwarded mousedown/mouseup
+- Shift-click extends selection
+- Ctrl+A selects all
+- Ctrl+C copies selected text (via JS: document.getSelection().toString())"""
+prerequisites = ["TASK-F08"]
+outputs = ["src/offscreen_webview.rs updated"]
+verification = ["Right-click doesn't show WebKit context menu", "Double-click selects word", "Ctrl+A selects all", "Clippy clean"]
+estimated_hours = 3
+cpr = "None"
+
+# --- Phase F.3: Optimization ---
+
+[[task]]
+id = "TASK-F12"
+title = "Dirty flag from WebKitGTK signals"
+phase = "F"
+subphase = "F.3"
+priority = "high"
+description = """Replace polling is_dirty() with signal-based dirty tracking:
+- Connect to WebKit's 'load-changed' signal (or wry's page load handler) to mark dirty
+- After JS evaluation, mark dirty (for dynamic content changes)
+- After input forwarding, mark dirty
+- After resize, mark dirty
+- Only capture frames when dirty, not every frame"""
+prerequisites = ["TASK-F11"]
+outputs = ["src/offscreen_webview.rs updated"]
+verification = ["Static pages not re-captured every frame", "Dynamic pages (animations) still update", "CPU usage reduced for idle panes", "Clippy clean"]
+estimated_hours = 3
+cpr = "None"
+
+[[task]]
+id = "TASK-F13"
+title = "Frame rate limiting"
+phase = "F"
+subphase = "F.3"
+priority = "medium"
+description = """- Capture offscreen frames at 30fps, not 60fps (halve capture frequency)
+- Use time-based throttle: only capture if >33ms since last capture for that pane
+- egui still renders at display refresh rate (smooth UI)
+- Loading pages can still use higher rate (dirty every frame during load)"""
+prerequisites = ["TASK-F12"]
+outputs = ["src/offscreen_webview.rs updated"]
+verification = ["Idle panes capture at 30fps max", "CPU usage ~halved for static content", "Clippy clean"]
 estimated_hours = 2
 cpr = "None"
 
-# ============================================================
-# PHASE C: History & Command Palette (Weeks 5-6)
-# ============================================================
-
 [[task]]
-id = "TASK-013"
-title = "SQLite database setup (history, bookmarks)"
-phase = "C"
-week = 5
-priority = "high"
-description = "Initialize rusqlite DB; create history/bookmarks tables; XDG-compliant path"
-prerequisites = ["TASK-001"]
-outputs = ["src/db/mod.rs", "src/db/schema.rs"]
-verification = ["DB created in XDG path", "Tables created", "AC-DB-003"]
-estimated_hours = 6
-cpr = "None"
-
-[[task]]
-id = "TASK-014"
-title = "Navigation callbacks: track history"
-phase = "C"
-week = 5
-priority = "high"
-description = "Listen to Servo LoadComplete/TitleChanged events; insert into history DB"
-prerequisites = ["TASK-010", "TASK-013"]
-outputs = ["src/db/history.rs"]
-verification = ["History recorded after navigation", "AC-DB-001"]
-estimated_hours = 4
-cpr = "None"
-
-[[task]]
-id = "TASK-015"
-title = "Fuzzy finder integration (nucleo)"
-phase = "C"
-week = 5
-priority = "high"
-description = "Implement fuzzy search over history/bookmarks using nucleo"
-prerequisites = ["TASK-014"]
-outputs = ["src/ui/search.rs"]
-verification = ["10K items search < 5ms", "100K items search < 50ms", "AC-CP-002"]
-estimated_hours = 6
-cpr = "None"
-
-[[task]]
-id = "TASK-016"
-title = "Command palette UI (egui overlay)"
-phase = "C"
-week = 6
-priority = "high"
-description = "Build egui overlay for command palette; trigger via keybinding; display results"
-prerequisites = ["TASK-003", "TASK-015"]
-outputs = ["src/ui/palette.rs"]
-verification = ["Palette opens < 100ms", "Search results display", "Enter navigates to selected", "AC-CP-001, AC-CP-003, AC-CP-004"]
-estimated_hours = 8
-cpr = "None"
-
-# ============================================================
-# PHASE D: Extensibility (Weeks 7-8)
-# ============================================================
-
-[[task]]
-id = "TASK-017"
-title = "Lua engine integration (mlua)"
-phase = "D"
-week = 7
-priority = "high"
-description = "Initialize mlua with Lua 5.4; load init.lua; expose aileron.* API"
-prerequisites = ["TASK-001"]
-outputs = ["src/lua/mod.rs", "src/lua/api.rs"]
-verification = ["init.lua loads without error", "AC-LUA-001"]
-estimated_hours = 10
-cpr = "None"
-
-[[task]]
-id = "TASK-018"
-title = "Lua keybinding and theme API"
-phase = "D"
-week = 7
-priority = "high"
-description = "Expose aileron.keymap.set, aileron.theme.set to Lua"
-prerequisites = ["TASK-017", "TASK-009"]
-outputs = ["src/lua/keymap.rs", "src/lua/theme.rs"]
-verification = ["Custom keybindings from init.lua work", "Theme changes apply", "AC-LUA-002, AC-LUA-003"]
-estimated_hours = 6
-cpr = "None"
-
-[[task]]
-id = "TASK-019"
-title = "Lua custom commands API"
-phase = "D"
-week = 8
+id = "TASK-F14"
+title = "Resize throttling"
+phase = "F"
+subphase = "F.3"
 priority = "medium"
-description = "Expose aileron.cmd.create to Lua for user-defined commands"
-prerequisites = ["TASK-017", "TASK-016"]
-outputs = ["src/lua/commands.rs"]
-verification = ["Custom command appears in palette", "AC-LUA-004"]
+description = """- Only resize OffscreenWindow when BSP layout actually changes (not every frame)
+- Debounce resize events (wait 100ms after last resize before resizing offscreen window)
+- Track last known dimensions per pane, skip if unchanged"""
+prerequisites = ["TASK-F12"]
+outputs = ["src/offscreen_webview.rs updated", "src/main.rs updated"]
+verification = ["No redundant resize calls", "Smooth resize experience", "Clippy clean"]
+estimated_hours = 2
+cpr = "None"
+
+# --- Phase F.4: Cutover ---
+
+[[task]]
+id = "TASK-F15"
+title = "Switch default render_mode to offscreen"
+phase = "F"
+subphase = "F.4"
+priority = "critical"
+description = """Change Config default for render_mode from "native" to "offscreen".
+Update config.toml.example. Update documentation."""
+prerequisites = ["TASK-F11"]
+outputs = ["src/config.rs updated"]
+verification = ["Default config uses offscreen mode", "Clippy clean"]
+estimated_hours = 0.5
+cpr = "None"
+
+[[task]]
+id = "TASK-F16"
+title = "Remove X11/GTK hacks"
+phase = "F"
+subphase = "F.4"
+priority = "critical"
+description = """Remove from main.rs:
+- WAYLAND_DISPLAY env var removal (lines ~1020-1026)
+- GDK_BACKEND=x11 override
+- x11_error_handler function
+- XSetErrorHandler call (lines ~1037-1042)
+Remove from Cargo.toml:
+- x11-dl dependency
+- wry "x11" feature flag
+Gate any remaining Linux-specific code with #[cfg(target_os = "linux")]"""
+prerequisites = ["TASK-F15"]
+outputs = ["src/main.rs updated", "Cargo.toml updated"]
+verification = ["No X11 references in main.rs", "x11-dl not in dependencies", "wry x11 feature removed", "cargo build succeeds", "Clippy clean", "All tests pass"]
+estimated_hours = 2
+cpr = "None"
+
+[[task]]
+id = "TASK-F17"
+title = "Full testing on KDE Plasma Wayland"
+phase = "F"
+subphase = "F.4"
+priority = "critical"
+description = """Test on KDE Plasma Wayland (native, no XWayland):
+- App launches without WAYLAND_DISPLAY/GDK_BACKEND hacks
+- Webview content renders in egui Image widgets
+- Mouse input works (click, scroll, drag)
+- Keyboard input works (typing, shortcuts)
+- IME works (fcitx5, at minimum English input)
+- Splits, closes, navigation all work
+- Terminal panes work
+- Downloads work
+- Command palette works
+- Tab switching works
+- No X11 protocol errors
+- No GTK protocol errors"""
+prerequisites = ["TASK-F16"]
+outputs = ["Test report in .reports/"]
+verification = ["All functional tests pass on Wayland", "No crashes", "No protocol errors"]
 estimated_hours = 4
-cpr = "None"
+cpr = "CPR: KDE Plasma Wayland compositor compatibility"
 
 [[task]]
-id = "TASK-020"
-title = "Lua sandboxing and error handling"
-phase = "D"
-week = 8
+id = "TASK-F18"
+title = "Performance profiling and adjustment"
+phase = "F"
+subphase = "F.4"
 priority = "high"
-description = "Restrict Lua stdlib (no os.execute, io.open); catch Lua errors gracefully"
-prerequisites = ["TASK-017"]
-outputs = ["src/lua/sandbox.rs"]
-verification = ["ST-SEC-008: os.execute blocked", "ST-SEC-009: io.open blocked", "AC-LUA-004"]
-estimated_hours = 6
-cpr = "T-TAMP-001"
+description = """Profile with perf/cargo-flamegraph:
+- Frame capture latency per pane
+- BGRA→RGBA conversion time
+- wgpu texture upload time
+- Total frame time at 1/2/4 panes
+- Memory usage
+- GTK event loop pump time
+Adjust frame rate limit, dirty thresholds based on results.
+Document baseline metrics in .specs/04_performance/"""
+prerequisites = ["TASK-F17"]
+outputs = [".specs/04_performance/arch_b_baseline.toml", "Performance report"]
+verification = ["1 pane < 16ms frame time", "2 panes < 25ms frame time", "4 panes < 33ms frame time", "Memory < 500MB"]
+estimated_hours = 4
+cpr = "CPR: Performance may require further optimization"
 
 # ============================================================
-# PHASE E: Killer Features (Weeks 9-10)
+# PHASE G: Native Terminal Emulator
 # ============================================================
+# Replaces xterm.js-in-webview with native Rust terminal using
+# alacritty_terminal + portable_pty + egui Painter rendering.
+# See ADR-004 for full context.
+#
+# Key benefits:
+# - 2 handoff points (was 7) per keystroke
+# - ~2-5MB per pane (was 30-50MB)
+# - No CDN dependency
+# - Direct PTY write eliminates input forwarding bugs
+# - Simplifies Architecture D (terminal needs no browser engine)
 
 [[task]]
-id = "TASK-021"
-title = "Native ad-blocking (Brave adblock crate)"
-phase = "E"
-week = 9
-priority = "high"
-description = "Load filter lists; intercept Servo network requests; block matching domains"
-prerequisites = ["TASK-004"]
-outputs = ["src/net/adblock.rs", "src/net/mod.rs"]
-verification = ["Ad domains blocked", "Normal domains allowed", "EasyList loads < 2s", "AC-AD-001 to AC-AD-003"]
-estimated_hours = 10
-cpr = "None"
+id = "TASK-G01"
+title = "Add alacritty_terminal dependency and create terminal module"
+phase = "G"
+subphase = "G.1"
+priority = "critical"
+description = """Add alacritty_terminal = "0.26" to Cargo.toml.
+Create src/terminal/ with mod.rs, pty.rs, grid.rs, render.rs.
+NativeTerminalPane wraps PTY + Term + vte::Processor.
+NativeTerminalManager manages panes by UUID."""
+prerequisites = []
+outputs = ["src/terminal/mod.rs", "src/terminal/pty.rs", "src/terminal/grid.rs", "src/terminal/render.rs"]
+verification = ["cargo clippy -- -D warnings", "cargo test --lib passes (319 tests)"]
+estimated_hours = 4
+status = "complete"
 
 [[task]]
-id = "TASK-022"
-title = "MCP server (stdio transport)"
-phase = "E"
-week = 9
+id = "TASK-G02"
+title = "Wire native terminal rendering into panels.rs"
+phase = "G"
+subphase = "G.1"
+priority = "critical"
+description = """Update CentralPanel in panels.rs: terminal panes render via render_terminal()
+using egui::Painter, web panes use texture widgets.
+Add terminal_manager parameter to build_ui()."""
+prerequisites = ["TASK-G01"]
+outputs = ["src/ui/panels.rs modified"]
+verification = ["cargo clippy -- -D warnings"]
+estimated_hours = 2
+status = "complete"
+
+[[task]]
+id = "TASK-G03"
+title = "Wire keyboard/IME/mouse input for native terminals"
+phase = "G"
+subphase = "G.2"
+priority = "critical"
+description = """Route keyboard events: terminal panes → PTY write via key_to_escape_sequence().
+Route IME commits to PTY. Route MouseWheel to terminal scrollback.
+Update frame_tasks.rs to call terminal_manager.tick_all() instead of JS bridge."""
+prerequisites = ["TASK-G02"]
+outputs = ["src/main.rs modified", "src/frame_tasks.rs modified"]
+verification = ["cargo clippy -- -D warnings", "All 358 tests pass"]
+estimated_hours = 3
+status = "complete"
+
+[[task]]
+id = "TASK-G04"
+title = "Auto-resize terminal grid to match pane dimensions"
+phase = "G"
+subphase = "G.2"
 priority = "high"
-description = "Implement MCP server on tokio background thread; stdio JSON-RPC; tools/list, tools/call"
-prerequisites = ["TASK-010"]
-outputs = ["src/mcp/server.rs", "src/mcp/transport.rs"]
-verification = ["MCP handshake succeeds", "read_active_pane returns Markdown", "AC-MCP-001, AC-MCP-002, AC-MCP-003"]
+description = """In reposition_all_panes(), calculate cols/rows from pane pixel size
+using CellMetrics. Call terminal_manager.resize() for terminal panes.
+Skip offscreen webview resize for terminal panes."""
+prerequisites = ["TASK-G03"]
+outputs = ["src/main.rs modified"]
+verification = ["cargo clippy -- -D warnings"]
+estimated_hours = 1
+status = "complete"
+
+[[task]]
+id = "TASK-G05"
+title = "Remove xterm.js HTML and legacy terminal pipeline"
+phase = "G"
+subphase = "G.3"
+priority = "medium"
+description = """Remove terminal_html() function, base64 encoding of PTY output,
+terminal_input_tx IPC channel, _terminalFit JS calls.
+Clean up unused imports (base64 crate)."""
+prerequisites = ["TASK-G04"]
+outputs = ["Clean removal of xterm.js artifacts"]
+verification = ["No references to xterm, terminal_html, _terminalWrite, _terminalFit"]
+estimated_hours = 2
+status = "complete"
+
+[[task]]
+id = "TASK-G06"
+title = "Add mouse selection support for native terminals"
+phase = "G"
+subphase = "G.3"
+priority = "medium"
+description = """Implement click-to-position, drag selection, copy-on-select.
+Use alacritty_terminal's selection module."""
+prerequisites = ["TASK-G04"]
+outputs = ["Mouse selection in terminal panes"]
+verification = ["Click positions cursor", "Drag selects text", "Copy to clipboard"]
+estimated_hours = 4
+status = "complete"
+
+[[task]]
+id = "TASK-G07"
+title = "Optimize terminal rendering performance"
+phase = "G"
+subphase = "G.4"
+priority = "medium"
+description = """Implement dirty-region rendering (only redraw changed cells).
+Consider glyph atlas for batched text rendering.
+Profile and optimize for 80x24 and 200x50 terminal sizes."""
+prerequisites = ["TASK-G05"]
+outputs = ["Performance metrics"]
+verification = ["<2ms per frame for 80x24 terminal", "<5ms per frame for 200x50"]
+estimated_hours = 4
+status = "complete"
+
+[[task]]
+id = "TASK-G08"
+title = "Write ADR-004 for native terminal decision"
+phase = "G"
+subphase = "G.0"
+priority = "medium"
+description = """Document the decision to replace xterm.js with native Rust terminal.
+Cover context, alternatives, consequences."""
+prerequisites = []
+outputs = [".adrs/ADR-004-native-terminal-emulator.md"]
+verification = ["ADR follows project format"]
+estimated_hours = 1
+status = "complete"
+
+# ============================================================
+# PHASE H: Critical Bug Fixes (Architecture B)
+# ============================================================
+# Fix 4 critical bugs and 3 medium bugs discovered during
+# Architecture B risk assessment.
+
+[[task]]
+id = "TASK-H01"
+title = "Fix C1: bgra_to_rgba ignores pixbuf rowstride"
+phase = "H"
+subphase = "H.1"
+priority = "critical"
+description = """bgra_to_rgba() assumed tightly packed pixels but rowstride may
+include per-row padding. Iterate row-by-row using rowstride, only process
+width*4 bytes per row. Add test with non-zero padding."""
+prerequisites = []
+outputs = ["src/offscreen_webview.rs modified"]
+verification = ["test_bgra_to_rgba_with_rowstride_padding passes"]
+estimated_hours = 1
+status = "complete"
+
+[[task]]
+id = "TASK-H02"
+title = "Fix C2: WryActions silently dropped in offscreen mode"
+phase = "H"
+subphase = "H.1"
+priority = "critical"
+description = """process_pending_wry_actions() only operated on WryPaneManager.
+Add offscreen_panes parameter. All actions (Navigate, Back, Forward, Reload,
+etc.) now fall back to offscreen_panes when pane not in wry_panes."""
+prerequisites = []
+outputs = ["src/frame_tasks.rs modified", "src/wry_actions.rs modified", "src/main.rs modified"]
+verification = ["URL bar navigation works in offscreen mode", "Back/Forward work"]
+estimated_hours = 3
+status = "complete"
+
+[[task]]
+id = "TASK-H03"
+title = "Fix C3: Key repeat events dropped"
+phase = "H"
+subphase = "H.1"
+priority = "critical"
+description = """Unconditional `if *repeat { return; }` dropped all repeated keys.
+Now only skips repeat for non-terminal panes (browsers handle their own repeat).
+Native terminals need repeat for held keys."""
+prerequisites = []
+outputs = ["src/main.rs modified"]
+verification = ["Holding a key in terminal produces repeated characters"]
+estimated_hours = 0.5
+status = "complete"
+
+[[task]]
+id = "TASK-H04"
+title = "Fix C4: CloseOtherPanes leaks offscreen webviews"
+phase = "H"
+subphase = "H.1"
+priority = "critical"
+description = """Single-pane close detection missed multiple closes from
+CloseOtherPanes. Changed to set-based diff: compare pane IDs before/after
+key processing, remove ALL closed panes."""
+prerequisites = []
+outputs = ["src/main.rs modified"]
+verification = ["CloseOtherPanes cleans up all webviews", "No memory leak"]
+estimated_hours = 1
+status = "complete"
+
+[[task]]
+id = "TASK-H05"
+title = "Fix M1: Mixed coordinate spaces on HiDPI"
+phase = "H"
+subphase = "H.2"
+priority = "medium"
+description = """CursorMoved used physical pixels but MouseInput used egui logical
+coords. Convert CursorMoved position to logical using window.scale_factor()."""
+prerequisites = []
+outputs = ["src/main.rs modified"]
+verification = ["Mouse clicks land correctly on HiDPI displays"]
+estimated_hours = 1
+status = "complete"
+
+[[task]]
+id = "TASK-H06"
+title = "Fix M2: Hover events not forwarded"
+phase = "H"
+subphase = "H.2"
+priority = "medium"
+description = """CursorMoved only forwarded when mouse button pressed.
+Now forwards mousemove for web panes even without button, enabling
+CSS :hover, tooltips, and cursor changes."""
+prerequisites = ["TASK-H05"]
+outputs = ["src/main.rs modified"]
+verification = ["CSS :hover works in offscreen web panes"]
+estimated_hours = 0.5
+status = "complete"
+
+[[task]]
+id = "TASK-H07"
+title = "Fix M3: Wrong offset constant (verification)"
+phase = "H"
+subphase = "H.2"
+priority = "low"
+description = """bsp_rect_to_wry_rect() uses STATUS_BAR_HEIGHT for top offset and
+URL_BAR_HEIGHT for height reduction. Both happen to be 32.0. Added clarifying
+comment. No code change needed."""
+prerequisites = []
+outputs = ["src/servo/wry_engine.rs comment added"]
+verification = ["Comment explains both offsets"]
+estimated_hours = 0.25
+status = "complete"
+
+# ============================================================
+# PHASE I: Critical Survival Features
+# ============================================================
+# Based on competitive gap analysis (.specs/01_research/gap_analysis_v1.md).
+# These are must-have features before any public release.
+
+[[task]]
+id = "TASK-I01"
+title = "Hardened ad blocking (filter list parser + cosmetic filters)"
+phase = "I"
+subphase = "I.1"
+priority = "critical"
+description = """Upgrade domain-only adblock to proper ABP filter list support.
+Parse EasyList format: network filters ($third-party, $popup, $media, $image, $script),
+cosmetic filters (##.selector, domain##.selector), exception filters (@@).
+Store filter lists in ~/.config/aileron/filter_lists/.
+Add cosmetic CSS injection via content scripts.
+:adblock-toggle and :adblock-count commands."""
+prerequisites = []
+outputs = ["src/net/filter_list.rs", "src/net/adblock.rs enhanced"]
+verification = ["adblock-testpages.com passes tests", "Cosmetic filters hide elements"]
+estimated_hours = 16
+status = "complete"
+
+[[task]]
+id = "TASK-I02"
+title = "HTTPS upgrade + tracking protection"
+phase = "I"
+subphase = "I.1"
+priority = "critical"
+description = """Auto-upgrade HTTP→HTTPS for known-safe domains (EFF HTTPS Everywhere list).
+Block known tracking domains (Disconnect list).
+Strip Referrer to origin-only. DNT + GPC headers.
+Privacy initialization script (referrer policy, CSP).
+:privacy and :https-toggle commands."""
+prerequisites = []
+outputs = ["src/net/privacy.rs", "HTTPS upgrade in wry_engine"]
+verification = ["HTTP→HTTPS upgrade works", "Tracking domains blocked"]
 estimated_hours = 12
-cpr = "REQ-MCP-003"
+status = "complete"
 
 [[task]]
-id = "TASK-023"
-title = "MCP tools: search_web, run_js, browser_navigate"
-phase = "E"
-week = 10
+id = "TASK-I15"
+title = "Session auto-complete (crash recovery)"
+phase = "I"
+subphase = "I.1"
 priority = "high"
-description = "Implement remaining MCP tools with timeout enforcement"
-prerequisites = ["TASK-022"]
-outputs = ["src/mcp/tools.rs"]
-verification = ["search_web returns results", "run_js executes in pane", "AC-MCP-002, AC-MCP-004"]
-estimated_hours = 8
-cpr = "T-INFO-002, T-ELEV-002"
+description = """Auto-save workspace every N seconds as _autosave.
+Clean shutdown detection via .session_active flag file.
+On startup, auto-restore _autosave if previous session was unclean.
+session_dirty flag tracks user activity to avoid saving fresh sessions.
+exiting() handler clears flag on clean shutdown."""
+prerequisites = []
+outputs = ["src/config.rs session flag methods", "Auto-save in about_to_wait"]
+verification = ["Crash recovery works", "Fresh sessions don't auto-save"]
+estimated_hours = 6
+status = "complete"
 
 [[task]]
-id = "TASK-024"
-title = "Password manager CLI integration"
-phase = "E"
-week = 10
+id = "TASK-I03"
+title = "Settings GUI (aileron://settings)"
+phase = "I"
+subphase = "I.2"
+priority = "high"
+description = """Create aileron://settings custom protocol page.
+Sections: General (homepage, search engine, startup), Appearance (theme, tab layout, sidebar),
+Privacy (adblock, tracking, HTTPS), Advanced (devtools, proxy, custom CSS).
+Keyboard-navigable (vim-style). All changes persist to config.toml via IPC.
+Runtime config changes without restart."""
+prerequisites = ["TASK-I01", "TASK-I02"]
+outputs = ["aileron://settings page"]
+verification = ["All config values editable from GUI"]
+estimated_hours = 12
+status = "complete"
+
+[[task]]
+id = "TASK-I04"
+title = "Download manager UI"
+phase = "I"
+subphase = "I.2"
+priority = "high"
+description = """Status bar notification on download start/complete.
+:downloads command shows list with status.
+Open downloaded file and open download directory.
+Cancel active downloads. Progress indication in status bar."""
+prerequisites = []
+outputs = ["Download progress in status bar"]
+verification = ["Downloads show progress"]
+estimated_hours = 8
+status = "complete"
+
+[[task]]
+id = "TASK-I05"
+title = "Import from other browsers"
+phase = "I"
+subphase = "I.2"
+priority = "high"
+description = """Parse Firefox bookmarks.html and places.sqlite.
+Parse Chrome/Chromium Bookmarks and History JSON.
+Import bookmarks and history into Aileron DB.
+:import-firefox and :import-chrome commands.
+Auto-detect browser data directories."""
+prerequisites = []
+outputs = ["Browser import commands"]
+verification = ["Bookmarks/history imported"]
+estimated_hours = 8
+status = "complete"
+
+[[task]]
+id = "TASK-I06"
+title = "Per-site settings"
+phase = "I"
+subphase = "I.3"
+priority = "high"
+description = """Per-site config in SQLite: zoom level, adblock on/off, JS on/off,
+cookie allow/block, auto-play allow/block. :site-settings command.
+Persist across sessions. URL pattern matching (exact, wildcard, regex)."""
+prerequisites = ["TASK-I03"]
+outputs = ["site_settings DB table"]
+verification = ["Settings persist per site"]
+estimated_hours = 12
+status = "complete"
+
+[[task]]
+id = "TASK-I07"
+title = "Improved password manager integration"
+phase = "I"
+subphase = "I.3"
+priority = "high"
+description = """Auto-detect login forms and offer credential fill via content script.
+Credential search from command palette. Save new credentials on form submit.
+Integration with system keyring for vault password caching."""
+prerequisites = []
+outputs = ["Auto-fill on login forms"]
+verification = ["Auto-fill works without manual bw-search"]
+estimated_hours = 8
+status = "complete"
+
+[[task]]
+id = "TASK-I08"
+title = "Print support"
+phase = "I"
+subphase = "I.3"
 priority = "medium"
-description = "Integrate bitwarden-cli via std::process::Command; command palette UI for vault search; JS injection"
-prerequisites = ["TASK-016", "TASK-022"]
-outputs = ["src/passwords/mod.rs", "src/passwords/bitwarden.rs"]
-verification = ["Vault search works", "Password injects into DOM", "Credentials zeroized after use", "ST-SEC-001, ST-SEC-002"]
-estimated_hours = 10
-cpr = "T-INFO-001"
+description = """:print command triggers system print dialog.
+Use wry's print API. Ctrl+P keybinding."""
+prerequisites = []
+outputs = [":print command"]
+verification = ["Current page prints"]
+estimated_hours = 4
+status = "complete"
+
+[[task]]
+id = "TASK-I09"
+title = "Built-in PDF viewer"
+phase = "I"
+subphase = "I.3"
+priority = "medium"
+description = """Detect PDF content-type. Render via pdf.js in aileron:// viewer.
+Support zoom, page navigation, text selection. :pdf command for local PDFs."""
+prerequisites = ["TASK-I02"]
+outputs = ["PDF viewer"]
+verification = ["PDFs render in browser"]
+estimated_hours = 8
+status = "complete"
+
+[[task]]
+id = "TASK-I10"
+title = "Popup blocker + notification control"
+phase = "I"
+subphase = "I.3"
+priority = "medium"
+description = """Block unwanted popups (allow user gestures only).
+Per-site notification permission control. Status bar indicator.
+:popups command to manage blocked/allowed sites."""
+prerequisites = []
+outputs = ["Popup blocking"]
+verification = ["Unwanted popups blocked"]
+estimated_hours = 4
+status = "complete"
+
+[[task]]
+id = "TASK-I11"
+title = "Cookie management UI"
+phase = "I"
+subphase = "I.3"
+priority = "medium"
+description = """:cookies command to view site cookies.
+:cookies-clear-site to clear current site cookies.
+Per-site cookie policy. Third-party cookie blocking."""
+prerequisites = ["TASK-I06"]
+outputs = ["Cookie management"]
+verification = ["Per-site cookie control"]
+estimated_hours = 6
+status = "complete"
+
+[[task]]
+id = "TASK-I12"
+title = "Tab audio mute/indicator"
+phase = "I"
+subphase = "I.4"
+priority = "medium"
+description = """Detect audio-playing panes via WebKit API.
+Show audio indicator in tab sidebar. :mute/:unmute commands.
+Global :mute-all."""
+prerequisites = []
+outputs = ["Audio indicator in tabs"]
+verification = ["Audio indicator appears; mute works"]
+estimated_hours = 4
+status = "complete"
+
+[[task]]
+id = "TASK-I13"
+title = "Theme system"
+phase = "I"
+subphase = "I.4"
+priority = "medium"
+description = """Dark/Light/System theme toggle. Custom themes via TOML.
+Color scheme: bg, fg, accent, tab bar, status bar, URL bar.
+Built-in themes: gruvbox, nord, dracula, solarized.
+:theme command. Per-workspace theme."""
+prerequisites = []
+outputs = ["Theme system"]
+verification = ["Multiple themes switchable"]
+estimated_hours = 8
+status = "complete"
+
+[[task]]
+id = "TASK-I14"
+title = "Enhanced content script system"
+phase = "I"
+subphase = "I.4"
+priority = "medium"
+description = """@match regex support. @run-at lifecycle stages.
+Script management UI (aileron://scripts). Script error reporting.
+Multiple scripts per URL. Shared storage between scripts."""
+prerequisites = []
+outputs = ["Enhanced content scripts"]
+verification = ["Scripts execute at correct stage"]
+estimated_hours = 12
+status = "complete"

@@ -12,7 +12,7 @@ use aileron::net::AdBlocker;
 use aileron::popup::PopupManager;
 use aileron::scripts::ContentScriptManager;
 use aileron::servo::PaneStateManager;
-use aileron::terminal::TerminalManager;
+use aileron::terminal::NativeTerminalManager;
 use aileron::ui::CommandPalette;
 use aileron::ui::{FuzzySearch, SearchCategory, SearchItem};
 use aileron::wm::BspTree;
@@ -61,9 +61,9 @@ fn test_bsp_tree_roundtrip() {
 
 #[test]
 fn test_terminal_manager_lifecycle() {
-    let mut mgr = TerminalManager::new();
+    let mut mgr = NativeTerminalManager::new();
     let id = uuid::Uuid::new_v4();
-    let (_tx, size) = mgr.create_terminal(id, 80, 24).unwrap();
+    let size = mgr.create_terminal(id, 80, 24).unwrap();
     assert_eq!(size.0, 80);
     assert_eq!(size.1, 24);
     assert!(mgr.is_terminal(&id));
@@ -150,17 +150,13 @@ fn test_git_status_parsing() {
 fn test_workspace_restore_module() {
     use aileron::workspace_restore;
     use std::collections::HashSet;
-    use std::sync::{Arc, Mutex};
 
     let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
     let mut terminal_pane_ids = HashSet::new();
     let mut pane_mgr = PaneStateManager::new();
     let initial_url = url::Url::parse("https://example.com").unwrap();
     let mut wm = BspTree::new(viewport, initial_url);
-    let terminal_input_tx: Arc<
-        Mutex<std::collections::HashMap<uuid::Uuid, std::sync::mpsc::Sender<String>>>,
-    > = Arc::new(Mutex::new(std::collections::HashMap::new()));
-    let mut terminal_mgr = TerminalManager::new();
+    let mut terminal_mgr = NativeTerminalManager::new();
 
     let result = workspace_restore::restore_workspace(
         "nonexistent",
@@ -169,7 +165,6 @@ fn test_workspace_restore_module() {
         &mut terminal_pane_ids,
         &mut pane_mgr,
         &mut wm,
-        &terminal_input_tx,
         &mut terminal_mgr,
     );
     assert!(matches!(

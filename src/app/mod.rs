@@ -159,6 +159,10 @@ pub struct AppState {
 
     /// Timestamp of last auto-save. Used for debouncing.
     pub last_auto_save: std::time::Instant,
+
+    /// Whether the user has interacted with this session.
+    /// Prevents auto-saving a fresh session (just the homepage).
+    pub session_dirty: bool,
 }
 
 impl AppState {
@@ -309,6 +313,7 @@ impl AppState {
             pending_mark_action: None,
             last_active_pane_id: None,
             last_auto_save: std::time::Instant::now(),
+            session_dirty: false,
         })
     }
 
@@ -508,6 +513,7 @@ impl AppState {
     }
 
     fn execute_action(&mut self, action: &crate::input::Action) {
+        self.session_dirty = true;
         use dispatch::ActionEffect;
 
         let effects = dispatch::dispatch_action(action);
@@ -767,6 +773,7 @@ impl AppState {
 
     /// Queue a navigation to a URL, applying any Lua URL redirect rules.
     fn navigate_with_redirects(&mut self, mut url: url::Url) {
+        self.session_dirty = true;
         // Apply URL redirect rules from Lua engine
         if let Some(ref engine) = self.lua_engine {
             url = engine.apply_url_redirects(&url);
@@ -815,6 +822,47 @@ impl AppState {
             }
             "minimal" => {
                 self.execute_action(&crate::input::Action::ToggleMinimalMode);
+            }
+            "settings" => {
+                if let Ok(url) = url::Url::parse("aileron://settings") {
+                    self.navigate_with_redirects(url);
+                    self.status_message = "Settings".into();
+                }
+            }
+            "privacy" => {
+                let https = self.config.https_upgrade_enabled;
+                let tracking = self.config.tracking_protection_enabled;
+                let adblock = self.config.adblock_enabled;
+                self.status_message = format!(
+                    "HTTPS upgrade: {} | Tracking protection: {} | Adblock: {}",
+                    if https { "ON" } else { "OFF" },
+                    if tracking { "ON" } else { "OFF" },
+                    if adblock { "ON" } else { "OFF" },
+                );
+            }
+            "https-toggle" => {
+                let active_id = self.wm.active_pane_id();
+                if let Some(engine) = self.engines.get(&active_id)
+                    && let Some(url) = engine.current_url()
+                    && let Some(host) = url.host_str()
+                {
+                    let host_lower = host.to_lowercase();
+                    let safe_list = crate::net::privacy::load_https_safe_list();
+                    if crate::net::privacy::is_https_safe(&host_lower, &safe_list) {
+                        self.status_message = format!(
+                            "HTTPS upgrade: {} is in the safe list",
+                            host_lower
+                        );
+                    } else {
+                        self.status_message = format!(
+                            "HTTPS upgrade: {} is not in the safe list ({} domains)",
+                            host_lower,
+                            safe_list.len()
+                        );
+                    }
+                } else {
+                    self.status_message = "No active page URL".into();
+                }
             }
             "" => {}
             _ => {
@@ -869,9 +917,27 @@ impl AppState {
                                     self.config.adblock_enabled
                                 );
                             }
+                            "https_upgrade" | "https-upgrade" => {
+                                self.config.https_upgrade_enabled = !value.contains("off")
+                                    && !value.contains("false")
+                                    && !value.contains("0");
+                                self.status_message = format!(
+                                    "https_upgrade = {}",
+                                    self.config.https_upgrade_enabled
+                                );
+                            }
+                            "tracking_protection" | "tracking-protection" => {
+                                self.config.tracking_protection_enabled = !value.contains("off")
+                                    && !value.contains("false")
+                                    && !value.contains("0");
+                                self.status_message = format!(
+                                    "tracking_protection = {}",
+                                    self.config.tracking_protection_enabled
+                                );
+                            }
                             _ => {
                                 self.status_message = format!(
-                                    "Unknown setting: {} (try: search_engine, homepage, adblock)",
+                                    "Unknown setting: {} (try: search_engine, homepage, adblock, https_upgrade, tracking_protection)",
                                     key
                                 );
                             }
@@ -1175,7 +1241,7 @@ impl AppState {
                             self.status_message = "No downloads".into();
                         } else {
                             let items: Vec<String> = entries.iter().map(|e| {
-                                format!("{} [{}]", e.filename, &e.status[..1])
+                                format!("{} [{}%]", e.filename, e.progress_percent)
                             }).collect();
                             self.status_message = format!("Downloads: {}", items.join(", "));
                         }
@@ -1194,6 +1260,63 @@ impl AppState {
             }
             return;
         }
+        if let Some(id_str) = query.strip_prefix("downloads-open ") {
+            let id_str = id_str.trim();
+            if id_str.is_empty() {
+                if let Some(db) = self.db.as_ref() {
+                    match crate::db::downloads::get_latest_download_id(db) {
+                        Ok(id) => {
+                            match crate::db::downloads::get_download_dest_path(db, id) {
+                                Ok(dest) => {
+                                    let _ = std::process::Command::new("xdg-open")
+                                        .arg(&dest)
+                                        .stdout(std::process::Stdio::null())
+                                        .stderr(std::process::Stdio::null())
+                                        .spawn();
+                                    self.status_message = format!("Opened: {}", dest);
+                                }
+                                Err(e) => self.status_message = format!("Error: {}", e),
+                            }
+                        }
+                        Err(e) => self.status_message = format!("No downloads: {}", e),
+                    }
+                }
+            } else if let Ok(id) = id_str.parse::<i64>() {
+                if let Some(db) = self.db.as_ref() {
+                    match crate::db::downloads::get_download_dest_path(db, id) {
+                        Ok(dest) => {
+                            let _ = std::process::Command::new("xdg-open")
+                                .arg(&dest)
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::null())
+                                .spawn();
+                            self.status_message = format!("Opened: {}", dest);
+                        }
+                        Err(e) => self.status_message = format!("Error: {}", e),
+                    }
+                } else {
+                    self.status_message = "No database".into();
+                }
+            } else {
+                self.status_message = "Usage: downloads-open [id]".into();
+            }
+            return;
+        }
+        if query == "downloads-dir" {
+            if let Some(downloads_dir) = directories::UserDirs::new()
+                .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
+            {
+                let _ = std::process::Command::new("xdg-open")
+                    .arg(&downloads_dir)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn();
+                self.status_message = format!("Opened: {}", downloads_dir.display());
+            } else {
+                self.status_message = "Could not determine downloads directory".into();
+            }
+            return;
+        }
 
         if query == "cookies-clear" {
             self.pending_wry_actions.push_back(WryAction::RunJs(
@@ -1208,8 +1331,57 @@ impl AppState {
             return;
         }
 
+        if query == "privacy" {
+            let https = self.config.https_upgrade_enabled;
+            let tracking = self.config.tracking_protection_enabled;
+            let adblock = self.config.adblock_enabled;
+            self.status_message = format!(
+                "HTTPS upgrade: {} | Tracking protection: {} | Adblock: {}",
+                if https { "ON" } else { "OFF" },
+                if tracking { "ON" } else { "OFF" },
+                if adblock { "ON" } else { "OFF" },
+            );
+            return;
+        }
+
+        if query == "https-toggle" {
+            let active_id = self.wm.active_pane_id();
+            if let Some(engine) = self.engines.get(&active_id)
+                && let Some(url) = engine.current_url()
+                && let Some(host) = url.host_str()
+            {
+                let host_lower = host.to_lowercase();
+                let safe_list = crate::net::privacy::load_https_safe_list();
+                if crate::net::privacy::is_https_safe(&host_lower, &safe_list) {
+                    self.status_message = format!(
+                        "HTTPS upgrade: {} is already in the safe list",
+                        host_lower
+                    );
+                } else {
+                    self.status_message = format!(
+                        "HTTPS upgrade: {} is not in the safe list ({} domains loaded)",
+                        host_lower,
+                        safe_list.len()
+                    );
+                }
+            } else {
+                self.status_message = "No active page URL".into();
+            }
+            return;
+        }
+
         if query == "config-save" {
             self.pending_wry_actions.push_back(WryAction::SaveConfig);
+            return;
+        }
+
+        if query == "import-firefox" {
+            self.import_firefox();
+            return;
+        }
+
+        if query == "import-chrome" {
+            self.import_chrome();
             return;
         }
 
@@ -1397,9 +1569,27 @@ impl AppState {
                         self.status_message =
                             format!("adblock = {}", self.config.adblock_enabled);
                     }
+                    "https_upgrade" | "https-upgrade" => {
+                        self.config.https_upgrade_enabled = !value.contains("off")
+                            && !value.contains("false")
+                            && !value.contains("0");
+                        self.status_message = format!(
+                            "https_upgrade = {}",
+                            self.config.https_upgrade_enabled
+                        );
+                    }
+                    "tracking_protection" | "tracking-protection" => {
+                        self.config.tracking_protection_enabled = !value.contains("off")
+                            && !value.contains("false")
+                            && !value.contains("0");
+                        self.status_message = format!(
+                            "tracking_protection = {}",
+                            self.config.tracking_protection_enabled
+                        );
+                    }
                     _ => {
                         self.status_message = format!(
-                            "Unknown setting: {} (try: search_engine, homepage, adblock)",
+                            "Unknown setting: {} (try: search_engine, homepage, adblock, https_upgrade, tracking_protection)",
                             key
                         );
                     }
@@ -1911,6 +2101,326 @@ if (window._terminal && window._terminal.buffer) {{
             .as_ref()
             .and_then(|conn| crate::db::history::search(conn, query, limit).ok())
             .unwrap_or_default()
+    }
+
+    fn import_firefox(&mut self) {
+        let db = match self.db.as_ref() {
+            Some(db) => db,
+            None => {
+                self.status_message = "No database connection".into();
+                return;
+            }
+        };
+
+        let home = match std::env::var("HOME") {
+            Ok(h) => h,
+            Err(_) => {
+                self.status_message = "Cannot determine HOME directory".into();
+                return;
+            }
+        };
+
+        let firefox_dir = std::path::Path::new(&home).join(".mozilla/firefox");
+        if !firefox_dir.exists() {
+            self.status_message = "Firefox data not found (~/.mozilla/firefox)".into();
+            return;
+        }
+
+        let mut bookmarks_imported = 0usize;
+        let mut history_imported = 0usize;
+
+        let profiles: Vec<std::path::PathBuf> = std::fs::read_dir(&firefox_dir)
+            .ok()
+            .map(|rd| {
+                rd.filter_map(|e| e.ok())
+                    .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                    .filter(|e| {
+                        e.file_name()
+                            .to_str()
+                            .map(|n| n.ends_with(".default") || n.contains(".default-"))
+                            .unwrap_or(false)
+                    })
+                    .map(|e| e.path())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        for profile_dir in &profiles {
+            let bk_dir = profile_dir.join("bookmarkbackups");
+            if bk_dir.exists()
+                && let Ok(entries) = std::fs::read_dir(&bk_dir)
+            {
+                let mut backups: Vec<std::path::PathBuf> = entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.path())
+                    .filter(|p| {
+                        p.extension()
+                            .and_then(|e| e.to_str())
+                            .map(|e| e == "json" || e == "html")
+                            .unwrap_or(false)
+                    })
+                    .collect();
+                backups.sort();
+                backups.reverse();
+                if let Some(latest) = backups.first() {
+                    let ext = latest.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    if ext == "json" {
+                        bookmarks_imported += Self::import_firefox_bookmarks_json(db, latest);
+                    } else {
+                        bookmarks_imported += Self::import_firefox_bookmarks_html(db, latest);
+                    }
+                }
+            }
+
+            let places_path = profile_dir.join("places.sqlite");
+            if places_path.exists() {
+                history_imported += Self::import_firefox_history(db, &places_path);
+            }
+        }
+
+        self.status_message = format!(
+            "Firefox import: {} bookmarks, {} history entries",
+            bookmarks_imported, history_imported
+        );
+    }
+
+    fn import_firefox_bookmarks_json(db: &rusqlite::Connection, path: &std::path::Path) -> usize {
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return 0,
+        };
+        let json: serde_json::Value = match serde_json::from_str(&content) {
+            Ok(j) => j,
+            Err(_) => return 0,
+        };
+        let mut count = 0usize;
+        Self::walk_firefox_json_bookmarks(&json, db, &mut count);
+        count
+    }
+
+    fn walk_firefox_json_bookmarks(node: &serde_json::Value, db: &rusqlite::Connection, count: &mut usize) {
+        if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
+            for child in children {
+                if child.get("type").and_then(|t| t.as_str()) == Some("text/x-moz-place")
+                    && let (Some(url), Some(title)) = (
+                        child.get("uri").and_then(|u| u.as_str()),
+                        child.get("title").and_then(|t| t.as_str()),
+                    )
+                    && url.starts_with("http")
+                    && bookmarks::import_bookmark(db, url, title).unwrap_or(false)
+                {
+                    *count += 1;
+                }
+                Self::walk_firefox_json_bookmarks(child, db, count);
+            }
+        }
+    }
+
+    fn import_firefox_bookmarks_html(db: &rusqlite::Connection, path: &std::path::Path) -> usize {
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return 0,
+        };
+        let mut count = 0usize;
+        for line in content.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("<DT><A ")
+                && let Some(href_start) = rest.find("HREF=\"")
+                && let Some(href_end) = rest[href_start + 6..].find('"')
+            {
+                let after_href = &rest[href_start + 6..];
+                let url = &after_href[..href_end];
+                let title = after_href[href_end + 1..]
+                    .find('>')
+                    .and_then(|gt| {
+                        let after_gt = &after_href[gt + 1..];
+                        after_gt.find("</A>").map(|end| &after_gt[..end])
+                    })
+                    .unwrap_or(url);
+                if url.starts_with("http")
+                    && bookmarks::import_bookmark(db, url, title).unwrap_or(false)
+                {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    fn import_firefox_history(db: &rusqlite::Connection, places_path: &std::path::Path) -> usize {
+        let conn = match rusqlite::Connection::open_with_flags(
+            places_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        ) {
+            Ok(c) => c,
+            Err(_) => return 0,
+        };
+        let mut stmt = match conn.prepare(
+            "SELECT p.url, p.title, h.visit_date
+             FROM moz_places p
+             JOIN moz_historyvisits h ON p.id = h.place_id
+             WHERE p.url LIKE 'http%' AND h.visit_type IN (1, 2)
+             ORDER BY h.visit_date DESC
+             LIMIT 500",
+        ) {
+            Ok(s) => s,
+            Err(_) => return 0,
+        };
+        let rows = match stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1).unwrap_or_default(),
+                row.get::<_, i64>(2).unwrap_or(0),
+            ))
+        }) {
+            Ok(r) => r,
+            Err(_) => return 0,
+        };
+        let mut count = 0usize;
+        for row in rows.filter_map(|r| r.ok()) {
+            let (url, title, visit_date) = row;
+            let visited_at = if visit_date > 0 {
+                let epoch_us = visit_date / 1000;
+                let secs = epoch_us / 1_000_000;
+                chrono::DateTime::from_timestamp(secs, 0)
+                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            if crate::db::history::import_visit(db, &url, &title, &visited_at).unwrap_or(false) {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    fn import_chrome(&mut self) {
+        let db = match self.db.as_ref() {
+            Some(db) => db,
+            None => {
+                self.status_message = "No database connection".into();
+                return;
+            }
+        };
+
+        let home = match std::env::var("HOME") {
+            Ok(h) => h,
+            Err(_) => {
+                self.status_message = "Cannot determine HOME directory".into();
+                return;
+            }
+        };
+
+        let chrome_dir = std::path::Path::new(&home)
+            .join(".config/google-chrome/Default");
+        if !chrome_dir.exists() {
+            self.status_message = "Chrome data not found (~/.config/google-chrome/Default)".into();
+            return;
+        }
+
+        let bookmarks_path = chrome_dir.join("Bookmarks");
+        let history_path = chrome_dir.join("History");
+
+        let mut bookmarks_imported = 0usize;
+        let mut history_imported = 0usize;
+
+        if bookmarks_path.exists() {
+            bookmarks_imported = Self::import_chrome_bookmarks(db, &bookmarks_path);
+        }
+
+        if history_path.exists() {
+            history_imported = Self::import_chrome_history(db, &history_path);
+        }
+
+        self.status_message = format!(
+            "Chrome import: {} bookmarks, {} history entries",
+            bookmarks_imported, history_imported
+        );
+    }
+
+    fn import_chrome_bookmarks(db: &rusqlite::Connection, path: &std::path::Path) -> usize {
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return 0,
+        };
+        let json: serde_json::Value = match serde_json::from_str(&content) {
+            Ok(j) => j,
+            Err(_) => return 0,
+        };
+        let mut count = 0usize;
+        if let Some(roots) = json.get("roots").and_then(|r| r.as_object()) {
+            for (_key, node) in roots {
+                Self::walk_chrome_bookmark_node(node, db, &mut count);
+            }
+        }
+        count
+    }
+
+    fn walk_chrome_bookmark_node(node: &serde_json::Value, db: &rusqlite::Connection, count: &mut usize) {
+        if node.get("type").and_then(|t| t.as_str()) == Some("url")
+            && let (Some(url), Some(name)) = (
+                node.get("url").and_then(|u| u.as_str()),
+                node.get("name").and_then(|n| n.as_str()),
+            )
+            && url.starts_with("http")
+            && bookmarks::import_bookmark(db, url, name).unwrap_or(false)
+        {
+            *count += 1;
+            return;
+        }
+        if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
+            for child in children {
+                Self::walk_chrome_bookmark_node(child, db, count);
+            }
+        }
+    }
+
+    fn import_chrome_history(db: &rusqlite::Connection, path: &std::path::Path) -> usize {
+        let conn = match rusqlite::Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        ) {
+            Ok(c) => c,
+            Err(_) => return 0,
+        };
+        let mut stmt = match conn.prepare(
+            "SELECT u.url, u.title, v.visit_time
+             FROM urls u
+             JOIN visits v ON u.id = v.url
+             ORDER BY v.visit_time DESC
+             LIMIT 500",
+        ) {
+            Ok(s) => s,
+            Err(_) => return 0,
+        };
+        let rows = match stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1).unwrap_or_default(),
+                row.get::<_, i64>(2).unwrap_or(0),
+            ))
+        }) {
+            Ok(r) => r,
+            Err(_) => return 0,
+        };
+        let mut count = 0usize;
+        for row in rows.filter_map(|r| r.ok()) {
+            let (url, title, visit_time) = row;
+            let visited_at = if visit_time > 0 {
+                let epoch_us = visit_time / 1000;
+                let secs = epoch_us / 1_000_000;
+                chrono::DateTime::from_timestamp(secs, 0)
+                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            if crate::db::history::import_visit(db, &url, &title, &visited_at).unwrap_or(false) {
+                count += 1;
+            }
+        }
+        count
     }
 
     fn swap_panes(&mut self) {

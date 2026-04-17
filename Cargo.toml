@@ -71,8 +71,8 @@ pollster = "0.4.0"
 # PTY management for embedded terminal panes
 portable-pty = "0.8"
 
-# Base64 encoding for PTY output
-base64 = "0.22"
+# Terminal emulation (VT parser + grid state)
+alacritty_terminal = "0.26"
 
 # WebView engine (wry = Tauri's system WebView wrapper)
 wry = { version = "0.55.0", default-features = false, features = [
@@ -81,6 +81,9 @@ wry = { version = "0.55.0", default-features = false, features = [
   "devtools",
   "x11",
 ] }
+
+# HTTP client (for downloading filter/privacy lists)
+attohttpc = "0.28"
 
 # GTK (required by wry on Linux for WebKitGTK event loop)
 [target.'cfg(target_os = "linux")'.dependencies]

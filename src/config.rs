@@ -30,6 +30,15 @@ pub struct Config {
     /// Enable ad-blocking (blocks domains from filter lists).
     pub adblock_enabled: bool,
 
+    /// URLs of filter lists to load (EasyList format).
+    pub adblock_filter_lists: Vec<String>,
+
+    /// How often to check for filter list updates (hours).
+    pub adblock_update_interval_hours: u64,
+
+    /// Enable cosmetic CSS injection (element hiding).
+    pub adblock_cosmetic_filtering: bool,
+
     /// Auto-restore the most recent workspace on startup.
     /// If true, Aileron loads the last-saved workspace instead of the homepage.
     pub restore_session: bool,
@@ -70,6 +79,17 @@ pub struct Config {
     /// HTTP/HTTPS/SOCKS5 proxy URL (e.g., "socks5://127.0.0.1:1080" or "http://proxy:8080").
     pub proxy: Option<String>,
 
+    /// Enable automatic HTTPS upgrade for known-safe domains.
+    pub https_upgrade_enabled: bool,
+
+    /// Enable tracking protection (block known tracker domains, strip referrer, send DNT/GPC).
+    pub tracking_protection_enabled: bool,
+
+    /// Webview rendering mode.
+    /// - "native": wry creates visible windows (XWayland on Wayland). Default for now.
+    /// - "offscreen": Architecture B — webviews render offscreen, displayed as egui textures.
+    pub render_mode: String,
+
     /// Config format version. Used for migrations.
     #[serde(default)]
     pub config_version: u32,
@@ -90,6 +110,12 @@ impl Default for Config {
             window_height: 800,
             devtools: false,
             adblock_enabled: true,
+            adblock_filter_lists: vec![
+                "https://easylist.to/easylist/easylist.txt".into(),
+                "https://easylist.to/easylist/easyprivacy.txt".into(),
+            ],
+            adblock_update_interval_hours: 24,
+            adblock_cosmetic_filtering: true,
             restore_session: false,
             auto_save: true,
             auto_save_interval: 30,
@@ -119,6 +145,9 @@ impl Default for Config {
             tab_layout: "sidebar".into(),
             tab_sidebar_width: 180.0,
             tab_sidebar_right: false,
+            render_mode: "offscreen".into(),
+            https_upgrade_enabled: true,
+            tracking_protection_enabled: true,
             config_version: 2,
         }
     }
@@ -170,9 +199,38 @@ impl Config {
 
     /// Get the path to the config file.
     pub fn config_path() -> PathBuf {
+        Self::config_dir().join("config.toml")
+    }
+
+    /// Get the XDG config directory for Aileron.
+    pub fn config_dir() -> PathBuf {
         directories::ProjectDirs::from("com", "aileron", "Aileron")
-            .map(|dirs| dirs.config_dir().join("config.toml"))
-            .unwrap_or_else(|| PathBuf::from("~/.config/aileron/config.toml"))
+            .map(|dirs| dirs.config_dir().to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("~/.config/aileron"))
+    }
+
+    /// Get the path to the session-active flag file.
+    pub fn session_active_path() -> PathBuf {
+        Self::config_dir().join(".session_active")
+    }
+
+    /// Write the session-active flag file (called on startup).
+    pub fn set_session_active() {
+        let path = Self::session_active_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, std::process::id().to_string());
+    }
+
+    /// Remove the session-active flag file (called on clean shutdown).
+    pub fn clear_session_active() {
+        let _ = std::fs::remove_file(Self::session_active_path());
+    }
+
+    /// Check whether the previous session ended uncleanly (flag still exists).
+    pub fn was_previous_session_unclean() -> bool {
+        Self::session_active_path().exists()
     }
 
     /// Get the path to the init.lua file.
@@ -242,6 +300,12 @@ devtools = false
 # Enable ad-blocking
 adblock_enabled = true
 
+# Enable automatic HTTPS upgrade for known-safe domains
+https_upgrade_enabled = true
+
+# Enable tracking protection (blocks trackers, sends DNT/GPC, strict referrer)
+tracking_protection_enabled = true
+
 # Auto-restore the most recent workspace on startup
 restore_session = false
 
@@ -270,6 +334,9 @@ tab_sidebar_width = 180.0
 # Show tab sidebar on the right instead of left
 tab_sidebar_right = false
 
+# Webview rendering mode: "offscreen" (Architecture B, default) or "native" (XWayland on Wayland)
+render_mode = "offscreen"
+
 [palette]
 # Maximum search results in command palette
 max_results = 20
@@ -291,6 +358,11 @@ wiki = "https://en.wikipedia.org/w/index.php?search={query}"
         let encoded = query.replace(' ', "+");
         let url_str = self.search_engine.replace("{query}", &encoded);
         url::Url::parse(&url_str).ok()
+    }
+
+    /// Whether Architecture B offscreen rendering is enabled.
+    pub fn is_offscreen(&self) -> bool {
+        self.render_mode == "offscreen"
     }
 }
 
@@ -430,5 +502,24 @@ mod tests {
     fn test_no_proxy_default() {
         let config = Config::default();
         assert!(config.proxy.is_none());
+    }
+
+    #[test]
+    fn test_render_mode_default_offscreen() {
+        let config = Config::default();
+        assert_eq!(config.render_mode, "offscreen");
+        assert!(config.is_offscreen());
+    }
+
+    #[test]
+    fn test_render_mode_offscreen() {
+        let config: Config = toml::from_str(r#"render_mode = "offscreen""#).unwrap();
+        assert!(config.is_offscreen());
+    }
+
+    #[test]
+    fn test_render_mode_invalid_treated_as_native() {
+        let config: Config = toml::from_str(r#"render_mode = "webgl""#).unwrap();
+        assert!(!config.is_offscreen());
     }
 }

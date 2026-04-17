@@ -38,12 +38,6 @@ impl PopupManager {
         window: Arc<Window>,
         url: url::Url,
         blocked_domains: Vec<String>,
-        terminal_input_tx: std::sync::Arc<
-            std::sync::Mutex<
-                std::collections::HashMap<uuid::Uuid, std::sync::mpsc::Sender<String>>,
-            >,
-        >,
-        terminal_resize_tx: std::sync::mpsc::Sender<(uuid::Uuid, u16, u16)>,
     ) {
         let size = window.inner_size();
         let bounds = wry::Rect {
@@ -60,8 +54,6 @@ impl PopupManager {
             url,
             bounds,
             blocked_domains,
-            terminal_input_tx,
-            terminal_resize_tx,
         ) {
             Ok(wry_pane) => {
                 self.windows.insert(

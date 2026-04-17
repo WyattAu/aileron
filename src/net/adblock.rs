@@ -1,29 +1,23 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use tracing::info;
 use url::Url;
 
-/// A simple, fast ad-blocker that uses domain-based blocking.
-///
-/// This is a lightweight alternative to the `brave/adblock` crate (which had
-/// transitive dependency conflicts). It supports:
-/// - EasyList-compatible domain blocking (simplified)
-/// - Cosmetic CSS rule injection
-/// - Whitelisting
-///
-/// Per YP-NET-ADBLOCK-001: ALG-ADBLOCK-001 (domain matching) and ALG-ADBLOCK-002 (CSS injection).
+use crate::net::filter_list::{
+    CosmeticFilter, FilterList, NetworkFilter,
+};
+
 pub struct AdBlocker {
-    /// Blocked domains (exact match and wildcard suffix).
     blocked_domains: HashSet<String>,
-    /// Blocked URL patterns (substring match).
     blocked_patterns: Vec<String>,
-    /// Whitelisted domains (never blocked).
     whitelisted_domains: HashSet<String>,
-    /// Cosmetic CSS rules to inject.
     cosmetic_rules: Vec<String>,
-    /// Whether ad-blocking is enabled.
+    domain_cosmetic_rules: HashMap<String, Vec<String>>,
+    network_filters: Vec<NetworkFilter>,
+    cosmetic_filters: Vec<CosmeticFilter>,
     enabled: bool,
-    /// Number of requests blocked since last reset.
     blocked_count: u64,
+    cosmetic_filtering: bool,
+    site_exceptions: HashSet<String>,
 }
 
 impl AdBlocker {
@@ -33,70 +27,90 @@ impl AdBlocker {
             blocked_patterns: Vec::new(),
             whitelisted_domains: HashSet::new(),
             cosmetic_rules: Vec::new(),
+            domain_cosmetic_rules: HashMap::new(),
+            network_filters: Vec::new(),
+            cosmetic_filters: Vec::new(),
             enabled: true,
             blocked_count: 0,
+            cosmetic_filtering: true,
+            site_exceptions: HashSet::new(),
         }
     }
 
-    /// Check if ad-blocking is enabled.
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
 
-    /// Enable or disable ad-blocking.
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
 
-    /// Get the number of blocked requests.
     pub fn blocked_count(&self) -> u64 {
         self.blocked_count
     }
 
-    /// Reset the blocked request counter.
     pub fn reset_blocked_count(&mut self) {
         self.blocked_count = 0;
     }
 
-    /// Add a domain to the block list.
-    /// Supports exact domains (e.g., "ads.example.com") and wildcards (e.g., "*.ads.*").
+    pub fn set_cosmetic_filtering(&mut self, enabled: bool) {
+        self.cosmetic_filtering = enabled;
+    }
+
+    pub fn cosmetic_filtering_enabled(&self) -> bool {
+        self.cosmetic_filtering
+    }
+
+    pub fn toggle_site_exception(&mut self, domain: &str) {
+        let domain = domain.to_lowercase();
+        if self.site_exceptions.remove(&domain) {
+            info!("Removed adblock exception for {}", domain);
+        } else {
+            self.site_exceptions.insert(domain.clone());
+            info!("Added adblock exception for {}", domain);
+        }
+    }
+
+    pub fn is_site_excepted(&self, domain: &str) -> bool {
+        let domain = domain.to_lowercase();
+        if self.site_exceptions.contains(&domain) {
+            return true;
+        }
+        if let Some(dot_pos) = domain.find('.') {
+            let parent = &domain[dot_pos + 1..];
+            if self.site_exceptions.contains(parent) {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn block_domain(&mut self, domain: &str) {
         self.blocked_domains.insert(domain.to_lowercase());
     }
 
-    /// Add a URL pattern to the block list (substring match).
     pub fn block_pattern(&mut self, pattern: &str) {
         self.blocked_patterns.push(pattern.to_lowercase());
     }
 
-    /// Add a domain to the whitelist.
     pub fn whitelist_domain(&mut self, domain: &str) {
         self.whitelisted_domains.insert(domain.to_lowercase());
     }
 
-    /// Add a cosmetic CSS rule (e.g., "div.ad-banner { display: none !important; }").
     pub fn add_cosmetic_rule(&mut self, rule: &str) {
         self.cosmetic_rules.push(rule.to_string());
     }
 
-    /// Load filter rules from an EasyList-compatible text format.
-    /// Supports:
-    /// - Lines starting with || (domain blocking)
-    /// - Lines starting with ! (comments, ignored)
-    /// - Lines starting with @@ (whitelist)
-    /// - Lines starting with ## (cosmetic rules)
     pub fn load_filter_list(&mut self, content: &str) -> anyhow::Result<usize> {
         let mut rules_loaded = 0;
 
         for line in content.lines() {
             let line = line.trim();
 
-            // Skip empty lines and comments
             if line.is_empty() || line.starts_with('!') || line.starts_with('[') {
                 continue;
             }
 
-            // Whitelist rule: @@||domain
             if line.starts_with("@@||") {
                 let domain = line.trim_start_matches("@@||");
                 let domain = domain.split('/').next().unwrap_or(domain);
@@ -108,7 +122,6 @@ impl AdBlocker {
                 continue;
             }
 
-            // Domain blocking: ||domain
             if line.starts_with("||") {
                 let domain = line.trim_start_matches("||");
                 let domain = domain.split('/').next().unwrap_or(domain);
@@ -120,30 +133,84 @@ impl AdBlocker {
                 continue;
             }
 
-            // Cosmetic rule: ##selector
             if line.contains("##") {
                 if let Some(selector) = line.split("##").nth(1)
-                    && !selector.is_empty() {
-                        let rule = format!("{} {{ display: none !important; }}", selector);
+                    && !selector.is_empty()
+                {
+                    let domain_part = &line[..line.find("##").unwrap()];
+                    let rule = format!("{} {{ display: none !important; }}", selector);
+                    if !domain_part.is_empty() {
+                        for domain in domain_part.split(',') {
+                            let domain = domain.trim().trim_start_matches('~').to_lowercase();
+                            if !domain.is_empty() {
+                                self.domain_cosmetic_rules
+                                    .entry(domain)
+                                    .or_default()
+                                    .push(rule.clone());
+                            }
+                        }
+                    } else {
                         self.cosmetic_rules.push(rule);
-                        rules_loaded += 1;
                     }
+                    rules_loaded += 1;
+                }
                 continue;
             }
 
-            // Generic URL pattern blocking
             if !line.contains(' ') && !line.contains('#') {
                 self.blocked_patterns.push(line.to_lowercase());
                 rules_loaded += 1;
             }
         }
 
-        info!(target: "adblock", "Loaded {} rules", rules_loaded);
+        info!(target: "adblock", "Loaded {} rules (legacy format)", rules_loaded);
         Ok(rules_loaded)
     }
 
-    /// Check if a URL should be blocked.
-    /// Returns true if the URL matches a block rule and is not whitelisted.
+    pub fn load_filter_list_file(&mut self, path: &std::path::Path) -> anyhow::Result<usize> {
+        let content = std::fs::read_to_string(path)?;
+        self.load_filter_list(&content)
+    }
+
+    pub fn load_from_filter_lists(&mut self, lists: &[FilterList]) -> usize {
+        let mut total = 0;
+
+        for list in lists {
+            for filter in &list.network_filters {
+                self.network_filters.push(filter.clone());
+                total += 1;
+            }
+
+            for filter in &list.cosmetic_filters {
+                self.cosmetic_filters.push(filter.clone());
+                total += 1;
+            }
+
+            for nf in &list.network_filters {
+                if nf.is_exception {
+                    if let Some(domain) = Self::extract_domain_from_pattern(&nf.pattern) {
+                        self.whitelisted_domains.insert(domain);
+                    }
+                } else if let Some(domain) = Self::extract_domain_from_pattern(&nf.pattern) {
+                    self.blocked_domains.insert(domain);
+                }
+            }
+        }
+
+        info!(target: "adblock", "Loaded {} rules from {} filter lists", total, lists.len());
+        total
+    }
+
+    fn extract_domain_from_pattern(pattern: &str) -> Option<String> {
+        let domain = pattern.strip_prefix("||")?;
+        let domain = domain.split('/').next()?;
+        let domain = domain.trim_end_matches('^').trim_end_matches('*');
+        if domain.is_empty() {
+            return None;
+        }
+        Some(domain.to_lowercase())
+    }
+
     pub fn should_block(&mut self, url: &Url) -> bool {
         if !self.enabled {
             return false;
@@ -154,21 +221,18 @@ impl AdBlocker {
             None => return false,
         };
 
-        // Check whitelist first
         if self.is_whitelisted(&host) {
             return false;
         }
 
-        // Check exact domain match
         if self.blocked_domains.contains(&host) {
             self.blocked_count += 1;
             return true;
         }
 
-        // Check suffix/wildcard domain match
         for blocked in &self.blocked_domains {
             if blocked.starts_with("*.") {
-                let suffix = &blocked[1..]; // ".ads.example.com"
+                let suffix = &blocked[1..];
                 if host.ends_with(suffix) {
                     self.blocked_count += 1;
                     return true;
@@ -176,7 +240,6 @@ impl AdBlocker {
             }
         }
 
-        // Check URL pattern match
         let url_str = url.as_str().to_lowercase();
         for pattern in &self.blocked_patterns {
             if url_str.contains(pattern) {
@@ -185,38 +248,171 @@ impl AdBlocker {
             }
         }
 
+        for filter in &self.network_filters {
+            if filter.is_exception {
+                continue;
+            }
+
+            if !self.pattern_matches_url(filter, &url_str, &host) {
+                continue;
+            }
+
+            if let Some(ref domains) = filter.domain_specific
+                && !self.host_matches_domain(&host, domains) {
+                    continue;
+            }
+
+            self.blocked_count += 1;
+            return true;
+        }
+
         false
     }
 
-    /// Check if a domain is whitelisted.
+    fn pattern_matches_url(&self, filter: &NetworkFilter, url_str: &str, host: &str) -> bool {
+        let pattern = &filter.pattern;
+
+        if pattern.starts_with("||") {
+            let domain = pattern.strip_prefix("||").unwrap();
+            let domain = domain.trim_end_matches('^');
+            let domain = domain.split('/').next().unwrap_or(domain);
+
+            if host == domain || host.ends_with(&format!(".{}", domain)) {
+                return true;
+            }
+        } else if let Some(stripped) = pattern.strip_prefix('|') {
+            if url_str.starts_with(stripped) {
+                return true;
+            }
+        } else if pattern.ends_with('|') {
+            if url_str.ends_with(&pattern[..pattern.len() - 1]) {
+                return true;
+            }
+        } else {
+            if url_str.contains(pattern) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn host_matches_domain(&self, host: &str, domain: &str) -> bool {
+        host == domain || host.ends_with(&format!(".{}", domain))
+    }
+
     fn is_whitelisted(&self, host: &str) -> bool {
         if self.whitelisted_domains.contains(host) {
             return true;
         }
-        // Check parent domains
-        let parts: Vec<&str> = host.rsplitn(3, '.').collect();
-        if parts.len() >= 2 {
-            let parent = format!("{}.{}", parts[1], parts[0]);
-            if self.whitelisted_domains.contains(&parent) {
+        if let Some(dot_pos) = host.find('.') {
+            let parent = &host[dot_pos + 1..];
+            if self.whitelisted_domains.contains(parent) {
                 return true;
             }
         }
         false
     }
 
-    /// Get all cosmetic CSS rules as a single CSS string.
     pub fn cosmetic_css(&self) -> String {
+        if !self.cosmetic_filtering {
+            return String::new();
+        }
         self.cosmetic_rules.join("\n")
     }
 
-    /// Get the number of loaded rules.
-    pub fn rule_count(&self) -> usize {
-        self.blocked_domains.len() + self.blocked_patterns.len() + self.cosmetic_rules.len()
+    pub fn cosmetic_css_for_domain(&self, domain: &str) -> String {
+        if !self.cosmetic_filtering {
+            return String::new();
+        }
+
+        let mut rules: Vec<String> = Vec::new();
+        rules.extend(self.cosmetic_rules.iter().cloned());
+
+        for (filter_domain, filter_rules) in &self.domain_cosmetic_rules {
+            if domain == filter_domain
+                || domain.ends_with(&format!(".{}", filter_domain))
+            {
+                rules.extend(filter_rules.iter().cloned());
+            }
+        }
+
+        for filter in &self.cosmetic_filters {
+            if let Some(ref domains) = filter.domains {
+                let matches = domains.iter().any(|d| {
+                    domain == d || domain.ends_with(&format!(".{}", d))
+                });
+                if matches {
+                    rules.push(format!(
+                        "{} {{ display: none !important; }}",
+                        filter.selector
+                    ));
+                }
+            } else {
+                rules.push(format!(
+                    "{} {{ display: none !important; }}",
+                    filter.selector
+                ));
+            }
+        }
+
+        rules.join("\n")
     }
 
-    /// Iterate over blocked domains (for sharing with wry navigation callbacks).
+    pub fn cosmetic_js_injection(&self, domain: &str) -> Option<String> {
+        let css = self.cosmetic_css_for_domain(domain);
+        if css.is_empty() {
+            return None;
+        }
+
+        let escaped = css.replace('\\', "\\\\").replace('`', "\\`").replace('$', "\\$");
+
+        Some(format!(
+            "(function() {{ \
+                var style = document.createElement('style'); \
+                style.id = '__aileron_adblock_css'; \
+                style.textContent = `{}`; \
+                var existing = document.getElementById('__aileron_adblock_css'); \
+                if (existing) existing.remove(); \
+                (document.head || document.documentElement).appendChild(style); \
+            }})()",
+            escaped
+        ))
+    }
+
+    pub fn rule_count(&self) -> usize {
+        self.blocked_domains.len()
+            + self.blocked_patterns.len()
+            + self.cosmetic_rules.len()
+            + self.network_filters.len()
+            + self.cosmetic_filters.len()
+    }
+
+    pub fn network_filter_count(&self) -> usize {
+        self.blocked_domains.len()
+            + self.blocked_patterns.len()
+            + self.network_filters.len()
+    }
+
+    pub fn cosmetic_filter_count(&self) -> usize {
+        self.cosmetic_rules.len() + self.cosmetic_filters.len()
+    }
+
     pub fn blocked_domains_iter(&self) -> Vec<String> {
-        self.blocked_domains.iter().cloned().collect()
+        let mut domains: HashSet<String> = self.blocked_domains.iter().cloned().collect();
+
+        for filter in &self.network_filters {
+            if !filter.is_exception
+                && let Some(domain) = Self::extract_domain_from_pattern(&filter.pattern) {
+                    domains.insert(domain);
+            }
+        }
+
+        domains.into_iter().collect()
+    }
+
+    pub fn filter_list_count(&self) -> usize {
+        self.network_filters.len() + self.cosmetic_filters.len()
     }
 }
 
@@ -299,17 +495,14 @@ mod tests {
 ##.sponsored-content
 "#;
         let count = blocker.load_filter_list(filters).unwrap();
-        assert_eq!(count, 5); // 2 blocked + 1 whitelist + 2 cosmetic
+        assert_eq!(count, 5);
 
-        // Verify domain blocking
         let url = Url::parse("https://ads.example.com/ad.js").unwrap();
         assert!(blocker.should_block(&url));
 
-        // Verify whitelist
         let url = Url::parse("https://safe.example.com/page").unwrap();
         assert!(!blocker.should_block(&url));
 
-        // Verify cosmetic rules
         let css = blocker.cosmetic_css();
         assert!(css.contains("div.ad-banner"));
         assert!(css.contains(".sponsored-content"));
@@ -365,5 +558,139 @@ mod tests {
         let count = blocker.load_filter_list(filters).unwrap();
         assert_eq!(count, 0);
         assert_eq!(blocker.rule_count(), 0);
+    }
+
+    #[test]
+    fn test_load_from_filter_lists() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||blocked.com^\n##.ad\n||pattern.com/path");
+        let count = blocker.load_from_filter_lists(&[list]);
+        assert_eq!(count, 3);
+        assert!(blocker.blocked_domains.contains("blocked.com"));
+        assert!(blocker.blocked_domains.contains("pattern.com"));
+    }
+
+    #[test]
+    fn test_cosmetic_css_for_domain() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("example.com##.ad-slot\ngeneric.com##.sidebar-ad\n##.global-ad");
+        blocker.load_from_filter_lists(&[list]);
+
+        let css = blocker.cosmetic_css_for_domain("example.com");
+        assert!(css.contains(".global-ad"));
+        assert!(css.contains(".ad-slot"));
+        assert!(!css.contains(".sidebar-ad"));
+    }
+
+    #[test]
+    fn test_cosmetic_js_injection() {
+        let mut blocker = AdBlocker::new();
+        blocker.add_cosmetic_rule(".ad { display: none !important; }");
+
+        let js = blocker.cosmetic_js_injection("example.com");
+        assert!(js.is_some());
+        let js = js.unwrap();
+        assert!(js.contains("__aileron_adblock_css"));
+        assert!(js.contains("display: none !important"));
+    }
+
+    #[test]
+    fn test_cosmetic_js_injection_empty() {
+        let blocker = AdBlocker::new();
+        let js = blocker.cosmetic_js_injection("example.com");
+        assert!(js.is_none());
+    }
+
+    #[test]
+    fn test_cosmetic_filtering_disabled() {
+        let mut blocker = AdBlocker::new();
+        blocker.add_cosmetic_rule(".ad { display: none !important; }");
+        blocker.set_cosmetic_filtering(false);
+
+        assert!(blocker.cosmetic_css().is_empty());
+        assert!(blocker.cosmetic_css_for_domain("example.com").is_empty());
+        assert!(blocker.cosmetic_js_injection("example.com").is_none());
+    }
+
+    #[test]
+    fn test_site_exception() {
+        let mut blocker = AdBlocker::new();
+        blocker.block_domain("ads.example.com");
+
+        let url = Url::parse("https://ads.example.com/ad.js").unwrap();
+        assert!(blocker.should_block(&url));
+
+        blocker.toggle_site_exception("example.com");
+        assert!(blocker.is_site_excepted("example.com"));
+        assert!(blocker.is_site_excepted("sub.example.com"));
+
+        let url2 = Url::parse("https://ads.example.com/ad.js").unwrap();
+        assert!(blocker.should_block(&url2));
+
+        blocker.toggle_site_exception("example.com");
+        assert!(!blocker.is_site_excepted("example.com"));
+    }
+
+    #[test]
+    fn test_blocked_domains_iter_includes_filter_list_domains() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||newblocked.com^\n||another.com^");
+        blocker.load_from_filter_lists(&[list]);
+
+        let domains = blocker.blocked_domains_iter();
+        assert!(domains.contains(&"newblocked.com".to_string()));
+        assert!(domains.contains(&"another.com".to_string()));
+    }
+
+    #[test]
+    fn test_domain_specific_cosmetic_filter() {
+        let mut blocker = AdBlocker::new();
+        let filters = "example.com##.ad-banner\n";
+        let _ = blocker.load_filter_list(filters);
+
+        let css = blocker.cosmetic_css_for_domain("example.com");
+        assert!(css.contains(".ad-banner"));
+
+        let css = blocker.cosmetic_css_for_domain("other.com");
+        assert!(!css.contains(".ad-banner"));
+    }
+
+    #[test]
+    fn test_network_filter_count() {
+        let mut blocker = AdBlocker::new();
+        blocker.block_domain("a.com");
+        blocker.block_pattern("/ad");
+        assert_eq!(blocker.network_filter_count(), 2);
+    }
+
+    #[test]
+    fn test_cosmetic_filter_count() {
+        let mut blocker = AdBlocker::new();
+        blocker.add_cosmetic_rule(".ad { display: none; }");
+        assert_eq!(blocker.cosmetic_filter_count(), 1);
+    }
+
+    #[test]
+    fn test_filter_list_count() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||a.com^\n##.ad");
+        blocker.load_from_filter_lists(&[list]);
+        assert_eq!(blocker.filter_list_count(), 2);
+    }
+
+    #[test]
+    fn test_extract_domain_from_pattern() {
+        assert_eq!(
+            AdBlocker::extract_domain_from_pattern("||ads.example.com^"),
+            Some("ads.example.com".to_string())
+        );
+        assert_eq!(
+            AdBlocker::extract_domain_from_pattern("||example.com/path"),
+            Some("example.com".to_string())
+        );
+        assert_eq!(
+            AdBlocker::extract_domain_from_pattern("not_a_domain"),
+            None
+        );
     }
 }

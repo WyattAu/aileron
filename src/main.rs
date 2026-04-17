@@ -11,9 +11,10 @@ use aileron::gfx::GfxState;
 use aileron::input::{KeyEvent as AileronKeyEvent, Modifiers};
 use aileron::mcp::McpBridge;
 use aileron::net::adblock::AdBlocker;
+use aileron::offscreen_webview::OffscreenWebViewManager;
 use aileron::popup::PopupManager;
 use aileron::servo::{bsp_rect_to_wry_rect, init_gtk, WryPaneManager};
-use aileron::terminal::TerminalManager;
+use aileron::terminal::NativeTerminalManager;
 use aileron::ui::panels;
 use aileron::wm::Rect;
 
@@ -66,17 +67,7 @@ struct AileronApp {
     mcp_bridge: McpBridge,
 
     /// Terminal manager for embedded terminal panes.
-    terminal_manager: TerminalManager,
-
-    /// Per-terminal-pane input senders. JS→Rust IPC uses these.
-    terminal_input_tx: Arc<
-        std::sync::Mutex<std::collections::HashMap<uuid::Uuid, std::sync::mpsc::Sender<String>>>,
-    >,
-
-    /// Channel for terminal resize events from JS→Rust IPC.
-    /// JS sends {t:'r', rows, cols} → IPC handler sends (pane_id, rows, cols) → drained in about_to_wait().
-    terminal_resize_tx: std::sync::mpsc::Sender<(uuid::Uuid, u16, u16)>,
-    terminal_resize_rx: std::sync::mpsc::Receiver<(uuid::Uuid, u16, u16)>,
+    terminal_manager: NativeTerminalManager,
 
     content_scripts: aileron::scripts::ContentScriptManager,
 
@@ -94,6 +85,21 @@ struct AileronApp {
 
     /// Instant when the app was created (for startup timing).
     startup_start: std::time::Instant,
+
+    /// Offscreen webview panes (Architecture B).
+    /// Webviews render into gtk::OffscreenWindow buffers; pixel data is
+    /// captured and uploaded as egui textures each frame.
+    offscreen_panes: OffscreenWebViewManager,
+
+    /// Whether the left mouse button is currently pressed (for drag detection in offscreen mode).
+    offscreen_mouse_pressed: bool,
+
+    /// Maps pane IDs to their current egui texture ID.
+    /// Updated each frame by `update_webview_textures()`.
+    webview_textures: std::collections::HashMap<uuid::Uuid, egui::TextureId>,
+
+    /// Last time each offscreen pane was captured (for frame rate limiting).
+    offscreen_last_capture: std::collections::HashMap<uuid::Uuid, std::time::Instant>,
 }
 
 impl AileronApp {
@@ -107,7 +113,6 @@ impl AileronApp {
         }
 
         let mcp_bridge = McpBridge::new();
-        let (terminal_resize_tx, terminal_resize_rx) = std::sync::mpsc::channel();
         Self {
             window: None,
             egui_winit: None,
@@ -118,16 +123,17 @@ impl AileronApp {
             wry_panes: WryPaneManager::new(),
             adblocker: AdBlocker::new(),
             mcp_bridge,
-            terminal_manager: TerminalManager::new(),
-            terminal_input_tx: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            terminal_resize_tx,
-            terminal_resize_rx,
+            terminal_manager: NativeTerminalManager::new(),
             content_scripts: aileron::scripts::ContentScriptManager::new(),
             git_status: aileron::git::GitStatus::default(),
             last_git_poll: std::time::Instant::now(),
             popup: PopupManager::new(),
             first_frame: true,
             startup_start: std::time::Instant::now(),
+            offscreen_panes: OffscreenWebViewManager::new(),
+            offscreen_mouse_pressed: false,
+            webview_textures: std::collections::HashMap::new(),
+            offscreen_last_capture: std::collections::HashMap::new(),
         }
     }
 
@@ -182,6 +188,11 @@ impl AileronApp {
     /// Create a wry webview for a BSP pane.
     /// Called when a new pane is created (initial + splits).
     fn create_wry_pane_for(&mut self, pane_id: uuid::Uuid, url: &url::Url) {
+        if self.config.is_offscreen() {
+            self.create_offscreen_pane_for(pane_id, url);
+            return;
+        }
+
         let window = match &self.window {
             Some(w) => Arc::clone(w),
             None => return,
@@ -203,7 +214,7 @@ impl AileronApp {
             };
             let panes = app_state.wm.panes();
             match panes.iter().find(|(id, _)| *id == pane_id) {
-                Some((_, rect)) => rect.clone(),
+                Some((_, rect)) => *rect,
                 None => {
                     warn!("BSP rect not found for pane {}", &pane_id.to_string()[..8]);
                     return;
@@ -235,28 +246,23 @@ impl AileronApp {
         // Collect blocked domains for the ad-block closure
         let blocked_domains: Vec<String> = self.adblocker.blocked_domains_iter();
 
-        let terminal_input_tx = self.terminal_input_tx.clone();
-        let terminal_resize_tx = self.terminal_resize_tx.clone();
-
         match self.wry_panes.create_pane(
             &*window,
             pane_id,
             url.clone(),
             wry_rect,
             blocked_domains,
-            terminal_input_tx,
-            terminal_resize_tx,
         ) {
             Ok(()) => {
                 if is_terminal {
                     match self.terminal_manager.create_terminal(pane_id, 80, 24) {
-                        Ok((tx, _size)) => {
-                            self.terminal_input_tx.lock().unwrap().insert(pane_id, tx);
+                        Ok(_size) => {
+                            // Native terminal: direct PTY write, no IPC sender needed
 
-                            if let Some(app_state) = &mut self.app_state {
-                                if let Some(cmd) = app_state.pending_terminal_command.take() {
-                                    self.terminal_manager.write_input(&pane_id, &cmd);
-                                }
+                            if let Some(app_state) = &mut self.app_state
+                                && let Some(cmd) = app_state.pending_terminal_command.take()
+                            {
+                                self.terminal_manager.write_input(&pane_id, &cmd);
                             }
                         }
                         Err(e) => warn!("Failed to create terminal: {}", e),
@@ -285,11 +291,107 @@ impl AileronApp {
         }
     }
 
+    /// Create an offscreen webview pane for Architecture B rendering.
+    fn create_offscreen_pane_for(&mut self, pane_id: uuid::Uuid, url: &url::Url) {
+        let is_terminal = {
+            let app_state = match &self.app_state {
+                Some(s) => s,
+                None => return,
+            };
+            app_state.terminal_pane_ids.contains(&pane_id)
+        };
+
+        let wm_rect = {
+            let app_state = match &self.app_state {
+                Some(s) => s,
+                None => return,
+            };
+            let panes = app_state.wm.panes();
+            match panes.iter().find(|(id, _)| *id == pane_id) {
+                Some((_, rect)) => *rect,
+                None => {
+                    warn!("BSP rect not found for pane {}", &pane_id.to_string()[..8]);
+                    return;
+                }
+            }
+        };
+
+        let wry_rect = {
+            let app_state = match &self.app_state {
+                Some(s) => s,
+                None => return,
+            };
+            let tab_layout = app_state.config.tab_layout.as_str();
+            let sidebar_width = if tab_layout == "sidebar" {
+                app_state.config.tab_sidebar_width as f64
+            } else {
+                0.0
+            };
+            let sidebar_on_right = app_state.config.tab_sidebar_right;
+            bsp_rect_to_wry_rect(
+                &wm_rect,
+                STATUS_BAR_HEIGHT,
+                URL_BAR_HEIGHT,
+                sidebar_width,
+                sidebar_on_right,
+            )
+        };
+
+        let (width, height) = match wry_rect.size {
+            winit::dpi::Size::Logical(s) => (s.width as i32, s.height as i32),
+            winit::dpi::Size::Physical(s) => (s.width as i32, s.height as i32),
+        };
+
+        let blocked_domains: Vec<String> = self.adblocker.blocked_domains_iter();
+
+        #[cfg(target_os = "linux")]
+        match self.offscreen_panes.create_pane(
+            pane_id, url, width, height, blocked_domains
+        ) {
+            Ok(()) => {
+                if is_terminal {
+                    match self.terminal_manager.create_terminal(pane_id, 80, 24) {
+                        Ok(_size) => {
+                            // Native terminal: direct PTY write, no IPC sender needed
+
+                            if let Some(app_state) = &mut self.app_state
+                                && let Some(cmd) = app_state.pending_terminal_command.take()
+                            {
+                                self.terminal_manager.write_input(&pane_id, &cmd);
+                            }
+                        }
+                        Err(e) => warn!("Failed to create terminal: {}", e),
+                    }
+                }
+
+                info!(
+                    "OffscreenWebView {} created -> {}",
+                    &pane_id.to_string()[..8],
+                    url
+                );
+            }
+            Err(e) => {
+                warn!("Failed to create OffscreenWebView: {}", e);
+                if let Some(app_state) = &mut self.app_state {
+                    app_state.status_message = format!("Pane creation failed: {}", e);
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (pane_id, url, width, height, blocked_domains);
+            warn!("Offscreen webview not supported on this platform");
+        }
+    }
+
     /// Remove a wry pane when a BSP leaf is closed.
     fn remove_wry_pane_for(&mut self, pane_id: &uuid::Uuid) {
         self.terminal_manager.remove(pane_id);
-        self.terminal_input_tx.lock().unwrap().remove(pane_id);
         self.wry_panes.remove_pane(pane_id);
+        self.offscreen_panes.remove_pane(pane_id);
+        self.webview_textures.remove(pane_id);
+        self.offscreen_last_capture.remove(pane_id);
     }
 
     /// Create a wry webview for a standalone popup window.
@@ -300,16 +402,12 @@ impl AileronApp {
             .and_then(|s| s.pending_detach_url.take())
             .unwrap_or_else(|| url::Url::parse("aileron://new").unwrap());
         let blocked_domains: Vec<String> = self.adblocker.blocked_domains_iter();
-        let terminal_input_tx = self.terminal_input_tx.clone();
-        let terminal_resize_tx = self.terminal_resize_tx.clone();
 
         self.popup.init_popup_window(
             window_id,
             window,
             url,
             blocked_domains,
-            terminal_input_tx,
-            terminal_resize_tx,
         );
     }
 
@@ -320,7 +418,7 @@ impl AileronApp {
 
     /// Reposition all wry panes to match current BSP layout.
     /// Called on window resize and after splits/closes.
-    fn reposition_all_panes(&self) {
+    fn reposition_all_panes(&mut self) {
         let app_state = match &self.app_state {
             Some(s) => s,
             None => return,
@@ -345,8 +443,37 @@ impl AileronApp {
                     sidebar_on_right,
                 );
                 wry_pane.set_bounds(wry_rect);
-                if app_state.terminal_pane_ids.contains(pane_id) {
-                    wry_pane.execute_js("_terminalFit()");
+            }
+        }
+
+        if self.config.is_offscreen() {
+            // Import CellMetrics for terminal auto-resize
+            use aileron::terminal::grid::CellMetrics;
+
+            for (pane_id, wm_rect) in &panes {
+                let wry_rect = bsp_rect_to_wry_rect(
+                    wm_rect,
+                    STATUS_BAR_HEIGHT,
+                    URL_BAR_HEIGHT,
+                    sidebar_width,
+                    sidebar_on_right,
+                );
+                let (w, h) = match wry_rect.size {
+                    winit::dpi::Size::Logical(s) => (s.width as i32, s.height as i32),
+                    winit::dpi::Size::Physical(s) => (s.width as i32, s.height as i32),
+                };
+
+                // Auto-resize native terminals to fit the pane
+                if self.terminal_manager.is_terminal(pane_id) {
+                    if let Some(ws) = self.egui_winit.as_ref() {
+                        let ctx = ws.egui_ctx();
+                        let metrics = CellMetrics::from_egui(ctx, 14.0);
+                        let cols = (w as f32 / metrics.cell_width).max(2.0) as u16;
+                        let rows = (h as f32 / metrics.cell_height).max(1.0) as u16;
+                        self.terminal_manager.resize(pane_id, cols, rows);
+                    }
+                } else {
+                    self.offscreen_panes.resize(pane_id, w, h);
                 }
             }
         }
@@ -382,6 +509,8 @@ impl AileronApp {
                 &self.wry_panes,
                 &self.git_status,
                 STATUS_BAR_HEIGHT,
+                &self.webview_textures,
+                &self.terminal_manager,
             );
         });
 
@@ -476,6 +605,58 @@ impl AileronApp {
         // 11. Present
         output.present();
     }
+
+    /// Capture dirty offscreen frames and update egui textures.
+    ///
+    /// For each offscreen pane that has changed since last capture:
+    /// 1. Call capture_frame() to read pixels from the offscreen GTK buffer
+    /// 2. Convert BGRA→RGBA
+    /// 3. Create or update an egui TextureId
+    #[cfg(target_os = "linux")]
+    fn update_webview_textures(&mut self) {
+        if self.offscreen_panes.is_empty() {
+            return;
+        }
+
+        const OFFSCREEN_CAPTURE_INTERVAL: std::time::Duration =
+            std::time::Duration::from_millis(33); // ~30fps
+
+        let mut dirty_data: Vec<(uuid::Uuid, Vec<u8>, u32, u32)> = Vec::new();
+
+        for (id, pane) in self.offscreen_panes.iter_mut() {
+            let last = self
+                .offscreen_last_capture
+                .get(id)
+                .copied()
+                .unwrap_or_else(std::time::Instant::now);
+            if pane.is_dirty() && last.elapsed() >= OFFSCREEN_CAPTURE_INTERVAL {
+                if pane.capture_frame().is_some()
+                    && let Some(rgba) = pane.frame_rgba()
+                {
+                    let (w, h) = pane.dimensions();
+                    dirty_data.push((*id, rgba, w as u32, h as u32));
+                }
+                self.offscreen_last_capture.insert(*id, std::time::Instant::now());
+            }
+        }
+
+        for (pane_id, rgba, width, height) in dirty_data {
+            let color_image =
+                egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &rgba);
+
+            // load_texture reuses the existing texture if the name matches.
+            // TextureHandle is stored; call .id() to get the TextureId when drawing.
+            if let Some(ws) = self.egui_winit.as_ref() {
+                let ctx = ws.egui_ctx();
+                let texture_handle = ctx.load_texture(
+                    format!("webview-{}", pane_id),
+                    color_image,
+                    egui::TextureOptions::LINEAR,
+                );
+                self.webview_textures.insert(pane_id, texture_handle.id());
+            }
+        }
+    }
 }
 
 impl ApplicationHandler for AileronApp {
@@ -515,25 +696,40 @@ impl ApplicationHandler for AileronApp {
             self.create_wry_pane_for(root_pane_id, &root_url);
         }
 
-        // Auto-restore the most recent workspace if configured.
-        // Prefer the _autosave workspace (crash recovery) over user-named ones.
-        if self.config.restore_session {
-            if let Some(app_state) = &mut self.app_state {
+        // Auto-restore workspace based on session state.
+        // Prefer _autosave (crash recovery) if previous session was unclean.
+        if let Some(app_state) = &mut self.app_state {
+            let was_unclean = Config::was_previous_session_unclean();
+
+            if (!self.config.restore_session || !was_unclean)
+                && let Some(db) = app_state.db.as_ref()
+            {
+                let _ = aileron::db::workspaces::delete_workspace(db, "_autosave");
+            }
+
+            if self.config.restore_session {
                 let all_workspaces = app_state
                     .db
                     .as_ref()
                     .and_then(|conn| aileron::db::workspaces::list_workspaces(conn).ok())
                     .unwrap_or_default();
 
-                let to_restore = all_workspaces
-                    .iter()
-                    .find(|ws| ws.name == "_autosave")
-                    .or_else(|| all_workspaces.first())
-                    .cloned();
+                let to_restore = if was_unclean {
+                    all_workspaces
+                        .iter()
+                        .find(|ws| ws.name == "_autosave")
+                        .cloned()
+                } else {
+                    all_workspaces
+                        .iter()
+                        .find(|ws| ws.name != "_autosave")
+                        .cloned()
+                };
 
                 if let Some(workspace) = to_restore {
                     info!("Auto-restoring workspace: {}", workspace.name);
                     app_state.pending_workspace_restore = Some(workspace.name);
+                    app_state.session_dirty = true;
                 }
             }
         }
@@ -592,19 +788,17 @@ impl ApplicationHandler for AileronApp {
         }
 
         // Handle resize
-        if let Some(app_state) = &mut self.app_state {
-            if let WindowEvent::Resized(physical_size) = &event {
-                if physical_size.width > 0 && physical_size.height > 0 {
-                    app_state.wm.resize(Rect::new(
-                        0.0,
-                        0.0,
-                        physical_size.width as f64,
-                        physical_size.height as f64,
-                    ));
-                    // Reposition wry panes to match new BSP layout
-                    self.reposition_all_panes();
-                }
-            }
+        if let Some(app_state) = &mut self.app_state
+            && let WindowEvent::Resized(physical_size) = &event
+            && physical_size.width > 0 && physical_size.height > 0
+        {
+            app_state.wm.resize(Rect::new(
+                0.0,
+                0.0,
+                physical_size.width as f64,
+                physical_size.height as f64,
+            ));
+            self.reposition_all_panes();
         }
 
         // Handle events
@@ -635,8 +829,13 @@ impl ApplicationHandler for AileronApp {
                     },
                 ..
             } => {
-                if *repeat {
-                    return;
+                if *repeat
+                    && let Some(app_state) = &self.app_state
+                {
+                    let active_id = app_state.wm.active_pane_id();
+                    if !self.terminal_manager.is_terminal(&active_id) {
+                        return;
+                    }
                 }
 
                 // Let egui consume the event first
@@ -727,41 +926,33 @@ impl ApplicationHandler for AileronApp {
                         return;
                     }
                     // Track pane count before processing key
-                    let pane_count_before = app_state.wm.leaf_count();
-                    let active_id_before = app_state.wm.active_pane_id();
+                    let pane_ids_before: std::collections::HashSet<uuid::Uuid> = app_state
+                        .wm
+                        .panes()
+                        .iter()
+                        .map(|(id, _)| *id)
+                        .collect();
 
                     app_state.process_key_event(aileron_event);
 
-                    let pane_count_after = app_state.wm.leaf_count();
-                    let active_id_after = app_state.wm.active_pane_id();
+                    let pane_ids_after: std::collections::HashSet<uuid::Uuid> = app_state
+                        .wm
+                        .panes()
+                        .iter()
+                        .map(|(id, _)| *id)
+                        .collect();
 
-                    // Collect info needed for wry sync before borrowing self.wry_panes
-                    let mut new_pane_ids: Vec<uuid::Uuid> = Vec::new();
-                    let mut closed_pane_id: Option<uuid::Uuid> = None;
+                    let closed_pane_ids: Vec<uuid::Uuid> = pane_ids_before
+                        .difference(&pane_ids_after)
+                        .copied()
+                        .collect();
 
-                    if pane_count_after > pane_count_before {
-                        // A new pane was created (split) — find the new pane ID
-                        let all_pane_ids: Vec<_> =
-                            app_state.wm.panes().iter().map(|(id, _)| *id).collect();
-                        for pid in all_pane_ids {
-                            if !self.wry_panes.contains(&pid) {
-                                new_pane_ids.push(pid);
-                            }
-                        }
-                    } else if pane_count_after < pane_count_before {
-                        if active_id_before != active_id_after {
-                            if !app_state
-                                .wm
-                                .panes()
-                                .iter()
-                                .any(|(id, _)| *id == active_id_before)
-                            {
-                                closed_pane_id = Some(active_id_before);
-                            }
-                        }
-                    }
+                    let new_pane_ids: Vec<uuid::Uuid> = pane_ids_after
+                        .difference(&pane_ids_before)
+                        .copied()
+                        .collect();
 
-                    let need_reposition = pane_count_after != pane_count_before;
+                    let need_reposition = pane_ids_before.len() != pane_ids_after.len();
                     let active_pane_id = app_state.wm.active_pane_id();
                     let is_insert_mode = app_state.mode == aileron::input::Mode::Insert;
 
@@ -771,18 +962,48 @@ impl ApplicationHandler for AileronApp {
                         self.create_wry_pane_for(*pid, &new_url);
                     }
 
-                    if let Some(pid) = closed_pane_id {
-                        self.remove_wry_pane_for(&pid);
+                    for pid in &closed_pane_ids {
+                        self.remove_wry_pane_for(pid);
                     }
 
                     if need_reposition {
                         self.reposition_all_panes();
                     }
 
-                    // Handle Insert mode: focus the wry webview
-                    if is_insert_mode {
-                        if let Some(wry_pane) = self.wry_panes.get(&active_pane_id) {
-                            wry_pane.focus();
+                    // Handle Insert mode: focus the wry webview (native mode only)
+                    if is_insert_mode
+                        && !self.config.is_offscreen()
+                        && let Some(wry_pane) = self.wry_panes.get(&active_pane_id)
+                    {
+                        wry_pane.focus();
+                    }
+
+                    // Offscreen mode: forward keyboard to webview via JS or native terminal
+                    if is_insert_mode && self.config.is_offscreen() {
+                        let is_terminal = self.terminal_manager.is_terminal(&active_pane_id);
+
+                        if is_terminal {
+                            // Native terminal: write directly to PTY
+                            if let aileron::input::Key::Character(c) = &key {
+                                self.terminal_manager.write_input(&active_pane_id, &c.to_string());
+                            } else {
+                                // Convert special keys to escape sequences
+                                let escape_seq = key_to_escape_sequence(&key, mods);
+                                if !escape_seq.is_empty() {
+                                    self.terminal_manager.write_input(&active_pane_id, &escape_seq);
+                                }
+                            }
+                        } else if let Some(pane) = self.offscreen_panes.get_mut(&active_pane_id) {
+                            // Web content: forward via JS
+                            if let aileron::input::Key::Character(c) = &key {
+                                pane.insert_text(&c.to_string());
+                            } else {
+                                let (js_key, js_code) = key_to_js(&key);
+                                let mods = aileron::offscreen_webview::modifiers_js(
+                                    mods.ctrl, mods.alt, mods.shift, mods.super_key,
+                                );
+                                pane.forward_key_event("keydown", &js_key, &js_code, &mods);
+                            }
                         }
                     }
                 }
@@ -793,41 +1014,191 @@ impl ApplicationHandler for AileronApp {
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                // Forward mouse wheel to wry pane when in Insert mode
-                // (egui handles scrolling in its own widgets, so we only forward
-                // when the user is interacting with the web content)
-                if let Some(app_state) = &self.app_state {
-                    if app_state.mode == aileron::input::Mode::Insert {
-                        let active_id = app_state.wm.active_pane_id();
-                        if let Some(wry_pane) = self.wry_panes.get(&active_id) {
-                            // winit uses logical pixels, convert to scroll delta
-                            let (dx, dy) = match delta {
-                                winit::event::MouseScrollDelta::LineDelta(x, y) => {
-                                    (*x as f64 * 40.0, *y as f64 * 40.0)
-                                }
-                                winit::event::MouseScrollDelta::PixelDelta(pos) => {
-                                    (pos.x as f64, pos.y as f64)
-                                }
-                            };
-                            if dx.abs() > 0.1 || dy.abs() > 0.1 {
+                if let Some(app_state) = &self.app_state
+                    && app_state.mode == aileron::input::Mode::Insert
+                {
+                    let active_id = app_state.wm.active_pane_id();
+                    let (dx, dy) = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                            (*x as f64 * 40.0, *y as f64 * 40.0)
+                        }
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                            (pos.x, pos.y)
+                        }
+                    };
+                    if dx.abs() > 0.1 || dy.abs() > 0.1 {
+                        if self.terminal_manager.is_terminal(&active_id) {
+                            // Native terminal: scroll scrollback buffer
+                            // Positive dy = scroll down (toward bottom), negative = scroll up
+                            let lines = (dy / 40.0).round() as i32;
+                            if lines != 0 {
+                                self.terminal_manager.scroll(&active_id, -lines);
+                            }
+                        } else if !self.config.is_offscreen() {
+                            if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                 let js = format!("window.scrollBy({}, {})", dx, dy);
                                 wry_pane.execute_js(&js);
+                            }
+                        } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                            pane.scroll_by(dx, dy);
+                        }
+                    }
+                }
+            }
+
+            WindowEvent::MouseInput { state, button, .. } => {
+                if !egui_response.consumed
+                    && self.config.is_offscreen()
+                    && let Some(app_state) = &self.app_state
+                    && app_state.mode == aileron::input::Mode::Insert
+                {
+                    self.offscreen_mouse_pressed = *state == winit::event::ElementState::Pressed;
+
+                    let forward_info = (|| {
+                        let ws = self.egui_winit.as_ref()?;
+                        let ctx = ws.egui_ctx();
+                        let pos = ctx.pointer_latest_pos()?;
+                        let active_id = app_state.wm.active_pane_id();
+                        let panes = app_state.wm.panes();
+                        let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
+                        let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
+                        let top_offset = URL_BAR_HEIGHT as f32;
+                        let sidebar_offset =
+                            if app_state.config.tab_layout == "sidebar"
+                                && !app_state.config.tab_sidebar_right
+                            {
+                                app_state.config.tab_sidebar_width
+                            } else {
+                                0.0
+                            };
+                        let local_x = pos.x - rect.x as f32 - sidebar_offset;
+                        let local_y = pos.y - rect.y as f32 - top_offset;
+                        if local_x >= 0.0 && local_y >= 0.0 && local_x < pw as f32 && local_y < ph as f32 {
+                            let event_type = match state {
+                                winit::event::ElementState::Pressed => "mousedown",
+                                winit::event::ElementState::Released => "mouseup",
+                            };
+                            let btn = match button {
+                                winit::event::MouseButton::Left => "0",
+                                winit::event::MouseButton::Middle => "1",
+                                winit::event::MouseButton::Right => "2",
+                                winit::event::MouseButton::Back => "3",
+                                winit::event::MouseButton::Forward => "4",
+                                _ => "0",
+                            };
+                            Some((active_id, event_type, local_x as f64, local_y as f64, btn))
+                        } else {
+                            None
+                        }
+                    })();
+
+                    if let Some((active_id, event_type, local_x, local_y, btn)) = forward_info {
+                        let mods = aileron::offscreen_webview::modifiers_js(
+                            self.modifiers.ctrl,
+                            self.modifiers.alt,
+                            self.modifiers.shift,
+                            self.modifiers.super_key,
+                        );
+                        if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                            pane.forward_mouse_event(event_type, local_x, local_y, btn, &mods);
+                        }
+                    }
+                }
+            }
+
+            WindowEvent::CursorMoved { position, .. } => {
+                if !egui_response.consumed
+                    && self.config.is_offscreen()
+                {
+                    let scale = window.scale_factor() as f32;
+                    let logical_pos = egui::pos2(position.x as f32 / scale, position.y as f32 / scale);
+
+                    if let Some(app_state) = &self.app_state
+                        && app_state.mode == aileron::input::Mode::Insert
+                    {
+                        let forward_info = (|| {
+                            let active_id = app_state.wm.active_pane_id();
+                            let panes = app_state.wm.panes();
+                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
+                            let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
+                            let top_offset = URL_BAR_HEIGHT as f32;
+                            let sidebar_offset =
+                                if app_state.config.tab_layout == "sidebar"
+                                    && !app_state.config.tab_sidebar_right
+                                {
+                                    app_state.config.tab_sidebar_width
+                                } else {
+                                    0.0
+                                };
+                            let local_x = logical_pos.x - rect.x as f32 - sidebar_offset;
+                            let local_y = logical_pos.y - rect.y as f32 - top_offset;
+                            if local_x >= 0.0 && local_y >= 0.0 && local_x < pw as f32 && local_y < ph as f32 {
+                                Some((active_id, local_x as f64, local_y as f64))
+                            } else {
+                                None
+                            }
+                        })();
+
+                        if let Some((active_id, local_x, local_y)) = forward_info {
+                            let is_web_pane = !self.terminal_manager.is_terminal(&active_id);
+                            if self.offscreen_mouse_pressed || is_web_pane {
+                                let mods = aileron::offscreen_webview::modifiers_js(
+                                    self.modifiers.ctrl,
+                                    self.modifiers.alt,
+                                    self.modifiers.shift,
+                                    self.modifiers.super_key,
+                                );
+                                if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                                    pane.forward_mouse_event("mousemove", local_x, local_y, "0", &mods);
+                                }
                             }
                         }
                     }
                 }
-                // Also let egui handle it (for its own scrollable areas)
-                // via the earlier winit_state.on_window_event() call at line 393
+            }
+
+            WindowEvent::Ime(ime) => {
+                if self.config.is_offscreen()
+                    && let Some(app_state) = &self.app_state
+                    && app_state.mode == aileron::input::Mode::Insert
+                {
+                    match ime {
+                        winit::event::Ime::Commit(text) => {
+                            let active_id = app_state.wm.active_pane_id();
+                            let text_owned = text.clone();
+
+                            // Route IME commit to native terminal or webview
+                            if self.terminal_manager.is_terminal(&active_id) {
+                                self.terminal_manager.write_input(&active_id, &text_owned);
+                            } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                                pane.insert_text(&text_owned);
+                            }
+                        }
+                        winit::event::Ime::Preedit(text, _cursor) => {
+                            if text.is_empty() {
+                                if let Some(app_state) = &mut self.app_state
+                                    && app_state.status_message.starts_with("composing: ")
+                                {
+                                    app_state.status_message.clear();
+                                }
+                            } else if let Some(app_state) = &mut self.app_state {
+                                app_state.status_message =
+                                    format!("composing: {}", text);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             }
 
             _ => {}
         }
 
         // Check if app wants to quit
-        if let Some(app_state) = &self.app_state {
-            if app_state.should_quit {
-                event_loop.exit();
-            }
+        if let Some(app_state) = &self.app_state
+            && app_state.should_quit
+        {
+            event_loop.exit();
         }
     }
 
@@ -837,11 +1208,11 @@ impl ApplicationHandler for AileronApp {
             info!("Startup completed in {:?}", self.startup_start.elapsed());
         }
 
-        if let Some(app_state) = &mut self.app_state {
-            if app_state.pending_new_window {
-                app_state.pending_new_window = false;
-                self.popup.pending_new_window = true;
-            }
+        if let Some(app_state) = &mut self.app_state
+            && app_state.pending_new_window
+        {
+            app_state.pending_new_window = false;
+            self.popup.pending_new_window = true;
         }
 
         frame_tasks::poll_git_status(&mut self.git_status, &mut self.last_git_poll);
@@ -865,8 +1236,20 @@ impl ApplicationHandler for AileronApp {
         frame_tasks::process_pending_wry_actions(
             &mut self.app_state,
             &mut self.wry_panes,
+            &mut self.offscreen_panes,
             &self.content_scripts,
         );
+
+        if self.config.is_offscreen()
+            && let Some(app_state) = &mut self.app_state
+        {
+            frame_tasks::process_offscreen_events(
+                app_state,
+                &mut self.offscreen_panes,
+                &self.content_scripts,
+                &mut self.mcp_bridge,
+            );
+        }
 
         let ws_name = self
             .app_state
@@ -890,6 +1273,9 @@ impl ApplicationHandler for AileronApp {
             };
 
             self.wry_panes.remove_all();
+            self.offscreen_panes = OffscreenWebViewManager::new();
+            self.webview_textures.clear();
+            self.offscreen_last_capture.clear();
 
             let app_state = match &mut self.app_state {
                 Some(s) => s,
@@ -903,7 +1289,6 @@ impl ApplicationHandler for AileronApp {
                 &mut app_state.terminal_pane_ids,
                 &mut app_state.engines,
                 &mut app_state.wm,
-                &self.terminal_input_tx,
                 &mut self.terminal_manager,
             );
 
@@ -912,27 +1297,27 @@ impl ApplicationHandler for AileronApp {
                     for (pid, url) in result.panes_to_create {
                         self.create_wry_pane_for(pid, &url);
                     }
-                    self.app_state.as_mut().map(|s| {
+                    if let Some(s) = self.app_state.as_mut() {
                         s.status_message = format!(
                             "Workspace restored: {} ({} panes)",
                             ws_name, result.pane_count
                         );
-                    });
+                    }
                 }
                 aileron::workspace_restore::RestoreOutcome::NotFound => {
-                    self.app_state.as_mut().map(|s| {
+                    if let Some(s) = self.app_state.as_mut() {
                         s.status_message = format!("Workspace '{}' not found", ws_name);
-                    });
+                    }
                 }
                 aileron::workspace_restore::RestoreOutcome::NoDatabase => {
-                    self.app_state.as_mut().map(|s| {
+                    if let Some(s) = self.app_state.as_mut() {
                         s.status_message = "Restore failed: no database".into();
-                    });
+                    }
                 }
                 aileron::workspace_restore::RestoreOutcome::TreeError(e) => {
-                    self.app_state.as_mut().map(|s| {
+                    if let Some(s) = self.app_state.as_mut() {
                         s.status_message = format!("Restore failed (tree): {}", e);
-                    });
+                    }
                 }
             }
         }
@@ -956,21 +1341,20 @@ impl ApplicationHandler for AileronApp {
             self.reposition_all_panes();
         }
 
-        frame_tasks::poll_terminal_output(&mut self.terminal_manager, &self.wry_panes);
-        frame_tasks::process_terminal_resizes(
-            &mut self.terminal_manager,
-            &mut self.terminal_resize_rx,
-        );
+        frame_tasks::poll_terminal_output(&mut self.terminal_manager);
 
         self.reposition_all_panes();
         frame_tasks::pump_gtk_loop();
 
+        // Architecture B: capture dirty offscreen frames and update egui textures.
+        self.update_webview_textures();
+
         if let Some(winit_state) = &self.egui_winit {
             let egui_ctx = winit_state.egui_ctx();
-            if egui_ctx.has_requested_repaint() {
-                if let Some(window) = &self.window {
-                    window.request_redraw();
-                }
+            if egui_ctx.has_requested_repaint()
+                && let Some(window) = &self.window
+            {
+                window.request_redraw();
             }
         }
     }
@@ -993,6 +1377,96 @@ impl ApplicationHandler for AileronApp {
             let window_id = window.id();
             self.popup.pending_popup_window = Some((window_id, window));
         }
+    }
+
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        info!("Clean shutdown — clearing session-active flag");
+        Config::clear_session_active();
+    }
+}
+
+fn key_to_js(key: &aileron::input::Key) -> (String, String) {
+    match key {
+        aileron::input::Key::Enter => ("Enter".into(), "Enter".into()),
+        aileron::input::Key::Backspace => ("Backspace".into(), "Backspace".into()),
+        aileron::input::Key::Tab => ("Tab".into(), "Tab".into()),
+        aileron::input::Key::Escape => ("Escape".into(), "Escape".into()),
+        aileron::input::Key::Up => ("ArrowUp".into(), "ArrowUp".into()),
+        aileron::input::Key::Down => ("ArrowDown".into(), "ArrowDown".into()),
+        aileron::input::Key::Left => ("ArrowLeft".into(), "ArrowLeft".into()),
+        aileron::input::Key::Right => ("ArrowRight".into(), "ArrowRight".into()),
+        aileron::input::Key::Home => ("Home".into(), "Home".into()),
+        aileron::input::Key::End => ("End".into(), "End".into()),
+        aileron::input::Key::PageUp => ("PageUp".into(), "PageUp".into()),
+        aileron::input::Key::PageDown => ("PageDown".into(), "PageDown".into()),
+        aileron::input::Key::F(n) => (format!("F{}", n), format!("F{}", n)),
+        _ => ("".into(), "".into()),
+    }
+}
+
+/// Convert an aileron Key + modifiers to a terminal escape sequence.
+/// This is the native terminal equivalent of key_to_js — it sends
+/// the appropriate VT100/xterm escape sequence to the PTY.
+fn key_to_escape_sequence(key: &aileron::input::Key, mods: aileron::input::Modifiers) -> String {
+    use aileron::input::Key;
+
+    let ctrl = mods.ctrl;
+    let shift = mods.shift;
+    let alt = mods.alt;
+
+    // Control letter: Ctrl+A through Ctrl+Z → \x01 through \x1A
+    if ctrl
+        && let Key::Character(c) = key
+    {
+        let lower = c.to_ascii_lowercase();
+        let byte = lower as u32;
+        if (0x61..=0x7a).contains(&byte) {
+            // a=0x61 → Ctrl+A = 0x01
+            return String::from_utf8_lossy(&[(byte - 0x60) as u8]).to_string();
+        }
+    }
+
+    // Alt+letter: ESC followed by the character
+    if alt
+        && let Key::Character(c) = key
+    {
+        return format!("\x1b{}", c);
+    }
+
+    match key {
+        Key::Enter => "\r".into(),
+        Key::Backspace => "\x7f".into(), // DEL
+        Key::Tab => "\t".into(),
+        Key::Escape => "\x1b".into(),
+        Key::Up => {
+            if shift { "\x1b[1;2A".into() } else { "\x1b[A".into() }
+        }
+        Key::Down => {
+            if shift { "\x1b[1;2B".into() } else { "\x1b[B".into() }
+        }
+        Key::Right => {
+            if shift { "\x1b[1;2C".into() } else { "\x1b[C".into() }
+        }
+        Key::Left => {
+            if shift { "\x1b[1;2D".into() } else { "\x1b[D".into() }
+        }
+        Key::Home => "\x1b[H".into(),
+        Key::End => "\x1b[F".into(),
+        Key::PageUp => "\x1b[5~".into(),
+        Key::PageDown => "\x1b[6~".into(),
+        Key::F(1) => "\x1bOP".into(),
+        Key::F(2) => "\x1bOQ".into(),
+        Key::F(3) => "\x1bOR".into(),
+        Key::F(4) => "\x1bOS".into(),
+        Key::F(5) => "\x1b[15~".into(),
+        Key::F(6) => "\x1b[17~".into(),
+        Key::F(7) => "\x1b[18~".into(),
+        Key::F(8) => "\x1b[19~".into(),
+        Key::F(9) => "\x1b[20~".into(),
+        Key::F(10) => "\x1b[21~".into(),
+        Key::F(11) => "\x1b[23~".into(),
+        Key::F(12) => "\x1b[24~".into(),
+        _ => String::new(), // Unknown keys → no escape sequence
     }
 }
 
@@ -1017,7 +1491,10 @@ fn main() -> anyhow::Result<()> {
     // WINIT_UNIX_BACKEND and uses WAYLAND_DISPLAY/DISPLAY to pick backend).
     // We also force GDK to use X11 so gtk::init() creates an X11 display.
     // TODO: Remove when wry supports embedding into a winit Wayland surface.
-    if std::env::var("WAYLAND_DISPLAY").is_ok() {
+    let config = Config::load();
+    if !config.is_offscreen()
+        && std::env::var("WAYLAND_DISPLAY").is_ok()
+    {
         info!("Wayland detected — using XWayland for wry build_as_child compatibility");
         unsafe {
             std::env::remove_var("WAYLAND_DISPLAY");
@@ -1035,13 +1512,16 @@ fn main() -> anyhow::Result<()> {
     // unfocus call produces GLXBadWindow (X error 170) which winit .expect()s on,
     // crashing the app. Install a custom X error handler that swallows GLXBadWindow.
     #[cfg(target_os = "linux")]
-    unsafe {
-        if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
-            (xlib.XSetErrorHandler)(Some(x11_error_handler));
+    if !config.is_offscreen() {
+        unsafe {
+            if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
+                (xlib.XSetErrorHandler)(Some(x11_error_handler));
+            }
         }
     }
 
     info!("Entering event loop...");
+    Config::set_session_active();
     let mut app = AileronApp::new();
     event_loop.run_app(&mut app)?;
 

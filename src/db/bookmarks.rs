@@ -101,6 +101,19 @@ pub fn clear_bookmarks(conn: &Connection) -> Result<usize> {
     Ok(count)
 }
 
+/// Add a bookmark only if the URL doesn't already exist.
+/// Returns true if inserted, false if duplicate.
+pub fn import_bookmark(conn: &Connection, url: &str, title: &str) -> Result<bool> {
+    if is_bookmarked(conn, url) {
+        return Ok(false);
+    }
+    conn.execute(
+        "INSERT INTO bookmarks (url, title) VALUES (?1, ?2)",
+        params![url, title],
+    )?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,5 +221,19 @@ mod tests {
         let count = clear_bookmarks(&conn).unwrap();
         assert_eq!(count, 2);
         assert_eq!(all_bookmarks(&conn).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_import_bookmark_skips_duplicate() {
+        let conn = test_db();
+        add_bookmark(&conn, "https://example.com", "Example").unwrap();
+
+        let inserted = import_bookmark(&conn, "https://example.com", "Example (dup)").unwrap();
+        assert!(!inserted);
+
+        let inserted = import_bookmark(&conn, "https://new.com", "New").unwrap();
+        assert!(inserted);
+
+        assert_eq!(all_bookmarks(&conn).unwrap().len(), 2);
     }
 }

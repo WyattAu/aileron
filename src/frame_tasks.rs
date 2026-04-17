@@ -5,8 +5,9 @@ use aileron::app::{AppState, WryAction};
 use aileron::git::GitStatus;
 use aileron::mcp::{McpBridge, McpCommand};
 use aileron::scripts::ContentScriptManager;
+use aileron::offscreen_webview::OffscreenWebViewManager;
 use aileron::servo::{pump_gtk, WryEvent, WryPaneManager};
-use aileron::terminal::TerminalManager;
+use aileron::terminal::NativeTerminalManager;
 
 pub fn poll_git_status(git_status: &mut GitStatus, last_git_poll: &mut std::time::Instant) {
     if last_git_poll.elapsed().as_secs() >= 1 {
@@ -17,6 +18,9 @@ pub fn poll_git_status(git_status: &mut GitStatus, last_git_poll: &mut std::time
 
 pub fn auto_save_workspace(app_state: &mut AppState, wry_panes: &WryPaneManager) {
     if !app_state.config.auto_save {
+        return;
+    }
+    if !app_state.session_dirty {
         return;
     }
     let interval = std::time::Duration::from_secs(app_state.config.auto_save_interval);
@@ -53,6 +57,7 @@ pub fn process_wry_events(
     for event in wry_events {
         match event {
             WryEvent::LoadComplete { pane_id, url, .. } => {
+                app_state.session_dirty = true;
                 if let Ok(parsed) = url::Url::parse(&url) {
                     app_state.record_visit(&parsed, &url);
                 }
@@ -87,25 +92,24 @@ pub fn process_wry_events(
                 app_state.status_message = format!("Loading: {}...", &url[..url.len().min(40)]);
             }
             WryEvent::TitleChanged { title, .. } => {
-                app_state.status_message = format!("{}", &title[..title.len().min(60)]);
+                app_state.status_message = title[..title.len().min(60)].to_string();
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
                 let short_url = if url.len() > 40 { &url[..37] } else { &url };
                 app_state.status_message = format!("Downloading: {} ({})", filename, short_url);
                 info!("Download started: {} from {}", filename, url);
-                if let Some(db) = app_state.db.as_ref() {
-                    if let Some(downloads_dir) = directories::UserDirs::new()
+                if let Some(db) = app_state.db.as_ref()
+                    && let Some(downloads_dir) = directories::UserDirs::new()
                         .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
-                    {
-                        let dest = downloads_dir.join(&filename);
-                        if let Err(e) = aileron::db::downloads::record_download(
-                            db,
-                            &url,
-                            &filename,
-                            &dest.to_string_lossy(),
-                        ) {
-                            warn!("Failed to record download: {}", e);
-                        }
+                {
+                    let dest = downloads_dir.join(&filename);
+                    if let Err(e) = aileron::db::downloads::record_download(
+                        db,
+                        &url,
+                        &filename,
+                        &dest.to_string_lossy(),
+                    ) {
+                        warn!("Failed to record download: {}", e);
                     }
                 }
             }
@@ -117,6 +121,12 @@ pub fn process_wry_events(
                     .spawn();
                 app_state.status_message = format!("Opened: {}", path);
             }
+            WryEvent::HttpsUpgraded { to, .. } => {
+                app_state.status_message = format!("HTTPS upgrade: {}", to);
+            }
+            WryEvent::IpcMessage { pane_id, message } => {
+                handle_ipc_message(app_state, wry_panes, pane_id, &message);
+            }
         }
     }
 
@@ -126,9 +136,102 @@ pub fn process_wry_events(
     }
 }
 
+pub fn process_offscreen_events(
+    app_state: &mut AppState,
+    offscreen_panes: &mut OffscreenWebViewManager,
+    content_scripts: &ContentScriptManager,
+    _mcp_bridge: &mut McpBridge,
+) {
+    let events = offscreen_panes.drain_all_events();
+    for (_pane_id, event) in events {
+        match event {
+            WryEvent::LoadComplete { pane_id, url, .. } => {
+                app_state.session_dirty = true;
+                if let Ok(parsed) = url::Url::parse(&url) {
+                    app_state.record_visit(&parsed, &url);
+                }
+                app_state.status_message = format!("Loaded: {}", &url[..url.len().min(60)]);
+
+                if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                    pane.mark_dirty();
+                }
+
+                if !url.starts_with("aileron://") {
+                    let matching = content_scripts.scripts_for_url(&url);
+                    for script in matching {
+                        if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                            info!(
+                                "Injecting content script '{}' into {}",
+                                script.name,
+                                &url[..url.len().min(40)]
+                            );
+                            pane.execute_js(&script.js_code);
+                        }
+                    }
+                    if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                        pane.execute_js(aileron::servo::NETWORK_MONITOR_JS);
+                        pane.execute_js(aileron::servo::CONSOLE_CAPTURE_JS);
+                        pane.suppress_context_menu();
+                        pane.execute_js(
+                            "setTimeout(function() { \
+                                if (window._aileron_scroll_pos) { \
+                                    window.scrollTo(window._aileron_scroll_pos.x, window._aileron_scroll_pos.y); \
+                                } \
+                            }, 100);"
+                        );
+                    }
+                }
+            }
+            WryEvent::LoadStarted { url, .. } => {
+                app_state.status_message = format!("Loading: {}...", &url[..url.len().min(40)]);
+            }
+            WryEvent::TitleChanged { title, .. } => {
+                app_state.status_message = title[..title.len().min(60)].to_string();
+            }
+            WryEvent::DownloadStarted { url, filename, .. } => {
+                let short_url = if url.len() > 40 { &url[..37] } else { &url };
+                app_state.status_message = format!("Downloading: {} ({})", filename, short_url);
+                info!("Download started: {} from {}", filename, url);
+                if let Some(db) = app_state.db.as_ref()
+                    && let Some(downloads_dir) = directories::UserDirs::new()
+                        .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
+                {
+                    let dest = downloads_dir.join(&filename);
+                    if let Err(e) = aileron::db::downloads::record_download(
+                        db,
+                        &url,
+                        &filename,
+                        &dest.to_string_lossy(),
+                    ) {
+                        warn!("Failed to record download: {}", e);
+                    }
+                }
+            }
+            WryEvent::OpenFile { path } => {
+                let _ = std::process::Command::new("xdg-open")
+                    .arg(&path)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn();
+                app_state.status_message = format!("Opened: {}", path);
+            }
+            WryEvent::HttpsUpgraded { to, .. } => {
+                app_state.status_message = format!("HTTPS upgrade: {}", to);
+                if let Some(pane) = offscreen_panes.get_mut(&_pane_id) {
+                    pane.mark_dirty();
+                }
+            }
+            WryEvent::IpcMessage { pane_id, message } => {
+                handle_ipc_message_offscreen(app_state, offscreen_panes, pane_id, &message);
+            }
+        }
+    }
+}
+
 pub fn process_pending_wry_actions(
     app_state: &mut Option<AppState>,
     wry_panes: &mut WryPaneManager,
+    offscreen_panes: &mut OffscreenWebViewManager,
     content_scripts: &ContentScriptManager,
 ) {
     let (pending_actions, active_id) = {
@@ -145,6 +248,7 @@ pub fn process_pending_wry_actions(
             action,
             active_id,
             wry_panes,
+            offscreen_panes,
             app_state,
             content_scripts,
         ) {
@@ -208,26 +312,9 @@ pub fn handle_pending_tab_close(app_state: &mut AppState, close_id: Uuid) {
     app_state.status_message = "Pane closed".into();
 }
 
-pub fn poll_terminal_output(terminal_manager: &mut TerminalManager, wry_panes: &WryPaneManager) {
-    let term_ids: Vec<Uuid> = terminal_manager.terminal_pane_ids();
-    terminal_manager.poll_input();
-    for tid in &term_ids {
-        if let Some(encoded) = terminal_manager.flush_output(tid) {
-            if let Some(wry_pane) = wry_panes.get(tid) {
-                let js = format!("_terminalWrite('{}')", encoded);
-                wry_pane.execute_js(&js);
-            }
-        }
-    }
-}
-
-pub fn process_terminal_resizes(
-    terminal_manager: &mut TerminalManager,
-    rx: &mut std::sync::mpsc::Receiver<(Uuid, u16, u16)>,
-) {
-    while let Ok((pane_id, cols, rows)) = rx.try_recv() {
-        terminal_manager.resize(&pane_id, cols, rows);
-    }
+/// Poll native terminals for new output and feed VT parser.
+pub fn poll_terminal_output(terminal_manager: &mut NativeTerminalManager) {
+    terminal_manager.tick_all();
 }
 
 pub fn pump_gtk_loop() {
@@ -269,4 +356,150 @@ pub fn spawn_mcp_server(mcp_bridge: &McpBridge) {
             warn!("MCP server error: {}", e);
         }
     });
+}
+
+fn handle_ipc_message(
+    app_state: &mut AppState,
+    wry_panes: &mut WryPaneManager,
+    pane_id: Uuid,
+    message: &str,
+) {
+    let msg: serde_json::Value = match serde_json::from_str(message) {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    match msg.get("t").and_then(|v| v.as_str()) {
+        Some("get-config") => {
+            let config_json = serde_json::to_string(&app_state.config).unwrap_or_default();
+            let js = format!(
+                "window._aileron_config = {}; window._onConfigLoaded && window._onConfigLoaded(window._aileron_config);",
+                config_json
+            );
+            if let Some(pane) = wry_panes.get_mut(&pane_id) {
+                pane.execute_js(&js);
+            }
+        }
+        Some("set-config") => {
+            if let Some(config_obj) = msg.get("config") {
+                if let Some(v) = config_obj.get("homepage").and_then(|v| v.as_str()) {
+                    app_state.config.homepage = v.to_string();
+                }
+                if let Some(v) = config_obj.get("search_engine").and_then(|v| v.as_str()) {
+                    app_state.config.search_engine = v.to_string();
+                }
+                if let Some(v) = config_obj.get("restore_session").and_then(|v| v.as_bool()) {
+                    app_state.config.restore_session = v;
+                }
+                if let Some(v) = config_obj.get("tab_layout").and_then(|v| v.as_str()) {
+                    app_state.config.tab_layout = v.to_string();
+                }
+                if let Some(v) = config_obj.get("tab_sidebar_width").and_then(|v| v.as_f64()) {
+                    app_state.config.tab_sidebar_width = v as f32;
+                }
+                if let Some(v) = config_obj.get("tab_sidebar_right").and_then(|v| v.as_bool()) {
+                    app_state.config.tab_sidebar_right = v;
+                }
+                if let Some(v) = config_obj.get("adblock_enabled").and_then(|v| v.as_bool()) {
+                    app_state.config.adblock_enabled = v;
+                }
+                if let Some(v) = config_obj.get("https_upgrade_enabled").and_then(|v| v.as_bool()) {
+                    app_state.config.https_upgrade_enabled = v;
+                }
+                if let Some(v) = config_obj.get("tracking_protection_enabled").and_then(|v| v.as_bool()) {
+                    app_state.config.tracking_protection_enabled = v;
+                }
+                if let Some(v) = config_obj.get("devtools").and_then(|v| v.as_bool()) {
+                    app_state.config.devtools = v;
+                }
+                if let Some(v) = config_obj.get("proxy") {
+                    app_state.config.proxy = v.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
+                }
+                if let Some(v) = config_obj.get("custom_css") {
+                    app_state.config.custom_css = v.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
+                }
+                if let Err(e) = aileron::config::Config::save(&app_state.config) {
+                    warn!("Failed to save config: {}", e);
+                }
+                if let Some(pane) = wry_panes.get_mut(&pane_id) {
+                    pane.execute_js("window._onConfigSaved && window._onConfigSaved();");
+                }
+                app_state.status_message = "Settings saved".into();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn handle_ipc_message_offscreen(
+    app_state: &mut AppState,
+    offscreen_panes: &mut OffscreenWebViewManager,
+    pane_id: Uuid,
+    message: &str,
+) {
+    let msg: serde_json::Value = match serde_json::from_str(message) {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    match msg.get("t").and_then(|v| v.as_str()) {
+        Some("get-config") => {
+            let config_json = serde_json::to_string(&app_state.config).unwrap_or_default();
+            let js = format!(
+                "window._aileron_config = {}; window._onConfigLoaded && window._onConfigLoaded(window._aileron_config);",
+                config_json
+            );
+            if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                pane.execute_js(&js);
+                pane.mark_dirty();
+            }
+        }
+        Some("set-config") => {
+            if let Some(config_obj) = msg.get("config") {
+                if let Some(v) = config_obj.get("homepage").and_then(|v| v.as_str()) {
+                    app_state.config.homepage = v.to_string();
+                }
+                if let Some(v) = config_obj.get("search_engine").and_then(|v| v.as_str()) {
+                    app_state.config.search_engine = v.to_string();
+                }
+                if let Some(v) = config_obj.get("restore_session").and_then(|v| v.as_bool()) {
+                    app_state.config.restore_session = v;
+                }
+                if let Some(v) = config_obj.get("tab_layout").and_then(|v| v.as_str()) {
+                    app_state.config.tab_layout = v.to_string();
+                }
+                if let Some(v) = config_obj.get("tab_sidebar_width").and_then(|v| v.as_f64()) {
+                    app_state.config.tab_sidebar_width = v as f32;
+                }
+                if let Some(v) = config_obj.get("tab_sidebar_right").and_then(|v| v.as_bool()) {
+                    app_state.config.tab_sidebar_right = v;
+                }
+                if let Some(v) = config_obj.get("adblock_enabled").and_then(|v| v.as_bool()) {
+                    app_state.config.adblock_enabled = v;
+                }
+                if let Some(v) = config_obj.get("https_upgrade_enabled").and_then(|v| v.as_bool()) {
+                    app_state.config.https_upgrade_enabled = v;
+                }
+                if let Some(v) = config_obj.get("tracking_protection_enabled").and_then(|v| v.as_bool()) {
+                    app_state.config.tracking_protection_enabled = v;
+                }
+                if let Some(v) = config_obj.get("devtools").and_then(|v| v.as_bool()) {
+                    app_state.config.devtools = v;
+                }
+                if let Some(v) = config_obj.get("proxy") {
+                    app_state.config.proxy = v.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
+                }
+                if let Some(v) = config_obj.get("custom_css") {
+                    app_state.config.custom_css = v.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
+                }
+                if let Err(e) = aileron::config::Config::save(&app_state.config) {
+                    warn!("Failed to save config: {}", e);
+                }
+                if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                    pane.execute_js("window._onConfigSaved && window._onConfigSaved();");
+                    pane.mark_dirty();
+                }
+                app_state.status_message = "Settings saved".into();
+            }
+        }
+        _ => {}
+    }
 }

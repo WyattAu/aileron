@@ -11,6 +11,7 @@ pub fn process_wry_action(
     action: crate::app::WryAction,
     active_id: uuid::Uuid,
     wry_panes: &mut crate::servo::WryPaneManager,
+    offscreen_panes: &mut crate::offscreen_webview::OffscreenWebViewManager,
     app_state: &mut Option<crate::app::AppState>,
     content_scripts: &crate::scripts::ContentScriptManager,
 ) -> Result<(), String> {
@@ -18,6 +19,8 @@ pub fn process_wry_action(
         crate::app::WryAction::Navigate(url) => {
             if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
                 wry_pane.navigate(&url);
+            } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
+                pane.navigate(&url);
             } else {
                 return Err(format!(
                     "No pane for navigation: {}",
@@ -26,53 +29,83 @@ pub fn process_wry_action(
             }
         }
         crate::app::WryAction::Back => {
-            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
-                wry_pane.execute_js(crate::servo::SCROLL_SAVE_JS);
+            if wry_panes.get(&active_id).is_some() {
+                if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                    wry_pane.execute_js(crate::servo::SCROLL_SAVE_JS);
+                }
+                wry_panes.back(&active_id);
+            } else {
+                offscreen_panes.back(&active_id);
             }
-            wry_panes.back(&active_id);
         }
         crate::app::WryAction::Forward => {
-            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
-                wry_pane.execute_js(crate::servo::SCROLL_SAVE_JS);
+            if wry_panes.get(&active_id).is_some() {
+                if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                    wry_pane.execute_js(crate::servo::SCROLL_SAVE_JS);
+                }
+                wry_panes.forward(&active_id);
+            } else {
+                offscreen_panes.forward(&active_id);
             }
-            wry_panes.forward(&active_id);
         }
         crate::app::WryAction::Reload => {
-            wry_panes.reload(&active_id);
+            if wry_panes.get(&active_id).is_some() {
+                wry_panes.reload(&active_id);
+            } else {
+                if let Some(pane) = offscreen_panes.get(&active_id) {
+                    pane.reload();
+                }
+            }
         }
         crate::app::WryAction::ToggleBookmark => {
+            let url_str;
+            let title_str;
             if let Some(wry_pane) = wry_panes.get(&active_id) {
-                let url = wry_pane.url().to_string();
-                let title = wry_pane.title().to_string();
-                let display_title = if title.is_empty() { &url } else { &title };
-                if let Some(app_state) = app_state
-                    && let Some(ref conn) = app_state.db
-                {
-                    if crate::db::bookmarks::is_bookmarked(conn, &url) {
-                        let _ = crate::db::bookmarks::remove_bookmark(conn, &url);
-                        app_state.status_message =
-                            format!("Bookmark removed: {}", display_title);
-                    } else {
-                        let _ = crate::db::bookmarks::add_bookmark(conn, &url, display_title);
-                        app_state.status_message = format!("Bookmarked: {}", display_title);
-                    }
+                url_str = wry_pane.url().to_string();
+                title_str = wry_pane.title().to_string();
+            } else if let Some(pane) = offscreen_panes.get(&active_id) {
+                url_str = pane.url().to_string();
+                title_str = pane.title().to_string();
+            } else {
+                return Ok(());
+            }
+            let display_title = if title_str.is_empty() { &url_str } else { &title_str };
+            if let Some(app_state) = app_state
+                && let Some(ref conn) = app_state.db
+            {
+                if crate::db::bookmarks::is_bookmarked(conn, &url_str) {
+                    let _ = crate::db::bookmarks::remove_bookmark(conn, &url_str);
+                    app_state.status_message =
+                        format!("Bookmark removed: {}", display_title);
+                } else {
+                    let _ = crate::db::bookmarks::add_bookmark(conn, &url_str, display_title);
+                    app_state.status_message = format!("Bookmarked: {}", display_title);
                 }
             }
         }
         crate::app::WryAction::Autofill { js } => {
-            if let Some(wry_pane) = wry_panes.get(&active_id) {
+            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
                 info!("Auto-filling credentials into active pane");
                 wry_pane.execute_js(&js);
+            } else if let Some(pane) = offscreen_panes.get(&active_id) {
+                info!("Auto-filling credentials into offscreen pane");
+                pane.execute_js(&js);
             }
         }
         crate::app::WryAction::ToggleDevTools => {
             #[cfg(target_os = "linux")]
-            wry_panes.open_devtools(&active_id);
+            {
+                if wry_panes.get(&active_id).is_some() {
+                    wry_panes.open_devtools(&active_id);
+                }
+            }
         }
         crate::app::WryAction::ScrollBy { x, y } => {
             if let Some(wry_pane) = wry_panes.get(&active_id) {
                 let js = format!("window.scrollBy({}, {})", x, y);
                 wry_pane.execute_js(&js);
+            } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
+                pane.scroll_by(x, y);
             }
         }
         crate::app::WryAction::ScrollTo { fraction } => {
@@ -82,11 +115,19 @@ pub fn process_wry_action(
                     fraction
                 );
                 wry_pane.execute_js(&js);
+            } else if let Some(pane) = offscreen_panes.get(&active_id) {
+                let js = format!(
+                    "window.scrollTo(0, document.documentElement.scrollHeight * {})",
+                    fraction
+                );
+                pane.execute_js(&js);
             }
         }
         crate::app::WryAction::RunJs(js) => {
             if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
                 wry_pane.execute_js(&js);
+            } else if let Some(pane) = offscreen_panes.get(&active_id) {
+                pane.execute_js(&js);
             }
         }
         crate::app::WryAction::EnterReaderMode => {
@@ -153,10 +194,55 @@ pub fn process_wry_action(
 })()
 "#.to_string();
                 pane.execute_js(&reader_js);
+            } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
+                let reader_js = r#"
+(function() {
+    var article = document.querySelector('article') ||
+                  document.querySelector('[role="main"]') ||
+                  document.querySelector('main') ||
+                  document.querySelector('.post-content') ||
+                  document.querySelector('.article-content') ||
+                  document.querySelector('.content') ||
+                  document.querySelector('#content') ||
+                  document.querySelector('.entry-content') ||
+                  document.body;
+    if (!article) return;
+    var title = document.title || '';
+    if (!window._aileron_original_html) {
+        window._aileron_original_html = document.documentElement.innerHTML;
+        window._aileron_original_title = document.title;
+    }
+    var text = article.textContent.trim();
+    var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + ' (Reader)</title>' +
+        '<style>body{background:#1a1a1a;color:#d4d4d4;font-family:serif;max-width:680px;margin:0 auto;padding:40px 20px;line-height:1.7;}</style></head><body>' +
+        '<h1>' + title + '</h1><div style="white-space:pre-wrap;">' + text + '</div></body></html>';
+    document.open();
+    document.write(html);
+    document.close();
+})()
+"#.to_string();
+                pane.execute_js(&reader_js);
             }
         }
         crate::app::WryAction::ExitReaderMode => {
             if let Some(pane) = wry_panes.get_mut(&active_id) {
+                let restore_js = r#"
+(function() {
+    if (window._aileron_original_html) {
+        document.open();
+        document.write(window._aileron_original_html);
+        document.close();
+        document.title = window._aileron_original_title || '';
+        window._aileron_original_html = null;
+        window._aileron_original_title = null;
+    } else {
+        location.reload();
+    }
+})()
+"#
+                .to_string();
+                pane.execute_js(&restore_js);
+            } else if let Some(pane) = offscreen_panes.get(&active_id) {
                 let restore_js = r#"
 (function() {
     if (window._aileron_original_html) {
@@ -198,6 +284,25 @@ pub fn process_wry_action(
                     );
                     pane.execute_js(&minimal_js);
                 }
+            } else if let Some(pane) = offscreen_panes.get(&active_id) {
+                let current_url = pane.url().clone();
+                if !current_url.as_str().starts_with("aileron://") {
+                    let minimal_js = format!(
+                        r#"
+(function() {{
+    if (!window._aileron_original_url) {{
+        window._aileron_original_url = '{url}';
+    }}
+    var style = document.createElement('style');
+    style.id = 'aileron-minimal-mode';
+    style.textContent = 'img, video, audio, iframe, svg, canvas, [style*="background-image"], .ad, .banner, .popup, .overlay {{ display: none !important; }}';
+    document.head.appendChild(style);
+}})()
+"#,
+                        url = current_url.as_str().replace('\'', "\\'")
+                    );
+                    pane.execute_js(&minimal_js);
+                }
             }
         }
         crate::app::WryAction::ExitMinimalMode => {
@@ -214,14 +319,30 @@ pub fn process_wry_action(
 "#
                 .to_string();
                 pane.execute_js(&restore_js);
+            } else if let Some(pane) = offscreen_panes.get(&active_id) {
+                let restore_js = r#"
+(function() {
+    var style = document.getElementById('aileron-minimal-mode');
+    if (style) style.remove();
+    if (window._aileron_original_url) {
+        location.href = window._aileron_original_url;
+        window._aileron_original_url = null;
+    }
+})()
+"#
+                .to_string();
+                pane.execute_js(&restore_js);
             }
         }
         crate::app::WryAction::SaveWorkspace { name, .. } => {
-            let pane_urls: std::collections::HashMap<uuid::Uuid, String> = wry_panes
+            let mut pane_urls: std::collections::HashMap<uuid::Uuid, String> = wry_panes
                 .pane_ids()
                 .into_iter()
                 .filter_map(|id| wry_panes.url_for(&id).map(|url| (id, url.to_string())))
                 .collect();
+            for (id, pane) in offscreen_panes.iter() {
+                pane_urls.insert(*id, pane.url().to_string());
+            }
             if let Some(app_state) = app_state {
                 match app_state.save_workspace_with_urls(&name, &pane_urls) {
                     Ok(()) => {
@@ -240,6 +361,11 @@ pub fn process_wry_action(
                 let error_url = url::Url::parse(&format!("aileron://error?msg={}", encoded))
                     .map_err(|e| format!("Invalid error URL: {}", e))?;
                 wry_pane.navigate(&error_url);
+            } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
+                let encoded = urlencoding::encode(&message);
+                let error_url = url::Url::parse(&format!("aileron://error?msg={}", encoded))
+                    .map_err(|e| format!("Invalid error URL: {}", e))?;
+                pane.navigate(&error_url);
             } else {
                 return Err(format!(
                     "No pane to show error: {}",
@@ -325,6 +451,8 @@ pub fn process_wry_action(
                 } else if let Some(app_state) = app_state {
                     app_state.status_message = "Network log: collecting...".into();
                 }
+            } else if let Some(app_state) = app_state {
+                app_state.status_message = "Network log: not available in offscreen mode".into();
             }
         }
         crate::app::WryAction::ClearNetworkLog => {
@@ -373,6 +501,8 @@ pub fn process_wry_action(
                 } else if let Some(app_state) = app_state {
                     app_state.status_message = "Console log: collecting...".into();
                 }
+            } else if let Some(app_state) = app_state {
+                app_state.status_message = "Console log: not available in offscreen mode".into();
             }
         }
         crate::app::WryAction::ClearConsoleLog => {

@@ -79,6 +79,28 @@ pub fn clear_history(conn: &Connection) -> Result<usize> {
     Ok(count)
 }
 
+/// Insert a history entry only if the URL doesn't already exist.
+/// Used for importing from other browsers (skip duplicates).
+/// Returns true if inserted, false if duplicate.
+pub fn import_visit(conn: &Connection, url: &str, title: &str, visited_at: &str) -> Result<bool> {
+    let exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM history WHERE url = ?1",
+            params![url],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+    if exists {
+        return Ok(false);
+    }
+    conn.execute(
+        "INSERT INTO history (url, title, visited_at) VALUES (?1, ?2, ?3)",
+        params![url, title, visited_at],
+    )?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,5 +207,26 @@ mod tests {
         let count = clear_history(&conn).unwrap();
         assert_eq!(count, 2);
         assert_eq!(recent_entries(&conn, 10).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_import_visit_skips_duplicate() {
+        let conn = setup_db();
+        record_visit(
+            &conn,
+            &Url::parse("https://example.com/").unwrap(),
+            "Example",
+        )
+        .unwrap();
+
+        let inserted =
+            import_visit(&conn, "https://example.com/", "Dup", "2024-01-01 00:00:00").unwrap();
+        assert!(!inserted);
+
+        let inserted =
+            import_visit(&conn, "https://new.com/", "New", "2024-01-01 00:00:00").unwrap();
+        assert!(inserted);
+
+        assert_eq!(recent_entries(&conn, 10).unwrap().len(), 2);
     }
 }

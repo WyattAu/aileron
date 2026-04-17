@@ -2,6 +2,9 @@ use crate::app::{AppState, WryAction};
 use crate::git::GitStatus;
 use crate::input::Mode;
 use crate::servo::WryPaneManager;
+use crate::terminal::grid::{CellMetrics, TerminalColors};
+use crate::terminal::render::render_terminal;
+use crate::terminal::NativeTerminalManager;
 use crate::ui::search::SearchCategory;
 
 pub fn build_ui(
@@ -10,6 +13,8 @@ pub fn build_ui(
     wry_panes: &WryPaneManager,
     git_status: &GitStatus,
     status_bar_height: f64,
+    webview_textures: &std::collections::HashMap<uuid::Uuid, egui::TextureId>,
+    terminal_manager: &NativeTerminalManager,
 ) {
     let tab_layout = app_state.config.tab_layout.as_str();
     if tab_layout == "sidebar" {
@@ -356,6 +361,7 @@ pub fn build_ui(
     egui::CentralPanel::default().show(ctx, |ui| {
         let panes = app_state.wm.panes();
         let active_id = app_state.wm.active_pane_id();
+        let offscreen = app_state.config.is_offscreen();
 
         if panes.len() > 1 {
             let available = ui.available_rect_before_wrap();
@@ -378,6 +384,50 @@ pub fn build_ui(
                     egui::Color32::from_rgb(60, 60, 60)
                 };
 
+                if offscreen {
+                    let is_terminal = terminal_manager.is_terminal(id);
+
+                    if is_terminal {
+                        // Native terminal rendering: draw grid directly with egui
+                        if let Some(pane) = terminal_manager.get(id) {
+                            let colors = TerminalColors::default();
+                            let metrics = CellMetrics::from_egui(ctx, 14.0);
+                            render_terminal(
+                                ui.painter(),
+                                pane.term(),
+                                screen_rect,
+                                &colors,
+                                &metrics,
+                            );
+                        } else {
+                            ui.painter().rect_filled(
+                                screen_rect,
+                                0.0,
+                                egui::Color32::from_rgb(20, 20, 20),
+                            );
+                        }
+                    } else if let Some(&tex_id) = webview_textures.get(id) {
+                        // Web content: show captured webview texture
+                        let image = egui::Image::new(egui::load::SizedTexture::new(
+                            tex_id,
+                            screen_rect.size(),
+                        ));
+                        ui.put(screen_rect, image);
+                    } else {
+                        ui.painter().rect_filled(
+                            screen_rect,
+                            0.0,
+                            egui::Color32::from_rgb(20, 20, 20),
+                        );
+                        ui.painter().rect_stroke(
+                            screen_rect,
+                            0.0,
+                            egui::Stroke::new(2.0, border_color),
+                            egui::epaint::StrokeKind::Middle,
+                        );
+                    }
+                }
+
                 ui.painter().rect_stroke(
                     screen_rect,
                     0.0,
@@ -385,7 +435,7 @@ pub fn build_ui(
                     egui::epaint::StrokeKind::Middle,
                 );
             }
-        } else if wry_panes.is_empty() {
+        } else if wry_panes.is_empty() && (!offscreen || webview_textures.is_empty()) {
             let available = ui.available_rect_before_wrap();
             let border_color = egui::Color32::from_rgb(80, 180, 255);
             ui.painter().rect_stroke(
