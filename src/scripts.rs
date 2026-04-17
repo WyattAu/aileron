@@ -3,6 +3,14 @@
 use std::path::PathBuf;
 use tracing::{info, warn};
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum RunAt {
+    DocumentStart,
+    DocumentEnd,
+    #[default]
+    DocumentIdle,
+}
+
 #[derive(Debug, Clone)]
 pub struct ContentScript {
     pub name: String,
@@ -10,6 +18,8 @@ pub struct ContentScript {
     pub grants: Vec<String>,
     pub js_code: String,
     pub enabled: bool,
+    pub run_at: RunAt,
+    pub match_regex: Option<String>,
 }
 
 pub struct ContentScriptManager {
@@ -70,6 +80,8 @@ impl ContentScriptManager {
             .unwrap_or_else(|| "unnamed".into());
         let mut match_patterns = Vec::new();
         let mut grants = Vec::new();
+        let mut run_at = RunAt::default();
+        let mut match_regex = None;
 
         if let Some(start) = source.find("==UserScript==")
             && let Some(end) = source[start..].find("==/UserScript==")
@@ -83,6 +95,14 @@ impl ContentScriptManager {
                     match_patterns.push(pattern.trim().to_string());
                 } else if let Some(grant) = line.strip_prefix("@grant") {
                     grants.push(grant.trim().to_string());
+                } else if let Some(value) = line.strip_prefix("@run-at") {
+                    run_at = match value.trim() {
+                        "document-start" => RunAt::DocumentStart,
+                        "document-end" => RunAt::DocumentEnd,
+                        _ => RunAt::DocumentIdle,
+                    };
+                } else if let Some(pattern) = line.strip_prefix("@match-regexp") {
+                    match_regex = Some(pattern.trim().to_string());
                 }
             }
         }
@@ -109,6 +129,8 @@ impl ContentScriptManager {
             grants,
             js_code,
             enabled: true,
+            run_at,
+            match_regex,
         })
     }
 
@@ -135,10 +157,19 @@ impl ContentScriptManager {
         }
     }
 
-    pub fn scripts_for_url(&self, url: &str) -> Vec<&ContentScript> {
+    pub fn scripts_for_url(&self, url: &str, run_at: RunAt) -> Vec<&ContentScript> {
         self.scripts
             .iter()
-            .filter(|s| s.enabled && Self::url_matches_patterns(url, &s.match_patterns))
+            .filter(|s| {
+                s.enabled
+                    && s.run_at == run_at
+                    && (Self::url_matches_patterns(url, &s.match_patterns)
+                        || s.match_regex.as_ref().map(|r| {
+                            regex::Regex::new(r)
+                                .map(|re| re.is_match(url))
+                                .unwrap_or(false)
+                        }).unwrap_or(false))
+            })
             .collect()
     }
 
@@ -150,6 +181,10 @@ impl ContentScriptManager {
     }
 
     fn url_matches_pattern(url: &str, pattern: &str) -> bool {
+        Self::wildcard_matches(url, pattern)
+    }
+
+    fn wildcard_matches(url: &str, pattern: &str) -> bool {
         let parts: Vec<&str> = pattern.split('*').collect();
         if parts.is_empty() {
             return url == pattern;
@@ -249,6 +284,8 @@ mod tests {
                     grants: vec![],
                     js_code: "console.log('hi')".into(),
                     enabled: true,
+                    run_at: RunAt::DocumentIdle,
+                    match_regex: None,
                 },
                 ContentScript {
                     name: "disabled-script".into(),
@@ -256,6 +293,8 @@ mod tests {
                     grants: vec![],
                     js_code: "console.log('no')".into(),
                     enabled: false,
+                    run_at: RunAt::DocumentIdle,
+                    match_regex: None,
                 },
                 ContentScript {
                     name: "other-script".into(),
@@ -263,13 +302,83 @@ mod tests {
                     grants: vec![],
                     js_code: "console.log('other')".into(),
                     enabled: true,
+                    run_at: RunAt::DocumentIdle,
+                    match_regex: None,
                 },
             ],
             scripts_dir: PathBuf::from("/tmp"),
         };
 
-        let matches = manager.scripts_for_url("https://api.github.com/user/repo");
+        let matches = manager.scripts_for_url("https://api.github.com/user/repo", RunAt::DocumentIdle);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].name, "gh-script");
+    }
+
+    #[test]
+    fn test_scripts_for_url_with_run_at_filter() {
+        let manager = ContentScriptManager {
+            scripts: vec![
+                ContentScript {
+                    name: "start-script".into(),
+                    match_patterns: vec!["https://*.example.com/*".into()],
+                    grants: vec![],
+                    js_code: "console.log('start')".into(),
+                    enabled: true,
+                    run_at: RunAt::DocumentStart,
+                    match_regex: None,
+                },
+                ContentScript {
+                    name: "idle-script".into(),
+                    match_patterns: vec!["https://*.example.com/*".into()],
+                    grants: vec![],
+                    js_code: "console.log('idle')".into(),
+                    enabled: true,
+                    run_at: RunAt::DocumentIdle,
+                    match_regex: None,
+                },
+            ],
+            scripts_dir: PathBuf::from("/tmp"),
+        };
+
+        let start = manager.scripts_for_url("https://www.example.com/page", RunAt::DocumentStart);
+        assert_eq!(start.len(), 1);
+        assert_eq!(start[0].name, "start-script");
+
+        let idle = manager.scripts_for_url("https://www.example.com/page", RunAt::DocumentIdle);
+        assert_eq!(idle.len(), 1);
+        assert_eq!(idle[0].name, "idle-script");
+    }
+
+    #[test]
+    fn test_scripts_for_url_with_regex() {
+        let manager = ContentScriptManager {
+            scripts: vec![
+                ContentScript {
+                    name: "regex-script".into(),
+                    match_patterns: vec![],
+                    grants: vec![],
+                    js_code: "console.log('regex')".into(),
+                    enabled: true,
+                    run_at: RunAt::DocumentIdle,
+                    match_regex: Some(r"https://.*\.example\.com/.*".into()),
+                },
+            ],
+            scripts_dir: PathBuf::from("/tmp"),
+        };
+
+        let matches = manager.scripts_for_url("https://sub.example.com/page", RunAt::DocumentIdle);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].name, "regex-script");
+
+        let no_match = manager.scripts_for_url("https://other.com/page", RunAt::DocumentIdle);
+        assert!(no_match.is_empty());
+    }
+
+    #[test]
+    fn test_url_matches_pattern_regex_not_used_for_wildcard() {
+        assert!(!ContentScriptManager::url_matches_pattern(
+            "https://github.com/user/repo",
+            "https://github.com"
+        ));
     }
 }

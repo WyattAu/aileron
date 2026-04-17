@@ -1156,7 +1156,6 @@ impl AppState {
         if query == "bw-lock" {
             self.bitwarden.lock();
             self.status_message = "Vault locked".into();
-            // Remove any credential items from palette
             self.palette.set_items(
                 self.palette
                     .results()
@@ -1165,6 +1164,65 @@ impl AppState {
                     .cloned()
                     .collect(),
             );
+            return;
+        }
+
+        if query == "bw-autofill" {
+            let active_id = self.wm.active_pane_id();
+            if let Some(engine) = self.engines.get(&active_id)
+                && let Some(url) = engine.current_url()
+            {
+                let url_str = url.to_string();
+                if !self.bitwarden.is_unlocked() {
+                    self.status_message = "Vault locked. Use :bw-unlock <password>".into();
+                } else {
+                    match self.bitwarden.search_for_url(&url_str) {
+                        Ok(items) if items.len() == 1 => {
+                            match self.bitwarden.get_credential(&items[0].id) {
+                                Ok(cred) => {
+                                    let js = self.bitwarden.autofill_js(&cred);
+                                    self.pending_wry_actions.push_back(WryAction::RunJs(js));
+                                    self.status_message = format!("Auto-filled: {}", items[0].name);
+                                }
+                                Err(e) => self.status_message = format!("!{}", e),
+                            }
+                        }
+                        Ok(items) if items.is_empty() => {
+                            self.status_message = "No credentials found for this site".into();
+                        }
+                        Ok(items) => {
+                            self.status_message = format!(
+                                "Multiple matches ({}). Use :bw-search <query> to pick.",
+                                items.len()
+                            );
+                        }
+                        Err(e) => self.status_message = format!("!{}", e),
+                    }
+                }
+            }
+            return;
+        }
+
+        if query == "bw-detect" {
+            self.pending_wry_actions.push_back(WryAction::RunJs(
+                BitwardenClient::detect_login_forms_js().into(),
+            ));
+            self.status_message = "Detecting login forms...".into();
+            return;
+        }
+
+        if let Some(path) = query.strip_prefix("pdf ") {
+            let path = path.trim();
+            if path.is_empty() {
+                self.status_message = "Usage: :pdf <path-or-url>".into();
+                return;
+            }
+            std::process::Command::new("xdg-open")
+                .arg(path)
+                .spawn()
+                .map_err(|e| self.status_message = format!("!{}", e))
+                .ok();
+            self.status_message = format!("Opening PDF: {}", path);
             return;
         }
 

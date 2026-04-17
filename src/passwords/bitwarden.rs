@@ -166,6 +166,51 @@ impl BitwardenClient {
         })
     }
 
+    /// Generate JavaScript to detect login forms and return form info.
+    pub fn detect_login_forms_js() -> &'static str {
+        r#"
+    (function() {
+        var forms = document.querySelectorAll('form');
+        var loginForms = [];
+        forms.forEach(function(form, idx) {
+            var hasPassword = form.querySelector('input[type="password"]');
+            var hasUsername = form.querySelector(
+                'input[type="text"], input[type="email"], ' +
+                'input[name="username"], input[name="email"], ' +
+                'input[name="user"], input[name="login"]'
+            );
+            if (hasPassword) {
+                loginForms.push({
+                    index: idx,
+                    hasUsername: !!hasUsername,
+                    action: form.action || ''
+                });
+            }
+        });
+        if (loginForms.length > 0) {
+            return JSON.stringify({type: 'login_forms', forms: loginForms});
+        }
+        return JSON.stringify({type: 'no_login_forms'});
+    })();
+    "#
+    }
+
+    /// Search for credentials matching a URL's domain.
+    pub fn search_for_url(&self, url: &str) -> anyhow::Result<Vec<VaultItem>> {
+        let parsed = match url::Url::parse(url) {
+            Ok(u) => u,
+            Err(_) => return Ok(Vec::new()),
+        };
+        let domain = match parsed.domain() {
+            Some(d) => d.to_string(),
+            None => return Ok(Vec::new()),
+        };
+        if domain.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.search(&domain)
+    }
+
     /// Generate JavaScript to auto-fill credentials into a form.
     /// The credential values are zeroized after this call returns.
     pub fn autofill_js(&self, credential: &Credential) -> String {

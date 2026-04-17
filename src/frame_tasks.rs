@@ -4,7 +4,7 @@ use uuid::Uuid;
 use aileron::app::{AppState, WryAction};
 use aileron::git::GitStatus;
 use aileron::mcp::{McpBridge, McpCommand};
-use aileron::scripts::ContentScriptManager;
+use aileron::scripts::{ContentScriptManager, RunAt};
 use aileron::offscreen_webview::OffscreenWebViewManager;
 use aileron::servo::{pump_gtk, WryEvent, WryPaneManager};
 use aileron::terminal::NativeTerminalManager;
@@ -64,7 +64,7 @@ pub fn process_wry_events(
                 app_state.status_message = format!("Loaded: {}", &url[..url.len().min(60)]);
 
                 if !url.starts_with("aileron://") {
-                    let matching = content_scripts.scripts_for_url(&url);
+                    let matching = content_scripts.scripts_for_url(&url, RunAt::DocumentIdle);
                     for script in matching {
                         if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
                             info!(
@@ -88,8 +88,21 @@ pub fn process_wry_events(
                     }
                 }
             }
-            WryEvent::LoadStarted { url, .. } => {
+            WryEvent::LoadStarted { url, pane_id, .. } => {
                 app_state.status_message = format!("Loading: {}...", &url[..url.len().min(40)]);
+                if !url.starts_with("aileron://") {
+                    let start_scripts = content_scripts.scripts_for_url(&url, RunAt::DocumentStart);
+                    for script in start_scripts {
+                        if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
+                            info!(
+                                "Injecting document-start script '{}' into {}",
+                                script.name,
+                                &url[..url.len().min(40)]
+                            );
+                            wry_pane.execute_js(&script.js_code);
+                        }
+                    }
+                }
             }
             WryEvent::TitleChanged { title, .. } => {
                 app_state.status_message = title[..title.len().min(60)].to_string();
@@ -157,7 +170,7 @@ pub fn process_offscreen_events(
                 }
 
                 if !url.starts_with("aileron://") {
-                    let matching = content_scripts.scripts_for_url(&url);
+                    let matching = content_scripts.scripts_for_url(&url, RunAt::DocumentIdle);
                     for script in matching {
                         if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                             info!(
@@ -182,8 +195,21 @@ pub fn process_offscreen_events(
                     }
                 }
             }
-            WryEvent::LoadStarted { url, .. } => {
+            WryEvent::LoadStarted { url, pane_id, .. } => {
                 app_state.status_message = format!("Loading: {}...", &url[..url.len().min(40)]);
+                if !url.starts_with("aileron://") {
+                    let start_scripts = content_scripts.scripts_for_url(&url, RunAt::DocumentStart);
+                    for script in start_scripts {
+                        if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                            info!(
+                                "Injecting document-start script '{}' into {}",
+                                script.name,
+                                &url[..url.len().min(40)]
+                            );
+                            pane.execute_js(&script.js_code);
+                        }
+                    }
+                }
             }
             WryEvent::TitleChanged { title, .. } => {
                 app_state.status_message = title[..title.len().min(60)].to_string();
