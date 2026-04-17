@@ -1,9 +1,11 @@
 pub mod engine;
 pub mod fallback;
+pub mod servo_engine;
 pub mod wry_engine;
 
-pub use engine::{PaneRenderer, PaneState, PaneStateManager};
+pub use engine::{EngineType, PaneRenderer, PaneState, PaneStateManager};
 pub use fallback::open_in_system_browser;
+pub use servo_engine::ServoPane;
 pub use wry_engine::{
     bsp_rect_to_wry_rect, init_gtk, pump_gtk, EmbedMode, WryEvent, WryPane, WryPaneManager,
     NETWORK_MONITOR_JS, NETWORK_LOG_JS, NETWORK_CLEAR_JS,

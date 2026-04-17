@@ -19,32 +19,32 @@ pub enum SearchCategory {
     Custom,
 }
 
-/// Simple fuzzy matcher using substring matching + scoring heuristic.
-/// Provides fast inline search without background threads.
-/// For a more advanced implementation, nucleo could be used with its
-/// thread-pool based `Nucleo<T>` matcher.
+use nucleo::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
+use nucleo::Matcher;
+use nucleo::Utf32Str;
+
 pub fn fuzzy_match(items: &[SearchItem], query: &str, limit: usize) -> Vec<SearchItem> {
-    let query_lower = query.to_lowercase();
-    let mut scored: Vec<(usize, &SearchItem)> = items
+    if query.is_empty() {
+        return items.iter().take(limit).cloned().collect();
+    }
+
+    let pattern = Pattern::new(
+        query,
+        CaseMatching::Ignore,
+        Normalization::Smart,
+        AtomKind::Fuzzy,
+    );
+
+    let mut matcher = Matcher::new(nucleo::Config::DEFAULT);
+    let mut buf = Vec::new();
+    let mut scored: Vec<(u32, &SearchItem)> = items
         .iter()
         .filter_map(|item| {
-            let label_lower = item.label.to_lowercase();
-            let desc_lower = item.description.to_lowercase();
-
-            // Score: position of match + whether it starts with query
-            if let Some(pos) = label_lower.find(&query_lower) {
-                let score = if pos == 0 {
-                    1000 - item.label.len()
-                } else {
-                    500 - pos
-                };
-                Some((score, item))
-            } else if let Some(pos) = desc_lower.find(&query_lower) {
-                let score = 200 - pos;
-                Some((score, item))
-            } else {
-                None
-            }
+            let haystack = format!("{} {}", item.label, item.description);
+            let haystack = Utf32Str::new(&haystack, &mut buf);
+            pattern
+                .score(haystack, &mut matcher)
+                .map(|score| (score, item))
         })
         .collect();
 

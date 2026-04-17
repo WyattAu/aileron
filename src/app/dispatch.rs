@@ -91,6 +91,8 @@ pub enum ActionEffect {
     CloseOtherPanes,
     /// Print the current page.
     Print,
+    /// Pin/unpin the active pane.
+    PinPane,
 }
 
 /// Pure dispatch: map an `Action` to a list of effects.
@@ -109,12 +111,12 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
         Action::Quit => vec![ActionEffect::Quit],
 
         // ─── Scrolling (pure Wry actions) ─────────────────────────
-        Action::ScrollDown => vec![ActionEffect::Wry(WryAction::ScrollBy { x: 0.0, y: 120.0 })],
-        Action::ScrollUp => vec![ActionEffect::Wry(WryAction::ScrollBy { x: 0.0, y: -120.0 })],
-        Action::HalfPageDown => vec![ActionEffect::Wry(WryAction::ScrollTo { fraction: 0.5 })],
-        Action::HalfPageUp => vec![ActionEffect::Wry(WryAction::ScrollTo { fraction: 0.3 })],
-        Action::ScrollTop => vec![ActionEffect::Wry(WryAction::ScrollTo { fraction: 0.0 })],
-        Action::ScrollBottom => vec![ActionEffect::Wry(WryAction::ScrollTo { fraction: 1.0 })],
+        Action::ScrollDown => vec![ActionEffect::Wry(WryAction::SmoothScroll { x: 0.0, y: 120.0 })],
+        Action::ScrollUp => vec![ActionEffect::Wry(WryAction::SmoothScroll { x: 0.0, y: -120.0 })],
+        Action::HalfPageDown => vec![ActionEffect::Wry(WryAction::SmoothScroll { x: 0.0, y: 400.0 })],
+        Action::HalfPageUp => vec![ActionEffect::Wry(WryAction::SmoothScroll { x: 0.0, y: -400.0 })],
+        Action::ScrollTop => vec![ActionEffect::Wry(WryAction::SmoothScroll { x: 0.0, y: -999999.0 })],
+        Action::ScrollBottom => vec![ActionEffect::Wry(WryAction::SmoothScroll { x: 0.0, y: 999999.0 })],
         Action::ScrollLeft => vec![ActionEffect::Wry(WryAction::ScrollBy { x: -120.0, y: 0.0 })],
         Action::ScrollRight => vec![ActionEffect::Wry(WryAction::ScrollBy { x: 120.0, y: 0.0 })],
 
@@ -275,6 +277,7 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
         Action::DetachPane => vec![ActionEffect::DetachPane],
         Action::CloseOtherPanes => vec![ActionEffect::CloseOtherPanes],
         Action::Print => vec![ActionEffect::Print],
+        Action::PinPane => vec![ActionEffect::PinPane],
     }
 }
 
@@ -316,7 +319,7 @@ mod tests {
         let effects = dispatch_action(&Action::ScrollDown);
         let wry = wry_effects(&effects);
         assert_eq!(wry.len(), 1);
-        assert_eq!(wry[0], &WryAction::ScrollBy { x: 0.0, y: 120.0 });
+        assert_eq!(wry[0], &WryAction::SmoothScroll { x: 0.0, y: 120.0 });
     }
 
     #[test]
@@ -324,7 +327,7 @@ mod tests {
         let effects = dispatch_action(&Action::ScrollUp);
         let wry = wry_effects(&effects);
         assert_eq!(wry.len(), 1);
-        assert_eq!(wry[0], &WryAction::ScrollBy { x: 0.0, y: -120.0 });
+        assert_eq!(wry[0], &WryAction::SmoothScroll { x: 0.0, y: -120.0 });
     }
 
     #[test]
@@ -348,7 +351,7 @@ mod tests {
         let effects = dispatch_action(&Action::HalfPageDown);
         let wry = wry_effects(&effects);
         assert_eq!(wry.len(), 1);
-        assert_eq!(wry[0], &WryAction::ScrollTo { fraction: 0.5 });
+        assert_eq!(wry[0], &WryAction::SmoothScroll { x: 0.0, y: 400.0 });
     }
 
     #[test]
@@ -356,7 +359,7 @@ mod tests {
         let effects = dispatch_action(&Action::HalfPageUp);
         let wry = wry_effects(&effects);
         assert_eq!(wry.len(), 1);
-        assert_eq!(wry[0], &WryAction::ScrollTo { fraction: 0.3 });
+        assert_eq!(wry[0], &WryAction::SmoothScroll { x: 0.0, y: -400.0 });
     }
 
     #[test]
@@ -364,7 +367,13 @@ mod tests {
         let effects = dispatch_action(&Action::ScrollTop);
         let wry = wry_effects(&effects);
         assert_eq!(wry.len(), 1);
-        assert_eq!(wry[0], &WryAction::ScrollTo { fraction: 0.0 });
+        assert_eq!(
+            wry[0],
+            &WryAction::SmoothScroll {
+                x: 0.0,
+                y: -999999.0
+            }
+        );
     }
 
     #[test]
@@ -372,7 +381,13 @@ mod tests {
         let effects = dispatch_action(&Action::ScrollBottom);
         let wry = wry_effects(&effects);
         assert_eq!(wry.len(), 1);
-        assert_eq!(wry[0], &WryAction::ScrollTo { fraction: 1.0 });
+        assert_eq!(
+            wry[0],
+            &WryAction::SmoothScroll {
+                x: 0.0,
+                y: 999999.0
+            }
+        );
     }
 
     // ─── Clipboard ────────────────────────────────────────────────
@@ -675,6 +690,7 @@ mod tests {
             Action::DetachPane,
             Action::CloseOtherPanes,
             Action::Custom("test".into()),
+            Action::PinPane,
         ];
 
         for action in &actions {

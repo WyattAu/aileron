@@ -100,6 +100,19 @@ pub fn process_wry_action(
                 }
             }
         }
+        crate::app::WryAction::SmoothScroll { x, y } => {
+            if let Some(pane) = offscreen_panes.get_mut(&active_id) {
+                pane.execute_js(&format!(
+                    "window.scrollBy({{top: {}, left: {}, behavior: 'smooth'}})", y, x
+                ));
+            }
+            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                let js = format!(
+                    "window.scrollBy({{top: {}, left: {}, behavior: 'smooth'}})", y, x
+                );
+                wry_pane.execute_js(&js);
+            }
+        }
         crate::app::WryAction::ScrollBy { x, y } => {
             if let Some(wry_pane) = wry_panes.get(&active_id) {
                 let js = format!("window.scrollBy({}, {})", x, y);

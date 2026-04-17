@@ -449,6 +449,7 @@ impl LuaEngine {
             "open_command_palette" => Some(Action::OpenCommandPalette),
             "open_external_browser" => Some(Action::OpenExternalBrowser),
             "enter_insert_mode" | "insert" => Some(Action::EnterInsertMode),
+            "pin_pane" | "pin" => Some(Action::PinPane),
             _ => None,
         }
     }

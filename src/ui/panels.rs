@@ -540,10 +540,15 @@ pub fn build_tab_list(
                         } else {
                             ""
                         };
+                        let pinned_prefix = if app_state.pinned_pane_ids.contains(pane_id) {
+                            "\u{1f4cc} "
+                        } else {
+                            ""
+                        };
 
                         let response = ui.selectable_label(
                             is_active,
-                            format!("{}{}", muted_prefix, display_title),
+                            format!("{}{}{}", pinned_prefix, muted_prefix, display_title),
                         );
                         if response.clicked() && !is_active {
                             app_state.wm.set_active_pane(*pane_id);
@@ -603,10 +608,15 @@ pub fn build_tab_list(
                         } else {
                             ""
                         };
+                        let pinned_prefix = if app_state.pinned_pane_ids.contains(pane_id) {
+                            "\u{1f4cc} "
+                        } else {
+                            ""
+                        };
 
                         let response = ui.selectable_label(
                             is_active,
-                            format!("{}{}", muted_prefix, display_title),
+                            format!("{}{}{}", pinned_prefix, muted_prefix, display_title),
                         );
                         if response.clicked() && !is_active {
                             app_state.wm.set_active_pane(*pane_id);

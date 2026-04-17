@@ -36,6 +36,8 @@ pub enum WryAction {
     ToggleDevTools,
     /// Scroll the active pane by a pixel offset.
     ScrollBy { x: f64, y: f64 },
+    /// Smooth scroll the webview (uses CSS smooth behavior).
+    SmoothScroll { x: f64, y: f64 },
     /// Scroll the active pane to a position (fraction of page height from top).
     ScrollTo { fraction: f64 },
     /// Run arbitrary JavaScript in the active pane.
@@ -170,6 +172,9 @@ pub struct AppState {
 
     /// Set of pane IDs that are muted (media paused + muted).
     pub muted_pane_ids: std::collections::HashSet<uuid::Uuid>,
+
+    /// Set of pane IDs that are pinned (cannot be closed).
+    pub pinned_pane_ids: std::collections::HashSet<uuid::Uuid>,
 }
 
 impl AppState {
@@ -322,6 +327,7 @@ impl AppState {
             last_auto_save: std::time::Instant::now(),
             session_dirty: false,
             muted_pane_ids: std::collections::HashSet::new(),
+            pinned_pane_ids: std::collections::HashSet::new(),
         })
     }
 
@@ -578,6 +584,10 @@ impl AppState {
                 }
                 ActionEffect::RequestClosePane => {
                     let active = self.wm.active_pane_id();
+                    if self.pinned_pane_ids.contains(&active) {
+                        self.status_message = "Cannot close pinned pane (use :pin to unpin)".into();
+                        return;
+                    }
                     if let Ok(()) = self.wm.close(active) {
                         self.engines.remove_pane(&active);
                         self.status_message = "Pane closed".into();
@@ -779,6 +789,16 @@ impl AppState {
                     self.pending_wry_actions.push_back(WryAction::Print);
                     self.status_message = "Printing...".into();
                 }
+                ActionEffect::PinPane => {
+                    let active_id = self.wm.active_pane_id();
+                    if self.pinned_pane_ids.contains(&active_id) {
+                        self.pinned_pane_ids.remove(&active_id);
+                        self.status_message = "Pane unpinned".into();
+                    } else {
+                        self.pinned_pane_ids.insert(active_id);
+                        self.status_message = "Pane pinned".into();
+                    }
+                }
             }
         }
     }
@@ -851,6 +871,10 @@ impl AppState {
                     if tracking { "ON" } else { "OFF" },
                     if adblock { "ON" } else { "OFF" },
                 );
+            }
+            "engine" => {
+                self.status_message =
+                    "Engine: WebKit (Servo planned for Q3 2026)".into();
             }
             "https-toggle" => {
                 let active_id = self.wm.active_pane_id();
@@ -1289,6 +1313,11 @@ impl AppState {
             return;
         }
 
+        if query == "pin" {
+            self.execute_action(&crate::input::Action::PinPane);
+            return;
+        }
+
         if query == "scripts" || query == "content-scripts" {
             self.pending_wry_actions
                 .push_back(WryAction::ListContentScripts);
@@ -1488,6 +1517,21 @@ impl AppState {
         }
         if query == "reload" {
             self.pending_wry_actions.push_back(WryAction::Reload);
+            return;
+        }
+
+        // Rendering engine info: :engine, :engine servo, :engine webkit
+        if query == "engine" {
+            self.status_message = "Engine: WebKit (Servo planned for Q3 2026)".into();
+            return;
+        }
+        if query == "engine servo" {
+            self.status_message =
+                "Servo engine not yet available (planned for Q3 2026)".into();
+            return;
+        }
+        if query == "engine webkit" {
+            self.status_message = "Using WebKit engine (default)".into();
             return;
         }
 
@@ -2156,14 +2200,54 @@ if (window._terminal && window._terminal.buffer) {{
             self.navigate_with_redirects(url);
             self.status_message = format!("Navigating to {}", query);
         } else {
-            // Treat as search query with configured search engine
-            if let Some(url) = self.config.search_url(query) {
+            // Try fuzzy suggestion before falling back to search
+            let known_commands = [
+                "q", "quit", "open", "ssh", "set", "vs", "sp", "files", "browse",
+                "bw-unlock", "bw-search", "bw-lock", "bw-autofill", "bw-detect",
+                "adblock-toggle", "adblock-count", "privacy", "https-toggle",
+                "downloads", "downloads-open", "downloads-dir", "downloads-clear",
+                "import-firefox", "import-chrome",
+                "site-settings", "cookies", "cookies-clear", "cookies-block", "cookies-allow",
+                "popups", "mute", "unmute", "theme", "theme-list",
+                "print", "pdf", "pin",
+                "scripts", "network", "network-clear", "console", "console-clear",
+                "inspect", "proxy", "config-save", "clear",
+                "layout-save", "layout-load", "ws-save", "ws-load", "ws-list",
+                "reader", "minimal", "only", "detach",
+            ];
+            let cmd = query;
+            let suggestion = known_commands
+                .iter()
+                .filter(|c| c.contains(cmd) || cmd.contains(*c))
+                .min_by_key(|c| Self::levenshtein_distance(cmd, c));
+            if let Some(sug) = suggestion {
+                self.status_message = format!("Unknown command: {} (did you mean :{}?)", cmd, sug);
+            } else if let Some(url) = self.config.search_url(query) {
                 self.navigate_with_redirects(url);
                 self.status_message = format!("Searching: {}", query);
             } else {
                 self.status_message = format!("Search failed for: {}", query);
             }
         }
+    }
+
+    fn levenshtein_distance(a: &str, b: &str) -> usize {
+        let a: Vec<char> = a.chars().collect();
+        let b: Vec<char> = b.chars().collect();
+        let m = a.len();
+        let n = b.len();
+        if m == 0 { return n; }
+        if n == 0 { return m; }
+        let mut dp = vec![vec![0; n + 1]; m + 1];
+        for (i, row) in dp.iter_mut().enumerate().take(m + 1) { row[0] = i; }
+        for (j, val) in dp[0].iter_mut().enumerate().take(n + 1).skip(1) { *val = j; }
+        for i in 1..=m {
+            for j in 1..=n {
+                let cost = if a[i-1] == b[j-1] { 0 } else { 1 };
+                dp[i][j] = (dp[i-1][j] + 1).min((dp[i][j-1] + 1).min(dp[i-1][j-1] + cost));
+            }
+        }
+        dp[m][n]
     }
 
     /// Check if a string looks like a URL.

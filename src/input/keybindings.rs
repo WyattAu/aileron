@@ -77,6 +77,8 @@ pub enum Action {
     CloseOtherPanes,
     /// Print the current page.
     Print,
+    /// Pin/unpin the active pane.
+    PinPane,
 }
 
 /// Registry of keybindings, organized by mode.
@@ -269,6 +271,21 @@ impl KeybindingRegistry {
                 Key::Character('D'),
             ),
             Action::DetachPane,
+        );
+
+        // Pin pane (Ctrl+Shift+P — Ctrl+P is command palette)
+        self.register(
+            KeyCombo::new(
+                Mode::Normal,
+                Modifiers {
+                    ctrl: true,
+                    shift: true,
+                    alt: false,
+                    super_key: false,
+                },
+                Key::Character('P'),
+            ),
+            Action::PinPane,
         );
 
         // Pane resize (Ctrl+Alt+H/J/K/L like tmux)

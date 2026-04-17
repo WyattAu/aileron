@@ -86,6 +86,18 @@ pub fn process_wry_events(
                             }, 100);"
                         );
                     }
+
+                    // Apply per-site zoom if configured
+                    if let Some(ref db) = app_state.db
+                        && let Ok(settings) = aileron::db::site_settings::get_site_settings_for_url(db, &url)
+                        && let Some(zoom) = settings.iter().find_map(|s| s.zoom_level)
+                        && let Some(wry_pane) = wry_panes.get_mut(&pane_id)
+                    {
+                        wry_pane.execute_js(&format!(
+                            "if(document.body) document.body.style.zoom = '{:.2}';",
+                            zoom
+                        ));
+                    }
                 }
             }
             WryEvent::LoadStarted { url, pane_id, .. } => {
@@ -192,6 +204,18 @@ pub fn process_offscreen_events(
                                 } \
                             }, 100);"
                         );
+                    }
+
+                    // Apply per-site zoom if configured
+                    if let Some(ref db) = app_state.db
+                        && let Ok(settings) = aileron::db::site_settings::get_site_settings_for_url(db, &url)
+                        && let Some(zoom) = settings.iter().find_map(|s| s.zoom_level)
+                        && let Some(pane) = offscreen_panes.get_mut(&pane_id)
+                    {
+                        pane.execute_js(&format!(
+                            "if(document.body) document.body.style.zoom = '{:.2}';",
+                            zoom
+                        ));
                     }
                 }
             }

@@ -10,6 +10,16 @@ use std::collections::HashMap;
 use url::Url;
 use uuid::Uuid;
 
+/// Which rendering engine a pane uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EngineType {
+    /// WebKitGTK via wry (current, Architecture B).
+    #[default]
+    WebKit,
+    /// Servo (future, Architecture D).
+    Servo,
+}
+
 /// Trait defining the contract for a web rendering backend.
 ///
 /// Any future rendering engine (wry, Servo, etc.) must implement this trait.
@@ -62,6 +72,7 @@ pub struct PaneState {
     pane_id: Uuid,
     url: Url,
     title: String,
+    engine_type: EngineType,
 }
 
 impl PaneState {
@@ -71,6 +82,7 @@ impl PaneState {
             pane_id,
             url,
             title,
+            engine_type: EngineType::default(),
         }
     }
 }
@@ -95,6 +107,11 @@ impl PaneState {
     /// Get the pane ID this state is associated with.
     pub fn pane_id(&self) -> Uuid {
         self.pane_id
+    }
+
+    /// Get the rendering engine type for this pane.
+    pub fn engine_type(&self) -> EngineType {
+        self.engine_type
     }
 }
 

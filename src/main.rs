@@ -1157,14 +1157,32 @@ impl ApplicationHandler for AileronApp {
                         })();
 
                         if let Some((event_type, local_x, local_y, btn)) = forward_info {
-                            let mods = aileron::offscreen_webview::modifiers_js(
-                                self.modifiers.ctrl,
-                                self.modifiers.alt,
-                                self.modifiers.shift,
-                                self.modifiers.super_key,
-                            );
-                            if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                                pane.forward_mouse_event(event_type, local_x, local_y, btn, &mods);
+                            if *button == winit::event::MouseButton::Middle
+                                && *state == winit::event::ElementState::Pressed
+                            {
+                                let js = format!(
+                                    r#"(function() {{
+                                        var el = document.elementFromPoint({}, {});
+                                        while (el && el.tagName !== 'A') {{ el = el.parentElement; }}
+                                        if (el && el.href) {{
+                                            window.open(el.href, '_blank');
+                                        }}
+                                    }})();"#,
+                                    local_x, local_y
+                                );
+                                if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                                    pane.execute_js(&js);
+                                }
+                            } else {
+                                let mods = aileron::offscreen_webview::modifiers_js(
+                                    self.modifiers.ctrl,
+                                    self.modifiers.alt,
+                                    self.modifiers.shift,
+                                    self.modifiers.super_key,
+                                );
+                                if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                                    pane.forward_mouse_event(event_type, local_x, local_y, btn, &mods);
+                                }
                             }
                         }
                     }
