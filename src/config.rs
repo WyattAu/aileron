@@ -110,6 +110,18 @@ pub struct Config {
     /// Custom theme definitions. Key is theme name, value is color overrides.
     #[serde(default)]
     pub themes: std::collections::HashMap<String, ThemeColors>,
+
+    /// Rendering engine selection: "auto", "servo", or "webkit" (default).
+    /// "auto" chooses per-URL based on compatibility lists.
+    /// "servo" uses Servo with WebKit fallback on failure.
+    /// "webkit" always uses WebKit (most compatible).
+    pub engine_selection: String,
+
+    /// Per-domain engine compatibility overrides.
+    /// Key is domain, value is "webkit" or "servo".
+    /// Custom overrides take highest priority in auto mode.
+    #[serde(default)]
+    pub compat_overrides: std::collections::HashMap<String, String>,
 }
 
 /// Color overrides for a custom theme.
@@ -336,6 +348,8 @@ impl Default for Config {
             theme: "dark".into(),
             themes: built_in_themes(),
             language: None,
+            engine_selection: "webkit".into(),
+            compat_overrides: std::collections::HashMap::new(),
         }
     }
 }

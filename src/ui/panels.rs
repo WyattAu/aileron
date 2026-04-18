@@ -90,6 +90,19 @@ pub fn build_ui(
                     });
                 }
 
+                if app_state.config.engine_selection != "webkit" {
+                    ui.separator();
+                    let engine_text = format!("[{}]", app_state.config.engine_selection);
+                    let engine_color = if app_state.config.engine_selection == "servo" {
+                        egui::Color32::from_rgb(100, 200, 255)
+                    } else {
+                        egui::Color32::from_rgb(200, 200, 100)
+                    };
+                    let et = engine_text.clone();
+                    ui.colored_label(engine_color, engine_text)
+                        .widget_info(|| a11y_info(WidgetType::Label, format!("Engine: {}", et)));
+                }
+
                 let git_text = git_status.status_bar_text();
                 if !git_text.is_empty() {
                     ui.separator();

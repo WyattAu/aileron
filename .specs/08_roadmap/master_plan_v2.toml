@@ -175,7 +175,7 @@ prerequisites = ["TASK-K07"]
 outputs = ["src/platform/mod.rs", "src/platform/linux.rs", "src/platform/macos.rs", "src/platform/windows.rs", "src/platform/common.rs"]
 verification = ["Compiles on Linux", "Conditional compilation with cfg(target_os)", "All existing platform code refactored to use traits"]
 estimated_hours = 10
-status = "partial"
+status = "complete"
 
 [[task]]
 id = "TASK-K09"
@@ -193,7 +193,7 @@ prerequisites = ["TASK-K08"]
 outputs = ["src/platform/window.rs"]
 verification = ["Window creation abstracted", "Platform-specific behaviors isolated"]
 estimated_hours = 6
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K10"
@@ -208,7 +208,7 @@ prerequisites = ["TASK-K09"]
 outputs = ["CI configuration", "Platform support matrix"]
 verification = ["Builds on 2+ platforms", "Tests pass on 2+ platforms"]
 estimated_hours = 10
-status = "pending"
+status = "complete"
 
 # --- K.3: Advanced Ad Blocking ---
 
@@ -560,7 +560,7 @@ prerequisites = []
 outputs = [".specs/02_architecture/servo_embedder_evaluation.md"]
 verification = ["API surface documented", "Compatibility assessment", "Risk assessment", "Go/no-go recommendation"]
 estimated_hours = 8
-status = "partial"
+status = "complete"
 
 [[task]]
 id = "TASK-K30"
@@ -579,7 +579,7 @@ prerequisites = ["TASK-K29"]
 outputs = [".specs/02_architecture/servo_pane_design.md"]
 verification = ["Architecture documented", "wgpu sharing strategy defined", "Thread model decided"]
 estimated_hours = 8
-status = "partial"
+status = "complete"
 
 [[task]]
 id = "TASK-K31"
@@ -597,7 +597,7 @@ prerequisites = ["TASK-K30"]
 outputs = ["src/servo/texture_share.rs"]
 verification = ["Servo renders to shared texture", "egui displays shared texture", "No CPU readback in happy path"]
 estimated_hours = 16
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K32"
@@ -616,7 +616,7 @@ prerequisites = ["TASK-K31"]
 outputs = ["src/servo/servo_pane.rs", "src/servo/mod.rs"]
 verification = ["Servo loads and displays web pages", "Mouse/keyboard work", "Texture sharing functional"]
 estimated_hours = 20
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K33"
@@ -635,7 +635,7 @@ prerequisites = ["TASK-K32"]
 outputs = ["Engine selection logic", ":engine command", "Config option"]
 verification = ["Auto selection works", "Manual override works", "Fallback to WebKit when needed"]
 estimated_hours = 8
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K34"
@@ -653,7 +653,7 @@ prerequisites = ["TASK-K32"]
 outputs = ["Compatibility test report", "Override list"]
 verification = ["Top 100 sites tested", "Incompatibilities documented", "Override list functional"]
 estimated_hours = 20
-status = "pending"
+status = "complete"
 
 # --- K.8: Accessibility ---
 

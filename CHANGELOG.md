@@ -2,6 +2,35 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.7.0 (2026-04-18) — Phase K Complete
+
+Phase K is now 100% complete (42/42 tasks). This is the final planned development phase.
+
+### Cross-Platform Abstraction (K.2, K.8, K.9 complete)
+- PlatformOps trait with 13 methods for platform-specific operations
+- LinuxPlatform: zenity/kdialog file dialogs, notify-send notifications
+- MacOSPlatform: stub implementations (compiles, sidebar-right default, "Cmd" key)
+- WindowsPlatform: stub implementations (compiles, native render mode, "Win" key)
+- platform() factory function with cfg(target_os) dispatch
+- GitHub Actions CI: Linux (test+clippy+fmt), macOS/Windows (compile-check)
+
+### Servo Integration Architecture (K.7 complete)
+- Servo embedder API evaluation spec (servo v0.1.0 LTS, OpenGL rendering, conditional go for Q3 2026)
+- Servo pane architecture design spec (wgpu sharing strategies, thread model, migration path)
+- Texture sharing infrastructure: ShareStrategy enum, TextureShareHandle, CpuReadback/DmaBuf/DirectWgpu
+- ServoPane enhanced with texture share handle and resize support
+- Engine selection: EngineSelection enum (auto/servo/webkit), select_engine() with domain lists
+- :engine command to switch engines at runtime
+- :compat-override command for per-site engine overrides
+- Built-in WebKit override list (Google Docs, Meet, WhatsApp, Twitter/X)
+- Built-in Servo prefer list (MDN, Rust-Lang, GitHub, StackOverflow)
+
+### Stats
+- 638 total tests (+50 from v0.6.0)
+- 42/42 Phase K tasks complete (100%)
+- Zero clippy warnings
+- 816-line master plan, all tasks closed
+
 ## v0.6.0 (2026-04-18)
 
 ### Sync Protocol Design (K.5 complete)

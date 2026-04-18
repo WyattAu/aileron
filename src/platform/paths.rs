@@ -1,8 +1,14 @@
 //! Platform-specific file paths.
+//!
+//! The directory resolution functions (config_dir, data_dir, cache_dir) use the
+//! `directories` crate and work cross-platform without conditional compilation.
+//!
+//! The per-OS functions (downloads_dir, os_name, etc.) delegate to the
+//! [`PlatformOps`](super::PlatformOps) trait via [`super::platform()`].
+//! Prefer calling `crate::platform::platform()` directly for new code.
 
 use std::path::PathBuf;
 
-/// Get the user configuration directory.
 pub fn config_dir() -> PathBuf {
     directories::ProjectDirs::from("com", "aileron", "Aileron")
         .map(|dirs| dirs.config_dir().to_path_buf())
@@ -12,7 +18,6 @@ pub fn config_dir() -> PathBuf {
         })
 }
 
-/// Get the user data directory.
 pub fn data_dir() -> PathBuf {
     directories::ProjectDirs::from("com", "aileron", "Aileron")
         .map(|dirs| dirs.data_dir().to_path_buf())
@@ -22,7 +27,6 @@ pub fn data_dir() -> PathBuf {
         })
 }
 
-/// Get the cache directory.
 pub fn cache_dir() -> PathBuf {
     directories::ProjectDirs::from("com", "aileron", "Aileron")
         .map(|dirs| dirs.cache_dir().to_path_buf())
@@ -32,129 +36,32 @@ pub fn cache_dir() -> PathBuf {
         })
 }
 
-/// Get the default downloads directory.
 pub fn downloads_dir() -> PathBuf {
-    #[cfg(target_os = "linux")]
-    {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-        PathBuf::from(home).join("Downloads")
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-        PathBuf::from(home).join("Downloads")
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let user_profile =
-            std::env::var("USERPROFILE").unwrap_or_else(|_| r"C:\Users\Default".into());
-        PathBuf::from(user_profile).join("Downloads")
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    {
-        PathBuf::from("/tmp")
-    }
+    super::platform().downloads_dir()
 }
 
-/// Get the operating system name.
 pub fn os_name() -> &'static str {
-    #[cfg(target_os = "linux")]
-    {
-        "Linux"
-    }
-    #[cfg(target_os = "macos")]
-    {
-        "macOS"
-    }
-    #[cfg(target_os = "windows")]
-    {
-        "Windows"
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    {
-        "Unknown"
-    }
+    super::platform().os_name()
 }
 
-/// Get the current desktop environment (Linux only).
 pub fn desktop_environment() -> Option<String> {
-    #[cfg(target_os = "linux")]
-    {
-        std::env::var("XDG_CURRENT_DESKTOP")
-            .ok()
-            .or_else(|| std::env::var("DESKTOP_SESSION").ok())
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        None
-    }
+    super::platform().desktop_environment()
 }
 
-/// Check if running under Wayland.
 pub fn is_wayland() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        std::env::var("WAYLAND_DISPLAY").is_ok()
-            || std::env::var("XDG_SESSION_TYPE")
-                .map(|s| s == "wayland")
-                .unwrap_or(false)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        false
-    }
+    super::platform().is_wayland()
 }
 
-/// Check if running under X11.
 pub fn is_x11() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        std::env::var("DISPLAY").is_ok()
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        false
-    }
+    super::platform().is_x11()
 }
 
-/// Get the default web browser command.
 pub fn default_browser_cmd() -> Vec<String> {
-    #[cfg(target_os = "linux")]
-    {
-        vec!["xdg-open".into()]
-    }
-    #[cfg(target_os = "macos")]
-    {
-        vec!["open".into()]
-    }
-    #[cfg(target_os = "windows")]
-    {
-        vec!["cmd".into(), "/c".into(), "start".into()]
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    {
-        vec!["xdg-open".into()]
-    }
+    super::platform().default_browser_cmd()
 }
 
-/// Get the default terminal emulator command.
 pub fn default_terminal_cmd() -> Vec<String> {
-    #[cfg(target_os = "linux")]
-    {
-        vec!["sh".into(), "-c".into(), "$TERM".into()]
-    }
-    #[cfg(target_os = "macos")]
-    {
-        vec!["open".into(), "-a".into(), "Terminal".into()]
-    }
-    #[cfg(target_os = "windows")]
-    {
-        vec!["cmd".into(), "/c".into(), "start".into(), "cmd".into()]
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    {
-        vec!["sh".into()]
-    }
+    super::platform().default_terminal_cmd()
 }
 
 #[cfg(test)]

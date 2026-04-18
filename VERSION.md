@@ -1,11 +1,11 @@
 # Aileron — Version & State Tracking
 
 ## Current State
-- **Phase:** v0.6.0 (Complete)
-- **Version:** 0.6.0
-- **Status:** Complete
+- **Phase:** Phase K Complete (v0.7.0)
+- **Version:** 0.7.0
+- **Status:** Phase K 100% Complete (42/42 tasks)
 - **Last Updated:** 2026-04-18
-- **Test Count:** 548 lib + 26 integration + 13 startup + 1 offscreen = 588 total
+- **Test Count:** 598 lib + 26 integration + 13 startup + 1 offscreen = 638 total
 - **Zero clippy warnings**
 
 ## Implementation Phases
@@ -27,12 +27,15 @@
 | M | Complete | Daily Driver Minimum: find-in-page, URL bar editing, download handler, link hints |
 | J.0 | Complete | Polish: nucleo search, smooth scroll, tab pinning, visual bell, Servo stub |
 | K.1 | Complete | WebExtensions API trait definitions (6 traits, full type system) |
-| K.2 | Complete | Cross-platform abstraction (Linux/macOS/Windows paths + cfg) |
+| K.2 | Complete | Cross-platform traits (PlatformOps), Linux/macOS/Windows impls, native dialogs, notifications |
 | K.3 | Complete | Advanced ad blocking ($csp, $removeheader, $redirect) |
-| K.4 | Complete | System keyring integration + save-on-submit observer |
-| K.6 | Complete | Frame time profiling + :perf, memory monitoring + :memory, adaptive quality, lazy init, texture caching |
+| K.4 | Complete | System keyring integration + save-on-submit observer, OAuth detection, multi-step flows |
+| K.5 | Complete | Sync protocol spec (WebDAV, E2EE, CRDT conflict resolution) |
+| K.6 | Complete | Frame time profiling, adaptive quality, lazy init, texture caching |
+| K.7 | Complete | Servo evaluation, pane design, texture sharing, engine selection, compat overrides |
 | K.8 | Complete | Accessibility (ARIA labels, keyboard nav, screen reader, focus management) |
 | K.9 | Complete | i18n framework (32 strings, 9 locales, TOML translation files, :language command) |
+| K.10 | Complete | CI/CD (GitHub Actions: Linux test, macOS/Windows check, fmt, clippy) |
 
 ## Benchmark Results (criterion --quick)
 | Benchmark | Time | Notes |

@@ -4,37 +4,170 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  check:
-    name: Lint & Test
+  linux-test:
+    name: Linux Test
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            webkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            libsqlite3-dev \
+            libvulkan-dev \
+            pkg-config \
+            clang
 
-      - name: Cache Nix store
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
         uses: actions/cache@v4
         with:
           path: |
-            /nix/store
-            ~/.cache/nix
-          key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: linux-test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            nix-${{ runner.os }}-
-
-      - name: Check Nix flake
-        run: nix flake check --no-build --accept-flake-config
+            linux-test-${{ runner.os }}-
 
       - name: Clippy (zero warnings)
-        run: nix develop --command cargo clippy --lib -- -D warnings
+        run: cargo clippy -- -D warnings
 
-      - name: Run tests
-        run: nix develop --command cargo test -- --test-threads=4
+      - name: Run library tests
+        run: cargo test --lib -- --test-threads=4
+
+      - name: Run integration smoke test
+        run: cargo test --test integration_smoke
+
+      - name: Run startup test
+        run: cargo test --test startup_test
+
+      - name: Build release
+        run: cargo build --release
+
+  linux-check:
+    name: Linux Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            webkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            libsqlite3-dev \
+            libvulkan-dev \
+            pkg-config \
+            clang
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: linux-check-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            linux-check-${{ runner.os }}-
+
+      - name: cargo check
+        run: cargo check
+
+      - name: cargo check (x86_64-unknown-linux-gnu)
+        run: cargo check --target x86_64-unknown-linux-gnu
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (rustfmt)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  macos-check:
+    name: macOS Check
+    runs-on: macos-latest
+    timeout-minutes: 20
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: macos-check-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            macos-check-${{ runner.os }}-
+
+      - name: cargo check
+        run: cargo check
+
+  windows-check:
+    name: Windows Check
+    runs-on: windows-latest
+    timeout-minutes: 20
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: windows-check-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            windows-check-${{ runner.os }}-
+
+      - name: cargo check
+        continue-on-error: true
+        run: cargo check

@@ -911,8 +911,7 @@ impl AppState {
                 );
             }
             "engine" => {
-                self.status_message =
-                    "Engine: WebKit (Servo planned for Q3 2026)".into();
+                self.status_message = format!("Engine: {}", self.config.engine_selection);
             }
             "https-toggle" => {
                 let active_id = self.wm.active_pane_id();
@@ -1697,18 +1696,79 @@ impl AppState {
             return;
         }
 
-        // Rendering engine info: :engine, :engine servo, :engine webkit
+        // Rendering engine info: :engine, :engine auto, :engine servo, :engine webkit
         if query == "engine" {
-            self.status_message = "Engine: WebKit (Servo planned for Q3 2026)".into();
+            self.status_message = format!("Engine: {}", self.config.engine_selection);
             return;
         }
-        if query == "engine servo" {
-            self.status_message =
-                "Servo engine not yet available (planned for Q3 2026)".into();
+        if query == "engine auto" || query == "engine servo" || query == "engine webkit" {
+            let val = query.strip_prefix("engine ").unwrap();
+            match val.parse::<crate::servo::EngineSelection>() {
+                Ok(selection) => {
+                    self.config.engine_selection = selection.to_string();
+                    self.status_message = format!("Engine: {}", selection);
+                }
+                Err(e) => {
+                    self.status_message = e;
+                }
+            }
             return;
         }
-        if query == "engine webkit" {
-            self.status_message = "Using WebKit engine (default)".into();
+
+        // Compat override command: :compat-override <add|remove|list> [domain] [engine]
+        if let Some(rest) = query.strip_prefix("compat-override ") {
+            let rest = rest.trim();
+            let mut parts = rest.splitn(3, ' ');
+            if let Some(subcmd) = parts.next() {
+                match subcmd {
+                    "list" => {
+                        let all: Vec<String> = self
+                            .config
+                            .compat_overrides
+                            .iter()
+                            .map(|(k, v)| format!("{}={}", k, v))
+                            .collect();
+                        if all.is_empty() {
+                            self.status_message = "No compat overrides".into();
+                        } else {
+                            let display = all.join(", ");
+                            let msg = if display.len() > 80 {
+                                format!("{}...", &display[..77])
+                            } else {
+                                display
+                            };
+                            self.status_message = format!("Compat overrides: {}", msg);
+                        }
+                    }
+                    "add" => {
+                        if let (Some(domain), Some(engine)) = (parts.next(), parts.next()) {
+                            let engine = engine.trim();
+                            if engine != "webkit" && engine != "servo" {
+                                self.status_message = "Usage: compat-override add <domain> webkit|servo".into();
+                            } else {
+                                self.config.compat_overrides.insert(domain.to_string(), engine.to_string());
+                                self.status_message = format!("Compat override: {} -> {}", domain, engine);
+                            }
+                        } else {
+                            self.status_message = "Usage: compat-override add <domain> webkit|servo".into();
+                        }
+                    }
+                    "remove" => {
+                        if let Some(domain) = parts.next() {
+                            if self.config.compat_overrides.remove(domain).is_some() {
+                                self.status_message = format!("Removed override for {}", domain);
+                            } else {
+                                self.status_message = format!("No override for {}", domain);
+                            }
+                        } else {
+                            self.status_message = "Usage: compat-override remove <domain>".into();
+                        }
+                    }
+                    _ => {
+                        self.status_message = "Usage: compat-override list|add|remove".into();
+                    }
+                }
+            }
             return;
         }
 
@@ -2395,6 +2455,7 @@ if (window._terminal && window._terminal.buffer) {{
                 "memory", "perf", "perf-on", "perf-off",
                 "adaptive-quality", "adaptive_quality",
                 "language", "language-list",
+                "engine", "compat-override",
             ];
             let cmd = query;
             let suggestion = known_commands
