@@ -1,5 +1,7 @@
 # Aileron
 
+**v0.8.0** — 678 tests, ~28,000 Rust LOC
+
 **The terminal for the web.** A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals. Written in Rust with wry (WebKitGTK) for web rendering and egui for the UI overlay.
 
 ## Features
@@ -12,10 +14,21 @@
 - **Lua scripting** — `init.lua` for custom keybindings, commands, URL redirect rules, and themes
 - **Workspace persistence** — save/restore pane layouts with URLs via `:ws-save` / `:ws-load`; auto-save every 30s for crash recovery
 - **MCP bridge** — built-in Model Context Protocol server (stdio transport) so LLMs can browse the web
+- **Sync protocol** — WebDAV + E2EE specification ready for implementation
+- **Cross-platform** — PlatformOps trait for Linux, macOS, Windows
+
+### Internationalization
+
+- **9 languages** — EN, ZH, JA, KO, DE, FR, ES, PT, RU with `:language` command
+- **Runtime switching** — `:language <code>` changes UI language instantly; `:language-list` shows available languages
+
+### Accessibility
+
+- **ARIA labels** — all UI chrome elements include ARIA labels for screen reader support
 
 ### Browsing
 
-- **Ad blocking** — EasyList parser with network + cosmetic CSS rules, per-site toggle (`:adblock-toggle`)
+- **Ad blocking** — EasyList parser with network + cosmetic CSS rules, `$redirect`/`$important`/`$badfilter` support, filter list auto-update, per-site toggle (`:adblock-toggle`, `:adblock-update`)
 - **HTTPS upgrade** — auto-upgrade HTTP for known-safe domains (EasyList HTTPS list)
 - **Tracking protection** — blocks known tracker domains, sends DNT/GPC headers, strict referrer policy
 - **Popup blocker** — blocks unwanted `window.open()` calls, configurable via `:popups`
@@ -24,6 +37,9 @@
 - **Download manager** — progress tracking, open file, open directory
 - **Browser import** — `:import-firefox` / `:import-chrome` for bookmarks and history
 - **Multiple search engines** — pre-configured Google, DuckDuckGo, GitHub, YouTube, Wikipedia; switch with `:engine <name>`
+- **Engine selection** — choose rendering engine (auto/servo/webkit) with `:engine auto|servo|webkit`
+- **Adaptive quality** — auto-reduces rendering quality when over frame budget (`:adaptive-quality`)
+- **Custom CSS** — inject custom stylesheets via config or `aileron://settings`
 - **Link hints** — press `f` to reveal clickable hints on all links, type digits to follow
 - **Find in page** — `Ctrl+F` incremental search with next/previous navigation
 - **Smooth scrolling** — native smooth scroll behavior
@@ -60,6 +76,7 @@
 - **Settings GUI** — `aileron://settings` page for keyboard-navigable configuration
 - **Privacy dashboard** — `:privacy` shows HTTPS upgrade, tracking protection, adblock status
 - **Bitwarden integration** — `bw-unlock` / `bw-search` / `bw-autofill` / `bw-detect` for credential management
+- **Password manager** — built-in credential storage with OAuth detection, multi-step login flow support (`:credentials`, `:credentials-save`)
 
 ### Developer Tools
 
@@ -78,10 +95,13 @@
 - **Command chaining** — `:open github.com && mg` chains ex-commands
 - **Did-you-mean** — fuzzy Levenshtein suggestions for mistyped commands
 - **Custom protocols** — `aileron://` for internal pages (welcome, settings, files, error)
+- **WebExtensions** — 6 API traits, extension loading from disk, `:extensions`/`:extension-load`/`:extension-info` commands
 
 ## Prerequisites
 
 - **Linux** (x86_64) — tested on CachyOS (Wayland + NVIDIA), should work on any distro with WebKitGTK 4.1
+- **macOS** (aarch64, x86_64) — WebKit built-in; requires Xcode command line tools
+- **Windows** (x86_64) — WebView2 (Edge); experimental, see `com.github.WyattAu.aileron.yaml` for Flatpak parity
 - **Vulkan-capable GPU** — required by wgpu for egui rendering
 - **Rust toolchain** — `rustc`, `cargo`, `pkg-config`
 
@@ -97,7 +117,7 @@ LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH" ./target/debug/aileron
 ## Test
 
 ```bash
-# Unit tests (428 tests)
+# Unit tests (678 tests)
 cargo test --lib -- --test-threads=4
 
 # Integration tests (26 tests)
@@ -228,6 +248,20 @@ flatpak run com.github.WyattAu.aileron
 | `:layout-save <name>` / `:layout-load <name>` | Save/load window layout preset |
 | `:ws-save <name>` / `:ws-load <name>` / `:ws-list` | Workspace management |
 | `:cmd1 && :cmd2` | Chain commands |
+| `:extensions` | List loaded extensions |
+| `:extension-load <path>` | Load extension from path |
+| `:extension-info <id>` | Show extension details |
+| `:language <code>` | Set UI language (en, zh, ja, ko, de, fr, es, pt, ru) |
+| `:language-list` | List available languages |
+| `:engine auto\|servo\|webkit` | Select rendering engine |
+| `:compat-override add\|remove\|list` | Manage compatibility overrides |
+| `:adaptive-quality` | Toggle adaptive quality rendering |
+| `:adblock-update` | Update adblock filter lists |
+| `:credentials` | Manage stored credentials |
+| `:credentials-save` | Save credentials for current site |
+| `:perf` | Show performance overlay |
+| `:perf-on` / `:perf-off` | Toggle performance overlay |
+| `:memory` | Show memory usage statistics |
 
 ## Configuration
 
@@ -244,6 +278,7 @@ window_height = 800
 adblock_enabled = true
 adblock_filter_lists = ["https://easylist.to/easylist/easylist.txt", "https://easylist.to/easylist/easyprivacy.txt"]
 adblock_cosmetic_filtering = true
+adblock_update_interval_hours = 24
 https_upgrade_enabled = true
 tracking_protection_enabled = true
 popup_blocker_enabled = true
@@ -253,9 +288,13 @@ theme = "dark"
 tab_layout = "sidebar"
 tab_sidebar_width = 180.0
 tab_sidebar_right = false
+language = "en"  # "en" | "zh" | "ja" | "ko" | "de" | "fr" | "es" | "pt" | "ru"
+custom_css = ""  # Path to custom CSS file or inline CSS
 
 # Rendering
 render_mode = "offscreen"
+engine_selection = "auto"  # "auto" | "servo" | "webkit"
+adaptive_quality = true
 
 # Search
 search_engine = "https://duckduckgo.com/?q={query}"
@@ -268,6 +307,13 @@ auto_save_interval = 30
 
 # Proxy
 # proxy = "socks5://127.0.0.1:1080"
+
+# Developer
+devtools = false
+
+# Compatibility overrides
+[compat_overrides]
+# "example.com" = { js = true, adblock = false }
 
 # Custom themes
 [themes.mytheme]
@@ -329,15 +375,18 @@ src/
   lua/                 — Lua sandbox, API bindings (cmd, keymap, theme, url)
   mcp/                 — MCP JSON-RPC server, tools, stdio transport
   net/                 — AdBlocker (EasyList parser), filter_list (network/cosmetic), privacy (HTTPS upgrade, tracking protection)
+  extensions/          — WebExtensions support (6 API traits, extension loading, lifecycle)
+  i18n/                — Internationalization (9 languages, locale resolution, message catalog)
+  passwords/           — Password manager (credential storage, OAuth detection, multi-step login flows, Bitwarden client)
+  platform/            — PlatformOps trait, Linux/macOS/Windows platform implementations
   scripts/             — Content script manager (Lua → JS injection, @match/@match-regexp, @run-at)
   gfx/                 — wgpu surface + egui renderer setup
-  passwords/           — Bitwarden client (credential fetch, autofill, login form detection)
-  config.rs            — Config struct (TOML), theme system, migration
   git.rs               — Git repo detection, status bar integration
   popup.rs             — Standalone popup window management
   frame_tasks.rs       — Frame-level task execution
   offscreen_webview.rs — Offscreen webview texture compositing
   wry_actions.rs       — WryAction queue utilities
+  sync.rs              — Sync protocol specification (WebDAV + E2EE)
 tests/
   integration_smoke.rs — 26 cross-module integration tests
 ```

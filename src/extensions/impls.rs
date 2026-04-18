@@ -127,19 +127,31 @@ impl TabsApi for AileronTabsApi {
     }
 
     fn on_updated(&self, callback: Box<dyn Fn(TabUpdateEvent) + Send + Sync>) {
-        self.updated_callbacks.lock().unwrap().push(callback);
+        self.updated_callbacks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(callback);
     }
 
     fn on_created(&self, callback: Box<dyn Fn(Tab) + Send + Sync>) {
-        self.created_callbacks.lock().unwrap().push(callback);
+        self.created_callbacks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(callback);
     }
 
     fn on_removed(&self, callback: Box<dyn Fn(TabId, RemovalInfo) + Send + Sync>) {
-        self.removed_callbacks.lock().unwrap().push(callback);
+        self.removed_callbacks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(callback);
     }
 
     fn on_activated(&self, callback: Box<dyn Fn(ActiveInfo) + Send + Sync>) {
-        self.activated_callbacks.lock().unwrap().push(callback);
+        self.activated_callbacks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(callback);
     }
 }
 
@@ -159,7 +171,10 @@ impl AileronStorageArea {
 
 impl StorageArea for AileronStorageArea {
     fn get(&self, keys: StorageGetKeys) -> Result<StorageChanges> {
-        let data = self.data.lock().unwrap();
+        let data = self
+            .data
+            .lock()
+            .map_err(|e| ExtensionError::Runtime(format!("Storage lock poisoned: {}", e)))?;
         let result = match keys {
             StorageGetKeys::Single(key) => {
                 let mut map = HashMap::new();
@@ -183,7 +198,10 @@ impl StorageArea for AileronStorageArea {
     }
 
     fn set(&self, items: StorageChanges) -> Result<()> {
-        let mut data = self.data.lock().unwrap();
+        let mut data = self
+            .data
+            .lock()
+            .map_err(|e| ExtensionError::Runtime(format!("Storage lock poisoned: {}", e)))?;
         for (key, value) in items {
             data.insert(key, value);
         }
@@ -191,7 +209,10 @@ impl StorageArea for AileronStorageArea {
     }
 
     fn remove(&self, keys: Vec<String>) -> Result<()> {
-        let mut data = self.data.lock().unwrap();
+        let mut data = self
+            .data
+            .lock()
+            .map_err(|e| ExtensionError::Runtime(format!("Storage lock poisoned: {}", e)))?;
         for key in keys {
             data.remove(&key);
         }
@@ -199,12 +220,18 @@ impl StorageArea for AileronStorageArea {
     }
 
     fn clear(&self) -> Result<()> {
-        self.data.lock().unwrap().clear();
+        self.data
+            .lock()
+            .map_err(|e| ExtensionError::Runtime(format!("Storage lock poisoned: {}", e)))?
+            .clear();
         Ok(())
     }
 
     fn get_bytes_in_use(&self, keys: Option<Vec<String>>) -> Result<u64> {
-        let data = self.data.lock().unwrap();
+        let data = self
+            .data
+            .lock()
+            .map_err(|e| ExtensionError::Runtime(format!("Storage lock poisoned: {}", e)))?;
         let bytes: usize = match keys {
             Some(keys) => keys
                 .iter()
@@ -217,7 +244,10 @@ impl StorageArea for AileronStorageArea {
     }
 
     fn on_changed(&self, callback: Box<dyn Fn(StorageChanges, String) + Send + Sync>) {
-        self.change_callbacks.lock().unwrap().push(callback);
+        self.change_callbacks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(callback);
     }
 }
 
@@ -311,19 +341,31 @@ impl RuntimeApi for AileronRuntimeApi {
     }
 
     fn on_message(&self, callback: MessageCallback) {
-        self.message_callbacks.lock().unwrap().push(callback);
+        self.message_callbacks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(callback);
     }
 
     fn on_connect(&self, callback: ConnectCallback) {
-        self.connect_callbacks.lock().unwrap().push(callback);
+        self.connect_callbacks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(callback);
     }
 
     fn on_installed(&self, callback: InstalledCallback) {
-        self.installed_callbacks.lock().unwrap().push(callback);
+        self.installed_callbacks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(callback);
     }
 
     fn on_startup(&self, callback: StartupCallback) {
-        self.startup_callbacks.lock().unwrap().push(callback);
+        self.startup_callbacks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(callback);
     }
 
     fn reload(&self) -> Result<()> {
@@ -370,7 +412,10 @@ impl WebRequestApi for AileronWebRequestApi {
             "webRequest.onBeforeRequest registered (listener {:?})",
             id
         );
-        self.listeners.lock().unwrap().push(id);
+        self.listeners
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(id);
         id
     }
 
@@ -386,7 +431,10 @@ impl WebRequestApi for AileronWebRequestApi {
             "webRequest.onBeforeSendHeaders registered (listener {:?})",
             id
         );
-        self.listeners.lock().unwrap().push(id);
+        self.listeners
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(id);
         id
     }
 
@@ -402,7 +450,10 @@ impl WebRequestApi for AileronWebRequestApi {
             "webRequest.onHeadersReceived registered (listener {:?})",
             id
         );
-        self.listeners.lock().unwrap().push(id);
+        self.listeners
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(id);
         id
     }
 
@@ -417,7 +468,10 @@ impl WebRequestApi for AileronWebRequestApi {
             "webRequest.onAuthRequired registered (listener {:?})",
             id
         );
-        self.listeners.lock().unwrap().push(id);
+        self.listeners
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(id);
         id
     }
 
@@ -427,7 +481,10 @@ impl WebRequestApi for AileronWebRequestApi {
         _callback: Box<dyn Fn(RedirectDetails) + Send + Sync>,
     ) -> ListenerId {
         let id = next_listener_id();
-        self.listeners.lock().unwrap().push(id);
+        self.listeners
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(id);
         id
     }
 
@@ -437,7 +494,10 @@ impl WebRequestApi for AileronWebRequestApi {
         _callback: Box<dyn Fn(CompletedDetails) + Send + Sync>,
     ) -> ListenerId {
         let id = next_listener_id();
-        self.listeners.lock().unwrap().push(id);
+        self.listeners
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(id);
         id
     }
 
@@ -447,12 +507,18 @@ impl WebRequestApi for AileronWebRequestApi {
         _callback: Box<dyn Fn(ErrorOccurredDetails) + Send + Sync>,
     ) -> ListenerId {
         let id = next_listener_id();
-        self.listeners.lock().unwrap().push(id);
+        self.listeners
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(id);
         id
     }
 
     fn remove_listener(&self, listener_id: ListenerId) -> Result<()> {
-        let mut listeners = self.listeners.lock().unwrap();
+        let mut listeners = self
+            .listeners
+            .lock()
+            .map_err(|e| ExtensionError::Runtime(format!("WebRequest lock poisoned: {}", e)))?;
         let before = listeners.len();
         listeners.retain(|&id| id != listener_id);
         if listeners.len() < before {
