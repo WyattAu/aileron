@@ -7,6 +7,15 @@ use crate::terminal::grid::{CellMetrics, TerminalColors};
 use crate::terminal::render::render_terminal;
 use crate::terminal::NativeTerminalManager;
 use crate::ui::search::SearchCategory;
+use egui::{WidgetInfo, WidgetType};
+
+fn a11y_info(typ: WidgetType, label: impl Into<String>) -> WidgetInfo {
+    WidgetInfo {
+        typ,
+        label: Some(label.into()),
+        ..WidgetInfo::new(typ)
+    }
+}
 
 pub fn build_ui(
     ctx: &egui::Context,
@@ -58,19 +67,27 @@ pub fn build_ui(
                     Mode::Insert => accent,
                     Mode::Command => egui::Color32::from_rgb(255, 200, 100),
                 };
-                ui.colored_label(mode_color, app_state.mode.as_str());
+                let mode_str = app_state.mode.as_str();
+                ui.colored_label(mode_color, mode_str).widget_info(|| {
+                    a11y_info(WidgetType::Label, format!("Current mode: {}", mode_str))
+                });
 
                 ui.separator();
 
                 let pane_count = app_state.wm.leaf_count();
-                ui.label(format!("panes: {}", pane_count));
+                ui.label(format!("panes: {}", pane_count))
+                    .widget_info(|| a11y_info(WidgetType::Label, format!("Panes: {}", pane_count)));
 
                 if app_state.adblock_blocked_count > 0 {
                     ui.separator();
+                    let blocked = app_state.adblock_blocked_count;
                     ui.colored_label(
                         egui::Color32::from_rgb(255, 100, 100),
-                        format!("[AB: {}]", app_state.adblock_blocked_count),
-                    );
+                        format!("[AB: {}]", blocked),
+                    )
+                    .widget_info(|| {
+                        a11y_info(WidgetType::Label, format!("Blocked ads: {}", blocked))
+                    });
                 }
 
                 let git_text = git_status.status_bar_text();
@@ -81,7 +98,9 @@ pub fn build_ui(
                     } else {
                         tab_fg
                     };
-                    ui.colored_label(git_color, git_text);
+                    let gt = git_text.clone();
+                    ui.colored_label(git_color, git_text)
+                        .widget_info(|| a11y_info(WidgetType::Label, format!("Git: {}", gt)));
                 }
 
                 ui.separator();
@@ -94,15 +113,22 @@ pub fn build_ui(
                     } else {
                         url_str.to_string()
                     };
-                    ui.label(display_url);
+                    let full_url = url_str.to_string();
+                    ui.label(display_url.clone()).widget_info(|| {
+                        a11y_info(WidgetType::Label, format!("Current URL: {}", full_url))
+                    });
                 }
 
                 ui.separator();
 
                 if app_state.hint_mode {
-                    ui.colored_label(accent, format!("hint: {}", app_state.hint_buffer));
+                    let hint_text = format!("hint: {}", app_state.hint_buffer);
+                    ui.colored_label(accent, hint_text.clone())
+                        .widget_info(|| a11y_info(WidgetType::Label, hint_text.clone()));
                 } else if !app_state.status_message.is_empty() {
-                    ui.label(&app_state.status_message);
+                    let msg = app_state.status_message.clone();
+                    ui.label(&msg)
+                        .widget_info(|| a11y_info(WidgetType::Label, format!("Status: {}", msg)));
                 }
             });
         });
@@ -111,32 +137,39 @@ pub fn build_ui(
     egui::TopBottomPanel::bottom("url-bar").show(ctx, |ui| {
         ui.horizontal(|ui| {
             if app_state.palette.open {
-                ui.label(":");
+                ui.label(":")
+                    .widget_info(|| a11y_info(WidgetType::Label, "Command palette prompt"));
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut app_state.palette.query)
                         .desired_width(f32::INFINITY)
                         .hint_text("Search commands, history, bookmarks..."),
                 );
+                response.widget_info(|| a11y_info(WidgetType::TextEdit, "Command palette"));
                 response.request_focus();
 
                 let query_snapshot = app_state.palette.query.clone();
                 app_state.palette.update_query(&query_snapshot);
                 app_state.command_palette_input = app_state.palette.query.clone();
             } else if app_state.command_palette_open {
-                ui.label(":");
+                ui.label(":")
+                    .widget_info(|| a11y_info(WidgetType::Label, "Command palette prompt"));
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut app_state.command_palette_input)
                         .desired_width(f32::INFINITY)
                         .hint_text("Enter command..."),
                 );
+                response.widget_info(|| a11y_info(WidgetType::TextEdit, "Command palette"));
                 response.request_focus();
             } else if app_state.url_bar_focused {
-                ui.colored_label(accent, "URL>");
+                ui.colored_label(accent, "URL>").widget_info(|| {
+                    a11y_info(WidgetType::Label, "URL bar mode indicator: editing")
+                });
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut app_state.url_bar_input)
                         .desired_width(f32::INFINITY)
                         .hint_text("Search or enter URL..."),
                 );
+                response.widget_info(|| a11y_info(WidgetType::TextEdit, "URL bar"));
                 response.request_focus();
 
                 let query_snapshot = app_state.url_bar_input.clone();
@@ -233,7 +266,9 @@ pub fn build_ui(
                     Mode::Insert => ("INSERT", accent),
                     Mode::Command => ("COMMAND", egui::Color32::from_rgb(200, 200, 100)),
                 };
-                ui.colored_label(mode_color, mode_label);
+                let ml = mode_label;
+                ui.colored_label(mode_color, mode_label)
+                    .widget_info(|| a11y_info(WidgetType::Label, format!("URL bar mode: {}", ml)));
                 ui.separator();
 
                 let active_id = app_state.wm.active_pane_id();
@@ -243,7 +278,10 @@ pub fn build_ui(
                     "aileron://welcome".to_string()
                 };
 
+                let url_clone = url_str.clone();
                 let url_label = ui.strong(&url_str);
+                url_label
+                    .widget_info(|| a11y_info(WidgetType::Label, format!("URL: {}", url_clone)));
 
                 if url_label.clicked() {
                     app_state.url_bar_focused = true;
@@ -276,6 +314,7 @@ pub fn build_ui(
                                 .desired_width(300.0)
                                 .hint_text("Search in page..."),
                         );
+                        response.widget_info(|| a11y_info(WidgetType::TextEdit, "Find in page"));
                         response.request_focus();
 
                         if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -289,7 +328,9 @@ pub fn build_ui(
                             }
                         }
 
-                        if ui.button("\u{2193}").clicked() {
+                        let find_next = ui.button("\u{2193}");
+                        find_next.widget_info(|| a11y_info(WidgetType::Button, "Find next"));
+                        if find_next.clicked() {
                             let active_id = app_state.wm.active_pane_id();
                             if let Some(wry_pane) = wry_panes.get(&active_id) {
                                 let q = app_state.find_query.replace('\'', "\\'");
@@ -299,7 +340,9 @@ pub fn build_ui(
                                 ));
                             }
                         }
-                        if ui.button("\u{2191}").clicked() {
+                        let find_prev = ui.button("\u{2191}");
+                        find_prev.widget_info(|| a11y_info(WidgetType::Button, "Find previous"));
+                        if find_prev.clicked() {
                             let active_id = app_state.wm.active_pane_id();
                             if let Some(wry_pane) = wry_panes.get(&active_id) {
                                 let q = app_state.find_query.replace('\'', "\\'");
@@ -309,7 +352,9 @@ pub fn build_ui(
                                 ));
                             }
                         }
-                        if ui.button("\u{2715}").clicked() {
+                        let find_close = ui.button("\u{2715}");
+                        find_close.widget_info(|| a11y_info(WidgetType::Button, "Close find bar"));
+                        if find_close.clicked() {
                             app_state.find_bar_open = false;
                             app_state.find_query.clear();
                             let active_id = app_state.wm.active_pane_id();
@@ -471,7 +516,12 @@ pub fn build_ui(
 
             ui.vertical_centered(|ui| {
                 ui.add_space(ui.available_height() / 4.0);
-                ui.heading("Aileron");
+                ui.heading("Aileron").widget_info(|| {
+                    a11y_info(
+                        WidgetType::Label,
+                        "Aileron welcome screen - keyboard shortcuts",
+                    )
+                });
                 ui.label("Keyboard-Driven Web Environment");
                 ui.add_space(16.0);
                 ui.label("Controls:");
@@ -510,7 +560,7 @@ pub fn build_tab_list(
                 let is_active = *pane_id == active_id;
                 let is_terminal = app_state.terminal_pane_ids.contains(pane_id);
 
-                let (title, _url) = wry_panes
+                let (title, tab_url) = wry_panes
                     .get(pane_id)
                     .map(|p| {
                         let t = p.title();
@@ -556,16 +606,36 @@ pub fn build_tab_list(
                             ""
                         };
 
+                        let is_pinned = app_state.pinned_pane_ids.contains(pane_id);
+                        let is_muted = app_state.muted_pane_ids.contains(pane_id);
+                        let a11y_title = title.clone();
+                        let a11y_url = tab_url.clone();
+
                         let response = ui.selectable_label(
                             is_active,
                             format!("{}{}{}", pinned_prefix, muted_prefix, display_title),
                         );
+                        response.widget_info(|| {
+                            let mut label = format!("Tab: {} - {}", a11y_title, a11y_url);
+                            if is_pinned {
+                                label.push_str(" (Pinned)");
+                            }
+                            if is_muted {
+                                label.push_str(" (Muted)");
+                            }
+                            a11y_info(WidgetType::SelectableLabel, label)
+                        });
                         if response.clicked() && !is_active {
                             app_state.wm.set_active_pane(*pane_id);
                             app_state.update_status();
                         }
 
-                        if ui.small_button("\u{00d7}").clicked() {
+                        let close_title = title.clone();
+                        let close_btn = ui.small_button("\u{00d7}");
+                        close_btn.widget_info(|| {
+                            a11y_info(WidgetType::Button, format!("Close tab: {}", close_title))
+                        });
+                        if close_btn.clicked() {
                             app_state.pending_tab_close = Some(*pane_id);
                         }
 
@@ -624,16 +694,36 @@ pub fn build_tab_list(
                             ""
                         };
 
+                        let is_pinned = app_state.pinned_pane_ids.contains(pane_id);
+                        let is_muted = app_state.muted_pane_ids.contains(pane_id);
+                        let a11y_title = title.clone();
+                        let a11y_url = url.clone();
+
                         let response = ui.selectable_label(
                             is_active,
                             format!("{}{}{}", pinned_prefix, muted_prefix, display_title),
                         );
+                        response.widget_info(|| {
+                            let mut label = format!("Tab: {} - {}", a11y_title, a11y_url);
+                            if is_pinned {
+                                label.push_str(" (Pinned)");
+                            }
+                            if is_muted {
+                                label.push_str(" (Muted)");
+                            }
+                            a11y_info(WidgetType::SelectableLabel, label)
+                        });
                         if response.clicked() && !is_active {
                             app_state.wm.set_active_pane(*pane_id);
                             app_state.update_status();
                         }
 
-                        if ui.small_button("\u{00d7}").clicked() {
+                        let close_title = title.clone();
+                        let close_btn = ui.small_button("\u{00d7}");
+                        close_btn.widget_info(|| {
+                            a11y_info(WidgetType::Button, format!("Close tab: {}", close_title))
+                        });
+                        if close_btn.clicked() {
                             app_state.pending_tab_close = Some(*pane_id);
                         }
                     });

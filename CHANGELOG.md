@@ -2,6 +2,43 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.6.0 (2026-04-18)
+
+### Sync Protocol Design (K.5 complete)
+- Complete sync protocol specification (.specs/02_architecture/sync_protocol_design.md)
+- 7 sync collections with CRDT conflict resolution and delta sync
+- Transport evaluation: WebDAV (recommended), Git, Custom HTTPS, Matrix, SQLite/SSH
+- E2E encryption: Argon2id key derivation, XChaCha20-Poly1305, Ed25519 signing, BIP-39 recovery
+
+### Performance Optimization (K.6 expanded)
+- Adaptive quality rendering: auto-reduces texture capture rate when over 16.7ms budget
+- Lazy pane initialization: background panes created one-per-frame, active pane prioritized
+- Texture caching: reuse GPU textures via TextureHandle.set(), only reallocate on resize
+- :adaptive-quality toggle command
+
+### Enhanced Password Manager (K.4 expanded)
+- Periodic form re-scan via MutationObserver (catches JS-rendered forms)
+- OAuth/SSO detection: skips credential saving for Google, Microsoft, Facebook, Apple OAuth
+- Multi-step login flow handling via sessionStorage
+- Hidden form detection (display:none, visibility:hidden, offscreen positioning)
+
+### Accessibility (K.8 complete)
+- ARIA labels on all egui UI chrome via widget_info()
+- Status bar, tab bar, URL bar, find bar, command palette all labeled
+- Screen reader compatible (egui AccessKit integration)
+
+### Internationalization (K.9 expanded)
+- 9 locales: English, Chinese, Japanese, Korean, German, French, Spanish, Portuguese, Russian
+- TOML translation files with compile-time embedding (include_str!)
+- :language <code> command for runtime language switching
+- :language-list command shows available languages
+- Language preference persisted in config.toml
+
+### Stats
+- 588 total tests (+42 from v0.5.0)
+- 33/42 Phase K tasks complete (78%)
+- Zero clippy warnings
+
 ## v0.5.0 (2026-04-18)
 
 ### Advanced Ad Blocking (K.3 complete)

@@ -1,6 +1,6 @@
 # Maintainer: Wyatt Au <wyatt@patch.com>
 pkgname=aileron
-pkgver=0.5.0
+pkgver=0.6.0
 pkgrel=1
 pkgdesc="Keyboard-driven tiling web environment for developers"
 arch=('x86_64')

@@ -1,11 +1,11 @@
 # Aileron — Version & State Tracking
 
 ## Current State
-- **Phase:** v0.5.0 (Complete)
-- **Version:** 0.5.0
+- **Phase:** v0.6.0 (Complete)
+- **Version:** 0.6.0
 - **Status:** Complete
 - **Last Updated:** 2026-04-18
-- **Test Count:** 506 lib + 26 integration + 13 startup + 1 offscreen = 546 total
+- **Test Count:** 548 lib + 26 integration + 13 startup + 1 offscreen = 588 total
 - **Zero clippy warnings**
 
 ## Implementation Phases
@@ -30,9 +30,9 @@
 | K.2 | Complete | Cross-platform abstraction (Linux/macOS/Windows paths + cfg) |
 | K.3 | Complete | Advanced ad blocking ($csp, $removeheader, $redirect) |
 | K.4 | Complete | System keyring integration + save-on-submit observer |
-| K.6 | Complete | Frame time profiling + :perf, memory monitoring + :memory |
-| K.8 | Complete | Accessibility (ARIA labels, keyboard nav, screen reader) |
-| K.9 | Complete | i18n framework (29 strings, register(), TrKey, tr()/tr_locale()) |
+| K.6 | Complete | Frame time profiling + :perf, memory monitoring + :memory, adaptive quality, lazy init, texture caching |
+| K.8 | Complete | Accessibility (ARIA labels, keyboard nav, screen reader, focus management) |
+| K.9 | Complete | i18n framework (32 strings, 9 locales, TOML translation files, :language command) |
 
 ## Benchmark Results (criterion --quick)
 | Benchmark | Time | Notes |

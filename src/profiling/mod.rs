@@ -124,11 +124,223 @@ pub struct FrameStats {
     pub dropped_frames: usize,
 }
 
+const FRAME_BUDGET_MS: f64 = 16.7;
+const RECOVERY_THRESHOLD_MS: f64 = 14.0;
+const MIN_QUALITY: f32 = 0.2;
+const MAX_QUALITY: f32 = 1.0;
+const QUALITY_REDUCTION_STEP: f32 = 0.2;
+const QUALITY_RECOVERY_STEP: f32 = 0.1;
+const BASE_CAPTURE_INTERVAL_MS: u32 = 33;
+
+pub struct AdaptiveQuality {
+    quality_level: f32,
+    over_budget_count: u32,
+    reduction_threshold: u32,
+    recovery_threshold: u32,
+    under_budget_count: u32,
+    enabled: bool,
+}
+
+impl AdaptiveQuality {
+    pub fn new() -> Self {
+        Self {
+            quality_level: MAX_QUALITY,
+            over_budget_count: 0,
+            reduction_threshold: 5,
+            recovery_threshold: 30,
+            under_budget_count: 0,
+            enabled: true,
+        }
+    }
+
+    pub fn update(&mut self, frame_time_ms: f64) {
+        if !self.enabled {
+            return;
+        }
+
+        if frame_time_ms > FRAME_BUDGET_MS {
+            self.over_budget_count += 1;
+            self.under_budget_count = 0;
+            if self.over_budget_count >= self.reduction_threshold {
+                self.quality_level = (self.quality_level - QUALITY_REDUCTION_STEP).max(MIN_QUALITY);
+                self.over_budget_count = 0;
+            }
+        } else if frame_time_ms < RECOVERY_THRESHOLD_MS {
+            self.under_budget_count += 1;
+            self.over_budget_count = 0;
+            if self.under_budget_count >= self.recovery_threshold {
+                self.quality_level = (self.quality_level + QUALITY_RECOVERY_STEP).min(MAX_QUALITY);
+                self.under_budget_count = 0;
+            }
+        } else {
+            self.over_budget_count = 0;
+            self.under_budget_count = 0;
+        }
+    }
+
+    pub fn quality_level(&self) -> f32 {
+        self.quality_level
+    }
+
+    pub fn should_skip_capture(&self, _pane_index: usize, _active_pane_index: usize) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        false
+    }
+
+    pub fn should_skip_non_active(&self) -> bool {
+        self.enabled && self.quality_level < 0.6
+    }
+
+    pub fn capture_interval_ms(&self) -> u32 {
+        if !self.enabled {
+            return BASE_CAPTURE_INTERVAL_MS;
+        }
+        (BASE_CAPTURE_INTERVAL_MS as f32 / self.quality_level).round() as u32
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+        if enabled {
+            self.quality_level = MAX_QUALITY;
+            self.over_budget_count = 0;
+            self.under_budget_count = 0;
+        }
+    }
+}
+
+impl Default for AdaptiveQuality {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn test_adaptive_quality_default() {
+        let aq = AdaptiveQuality::new();
+        assert_eq!(aq.quality_level(), 1.0);
+        assert!(aq.enabled());
+        assert_eq!(aq.capture_interval_ms(), 33);
+    }
+
+    #[test]
+    fn test_quality_reduction_triggers_after_threshold() {
+        let mut aq = AdaptiveQuality::new();
+        for _ in 0..5 {
+            aq.update(20.0);
+        }
+        assert_eq!(aq.quality_level(), 0.8);
+    }
+
+    #[test]
+    fn test_quality_recovery_triggers_after_threshold() {
+        let mut aq = AdaptiveQuality::new();
+        aq.update(20.0);
+        aq.update(20.0);
+        aq.update(20.0);
+        aq.update(20.0);
+        aq.update(20.0);
+        assert_eq!(aq.quality_level(), 0.8);
+        for _ in 0..30 {
+            aq.update(10.0);
+        }
+        assert!((aq.quality_level() - 0.9).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_active_pane_never_skipped() {
+        let mut aq = AdaptiveQuality::new();
+        for _ in 0..10 {
+            aq.update(20.0);
+        }
+        assert!(!aq.should_skip_capture(0, 0));
+    }
+
+    #[test]
+    fn test_non_active_panes_skipped_at_low_quality() {
+        let mut aq = AdaptiveQuality::new();
+        for _ in 0..15 {
+            aq.update(20.0);
+        }
+        assert!(aq.quality_level() < 0.6);
+        assert!(aq.should_skip_non_active());
+    }
+
+    #[test]
+    fn test_min_quality_bound() {
+        let mut aq = AdaptiveQuality::new();
+        for _ in 0..50 {
+            aq.update(20.0);
+        }
+        assert!(aq.quality_level() >= MIN_QUALITY);
+    }
+
+    #[test]
+    fn test_max_quality_bound() {
+        let mut aq = AdaptiveQuality::new();
+        for _ in 0..100 {
+            aq.update(10.0);
+        }
+        assert!(aq.quality_level() <= MAX_QUALITY);
+    }
+
+    #[test]
+    fn test_disabled_state() {
+        let mut aq = AdaptiveQuality::new();
+        aq.set_enabled(false);
+        assert!(!aq.enabled());
+        assert!(!aq.should_skip_capture(1, 0));
+        assert!(!aq.should_skip_non_active());
+        assert_eq!(aq.capture_interval_ms(), 33);
+        aq.update(20.0);
+        assert_eq!(aq.quality_level(), 1.0);
+    }
+
+    #[test]
+    fn test_reenable_resets_quality() {
+        let mut aq = AdaptiveQuality::new();
+        for _ in 0..10 {
+            aq.update(20.0);
+        }
+        assert!(aq.quality_level() < 1.0);
+        aq.set_enabled(false);
+        aq.set_enabled(true);
+        assert_eq!(aq.quality_level(), 1.0);
+    }
+
+    #[test]
+    fn test_in_between_frame_time_resets_counters() {
+        let mut aq = AdaptiveQuality::new();
+        aq.update(20.0);
+        aq.update(20.0);
+        aq.update(15.0);
+        aq.update(20.0);
+        aq.update(20.0);
+        aq.update(20.0);
+        assert_eq!(aq.quality_level(), 1.0);
+    }
+
+    #[test]
+    fn test_capture_interval_scales_with_quality() {
+        let mut aq = AdaptiveQuality::new();
+        assert_eq!(aq.capture_interval_ms(), 33);
+        for _ in 0..5 {
+            aq.update(20.0);
+        }
+        assert_eq!(aq.quality_level(), 0.8);
+        assert_eq!(aq.capture_interval_ms(), 41);
+    }
 
     #[test]
     fn test_profiler_new() {

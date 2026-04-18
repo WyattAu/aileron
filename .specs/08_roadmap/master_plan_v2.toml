@@ -349,7 +349,7 @@ prerequisites = ["TASK-K16"]
 outputs = ["Enhanced form detection content script"]
 verification = ["Detects login forms on top 50 sites", "Handles multi-step flows", "Skips OAuth flows"]
 estimated_hours = 4
-status = "partial"
+status = "complete"
 
 [[task]]
 id = "TASK-K19"
@@ -389,7 +389,7 @@ prerequisites = []
 outputs = [".specs/02_architecture/sync_protocol_design.md — Requirements"]
 verification = ["All data types enumerated", "Conflict resolution strategy defined"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K21"
@@ -409,7 +409,7 @@ prerequisites = ["TASK-K20"]
 outputs = [".specs/02_architecture/sync_protocol_design.md — Transport Evaluation"]
 verification = ["Each option evaluated against criteria", "Recommendation with rationale"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K22"
@@ -428,7 +428,7 @@ prerequisites = ["TASK-K21"]
 outputs = [".specs/02_architecture/sync_protocol_design.md — Encryption"]
 verification = ["Encryption scheme fully specified", "Key management documented", "Recovery flow documented"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K23"
@@ -444,7 +444,7 @@ prerequisites = ["TASK-K22"]
 outputs = [".specs/02_architecture/sync_protocol_design.md"]
 verification = ["Complete, reviewable specification", "Protocol diagrams", "Example sync flows"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 # --- K.6: Performance Optimization ---
 
@@ -464,7 +464,7 @@ prerequisites = []
 outputs = ["src/frame_tasks.rs — budget enforcement", "Frame time logging"]
 verification = ["60fps maintained with 2 panes", "Adaptive quality kicks in at 4+ panes", "Frame time logged"]
 estimated_hours = 6
-status = "partial"
+status = "complete"
 
 [[task]]
 id = "TASK-K25"
@@ -520,7 +520,7 @@ prerequisites = []
 outputs = ["Lazy initialization in create_wry_pane_for"]
 verification = ["Startup time reduced", "Memory at startup reduced", "Panes work correctly after lazy init"]
 estimated_hours = 3
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K28"
@@ -538,7 +538,7 @@ prerequisites = []
 outputs = ["Texture pool in offscreen_webview.rs"]
 verification = ["Texture reuse verified", "Partial upload works", "Upload time <1ms"]
 estimated_hours = 3
-status = "pending"
+status = "complete"
 
 # --- K.7: Servo Embedder Integration ---
 
@@ -711,7 +711,7 @@ prerequisites = ["TASK-K35", "TASK-K36"]
 outputs = ["ARIA attributes on all UI chrome", "Focus management logic"]
 verification = ["Screen reader announces UI state changes", "Focus moves logically", "WCAG 2.1 AA focus criteria met"]
 estimated_hours = 6
-status = "partial"
+status = "complete"
 
 # --- K.9: i18n/l10n Framework ---
 
@@ -750,7 +750,7 @@ prerequisites = ["TASK-K38"]
 outputs = ["Locale detection", ":language command", "Date/number formatting"]
 verification = ["System locale detected correctly", "Language switches at runtime", "Dates/numbers formatted per locale"]
 estimated_hours = 6
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K40"
@@ -771,7 +771,7 @@ prerequisites = ["TASK-K38"]
 outputs = ["locales/zh-CN.toml", "locales/ja.toml", "locales/es.toml", "locales/fr.toml", "locales/de.toml"]
 verification = ["All locale files valid TOML", "All keys present in each locale"]
 estimated_hours = 6
-status = "pending"
+status = "complete"
 
 # --- K.10: Developer Documentation and Examples ---
 

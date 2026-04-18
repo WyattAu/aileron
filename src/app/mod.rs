@@ -876,6 +876,21 @@ impl AppState {
                     if adblock { "ON" } else { "OFF" },
                 );
             }
+            "language-list" => {
+                let locales = crate::i18n::available_locales();
+                let current = crate::i18n::detect_locale();
+                let items: Vec<String> = locales
+                    .iter()
+                    .map(|(locale, name)| {
+                        if *locale == current {
+                            format!("{}*", name)
+                        } else {
+                            name.to_string()
+                        }
+                    })
+                    .collect();
+                self.status_message = format!("Languages: {}", items.join(", "));
+            }
             "memory" => {
                 let rss = crate::profiling::memory::process_rss_human();
                 let term_count = self.terminal_pane_ids.len();
@@ -886,6 +901,13 @@ impl AppState {
                     "RSS: {} | WebViews: {}x~50MB | Terminals: {}x~3MB | Est pane: {}",
                     rss, web_count, term_count,
                     crate::profiling::memory::format_human_bytes(estimated)
+                );
+            }
+            "adaptive-quality" | "adaptive_quality" => {
+                self.config.adaptive_quality = !self.config.adaptive_quality;
+                self.status_message = format!(
+                    "Adaptive quality: {}",
+                    if self.config.adaptive_quality { "on" } else { "off" }
                 );
             }
             "engine" => {
@@ -918,6 +940,42 @@ impl AppState {
             }
             "" => {}
             _ => {
+                if let Some(code) = cmd.strip_prefix("language ") {
+                    let code = code.trim();
+                    if code.is_empty() {
+                        let current = crate::i18n::detect_locale();
+                        let locales = crate::i18n::available_locales();
+                        let name = locales
+                            .iter()
+                            .find(|(l, _)| *l == current)
+                            .map(|(_, n)| *n)
+                            .unwrap_or("?");
+                        self.status_message =
+                            format!("Language: {} ({})", name, current.code());
+                    } else if let Some(locale) = crate::i18n::Locale::from_code(code) {
+                        crate::i18n::set_locale(locale);
+                        self.config.language = Some(code.to_string());
+                        let locales = crate::i18n::available_locales();
+                        let name = locales
+                            .iter()
+                            .find(|(l, _)| *l == locale)
+                            .map(|(_, n)| *n)
+                            .unwrap_or("?");
+                        self.status_message = format!("Language: {}", name);
+                    } else {
+                        let available: Vec<&str> = crate::i18n::available_locales()
+                            .iter()
+                            .map(|(l, _)| l.code())
+                            .collect();
+                        self.status_message = format!(
+                            "Unknown language: {}. Available: {}",
+                            code,
+                            available.join(", ")
+                        );
+                    }
+                    return;
+                }
+
                 // Shell command: !<cmd>
                 if let Some(cmd) = cmd.strip_prefix("!") {
                     let cmd = cmd.trim();
@@ -1464,6 +1522,59 @@ impl AppState {
             return;
         }
 
+        if query == "language-list" {
+            let locales = crate::i18n::available_locales();
+            let current = crate::i18n::detect_locale();
+            let items: Vec<String> = locales
+                .iter()
+                .map(|(locale, name)| {
+                    if *locale == current {
+                        format!("{}*", name)
+                    } else {
+                        name.to_string()
+                    }
+                })
+                .collect();
+            self.status_message = format!("Languages: {}", items.join(", "));
+            return;
+        }
+
+        if let Some(code) = query.strip_prefix("language ") {
+            let code = code.trim();
+            if code.is_empty() {
+                let current = crate::i18n::detect_locale();
+                let locales = crate::i18n::available_locales();
+                let name = locales
+                    .iter()
+                    .find(|(l, _)| *l == current)
+                    .map(|(_, n)| *n)
+                    .unwrap_or("?");
+                self.status_message =
+                    format!("Language: {} ({})", name, current.code());
+            } else if let Some(locale) = crate::i18n::Locale::from_code(code) {
+                crate::i18n::set_locale(locale);
+                self.config.language = Some(code.to_string());
+                let locales = crate::i18n::available_locales();
+                let name = locales
+                    .iter()
+                    .find(|(l, _)| *l == locale)
+                    .map(|(_, n)| *n)
+                    .unwrap_or("?");
+                self.status_message = format!("Language: {}", name);
+            } else {
+                let available: Vec<&str> = crate::i18n::available_locales()
+                    .iter()
+                    .map(|(l, _)| l.code())
+                    .collect();
+                self.status_message = format!(
+                    "Unknown language: {}. Available: {}",
+                    code,
+                    available.join(", ")
+                );
+            }
+            return;
+        }
+
         if query == "privacy" {
             let https = self.config.https_upgrade_enabled;
             let tracking = self.config.tracking_protection_enabled;
@@ -1518,6 +1629,15 @@ impl AppState {
                 "RSS: {} | WebViews: {}x~50MB | Terminals: {}x~3MB | Est pane: {}",
                 rss, web_count, term_count,
                 crate::profiling::memory::format_human_bytes(estimated)
+            );
+            return;
+        }
+
+        if query == "adaptive-quality" || query == "adaptive_quality" {
+            self.config.adaptive_quality = !self.config.adaptive_quality;
+            self.status_message = format!(
+                "Adaptive quality: {}",
+                if self.config.adaptive_quality { "on" } else { "off" }
             );
             return;
         }
@@ -2273,6 +2393,8 @@ if (window._terminal && window._terminal.buffer) {{
                 "layout-save", "layout-load", "ws-save", "ws-load", "ws-list",
                 "reader", "minimal", "only", "detach",
                 "memory", "perf", "perf-on", "perf-off",
+                "adaptive-quality", "adaptive_quality",
+                "language", "language-list",
             ];
             let cmd = query;
             let suggestion = known_commands

@@ -167,30 +167,176 @@ impl BitwardenClient {
     }
 
     /// Generate JavaScript to detect login forms and return form info.
+    /// Enhanced with: periodic re-scan via MutationObserver, OAuth detection,
+    /// multi-step flow handling via sessionStorage, and hidden form filtering.
     pub fn detect_login_forms_js() -> &'static str {
         r#"
     (function() {
-        var forms = document.querySelectorAll('form');
-        var loginForms = [];
-        forms.forEach(function(form, idx) {
-            var hasPassword = form.querySelector('input[type="password"]');
-            var hasUsername = form.querySelector(
-                'input[type="text"], input[type="email"], ' +
-                'input[name="username"], input[name="email"], ' +
-                'input[name="user"], input[name="login"]'
-            );
-            if (hasPassword) {
-                loginForms.push({
-                    index: idx,
-                    hasUsername: !!hasUsername,
-                    action: form.action || ''
-                });
+        if (window.__aileron_form_observer_installed) return;
+        window.__aileron_form_observer_installed = true;
+
+        var OAUTH_URL_PATTERNS = [
+            'accounts.google.com/o/oauth2',
+            'login.microsoftonline.com',
+            'graph.facebook.com/oauth',
+            'appleid.apple.com/auth'
+        ];
+
+        var OAUTH_ACTION_PATTERNS = [
+            '/oauth', '/oauth2', '/authorize', '/sso', '/saml'
+        ];
+
+        function isOAuthUrl(url) {
+            if (!url) return false;
+            var lower = url.toLowerCase();
+            for (var i = 0; i < OAUTH_URL_PATTERNS.length; i++) {
+                if (lower.indexOf(OAUTH_URL_PATTERNS[i]) !== -1) return true;
             }
-        });
-        if (loginForms.length > 0) {
-            return JSON.stringify({type: 'login_forms', forms: loginForms});
+            return false;
         }
-        return JSON.stringify({type: 'no_login_forms'});
+
+        function isOAuthAction(action) {
+            if (!action) return false;
+            var lower = action.toLowerCase();
+            for (var i = 0; i < OAUTH_ACTION_PATTERNS.length; i++) {
+                if (lower.indexOf(OAUTH_ACTION_PATTERNS[i]) !== -1) return true;
+            }
+            return false;
+        }
+
+        function isElementHidden(el) {
+            var current = el;
+            while (current && current !== document.body) {
+                var style = window.getComputedStyle(current);
+                if (style.display === 'none') return true;
+                if (style.visibility === 'hidden') return true;
+                if (parseFloat(style.opacity) === 0) return true;
+                var pos = style.position;
+                var left = parseInt(style.left, 10);
+                var top = parseInt(style.top, 10);
+                if ((pos === 'fixed' || pos === 'absolute') && (left < -999 || top < -999)) return true;
+                current = current.parentElement;
+            }
+            return false;
+        }
+
+        function hasOpenIdFields(form) {
+            var allInputs = form.querySelectorAll('input');
+            for (var i = 0; i < allInputs.length; i++) {
+                var name = (allInputs[i].name || '').toLowerCase();
+                if (name.indexOf('openid') !== -1) return true;
+            }
+            if (form.getAttribute('rel') === 'openid') return true;
+            return false;
+        }
+
+        function detectOAuth() {
+            if (isOAuthUrl(window.location.href)) {
+                window.__aileron_is_oauth = true;
+                return true;
+            }
+            return false;
+        }
+
+        function aileron_detect_login_forms() {
+            if (window.__aileron_is_oauth) {
+                return JSON.stringify({type: 'no_login_forms', oauth: true});
+            }
+
+            var forms = document.querySelectorAll('form');
+            var loginForms = [];
+            var detectedForms = document.querySelectorAll('form');
+            var globalIdx = 0;
+
+            for (var i = 0; i < forms.length; i++) {
+                var form = forms[i];
+                var formIdx = Array.prototype.indexOf.call(detectedForms, form);
+
+                if (isElementHidden(form)) continue;
+                if (hasOpenIdFields(form)) {
+                    window.__aileron_is_oauth = true;
+                    continue;
+                }
+                if (isOAuthAction(form.getAttribute('action'))) {
+                    window.__aileron_is_oauth = true;
+                    continue;
+                }
+
+                var hasPassword = form.querySelector('input[type="password"]');
+                var hasUsername = form.querySelector(
+                    'input[type="text"], input[type="email"], ' +
+                    'input[name="username"], input[name="email"], ' +
+                    'input[name="user"], input[name="login"]'
+                );
+
+                if (hasPassword) {
+                    var isStep2 = false;
+                    var step1Data = sessionStorage.getItem('__aileron_multistep_step1');
+                    if (step1Data) {
+                        try {
+                            var parsed = JSON.parse(step1Data);
+                            if (parsed.username && !parsed.password) {
+                                isStep2 = true;
+                                var credential = {
+                                    username: parsed.username,
+                                    password: hasPassword.value || '',
+                                    url: parsed.url || window.location.href
+                                };
+                                window.__aileron_credential_save = credential;
+                                sessionStorage.removeItem('__aileron_multistep_step1');
+                            }
+                        } catch(e) {
+                            sessionStorage.removeItem('__aileron_multistep_step1');
+                        }
+                    }
+
+                    loginForms.push({
+                        index: formIdx,
+                        hasUsername: !!hasUsername,
+                        action: form.action || '',
+                        multiStep: isStep2
+                    });
+                } else if (hasUsername) {
+                    var userInput = form.querySelector(
+                        'input[type="text"], input[type="email"], ' +
+                        'input[name="username"], input[name="email"], ' +
+                        'input[name="user"], input[name="login"]'
+                    );
+                    if (userInput && userInput.value) {
+                        sessionStorage.setItem('__aileron_multistep_step1', JSON.stringify({
+                            username: userInput.value,
+                            password: null,
+                            url: window.location.href
+                        }));
+                    }
+                }
+
+                globalIdx++;
+            }
+
+            if (loginForms.length > 0) {
+                return JSON.stringify({type: 'login_forms', forms: loginForms});
+            }
+            return JSON.stringify({type: 'no_login_forms'});
+        }
+
+        detectOAuth();
+
+        var debounceTimer = null;
+        var observer = new MutationObserver(function() {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function() {
+                aileron_detect_login_forms();
+            }, 2000);
+        });
+
+        observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true,
+            attributes: true
+        });
+
+        aileron_detect_login_forms();
     })();
     "#
     }
@@ -212,22 +358,36 @@ impl BitwardenClient {
     }
 
     /// JavaScript to detect form submissions and save credentials.
+    /// Enhanced with OAuth flag check and multi-step sessionStorage handling.
     pub fn form_submit_observer_js() -> &'static str {
         r#"
     (function() {
+        if (window.__aileron_submit_observer_installed) return;
+        window.__aileron_submit_observer_installed = true;
+
         document.addEventListener('submit', function(e) {
+            if (window.__aileron_is_oauth) return;
+
             var form = e.target;
             var passInput = form.querySelector('input[type="password"]');
             var userInput = form.querySelector(
                 'input[type="text"], input[type="email"], ' +
                 'input[name="username"], input[name="email"]'
             );
+
             if (passInput && passInput.value && userInput && userInput.value) {
                 window.__aileron_credential_save = {
                     username: userInput.value,
                     password: passInput.value,
                     url: window.location.href
                 };
+                sessionStorage.removeItem('__aileron_multistep_step1');
+            } else if (userInput && userInput.value && !passInput) {
+                sessionStorage.setItem('__aileron_multistep_step1', JSON.stringify({
+                    username: userInput.value,
+                    password: null,
+                    url: window.location.href
+                }));
             }
         });
     })();
@@ -306,5 +466,108 @@ mod tests {
         let client = BitwardenClient::new();
         // Don't assert — just verify it doesn't panic
         let _ = client.is_available();
+    }
+
+    #[test]
+    fn test_detect_js_contains_oauth_domain_checks() {
+        let js = BitwardenClient::detect_login_forms_js();
+        assert!(js.contains("accounts.google.com/o/oauth2"));
+        assert!(js.contains("login.microsoftonline.com"));
+        assert!(js.contains("graph.facebook.com/oauth"));
+        assert!(js.contains("appleid.apple.com/auth"));
+    }
+
+    #[test]
+    fn test_detect_js_contains_mutation_observer() {
+        let js = BitwardenClient::detect_login_forms_js();
+        assert!(js.contains("MutationObserver"));
+        assert!(js.contains("setTimeout"));
+        assert!(js.contains("2000"));
+        assert!(js.contains("aileron_detect_login_forms"));
+    }
+
+    #[test]
+    fn test_detect_js_contains_sessionstorage_multistep() {
+        let js = BitwardenClient::detect_login_forms_js();
+        assert!(js.contains("sessionStorage"));
+        assert!(js.contains("__aileron_multistep_step1"));
+        assert!(js.contains("multiStep"));
+    }
+
+    #[test]
+    fn test_detect_js_contains_hidden_form_detection() {
+        let js = BitwardenClient::detect_login_forms_js();
+        assert!(js.contains("display"));
+        assert!(js.contains("none"));
+        assert!(js.contains("visibility"));
+        assert!(js.contains("hidden"));
+        assert!(js.contains("opacity"));
+        assert!(js.contains("isElementHidden"));
+        assert!(js.contains("-999"));
+    }
+
+    #[test]
+    fn test_detect_js_has_balanced_braces() {
+        let js = BitwardenClient::detect_login_forms_js();
+        let mut depth = 0;
+        let mut in_string = false;
+        let mut escape = false;
+        let chars: Vec<char> = js.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            if escape {
+                escape = false;
+                i += 1;
+                continue;
+            }
+            if c == '\\' && in_string {
+                escape = true;
+                i += 1;
+                continue;
+            }
+            if c == '"' || c == '\'' {
+                in_string = !in_string;
+                i += 1;
+                continue;
+            }
+            if !in_string {
+                match c {
+                    '{' => depth += 1,
+                    '}' => depth -= 1,
+                    _ => {}
+                }
+            }
+            i += 1;
+        }
+        assert_eq!(depth, 0, "JS should have balanced braces");
+    }
+
+    #[test]
+    fn test_submit_js_checks_oauth_flag() {
+        let js = BitwardenClient::form_submit_observer_js();
+        assert!(js.contains("__aileron_is_oauth"));
+        assert!(js.contains("return;"));
+    }
+
+    #[test]
+    fn test_submit_js_handles_multistep() {
+        let js = BitwardenClient::form_submit_observer_js();
+        assert!(js.contains("sessionStorage"));
+        assert!(js.contains("__aileron_multistep_step1"));
+    }
+
+    #[test]
+    fn test_detect_js_contains_oauth_flag_prevention() {
+        let js = BitwardenClient::detect_login_forms_js();
+        assert!(js.contains("window.__aileron_is_oauth"));
+        assert!(js.contains("oauth: true"));
+    }
+
+    #[test]
+    fn test_detect_js_contains_openid_detection() {
+        let js = BitwardenClient::detect_login_forms_js();
+        assert!(js.contains("openid"));
+        assert!(js.contains("rel"));
     }
 }

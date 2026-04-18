@@ -90,6 +90,9 @@ pub struct Config {
     /// - "offscreen": Architecture B — webviews render offscreen, displayed as egui textures.
     pub render_mode: String,
 
+    /// Enable adaptive quality rendering (reduces texture capture rate when frames are slow).
+    pub adaptive_quality: bool,
+
     /// Config format version. Used for migrations.
     #[serde(default)]
     pub config_version: u32,
@@ -99,6 +102,10 @@ pub struct Config {
 
     /// UI theme: "dark", "light", or a custom theme name.
     pub theme: String,
+
+    /// Preferred UI language (ISO 639-1 code like "en", "zh", "ja").
+    /// None means auto-detect from the LANG environment variable.
+    pub language: Option<String>,
 
     /// Custom theme definitions. Key is theme name, value is color overrides.
     #[serde(default)]
@@ -321,12 +328,14 @@ impl Default for Config {
             tab_sidebar_width: 180.0,
             tab_sidebar_right: false,
             render_mode: "offscreen".into(),
+            adaptive_quality: true,
             https_upgrade_enabled: true,
             tracking_protection_enabled: true,
             config_version: 2,
             popup_blocker_enabled: true,
             theme: "dark".into(),
             themes: built_in_themes(),
+            language: None,
         }
     }
 }

@@ -13,6 +13,7 @@ use aileron::mcp::McpBridge;
 use aileron::net::adblock::AdBlocker;
 use aileron::offscreen_webview::OffscreenWebViewManager;
 use aileron::popup::PopupManager;
+use aileron::profiling::AdaptiveQuality;
 use aileron::servo::{bsp_rect_to_wry_rect, init_gtk, WryPaneManager};
 use aileron::terminal::NativeTerminalManager;
 use aileron::ui::panels;
@@ -98,8 +99,21 @@ struct AileronApp {
     /// Updated each frame by `update_webview_textures()`.
     webview_textures: std::collections::HashMap<uuid::Uuid, egui::TextureId>,
 
+    /// Cached texture handles for offscreen panes (TASK-K28).
+    /// Reuses GPU textures across frames when dimensions are unchanged.
+    webview_texture_handles: std::collections::HashMap<uuid::Uuid, egui::TextureHandle>,
+
     /// Last time each offscreen pane was captured (for frame rate limiting).
     offscreen_last_capture: std::collections::HashMap<uuid::Uuid, std::time::Instant>,
+
+    /// Deferred pane creation queue (TASK-K27).
+    /// Background panes are queued here and created one-per-frame in
+    /// `about_to_wait()` to prevent startup freeze with many tabs.
+    pending_pane_creates: std::collections::VecDeque<(uuid::Uuid, url::Url)>,
+
+    /// Adaptive quality renderer (TASK-K24).
+    /// Reduces texture capture rate when frames are slow.
+    adaptive_quality: AdaptiveQuality,
 }
 
 impl AileronApp {
@@ -113,6 +127,8 @@ impl AileronApp {
         }
 
         let mcp_bridge = McpBridge::new();
+        let mut adaptive_quality = AdaptiveQuality::new();
+        adaptive_quality.set_enabled(config.adaptive_quality);
         Self {
             window: None,
             egui_winit: None,
@@ -133,7 +149,10 @@ impl AileronApp {
             offscreen_panes: OffscreenWebViewManager::new(),
             offscreen_mouse_pressed: false,
             webview_textures: std::collections::HashMap::new(),
+            webview_texture_handles: std::collections::HashMap::new(),
             offscreen_last_capture: std::collections::HashMap::new(),
+            pending_pane_creates: std::collections::VecDeque::new(),
+            adaptive_quality,
         }
     }
 
@@ -391,7 +410,10 @@ impl AileronApp {
         self.wry_panes.remove_pane(pane_id);
         self.offscreen_panes.remove_pane(pane_id);
         self.webview_textures.remove(pane_id);
+        self.webview_texture_handles.remove(pane_id);
         self.offscreen_last_capture.remove(pane_id);
+        self.pending_pane_creates
+            .retain(|(id, _)| id != pane_id);
     }
 
     /// Create a wry webview for a standalone popup window.
@@ -409,6 +431,48 @@ impl AileronApp {
             url,
             blocked_domains,
         );
+    }
+
+    /// Create at most one deferred offscreen pane per frame (TASK-K27).
+    /// When the active pane switches to a deferred pane, creates it immediately.
+    fn drain_pending_pane_creates(&mut self) {
+        if self.pending_pane_creates.is_empty() {
+            return;
+        }
+
+        let active_id = self
+            .app_state
+            .as_ref()
+            .map(|s| s.wm.active_pane_id());
+
+        let current_pane_ids: std::collections::HashSet<uuid::Uuid> = self
+            .app_state
+            .as_ref()
+            .map(|s| s.wm.panes().iter().map(|(id, _)| *id).collect())
+            .unwrap_or_default();
+
+        let has_active = self
+            .pending_pane_creates
+            .iter()
+            .any(|(pid, _)| Some(*pid) == active_id && current_pane_ids.contains(pid));
+
+        let to_create = if has_active {
+            self.pending_pane_creates
+                .iter()
+                .position(|(pid, _)| Some(*pid) == active_id && current_pane_ids.contains(pid))
+        } else {
+            self.pending_pane_creates
+                .iter()
+                .position(|(pid, _)| current_pane_ids.contains(pid))
+        };
+
+        if let Some(idx) = to_create {
+            let (pid, url) = self.pending_pane_creates.remove(idx).unwrap();
+            self.create_wry_pane_for(pid, &url);
+        }
+
+        self.pending_pane_creates
+            .retain(|(pid, _)| current_pane_ids.contains(pid));
     }
 
     /// Handle a window event for a popup window.
@@ -618,18 +682,26 @@ impl AileronApp {
             return;
         }
 
-        const OFFSCREEN_CAPTURE_INTERVAL: std::time::Duration =
-            std::time::Duration::from_millis(33); // ~30fps
+        let capture_interval = self.adaptive_quality.capture_interval_ms();
+        let skip_non_active = self.adaptive_quality.should_skip_non_active();
+        let active_id = self
+            .app_state
+            .as_ref()
+            .map(|s| s.wm.active_pane_id());
 
         let mut dirty_data: Vec<(uuid::Uuid, Vec<u8>, u32, u32)> = Vec::new();
 
         for (id, pane) in self.offscreen_panes.iter_mut() {
+            if skip_non_active && active_id.is_some_and(|aid| aid != *id) {
+                continue;
+            }
+
             let last = self
                 .offscreen_last_capture
                 .get(id)
                 .copied()
                 .unwrap_or_else(std::time::Instant::now);
-            if pane.is_dirty() && last.elapsed() >= OFFSCREEN_CAPTURE_INTERVAL {
+            if pane.is_dirty() && last.elapsed() >= std::time::Duration::from_millis(capture_interval as u64) {
                 if pane.capture_frame().is_some()
                     && let Some(rgba) = pane.frame_rgba()
                 {
@@ -644,16 +716,30 @@ impl AileronApp {
             let color_image =
                 egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &rgba);
 
-            // load_texture reuses the existing texture if the name matches.
-            // TextureHandle is stored; call .id() to get the TextureId when drawing.
             if let Some(ws) = self.egui_winit.as_ref() {
                 let ctx = ws.egui_ctx();
-                let texture_handle = ctx.load_texture(
-                    format!("webview-{}", pane_id),
-                    color_image,
-                    egui::TextureOptions::LINEAR,
-                );
-                self.webview_textures.insert(pane_id, texture_handle.id());
+
+                if let Some(handle) = self.webview_texture_handles.get_mut(&pane_id) {
+                    if handle.size() == [width as usize, height as usize] {
+                        handle.set(color_image, egui::TextureOptions::LINEAR);
+                    } else {
+                        let new_handle = ctx.load_texture(
+                            format!("webview-{}", pane_id),
+                            color_image,
+                            egui::TextureOptions::LINEAR,
+                        );
+                        self.webview_textures.insert(pane_id, new_handle.id());
+                        self.webview_texture_handles.insert(pane_id, new_handle);
+                    }
+                } else {
+                    let handle = ctx.load_texture(
+                        format!("webview-{}", pane_id),
+                        color_image,
+                        egui::TextureOptions::LINEAR,
+                    );
+                    self.webview_textures.insert(pane_id, handle.id());
+                    self.webview_texture_handles.insert(pane_id, handle);
+                }
             }
         }
     }
@@ -812,9 +898,11 @@ impl ApplicationHandler for AileronApp {
                 let frame_start = std::time::Instant::now();
                 self.render();
                 let frame_time = frame_start.elapsed();
+                let frame_time_ms = frame_time.as_secs_f64() * 1000.0;
                 if frame_time.as_millis() > 17 {
-                    tracing::debug!("Frame over budget: {:.1}ms", frame_time.as_secs_f64() * 1000.0);
+                    tracing::debug!("Frame over budget: {:.1}ms", frame_time_ms);
                 }
+                self.adaptive_quality.update(frame_time_ms);
             }
 
             WindowEvent::Resized(physical_size) => {
@@ -964,7 +1052,11 @@ impl ApplicationHandler for AileronApp {
                     // Now sync wry panes (drop borrow on app_state first)
                     for pid in &new_pane_ids {
                         let new_url = url::Url::parse("aileron://new").unwrap();
-                        self.create_wry_pane_for(*pid, &new_url);
+                        if *pid == active_pane_id || !self.config.is_offscreen() {
+                            self.create_wry_pane_for(*pid, &new_url);
+                        } else {
+                            self.pending_pane_creates.push_back((*pid, new_url));
+                        }
                     }
 
                     for pid in &closed_pane_ids {
@@ -1406,7 +1498,9 @@ impl ApplicationHandler for AileronApp {
             self.wry_panes.remove_all();
             self.offscreen_panes = OffscreenWebViewManager::new();
             self.webview_textures.clear();
+            self.webview_texture_handles.clear();
             self.offscreen_last_capture.clear();
+            self.pending_pane_creates.clear();
 
             let app_state = match &mut self.app_state {
                 Some(s) => s,
@@ -1425,8 +1519,15 @@ impl ApplicationHandler for AileronApp {
 
             match outcome {
                 aileron::workspace_restore::RestoreOutcome::Restored(result) => {
+                    let active_id = app_state.wm.active_pane_id();
                     for (pid, url) in result.panes_to_create {
-                        self.create_wry_pane_for(pid, &url);
+                        if pid == active_id {
+                            self.create_wry_pane_for(pid, &url);
+                        } else if self.config.is_offscreen() {
+                            self.pending_pane_creates.push_back((pid, url));
+                        } else {
+                            self.create_wry_pane_for(pid, &url);
+                        }
                     }
                     if let Some(s) = self.app_state.as_mut() {
                         s.status_message = format!(
@@ -1476,6 +1577,9 @@ impl ApplicationHandler for AileronApp {
 
         self.reposition_all_panes();
         frame_tasks::pump_gtk_loop();
+
+        // TASK-K27: create at most one deferred offscreen pane per frame.
+        self.drain_pending_pane_creates();
 
         // Architecture B: capture dirty offscreen frames and update egui textures.
         self.update_webview_textures();
@@ -1597,7 +1701,125 @@ fn key_to_escape_sequence(key: &aileron::input::Key, mods: aileron::input::Modif
         Key::F(10) => "\x1b[21~".into(),
         Key::F(11) => "\x1b[23~".into(),
         Key::F(12) => "\x1b[24~".into(),
-        _ => String::new(), // Unknown keys → no escape sequence
+        _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{HashSet, VecDeque};
+
+    /// Simulate one step of drain_pending_pane_creates logic.
+    /// Returns (created_count, remaining_count) and modifies the queue in-place.
+    fn drain_one_step(
+        pending: &mut std::collections::VecDeque<(uuid::Uuid, url::Url)>,
+        active_id: Option<uuid::Uuid>,
+        live_pane_ids: &std::collections::HashSet<uuid::Uuid>,
+    ) -> (usize, usize) {
+        let has_active = pending
+            .iter()
+            .any(|(pid, _)| Some(*pid) == active_id && live_pane_ids.contains(pid));
+
+        let to_create = if has_active {
+            pending
+                .iter()
+                .position(|(pid, _)| Some(*pid) == active_id && live_pane_ids.contains(pid))
+        } else {
+            pending
+                .iter()
+                .position(|(pid, _)| live_pane_ids.contains(pid))
+        };
+
+        let mut created = 0usize;
+        if let Some(idx) = to_create {
+            pending.remove(idx);
+            created += 1;
+        }
+
+        pending.retain(|(pid, _)| live_pane_ids.contains(pid));
+        (created, pending.len())
+    }
+
+    #[test]
+    fn test_staggered_creation_one_per_step() {
+        let id1 = uuid::Uuid::new_v4();
+        let id2 = uuid::Uuid::new_v4();
+        let id3 = uuid::Uuid::new_v4();
+        let url = url::Url::parse("aileron://new").unwrap();
+
+        let mut pending: std::collections::VecDeque<(uuid::Uuid, url::Url)> =
+            std::collections::VecDeque::new();
+        pending.push_back((id1, url.clone()));
+        pending.push_back((id2, url.clone()));
+        pending.push_back((id3, url.clone()));
+
+        let live: std::collections::HashSet<uuid::Uuid> = [id1, id2, id3].into_iter().collect();
+
+        let (created, remaining) = drain_one_step(&mut pending, None, &live);
+        assert_eq!(created, 1);
+        assert_eq!(remaining, 2);
+
+        let (created, remaining) = drain_one_step(&mut pending, None, &live);
+        assert_eq!(created, 1);
+        assert_eq!(remaining, 1);
+
+        let (created, remaining) = drain_one_step(&mut pending, None, &live);
+        assert_eq!(created, 1);
+        assert_eq!(remaining, 0);
+
+        let (created, remaining) = drain_one_step(&mut pending, None, &live);
+        assert_eq!(created, 0);
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn test_staggered_creation_active_pane_created_immediately() {
+        let id1 = uuid::Uuid::new_v4();
+        let id2 = uuid::Uuid::new_v4();
+        let id3 = uuid::Uuid::new_v4();
+        let url = url::Url::parse("aileron://new").unwrap();
+
+        let mut pending: std::collections::VecDeque<(uuid::Uuid, url::Url)> =
+            std::collections::VecDeque::new();
+        pending.push_back((id1, url.clone()));
+        pending.push_back((id2, url.clone()));
+        pending.push_back((id3, url.clone()));
+
+        let live: std::collections::HashSet<uuid::Uuid> = [id1, id2, id3].into_iter().collect();
+
+        let (created, remaining) = drain_one_step(&mut pending, Some(id2), &live);
+        assert_eq!(created, 1);
+        assert_eq!(remaining, 2);
+        assert_eq!(pending.front().map(|(id, _)| *id), Some(id1));
+    }
+
+    #[test]
+    fn test_staggered_creation_closed_pane_discarded() {
+        let id1 = uuid::Uuid::new_v4();
+        let id2 = uuid::Uuid::new_v4();
+        let url = url::Url::parse("aileron://new").unwrap();
+
+        let mut pending: std::collections::VecDeque<(uuid::Uuid, url::Url)> =
+            std::collections::VecDeque::new();
+        pending.push_back((id1, url.clone()));
+        pending.push_back((id2, url.clone()));
+
+        let live: std::collections::HashSet<uuid::Uuid> = [id1].into_iter().collect();
+
+        let (created, remaining) = drain_one_step(&mut pending, None, &live);
+        assert_eq!(created, 1);
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn test_staggered_creation_empty_queue() {
+        let mut pending: std::collections::VecDeque<(uuid::Uuid, url::Url)> =
+            std::collections::VecDeque::new();
+        let live: std::collections::HashSet<uuid::Uuid> = std::collections::HashSet::new();
+
+        let (created, remaining) = drain_one_step(&mut pending, None, &live);
+        assert_eq!(created, 0);
+        assert_eq!(remaining, 0);
     }
 }
 
