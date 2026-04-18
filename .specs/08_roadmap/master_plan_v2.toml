@@ -49,7 +49,7 @@ prerequisites = []
 outputs = [".specs/02_architecture/webextensions_api_design.md — TabsApi section"]
 verification = ["All chrome.tabs MVP methods covered", "Type definitions complete", "Doc comments on every method"]
 estimated_hours = 6
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K02"
@@ -66,7 +66,7 @@ prerequisites = []
 outputs = [".specs/02_architecture/webextensions_api_design.md — StorageApi section"]
 verification = ["local, sync, managed areas defined", "onChanged event with change info", "Type-safe get/set with generics"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K03"
@@ -83,7 +83,7 @@ prerequisites = []
 outputs = [".specs/02_architecture/webextensions_api_design.md — RuntimeApi section"]
 verification = ["One-shot messaging and long-lived ports", "Extension manifest access", "URL resolution for extension resources"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K04"
@@ -101,7 +101,7 @@ prerequisites = []
 outputs = [".specs/02_architecture/webextensions_api_design.md — WebRequestApi section"]
 verification = ["All lifecycle hooks defined", "Blocking and non-blocking modes", "Header modification support", "URL filtering"]
 estimated_hours = 8
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K05"
@@ -118,7 +118,7 @@ prerequisites = []
 outputs = [".specs/02_architecture/webextensions_api_design.md — ScriptingApi section"]
 verification = ["Script injection with files and function", "CSS injection", "Content script registration API", "Migration path from Lua scripts documented"]
 estimated_hours = 6
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K06"
@@ -136,7 +136,7 @@ prerequisites = ["TASK-K01", "TASK-K02", "TASK-K03", "TASK-K04", "TASK-K05"]
 outputs = [".specs/02_architecture/webextensions_api_design.md"]
 verification = ["Complete design document", "All traits compile as trait objects", "Integration with existing content scripts explained", "Ad blocking via webRequest documented"]
 estimated_hours = 12
-status = "pending"
+status = "complete"
 
 # --- K.2: Cross-Platform Abstraction ---
 
@@ -155,7 +155,7 @@ prerequisites = []
 outputs = [".specs/02_architecture/platform_audit.md"]
 verification = ["All platform-specific code cataloged", "Each entry has file:line, platform, purpose"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K08"
@@ -175,7 +175,7 @@ prerequisites = ["TASK-K07"]
 outputs = ["src/platform/mod.rs", "src/platform/linux.rs", "src/platform/macos.rs", "src/platform/windows.rs", "src/platform/common.rs"]
 verification = ["Compiles on Linux", "Conditional compilation with cfg(target_os)", "All existing platform code refactored to use traits"]
 estimated_hours = 10
-status = "pending"
+status = "partial"
 
 [[task]]
 id = "TASK-K09"
@@ -227,7 +227,7 @@ prerequisites = []
 outputs = ["src/net/filter_list.rs — $CSP parsing", "Header injection logic"]
 verification = ["$CSP rules parsed correctly", "CSP headers injected on matching requests", "adblock-testpages.com CSP tests pass"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K12"
@@ -243,7 +243,7 @@ prerequisites = []
 outputs = ["src/net/filter_list.rs — $redirect parsing", "Built-in resource stubs"]
 verification = ["$redirect rules parsed", "Matching requests redirected to stubs", "No network requests for redirected resources"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K13"
@@ -259,7 +259,7 @@ prerequisites = []
 outputs = ["src/net/filter_list.rs — $removeheader parsing", "Header stripping logic"]
 verification = ["$removeheader rules parsed", "Headers stripped from matching responses"]
 estimated_hours = 3
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K14"
@@ -278,7 +278,7 @@ prerequisites = ["TASK-K11", "TASK-K12", "TASK-K13"]
 outputs = ["Enhanced filter parser", "Additional default filter lists"]
 verification = ["uBlock filter syntax parsed correctly", "Peter Lowe's list loads and works"]
 estimated_hours = 3
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K15"
@@ -295,7 +295,7 @@ prerequisites = ["TASK-K14"]
 outputs = ["Filter list updater", "Settings UI for last-updated"]
 verification = ["Lists update automatically", "Cached fallback works", "Manual update command works"]
 estimated_hours = 2
-status = "pending"
+status = "complete"
 
 # --- K.4: Password Manager Native Integration ---
 
@@ -313,7 +313,7 @@ prerequisites = []
 outputs = ["Save-on-submit content script", "Credential save flow"]
 verification = ["Login form submission triggers save prompt", "Credentials saved to keyring", "No duplicate prompts"]
 estimated_hours = 6
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K17"
@@ -331,7 +331,7 @@ prerequisites = []
 outputs = ["src/keyring.rs (or src/platform/keyring.rs)"]
 verification = ["Credentials stored in system keyring", "Credentials retrieved on demand", "Works on at least Linux"]
 estimated_hours = 6
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K18"
@@ -349,7 +349,7 @@ prerequisites = ["TASK-K16"]
 outputs = ["Enhanced form detection content script"]
 verification = ["Detects login forms on top 50 sites", "Handles multi-step flows", "Skips OAuth flows"]
 estimated_hours = 4
-status = "pending"
+status = "partial"
 
 [[task]]
 id = "TASK-K19"
@@ -365,7 +365,7 @@ prerequisites = ["TASK-K17"]
 outputs = ["Credential palette integration"]
 verification = ["Credentials searchable from palette", "Auto-fill on selection", "URL filtering works"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 # --- K.5: Sync Protocol Design (spec-only) ---
 
@@ -464,7 +464,7 @@ prerequisites = []
 outputs = ["src/frame_tasks.rs — budget enforcement", "Frame time logging"]
 verification = ["60fps maintained with 2 panes", "Adaptive quality kicks in at 4+ panes", "Frame time logged"]
 estimated_hours = 6
-status = "pending"
+status = "partial"
 
 [[task]]
 id = "TASK-K25"
@@ -483,7 +483,7 @@ prerequisites = []
 outputs = ["src/profiling.rs", ":perf command"]
 verification = ["Per-phase timing visible", "Stats computed correctly", "JSON export works"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K26"
@@ -502,7 +502,7 @@ prerequisites = []
 outputs = ["src/memory.rs", ":memory command", "Tab discard logic"]
 verification = ["Memory stats accurate", "Tab discarding works", "Per-pane targets met"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K27"
@@ -560,7 +560,7 @@ prerequisites = []
 outputs = [".specs/02_architecture/servo_embedder_evaluation.md"]
 verification = ["API surface documented", "Compatibility assessment", "Risk assessment", "Go/no-go recommendation"]
 estimated_hours = 8
-status = "pending"
+status = "partial"
 
 [[task]]
 id = "TASK-K30"
@@ -579,7 +579,7 @@ prerequisites = ["TASK-K29"]
 outputs = [".specs/02_architecture/servo_pane_design.md"]
 verification = ["Architecture documented", "wgpu sharing strategy defined", "Thread model decided"]
 estimated_hours = 8
-status = "pending"
+status = "partial"
 
 [[task]]
 id = "TASK-K31"
@@ -671,7 +671,7 @@ prerequisites = []
 outputs = ["ARIA attributes on internal pages", "egui accessibility layer"]
 verification = ["Orca navigates tab bar", "VoiceOver reads status bar", "Settings page fully keyboard/screen-reader navigable"]
 estimated_hours = 6
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K36"
@@ -691,7 +691,7 @@ prerequisites = []
 outputs = ["Keyboard audit report", "Fixes applied"]
 verification = ["All UI accessible via keyboard only", "Focus indicators present", "No keyboard traps"]
 estimated_hours = 4
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K37"
@@ -711,7 +711,7 @@ prerequisites = ["TASK-K35", "TASK-K36"]
 outputs = ["ARIA attributes on all UI chrome", "Focus management logic"]
 verification = ["Screen reader announces UI state changes", "Focus moves logically", "WCAG 2.1 AA focus criteria met"]
 estimated_hours = 6
-status = "pending"
+status = "partial"
 
 # --- K.9: i18n/l10n Framework ---
 
@@ -732,7 +732,7 @@ prerequisites = []
 outputs = ["src/i18n/mod.rs", "locales/en.toml"]
 verification = ["All UI strings externalized", "String interpolation works", "Pluralization works"]
 estimated_hours = 8
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K39"
@@ -794,7 +794,7 @@ prerequisites = []
 outputs = ["docs/developer-guide.md"]
 verification = ["Guide covers all major extension points", "Examples compile and run"]
 estimated_hours = 6
-status = "pending"
+status = "complete"
 
 [[task]]
 id = "TASK-K42"
@@ -813,4 +813,4 @@ prerequisites = []
 outputs = ["docs/architecture.md", "docs/contributing.md update", "examples/ directory"]
 verification = ["Architecture document complete", "Contributing guide current", "Examples work"]
 estimated_hours = 10
-status = "pending"
+status = "complete"

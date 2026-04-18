@@ -2,6 +2,40 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.5.0 (2026-04-18)
+
+### Advanced Ad Blocking (K.3 complete)
+- $redirect filter rules with inline data URI stubs (1x1.gif, empty.css, empty.js)
+- $badfilter detection (skip broken rules with warning)
+- $important modifier (important rules override exceptions/whitelist)
+- $generichide generic element hiding
+- $document and $all resource type modifiers
+- Peter Lowe's Ad & Tracking Server list as default
+- Filter list update mechanism with ETag/304 conditional HTTP
+- :adblock-update command
+
+### Password Manager (K.4 complete)
+- :credentials command lists Bitwarden vault items for current site
+- :credentials-save saves pending form submission to system keyring
+- Save-on-submit observer JS injected on page load
+- Ctrl+Shift+K for credential search
+
+### Performance & Monitoring (K.6)
+- Frame time profiler: 1000-sample ring buffer with p50/p95/p99 stats
+- :perf / :perf-on / :perf-off commands
+- Dropped frame counter (frames exceeding 16.7ms budget)
+- Memory monitoring via /proc/self/status
+- :memory command shows RSS + per-pane estimates
+
+### Internationalization (K.9 expanded)
+- 29 UI strings externalized (was 7)
+- register() helper for clean key registration
+- Coverage: mode names, status messages, commands, errors
+
+### Stats
+- 546 total tests (+37 from v0.4.0)
+- Zero clippy warnings
+
 ## v0.4.0 (2026-04-18)
 
 ### WebExtensions API (K.1)
