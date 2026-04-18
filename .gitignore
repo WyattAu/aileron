@@ -27,3 +27,6 @@ target
 
 # Nix build result symlink
 /result
+
+# Lean dependency caches
+**/.lake/

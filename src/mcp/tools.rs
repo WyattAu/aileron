@@ -74,14 +74,12 @@ impl McpTool for ReadActivePaneTool {
 /// Tool: Navigate to a URL in the active pane.
 /// Sends a command to the main thread via McpBridge.
 pub struct BrowserNavigateTool {
-    #[allow(dead_code)]
-    state: McpState,
     command_tx: std::sync::mpsc::Sender<McpCommand>,
 }
 
 impl BrowserNavigateTool {
-    pub fn new(state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
-        Self { state, command_tx }
+    pub fn new(_state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
     }
 }
 
@@ -129,14 +127,12 @@ impl McpTool for BrowserNavigateTool {
 /// Tool: Execute JavaScript in the active pane.
 /// Sends a command to the main thread via McpBridge.
 pub struct RunJsTool {
-    #[allow(dead_code)]
-    state: McpState,
     command_tx: std::sync::mpsc::Sender<McpCommand>,
 }
 
 impl RunJsTool {
-    pub fn new(state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
-        Self { state, command_tx }
+    pub fn new(_state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
     }
 }
 
@@ -227,14 +223,12 @@ impl McpTool for SearchWebTool {
 /// Tool: Extract visible text content from the active pane.
 /// A convenience wrapper around `run_js` that returns `document.body.innerText`.
 pub struct BrowserGetTextTool {
-    #[allow(dead_code)]
-    state: McpState,
     command_tx: std::sync::mpsc::Sender<McpCommand>,
 }
 
 impl BrowserGetTextTool {
-    pub fn new(state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
-        Self { state, command_tx }
+    pub fn new(_state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
     }
 }
 
@@ -295,14 +289,12 @@ impl McpTool for BrowserGetTextTool {
 /// Sets the value, dispatches input/change events so frameworks (React, Vue)
 /// pick up the change, and optionally submits the form.
 pub struct BrowserFillFormTool {
-    #[allow(dead_code)]
-    state: McpState,
     command_tx: std::sync::mpsc::Sender<McpCommand>,
 }
 
 impl BrowserFillFormTool {
-    pub fn new(state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
-        Self { state, command_tx }
+    pub fn new(_state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
     }
 }
 

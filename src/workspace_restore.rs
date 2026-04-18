@@ -15,6 +15,15 @@ pub struct RestoreResult {
     pub panes_to_create: Vec<(uuid::Uuid, Url)>,
 }
 
+impl RestoreResult {
+    pub fn empty() -> Self {
+        Self {
+            pane_count: 0,
+            panes_to_create: Vec::new(),
+        }
+    }
+}
+
 pub enum RestoreOutcome {
     Restored(RestoreResult),
     NotFound,
@@ -87,4 +96,71 @@ pub fn restore_workspace(
         pane_count: count,
         panes_to_create,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_restore_result_empty() {
+        let result = RestoreResult::empty();
+        assert_eq!(result.pane_count, 0);
+        assert!(result.panes_to_create.is_empty());
+    }
+
+    #[test]
+    fn test_restore_result_with_panes() {
+        let id = uuid::Uuid::new_v4();
+        let url = Url::parse("https://example.com").unwrap();
+        let result = RestoreResult {
+            pane_count: 1,
+            panes_to_create: vec![(id, url)],
+        };
+        assert_eq!(result.pane_count, 1);
+        assert_eq!(result.panes_to_create.len(), 1);
+        assert_eq!(result.panes_to_create[0].0, id);
+        assert_eq!(result.panes_to_create[0].1.as_str(), "https://example.com/");
+    }
+
+    #[test]
+    fn test_restore_outcome_restored() {
+        let result = RestoreResult::empty();
+        match RestoreOutcome::Restored(result) {
+            RestoreOutcome::Restored(r) => assert_eq!(r.pane_count, 0),
+            _ => panic!("Expected Restored variant"),
+        }
+    }
+
+    #[test]
+    fn test_restore_outcome_not_found() {
+        matches!(RestoreOutcome::NotFound, RestoreOutcome::NotFound);
+    }
+
+    #[test]
+    fn test_restore_outcome_no_database() {
+        matches!(RestoreOutcome::NoDatabase, RestoreOutcome::NoDatabase);
+    }
+
+    #[test]
+    fn test_restore_outcome_tree_error() {
+        match RestoreOutcome::TreeError("bad tree".into()) {
+            RestoreOutcome::TreeError(msg) => assert_eq!(msg, "bad tree"),
+            _ => panic!("Expected TreeError variant"),
+        }
+    }
+
+    #[test]
+    fn test_restore_result_pane_urls() {
+        let id1 = uuid::Uuid::new_v4();
+        let id2 = uuid::Uuid::new_v4();
+        let url1 = Url::parse("https://example.com").unwrap();
+        let url2 = Url::parse("aileron://terminal").unwrap();
+        let result = RestoreResult {
+            pane_count: 2,
+            panes_to_create: vec![(id1, url1), (id2, url2)],
+        };
+        assert_eq!(result.panes_to_create[0].1.scheme(), "https");
+        assert_eq!(result.panes_to_create[1].1.scheme(), "aileron");
+    }
 }

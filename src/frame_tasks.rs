@@ -91,6 +91,21 @@ pub fn process_wry_events(
                         );
                     }
 
+                    if let Some(ref css) = app_state.config.custom_css
+                        && !css.trim().is_empty()
+                        && let Some(wry_pane) = wry_panes.get_mut(&pane_id)
+                    {
+                        let escaped = css.replace('\\', "\\\\").replace('`', "\\`").replace('$', "\\$");
+                        wry_pane.execute_js(&format!(
+                            "setTimeout(function() {{ \
+                                var s = document.createElement('style'); \
+                                s.textContent = `{}`; \
+                                (document.head || document.documentElement).appendChild(s); \
+                            }}, 0);",
+                            escaped
+                        ));
+                    }
+
                     let csp_headers = adblocker.get_csp_headers(&url);
                     if !csp_headers.is_empty() {
                         let csp = csp_headers.join("; ");
@@ -224,6 +239,22 @@ pub fn process_offscreen_events(
                                 } \
                             }, 100);"
                         );
+                    }
+
+                    if let Some(ref css) = app_state.config.custom_css
+                        && !css.trim().is_empty()
+                        && let Some(pane) = offscreen_panes.get_mut(&pane_id)
+                    {
+                        let escaped = css.replace('\\', "\\\\").replace('`', "\\`").replace('$', "\\$");
+                        pane.execute_js(&format!(
+                            "setTimeout(function() {{ \
+                                var s = document.createElement('style'); \
+                                s.textContent = `{}`; \
+                                (document.head || document.documentElement).appendChild(s); \
+                            }}, 0);",
+                            escaped
+                        ));
+                        pane.mark_dirty();
                     }
 
                     let csp_headers = adblocker.get_csp_headers(&url);

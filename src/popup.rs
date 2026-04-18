@@ -10,8 +10,6 @@ use winit::window::{Window, WindowId};
 
 /// A standalone popup browser window — just a wry webview, no egui overlay.
 pub struct PopupWindow {
-    #[allow(dead_code)]
-    pub window: Arc<Window>,
     pub wry_pane: Option<crate::servo::WryPane>,
 }
 
@@ -38,6 +36,7 @@ impl PopupManager {
         window: Arc<Window>,
         url: url::Url,
         blocked_domains: Vec<String>,
+        devtools: bool,
     ) {
         let size = window.inner_size();
         let bounds = wry::Rect {
@@ -54,12 +53,12 @@ impl PopupManager {
             url,
             bounds,
             blocked_domains,
+            devtools,
         ) {
             Ok(wry_pane) => {
                 self.windows.insert(
                     window_id,
                     PopupWindow {
-                        window,
                         wry_pane: Some(wry_pane),
                     },
                 );

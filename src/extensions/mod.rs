@@ -5,19 +5,23 @@
 //! See `.specs/02_architecture/webextensions_api_design.md` for full design.
 
 pub mod api;
+pub mod impls;
+pub mod loader;
 pub mod manifest;
-pub mod tabs;
-pub mod storage;
 pub mod runtime;
-pub mod web_request;
 pub mod scripting;
+pub mod storage;
+pub mod tabs;
 pub mod types;
+pub mod web_request;
 
 pub use api::*;
+pub use impls::AileronExtensionApi;
+pub use loader::ExtensionManager;
 pub use manifest::*;
-pub use tabs::*;
-pub use storage::*;
 pub use runtime::*;
-pub use web_request::*;
 pub use scripting::*;
+pub use storage::*;
+pub use tabs::*;
 pub use types::*;
+pub use web_request::*;

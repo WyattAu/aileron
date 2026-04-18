@@ -60,7 +60,7 @@ pub struct HttpHeader {
 #[derive(Debug, Clone)]
 pub struct AuthCredentials {
     pub username: String,
-    pub password: String,
+    pub password: zeroize::Zeroizing<String>,
 }
 
 /// Details provided to onBeforeRequest handler.
@@ -275,7 +275,7 @@ mod tests {
     fn test_auth_credentials() {
         let creds = AuthCredentials {
             username: "admin".into(),
-            password: "secret".into(),
+            password: zeroize::Zeroizing::new("secret".into()),
         };
         assert_eq!(creds.username, "admin");
     }

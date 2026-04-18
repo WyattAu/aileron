@@ -75,6 +75,7 @@ impl OffscreenWebView {
         width: i32,
         height: i32,
         blocked_domains: Vec<String>,
+        devtools: bool,
     ) -> Result<Self, wry::Error> {
         Self::new_with_privacy(
             pane_id,
@@ -84,6 +85,7 @@ impl OffscreenWebView {
             blocked_domains,
             true,
             true,
+            devtools,
         )
     }
 
@@ -98,6 +100,7 @@ impl OffscreenWebView {
         blocked_domains: Vec<String>,
         https_upgrade_enabled: bool,
         tracking_protection_enabled: bool,
+        devtools: bool,
     ) -> Result<Self, wry::Error> {
         let offscreen = gtk::OffscreenWindow::new();
         offscreen.set_default_size(width, height);
@@ -106,7 +109,7 @@ impl OffscreenWebView {
         let url_str = initial_url.as_str().to_string();
         let (event_tx, event_rx) = mpsc::channel();
 
-        let devtools = cfg!(debug_assertions);
+        let devtools = cfg!(debug_assertions) || devtools;
 
         let https_safe_list = if https_upgrade_enabled {
             crate::net::privacy::load_https_safe_list()
@@ -553,6 +556,7 @@ impl OffscreenWebViewManager {
         width: i32,
         height: i32,
         blocked_domains: Vec<String>,
+        devtools: bool,
     ) -> Result<(), wry::Error> {
         let pane = OffscreenWebView::new(
             pane_id,
@@ -560,6 +564,7 @@ impl OffscreenWebViewManager {
             width,
             height,
             blocked_domains,
+            devtools,
         )?;
         self.panes.insert(pane_id, pane);
         Ok(())
@@ -577,6 +582,7 @@ impl OffscreenWebViewManager {
         blocked_domains: Vec<String>,
         https_upgrade_enabled: bool,
         tracking_protection_enabled: bool,
+        devtools: bool,
     ) -> Result<(), wry::Error> {
         let pane = OffscreenWebView::new_with_privacy(
             pane_id,
@@ -586,6 +592,7 @@ impl OffscreenWebViewManager {
             blocked_domains,
             https_upgrade_enabled,
             tracking_protection_enabled,
+            devtools,
         )?;
         self.panes.insert(pane_id, pane);
         Ok(())

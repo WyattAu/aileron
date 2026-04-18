@@ -1,6 +1,6 @@
 [package]
 name = "aileron"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 description = "A blazingly fast, keyboard-driven web environment for developers"
 license = "MIT"
@@ -11,7 +11,7 @@ anyhow = "1.0.102"
 thiserror = "2.0.18"
 
 # Async runtime
-tokio = { version = "1.51.1", features = ["full"] }
+tokio = { version = "1.51.1", features = ["rt-multi-thread", "macros"] }
 
 # Concurrency
 crossbeam-channel = "0.5.15"

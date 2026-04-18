@@ -7,6 +7,7 @@ pub mod dispatch;
 
 use crate::config::Config;
 use crate::db::bookmarks;
+use crate::extensions::{ExtensionId, ExtensionManager};
 use crate::input::{EventDestination, Key, KeyEvent, KeybindingRegistry, Mode};
 use crate::lua::LuaEngine;
 use crate::passwords::BitwardenClient;
@@ -178,6 +179,9 @@ pub struct AppState {
 
     /// Adblock blocked request count (updated by main.rs each frame).
     pub adblock_blocked_count: u64,
+
+    /// Extension manager — loads and manages WebExtensions.
+    pub extension_manager: ExtensionManager,
 }
 
 impl AppState {
@@ -332,6 +336,7 @@ impl AppState {
             muted_pane_ids: std::collections::HashSet::new(),
             pinned_pane_ids: std::collections::HashSet::new(),
             adblock_blocked_count: 0,
+            extension_manager: ExtensionManager::new(Self::extensions_dir()),
         })
     }
 
@@ -340,6 +345,12 @@ impl AppState {
             .ok_or_else(|| anyhow::anyhow!("Failed to determine project directories"))?;
         let data_dir = dirs.data_dir().to_path_buf();
         Ok(data_dir.join("aileron.db"))
+    }
+
+    fn extensions_dir() -> PathBuf {
+        directories::ProjectDirs::from("com", "aileron", "Aileron")
+            .map(|dirs| dirs.data_dir().join("extensions"))
+            .unwrap_or_else(|| PathBuf::from("./extensions"))
     }
 
     /// Refresh the command palette with latest history items from the DB
@@ -937,6 +948,27 @@ impl AppState {
                     self.status_message = "No active page URL".into();
                 }
             }
+            "extensions" => {
+                let ids = self.extension_manager.list();
+                if ids.is_empty() {
+                    self.status_message = "No extensions loaded".into();
+                } else {
+                    let names: Vec<String> = ids
+                        .iter()
+                        .map(|id| {
+                            self.extension_manager
+                                .get(id)
+                                .map(|api| api.manifest().name.clone())
+                                .unwrap_or_else(|| id.to_string())
+                        })
+                        .collect();
+                    self.status_message = format!("Extensions: {}", names.join(", "));
+                }
+            }
+            "extension-load" => {
+                let loaded = self.extension_manager.load_all();
+                self.status_message = format!("Loaded {} extension(s)", loaded.len());
+            }
             "" => {}
             _ => {
                 if let Some(code) = cmd.strip_prefix("language ") {
@@ -971,6 +1003,37 @@ impl AppState {
                             code,
                             available.join(", ")
                         );
+                    }
+                    return;
+                }
+
+                if let Some(id_str) = cmd.strip_prefix("extension-info ") {
+                    let id_str = id_str.trim();
+                    if id_str.is_empty() {
+                        self.status_message = "Usage: extension-info <id>".into();
+                        return;
+                    }
+                    let ext_id = ExtensionId(id_str.to_string());
+                    match self.extension_manager.get(&ext_id) {
+                        Some(api) => {
+                            let m = api.manifest();
+                            let perms = if m.permissions.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" | perms: {}", m.permissions.join(", "))
+                            };
+                            self.status_message = format!(
+                                "{} v{} ({}){}",
+                                m.name,
+                                m.version,
+                                api.extension_id(),
+                                perms,
+                            );
+                        }
+                        None => {
+                            self.status_message =
+                                format!("Extension '{}' not found", id_str);
+                        }
                     }
                     return;
                 }
@@ -1518,6 +1581,58 @@ impl AppState {
 
         if query == "inspect" {
             self.pending_wry_actions.push_back(WryAction::ToggleDevTools);
+            return;
+        }
+
+        if query == "extensions" {
+            let ids = self.extension_manager.list();
+            if ids.is_empty() {
+                self.status_message = "No extensions loaded".into();
+            } else {
+                let names: Vec<String> = ids
+                    .iter()
+                    .map(|id| {
+                        self.extension_manager
+                            .get(id)
+                            .map(|api| api.manifest().name.clone())
+                            .unwrap_or_else(|| id.to_string())
+                    })
+                    .collect();
+                self.status_message = format!("Extensions: {}", names.join(", "));
+            }
+            return;
+        }
+
+        if query == "extension-load" {
+            let loaded = self.extension_manager.load_all();
+            self.status_message = format!("Loaded {} extension(s)", loaded.len());
+            return;
+        }
+
+        if let Some(id_str) = query.strip_prefix("extension-info ") {
+            let id_str = id_str.trim();
+            if id_str.is_empty() {
+                self.status_message = "Usage: extension-info <id>".into();
+                return;
+            }
+            let ext_id = ExtensionId(id_str.to_string());
+            match self.extension_manager.get(&ext_id) {
+                Some(api) => {
+                    let m = api.manifest();
+                    let perms = if m.permissions.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" | perms: {}", m.permissions.join(", "))
+                    };
+                    self.status_message = format!(
+                        "{} v{} ({}){}",
+                        m.name, m.version, api.extension_id(), perms,
+                    );
+                }
+                None => {
+                    self.status_message = format!("Extension '{}' not found", id_str);
+                }
+            }
             return;
         }
 
@@ -2456,6 +2571,7 @@ if (window._terminal && window._terminal.buffer) {{
                 "adaptive-quality", "adaptive_quality",
                 "language", "language-list",
                 "engine", "compat-override",
+                "extensions", "extension-load", "extension-info",
             ];
             let cmd = query;
             let suggestion = known_commands

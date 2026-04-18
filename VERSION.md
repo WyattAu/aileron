@@ -1,11 +1,11 @@
 # Aileron — Version & State Tracking
 
 ## Current State
-- **Phase:** Phase K Complete (v0.7.0)
-- **Version:** 0.7.0
-- **Status:** Phase K 100% Complete (42/42 tasks)
+- **Phase:** Phase L Complete (v0.8.0)
+- **Version:** 0.8.0
+- **Status:** Hardening, bug fixes, WebExtensions wiring
 - **Last Updated:** 2026-04-18
-- **Test Count:** 598 lib + 26 integration + 13 startup + 1 offscreen = 638 total
+- **Test Count:** 638 lib + 26 integration + 13 startup + 1 offscreen = 678 total
 - **Zero clippy warnings**
 
 ## Implementation Phases

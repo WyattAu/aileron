@@ -96,6 +96,7 @@ impl WryPane {
         initial_url: Url,
         bounds: Rect,
         blocked_domains: Vec<String>,
+        devtools: bool,
     ) -> Result<Self, wry::Error>
     where
         W: HasWindowHandle,
@@ -106,7 +107,7 @@ impl WryPane {
 
         // === Path 1: Try build_as_child (X11) ===
         // Builder is built inline so event_tx isn't lost if this path fails.
-        match Self::make_builder(&url_str, pid, event_tx.clone(), blocked_domains.clone())
+        match Self::make_builder(&url_str, pid, event_tx.clone(), blocked_domains.clone(), devtools)
             .with_bounds(bounds)
             .build_as_child(parent)
         {
@@ -141,7 +142,7 @@ impl WryPane {
         // === Path 2: GTK window fallback (Wayland) ===
         #[cfg(target_os = "linux")]
         {
-            Self::create_gtk_pane(pid, initial_url, bounds, event_tx, event_rx)
+            Self::create_gtk_pane(pid, initial_url, bounds, event_tx, event_rx, devtools)
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -161,6 +162,7 @@ impl WryPane {
         bounds: Rect,
         event_tx: mpsc::Sender<WryEvent>,
         event_rx: mpsc::Receiver<WryEvent>,
+        devtools: bool,
     ) -> Result<Self, wry::Error> {
         let url_str = initial_url.as_str().to_string();
 
@@ -185,7 +187,7 @@ impl WryPane {
         gtk_window.set_child(Some(&fixed));
 
         // Build the webview inside the GTK container using the SAME event_tx
-        let builder = Self::make_builder(&url_str, pane_id, event_tx, Vec::new());
+        let builder = Self::make_builder(&url_str, pane_id, event_tx, Vec::new(), devtools);
 
         let webview = builder.build_gtk(&fixed)?;
 
@@ -216,8 +218,9 @@ impl WryPane {
         pid: Uuid,
         event_tx: mpsc::Sender<WryEvent>,
         blocked_domains: Vec<String>,
+        devtools: bool,
     ) -> WebViewBuilder<'static> {
-        Self::make_builder_with_privacy(url_str, pid, event_tx, blocked_domains, true, true)
+        Self::make_builder_with_privacy(url_str, pid, event_tx, blocked_domains, true, true, devtools)
     }
 
     /// Build a WebViewBuilder with common configuration and privacy settings.
@@ -229,6 +232,7 @@ impl WryPane {
         blocked_domains: Vec<String>,
         https_upgrade_enabled: bool,
         tracking_protection_enabled: bool,
+        devtools: bool,
     ) -> WebViewBuilder<'static> {
         let https_safe_list = if https_upgrade_enabled {
             crate::net::privacy::load_https_safe_list()
@@ -242,7 +246,7 @@ impl WryPane {
         let privacy_script =
             crate::net::privacy::privacy_initialization_script(tracking_protection_enabled);
 
-        let devtools = cfg!(debug_assertions);
+        let devtools = cfg!(debug_assertions) || devtools;
 
         WebViewBuilder::new()
             .with_url(url_str)
@@ -629,11 +633,12 @@ impl WryPaneManager {
         initial_url: Url,
         bounds: Rect,
         blocked_domains: Vec<String>,
+        devtools: bool,
     ) -> Result<(), wry::Error>
     where
         W: HasWindowHandle,
     {
-        let pane = WryPane::new(parent, pane_id, initial_url, bounds, blocked_domains)?;
+        let pane = WryPane::new(parent, pane_id, initial_url, bounds, blocked_domains, devtools)?;
         self.panes.insert(pane_id, pane);
         Ok(())
     }

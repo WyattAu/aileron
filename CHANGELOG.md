@@ -2,6 +2,44 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.8.0 (2026-04-18) — Phase L: Hardening & Quality
+
+### Bug Fixes
+- Fixed: config.devtools now actually controls webview devtools (was hardcoded to debug builds only)
+- Fixed: custom_css is now injected into web pages on load (was stored but never applied)
+- Fixed: adblock_update_interval_hours now triggers periodic filter list updates
+
+### WebExtensions Wiring (L.8)
+- Concrete AileronExtensionApi implementing all 6 WebExtensions traits
+- ExtensionManager with directory scanning and manifest.json loading
+- :extensions, :extension-load, :extension-info commands
+- Extension loading on startup from data_dir/extensions/
+
+### Dead Code Cleanup (L.5)
+- Removed unused MCP tool state fields (4 structs)
+- Removed unused ParsedFilter::Ignore variant
+- Removed never-accessed PopupWindow.window field
+- Changed AuthCredentials.password to Zeroizing<String> for consistency
+
+### Test Coverage (L.6)
+- 22 new tests for i18n/loader (10), workspace_restore (6), wm/pane (6)
+- Total: 638 lib tests + 40 integration/startup/offscreen = 678
+
+### Housekeeping (L.7)
+- Trimmed tokio features from "full" to "rt-multi-thread,macros" (smaller binary)
+- Added **/.lake/ to .gitignore
+- Removed 5 unnecessary #[allow(dead_code)] annotations
+
+### Hardening Audit (L.2-L.4)
+- Database layer: already properly hardened (all unwraps in test code only)
+- lua/api.rs: already properly hardened (63/64 unwraps in test code)
+- wm/tree.rs: already properly hardened (all unwraps in test code)
+
+### Stats
+- 678 total tests (+40 from v0.7.0)
+- Zero clippy warnings
+- Production unwrap() audit: db (0), lua (1 infallible), wm (1 infallible)
+
 ## v0.7.0 (2026-04-18) — Phase K Complete
 
 Phase K is now 100% complete (42/42 tasks). This is the final planned development phase.

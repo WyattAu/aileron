@@ -86,7 +86,6 @@ impl FilterList {
                         self.cosmetic_filters.push(f);
                         count += 1;
                     }
-                    ParsedFilter::Ignore => {}
                 }
             }
         }
@@ -270,8 +269,6 @@ impl Default for FilterList {
 enum ParsedFilter {
     Network(NetworkFilter),
     Cosmetic(CosmeticFilter),
-    #[allow(dead_code)]
-    Ignore,
 }
 
 pub fn filter_list_dir() -> PathBuf {

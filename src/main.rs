@@ -114,6 +114,9 @@ struct AileronApp {
     /// Adaptive quality renderer (TASK-K24).
     /// Reduces texture capture rate when frames are slow.
     adaptive_quality: AdaptiveQuality,
+
+    /// Last time adblock filter lists were updated (for periodic refresh).
+    last_filter_update: std::time::Instant,
 }
 
 impl AileronApp {
@@ -153,6 +156,7 @@ impl AileronApp {
             offscreen_last_capture: std::collections::HashMap::new(),
             pending_pane_creates: std::collections::VecDeque::new(),
             adaptive_quality,
+            last_filter_update: std::time::Instant::now(),
         }
     }
 
@@ -184,7 +188,7 @@ impl AileronApp {
         // Initialize app state with viewport and config
         let size = window.inner_size();
         let viewport = Rect::new(0.0, 0.0, size.width as f64, size.height as f64);
-        let app_state = match AppState::new(viewport, self.config.clone()) {
+        let mut app_state = match AppState::new(viewport, self.config.clone()) {
             Ok(s) => {
                 info!(
                     "Application state initialized with {} panes",
@@ -197,6 +201,11 @@ impl AileronApp {
                 return;
             }
         };
+
+        let loaded_count = app_state.extension_manager.load_all().len();
+        if loaded_count > 0 {
+            info!("Loaded {} extension(s)", loaded_count);
+        }
 
         self.egui_winit = Some(winit_state);
         self.gfx = Some(gfx);
@@ -271,6 +280,7 @@ impl AileronApp {
             url.clone(),
             wry_rect,
             blocked_domains,
+            self.config.devtools,
         ) {
             Ok(()) => {
                 if is_terminal {
@@ -365,7 +375,7 @@ impl AileronApp {
 
         #[cfg(target_os = "linux")]
         match self.offscreen_panes.create_pane(
-            pane_id, url, width, height, blocked_domains
+            pane_id, url, width, height, blocked_domains, self.config.devtools
         ) {
             Ok(()) => {
                 if is_terminal {
@@ -430,6 +440,7 @@ impl AileronApp {
             window,
             url,
             blocked_domains,
+            self.config.devtools,
         );
     }
 
@@ -1439,6 +1450,21 @@ impl ApplicationHandler for AileronApp {
         if let Some(app_state) = &mut self.app_state {
             app_state.adblock_blocked_count = self.adblocker.blocked_count();
             frame_tasks::auto_save_workspace(app_state, &self.wry_panes);
+        }
+
+        {
+            let interval = std::time::Duration::from_secs(self.config.adblock_update_interval_hours * 3600);
+            if self.last_filter_update.elapsed() >= interval {
+                self.last_filter_update = std::time::Instant::now();
+                let updated = aileron::net::filter_list::update_all_filter_lists();
+                if updated > 0 {
+                    frame_tasks::load_default_adblock_rules(&mut self.adblocker);
+                    if let Some(app_state) = &mut self.app_state {
+                        app_state.status_message = format!("Updated {} filter list(s)", updated);
+                    }
+                    info!("Periodic filter list update: {} list(s) refreshed", updated);
+                }
+            }
         }
 
         {

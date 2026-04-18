@@ -71,6 +71,8 @@ pub enum ExtensionError {
     Runtime(String),
     /// JSON serialization/deserialization failed.
     Serialization(String),
+    /// Extension manifest loading failed.
+    LoadFailed(String),
 }
 
 impl fmt::Display for ExtensionError {
@@ -82,6 +84,7 @@ impl fmt::Display for ExtensionError {
             Self::NotFound(msg) => write!(f, "Not found: {}", msg),
             Self::Runtime(msg) => write!(f, "Runtime error: {}", msg),
             Self::Serialization(msg) => write!(f, "Serialization error: {}", msg),
+            Self::LoadFailed(msg) => write!(f, "Load failed: {}", msg),
         }
     }
 }
