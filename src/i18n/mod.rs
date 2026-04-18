@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::OnceLock;
+use std::sync::RwLock;
 
 pub mod loader;
 
@@ -48,33 +48,21 @@ impl Locale {
     }
 }
 
-static LOCALE_OVERRIDE: AtomicPtr<Locale> = AtomicPtr::new(std::ptr::null_mut());
+static LOCALE_OVERRIDE: RwLock<Option<Locale>> = RwLock::new(None);
 
 pub fn set_locale(locale: Locale) {
-    let boxed = Box::into_raw(Box::new(locale));
-    let old = LOCALE_OVERRIDE.swap(boxed, Ordering::SeqCst);
-    if !old.is_null() {
-        unsafe {
-            drop(Box::from_raw(old));
-        }
+    if let Ok(mut guard) = LOCALE_OVERRIDE.write() {
+        *guard = Some(locale);
     }
 }
 
 fn get_locale_override() -> Option<Locale> {
-    let ptr = LOCALE_OVERRIDE.load(Ordering::SeqCst);
-    if ptr.is_null() {
-        None
-    } else {
-        Some(unsafe { *ptr })
-    }
+    LOCALE_OVERRIDE.read().ok().and_then(|guard| *guard)
 }
 
 pub fn clear_locale_override() {
-    let old = LOCALE_OVERRIDE.swap(std::ptr::null_mut(), Ordering::SeqCst);
-    if !old.is_null() {
-        unsafe {
-            drop(Box::from_raw(old));
-        }
+    if let Ok(mut guard) = LOCALE_OVERRIDE.write() {
+        *guard = None;
     }
 }
 

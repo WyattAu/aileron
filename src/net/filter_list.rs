@@ -328,28 +328,20 @@ pub fn save_filter_list(name: &str, content: &str) -> std::io::Result<PathBuf> {
 }
 
 pub fn download_filter_list(url: &str) -> anyhow::Result<String> {
-    let output = std::process::Command::new("curl")
-        .args([
-            "-sL",
-            "--max-time",
-            "30",
-            "--connect-timeout",
-            "10",
-            "-A",
-            "Aileron/0.1",
-            url,
-        ])
-        .output()
-        .map_err(|e| anyhow::anyhow!("Failed to run curl: {}", e))?;
+    let response = attohttpc::get(url)
+        .header("User-Agent", "Aileron/0.8.1")
+        .timeout(std::time::Duration::from_secs(30))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .send()
+        .map_err(|e| anyhow::anyhow!("Failed to download filter list: {}", e))?;
 
-    if !output.status.success() {
-        anyhow::bail!(
-            "curl exited with status {}",
-            output.status.code().unwrap_or(-1)
-        );
+    if !response.status().is_success() {
+        anyhow::bail!("HTTP request failed with status {}", response.status());
     }
 
-    let body = String::from_utf8_lossy(&output.stdout).to_string();
+    let body = response
+        .text()
+        .map_err(|e| anyhow::anyhow!("Response not UTF-8: {}", e))?;
     if body.is_empty() {
         anyhow::bail!("Empty response from {}", url);
     }

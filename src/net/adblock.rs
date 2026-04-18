@@ -244,6 +244,14 @@ impl AdBlocker {
             return true;
         }
 
+        for filter in &self.network_filters {
+            if filter.is_exception
+                && !filter.badfilter
+                && self.pattern_matches_url(filter, &url_str, &host) {
+                    return false;
+            }
+        }
+
         if self.is_whitelisted(&host) {
             return false;
         }
@@ -964,5 +972,38 @@ mod tests {
 
         let url = Url::parse("https://ads.tracker.com/ad.js").unwrap();
         assert!(!blocker.should_block(&url));
+    }
+
+    #[test]
+    fn test_exception_filter_whitelists_matching_url() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||ads.example.com^$third-party\n@@||ads.example.com^$third-party");
+        blocker.load_from_filter_lists(&[list]);
+
+        let url = Url::parse("https://ads.example.com/banner.js").unwrap();
+        assert!(!blocker.should_block(&url));
+    }
+
+    #[test]
+    fn test_exception_filter_does_not_affect_unrelated_urls() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||ads.example.com^\n@@||safe.example.com^");
+        blocker.load_from_filter_lists(&[list]);
+
+        let blocked_url = Url::parse("https://ads.example.com/ad.js").unwrap();
+        assert!(blocker.should_block(&blocked_url));
+
+        let safe_url = Url::parse("https://safe.example.com/page").unwrap();
+        assert!(!blocker.should_block(&safe_url));
+    }
+
+    #[test]
+    fn test_exception_filter_ignored_when_badfilter() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||ads.example.com^\n@@||ads.example.com^$badfilter");
+        blocker.load_from_filter_lists(&[list]);
+
+        let url = Url::parse("https://ads.example.com/ad.js").unwrap();
+        assert!(blocker.should_block(&url));
     }
 }

@@ -29,12 +29,18 @@ impl McpTransport {
                     None,
                     super::server::JsonRpcError::new(-32700, format!("Parse error: {}", e)),
                 );
-                return Some(serde_json::to_string(&response).unwrap());
+                return Some(serde_json::to_string(&response).unwrap_or_else(|e| {
+                    tracing::error!("Failed to serialize MCP response: {}", e);
+                    r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error"},"id":null}"#.to_string()
+                }));
             }
         };
 
         let response = self.server.handle_request(&request);
-        Some(serde_json::to_string(&response).unwrap())
+        Some(serde_json::to_string(&response).unwrap_or_else(|e| {
+            tracing::error!("Failed to serialize MCP response: {}", e);
+            r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error"},"id":null}"#.to_string()
+        }))
     }
 
     /// Run the MCP server on stdin/stdout (blocking).

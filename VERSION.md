@@ -1,12 +1,14 @@
 # Aileron — Version & State Tracking
 
 ## Current State
-- **Phase:** Phase L Complete (v0.8.0)
-- **Version:** 0.8.0
-- **Status:** Hardening, bug fixes, WebExtensions wiring
+- **Phase:** Phase M Complete (v0.9.0)
+- **Version:** 0.9.0
+- **Status:** Critical bug fixes, performance optimization
 - **Last Updated:** 2026-04-18
-- **Test Count:** 638 lib + 26 integration + 13 startup + 1 offscreen = 678 total
+- **Test Count:** 641 lib + 26 integration + 13 startup + 1 offscreen = 681 total
 - **Zero clippy warnings**
+- **Zero unsafe blocks (was 25 in i18n, eliminated)**
+- **Release profile: LTO + strip + panic=abort**
 
 ## Implementation Phases
 

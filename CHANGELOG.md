@@ -2,7 +2,28 @@
 
 All notable changes to Aileron will be documented in this file.
 
-## v0.8.0 (2026-04-18) — Phase L: Hardening & Quality
+## v0.9.0 (2026-04-18) — Phase M: Critical Bug Fixes
+
+### Security & Correctness
+- Fixed use-after-free UB in i18n locale override (AtomicPtr → RwLock, eliminated 25 unsafe blocks)
+- Fixed ad-blocker exception filters never evaluated in should_block() — @@|| rules now work correctly
+- Fixed MCP transport serde_json::to_string().unwrap() panics on unserializable data
+- Replaced curl shell-out with attohttpc for filter list downloads (no command injection risk)
+
+### Performance
+- Added release profile: LTO (thin), strip, codegen-units=1, panic=abort
+- Expected 15-25% binary size reduction in release builds
+
+### Tests
+- 3 new adblock exception filter tests
+- Total: 641 lib tests + 40 integration/startup/offscreen = 681
+
+### Stats
+- 681 total tests (+43 from v0.8.1)
+- Zero clippy warnings
+- Zero unsafe blocks in production code
+
+## v0.8.1 (2026-04-18) — Phase L continued
 
 ### Bug Fixes
 - Fixed: config.devtools now actually controls webview devtools (was hardcoded to debug builds only)
