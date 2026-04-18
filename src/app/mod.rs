@@ -797,10 +797,10 @@ impl AppState {
                     let active_id = self.wm.active_pane_id();
                     if self.pinned_pane_ids.contains(&active_id) {
                         self.pinned_pane_ids.remove(&active_id);
-                        self.status_message = "Pane unpinned".into();
+                        self.status_message = crate::i18n::tr(crate::i18n::TrKey("status_unpinned")).into();
                     } else {
                         self.pinned_pane_ids.insert(active_id);
-                        self.status_message = "Pane pinned".into();
+                        self.status_message = crate::i18n::tr(crate::i18n::TrKey("status_pinned")).into();
                     }
                 }
             }

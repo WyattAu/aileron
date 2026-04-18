@@ -14,42 +14,85 @@ pub fn detect_locale() -> Locale {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TrKey(&'static str);
+pub struct TrKey(pub &'static str);
 
 static I18N: OnceLock<HashMap<TrKey, HashMap<Locale, &'static str>>> = OnceLock::new();
 
 pub fn init() {
     let mut map = HashMap::new();
 
-    let mut status_normal = HashMap::new();
-    status_normal.insert(Locale::English, "NORMAL");
-    map.insert(TrKey("status_normal"), status_normal);
+    register(&mut map, TrKey("mode_normal"), "NORMAL");
+    register(&mut map, TrKey("mode_insert"), "INSERT");
+    register(&mut map, TrKey("mode_command"), "COMMAND");
 
-    let mut status_insert = HashMap::new();
-    status_insert.insert(Locale::English, "INSERT");
-    map.insert(TrKey("status_insert"), status_insert);
+    register(&mut map, TrKey("panes"), "panes");
+    register(&mut map, TrKey("hint_mode"), "hint");
+    register(&mut map, TrKey("find"), "Find:");
+    register(
+        &mut map,
+        TrKey("search_or_enter_url"),
+        "Search or enter URL...",
+    );
 
-    let mut status_command = HashMap::new();
-    status_command.insert(Locale::English, "COMMAND");
-    map.insert(TrKey("status_command"), status_command);
+    register(&mut map, TrKey("status_saved"), "Workspace saved");
+    register(&mut map, TrKey("status_restored"), "Workspace restored");
+    register(&mut map, TrKey("status_pinned"), "Pane pinned");
+    register(&mut map, TrKey("status_unpinned"), "Pane unpinned");
+    register(&mut map, TrKey("status_blocked"), "Blocked by ad blocker");
+    register(
+        &mut map,
+        TrKey("status_credential_saved"),
+        "Credential saved",
+    );
+    register(
+        &mut map,
+        TrKey("status_filter_updated"),
+        "Filter lists updated",
+    );
+    register(
+        &mut map,
+        TrKey("status_no_credential"),
+        "No credentials for this site",
+    );
+    register(&mut map, TrKey("status_vault_locked"), "Vault locked");
+    register(&mut map, TrKey("status_profiling_on"), "Profiling enabled");
+    register(
+        &mut map,
+        TrKey("status_profiling_off"),
+        "Profiling disabled",
+    );
 
-    let mut panes = HashMap::new();
-    panes.insert(Locale::English, "panes");
-    map.insert(TrKey("panes"), panes);
+    register(&mut map, TrKey("cmd_quit"), "Quit Aileron");
+    register(&mut map, TrKey("cmd_close"), "Close pane");
+    register(&mut map, TrKey("cmd_split_v"), "Split vertical");
+    register(&mut map, TrKey("cmd_split_h"), "Split horizontal");
+    register(&mut map, TrKey("cmd_new_tab"), "New tab");
+    register(&mut map, TrKey("cmd_settings"), "Open settings");
+    register(&mut map, TrKey("cmd_adblock_update"), "Update filter lists");
+    register(&mut map, TrKey("cmd_print"), "Print page");
+    register(&mut map, TrKey("cmd_memory"), "Show memory usage");
+    register(&mut map, TrKey("cmd_perf"), "Show performance stats");
+    register(&mut map, TrKey("cmd_credentials"), "Search credentials");
 
-    let mut hint_mode = HashMap::new();
-    hint_mode.insert(Locale::English, "hint");
-    map.insert(TrKey("hint_mode"), hint_mode);
-
-    let mut find = HashMap::new();
-    find.insert(Locale::English, "Find:");
-    map.insert(TrKey("find"), find);
-
-    let mut search_or_enter_url = HashMap::new();
-    search_or_enter_url.insert(Locale::English, "Search or enter URL...");
-    map.insert(TrKey("search_or_enter_url"), search_or_enter_url);
+    register(
+        &mut map,
+        TrKey("err_unknown_command"),
+        "Unknown command: {}",
+    );
+    register(
+        &mut map,
+        TrKey("err_vault_locked"),
+        "Vault locked. Use :bw-unlock",
+    );
+    register(&mut map, TrKey("err_save_failed"), "Failed to save: {}");
 
     let _ = I18N.set(map);
+}
+
+fn register(map: &mut HashMap<TrKey, HashMap<Locale, &'static str>>, key: TrKey, en: &'static str) {
+    let mut locales = HashMap::new();
+    locales.insert(Locale::English, en);
+    map.insert(key, locales);
 }
 
 pub fn tr(key: TrKey) -> &'static str {
@@ -97,12 +140,63 @@ mod tests {
     #[test]
     fn test_tr_known_key() {
         init();
-        assert_eq!(tr(TrKey("status_normal")), "NORMAL");
+        assert_eq!(tr(TrKey("mode_normal")), "NORMAL");
     }
 
     #[test]
     fn test_tr_locale_specific() {
         init();
-        assert_eq!(tr_locale(TrKey("status_insert"), Locale::English), "INSERT");
+        assert_eq!(tr_locale(TrKey("mode_insert"), Locale::English), "INSERT");
+    }
+
+    #[test]
+    fn test_tr_status_pinned() {
+        init();
+        assert_eq!(tr(TrKey("status_pinned")), "Pane pinned");
+    }
+
+    #[test]
+    fn test_tr_status_unpinned() {
+        init();
+        assert_eq!(tr(TrKey("status_unpinned")), "Pane unpinned");
+    }
+
+    #[test]
+    fn test_tr_cmd_quit() {
+        init();
+        assert_eq!(tr(TrKey("cmd_quit")), "Quit Aileron");
+    }
+
+    #[test]
+    fn test_tr_cmd_new_tab() {
+        init();
+        assert_eq!(tr(TrKey("cmd_new_tab")), "New tab");
+    }
+
+    #[test]
+    fn test_tr_err_vault_locked() {
+        init();
+        assert_eq!(
+            tr(TrKey("err_vault_locked")),
+            "Vault locked. Use :bw-unlock"
+        );
+    }
+
+    #[test]
+    fn test_tr_status_blocked() {
+        init();
+        assert_eq!(tr(TrKey("status_blocked")), "Blocked by ad blocker");
+    }
+
+    #[test]
+    fn test_tr_status_credential_saved() {
+        init();
+        assert_eq!(tr(TrKey("status_credential_saved")), "Credential saved");
+    }
+
+    #[test]
+    fn test_tr_status_vault_locked() {
+        init();
+        assert_eq!(tr(TrKey("status_vault_locked")), "Vault locked");
     }
 }

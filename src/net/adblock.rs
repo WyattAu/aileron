@@ -178,6 +178,10 @@ impl AdBlocker {
 
         for list in lists {
             for filter in &list.network_filters {
+                if filter.badfilter {
+                    tracing::warn!("Skipping badfilter: {:?}", filter.pattern);
+                    continue;
+                }
                 self.network_filters.push(filter.clone());
                 total += 1;
             }
@@ -188,6 +192,9 @@ impl AdBlocker {
             }
 
             for nf in &list.network_filters {
+                if nf.badfilter {
+                    continue;
+                }
                 if nf.is_exception {
                     if let Some(domain) = Self::extract_domain_from_pattern(&nf.pattern) {
                         self.whitelisted_domains.insert(domain);
@@ -222,6 +229,21 @@ impl AdBlocker {
             None => return false,
         };
 
+        let url_str = url.as_str().to_lowercase();
+
+        for filter in &self.network_filters {
+            if filter.is_exception || !filter.important || filter.badfilter {
+                continue;
+            }
+
+            if !self.pattern_matches_url(filter, &url_str, &host) {
+                continue;
+            }
+
+            self.blocked_count += 1;
+            return true;
+        }
+
         if self.is_whitelisted(&host) {
             return false;
         }
@@ -241,7 +263,6 @@ impl AdBlocker {
             }
         }
 
-        let url_str = url.as_str().to_lowercase();
         for pattern in &self.blocked_patterns {
             if url_str.contains(pattern) {
                 self.blocked_count += 1;
@@ -250,7 +271,7 @@ impl AdBlocker {
         }
 
         for filter in &self.network_filters {
-            if filter.is_exception {
+            if filter.is_exception || filter.important || filter.badfilter {
                 continue;
             }
 
@@ -893,5 +914,55 @@ mod tests {
         let redirect = blocker.get_redirect_url(&url);
         assert!(redirect.is_some());
         assert!(redirect.unwrap().contains("my-resource.js"));
+    }
+
+    #[test]
+    fn test_badfilter_skipped() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||ads.example.com^$badfilter\n||tracker.com^");
+        let count = blocker.load_from_filter_lists(&[list]);
+        assert_eq!(count, 1);
+        assert!(!blocker.blocked_domains.contains("ads.example.com"));
+        assert!(blocker.blocked_domains.contains("tracker.com"));
+    }
+
+    #[test]
+    fn test_badfilter_domain_not_blocked() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||ads.example.com^$badfilter");
+        blocker.load_from_filter_lists(&[list]);
+
+        let url = Url::parse("https://ads.example.com/ad.js").unwrap();
+        assert!(!blocker.should_block(&url));
+    }
+
+    #[test]
+    fn test_important_filter_blocks() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||example.com^$important\n@@||example.com^");
+        blocker.load_from_filter_lists(&[list]);
+
+        let url = Url::parse("https://example.com/page").unwrap();
+        assert!(blocker.should_block(&url));
+    }
+
+    #[test]
+    fn test_important_filter_overrides_whitelist() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||ads.tracker.com^$important\n@@||ads.tracker.com^");
+        blocker.load_from_filter_lists(&[list]);
+
+        let url = Url::parse("https://ads.tracker.com/ad.js").unwrap();
+        assert!(blocker.should_block(&url));
+    }
+
+    #[test]
+    fn test_normal_filter_respects_whitelist() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||ads.tracker.com^\n@@||ads.tracker.com^");
+        blocker.load_from_filter_lists(&[list]);
+
+        let url = Url::parse("https://ads.tracker.com/ad.js").unwrap();
+        assert!(!blocker.should_block(&url));
     }
 }

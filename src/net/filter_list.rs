@@ -24,6 +24,11 @@ pub struct NetworkFilter {
     pub csp: Option<String>,
     pub remove_header: Option<String>,
     pub redirect: Option<String>,
+    pub badfilter: bool,
+    pub important: bool,
+    pub generichide: bool,
+    pub document: bool,
+    pub all_resources: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +121,11 @@ impl FilterList {
         let mut csp = None;
         let mut remove_header = None;
         let mut redirect = None;
+        let mut badfilter = false;
+        let mut important = false;
+        let mut generichide = false;
+        let mut document = false;
+        let mut all_resources = false;
 
         if let Some(opts) = options_str {
             for opt in opts.split(',') {
@@ -128,6 +138,16 @@ impl FilterList {
                     remove_header = Some(val.to_string());
                 } else if let Some(val) = opt.strip_prefix("redirect=") {
                     redirect = Some(val.to_string());
+                } else if opt == "badfilter" {
+                    badfilter = true;
+                } else if opt == "important" {
+                    important = true;
+                } else if opt == "generichide" {
+                    generichide = true;
+                } else if opt == "document" {
+                    document = true;
+                } else if opt == "all" {
+                    all_resources = true;
                 } else {
                     let rt = match opt {
                         "script" => Some(ResourceType::Script),
@@ -145,6 +165,36 @@ impl FilterList {
                     }
                 }
             }
+        }
+
+        if all_resources {
+            resource_types
+                .get_or_insert_with(Vec::new)
+                .push(ResourceType::Script);
+            resource_types
+                .get_or_insert_with(Vec::new)
+                .push(ResourceType::Image);
+            resource_types
+                .get_or_insert_with(Vec::new)
+                .push(ResourceType::Stylesheet);
+            resource_types
+                .get_or_insert_with(Vec::new)
+                .push(ResourceType::Font);
+            resource_types
+                .get_or_insert_with(Vec::new)
+                .push(ResourceType::Media);
+            resource_types
+                .get_or_insert_with(Vec::new)
+                .push(ResourceType::WebSocket);
+            resource_types
+                .get_or_insert_with(Vec::new)
+                .push(ResourceType::Popup);
+            resource_types
+                .get_or_insert_with(Vec::new)
+                .push(ResourceType::XmlHttpRequest);
+            resource_types
+                .get_or_insert_with(Vec::new)
+                .push(ResourceType::Other);
         }
 
         let domain_specific = if let Some(pos) = pattern.find("||") {
@@ -168,6 +218,11 @@ impl FilterList {
             csp,
             remove_header,
             redirect,
+            badfilter,
+            important,
+            generichide,
+            document,
+            all_resources,
         }))
     }
 
@@ -319,6 +374,10 @@ pub fn default_filter_list_urls() -> Vec<(&'static str, &'static str)> {
         (
             "easyprivacy",
             "https://easylist.to/easylist/easyprivacy.txt",
+        ),
+        (
+            "peter_lowe",
+            "https://pgl.yoyo.org/asbserverlist/asbserverlist.txt",
         ),
     ]
 }
@@ -585,5 +644,79 @@ mod tests {
             .unwrap()
             .contains(&ResourceType::Script));
         assert_eq!(f.csp.as_deref(), Some("default-src 'none'"));
+    }
+
+    #[test]
+    fn test_parse_badfilter() {
+        let content = "||ads.example.com^$badfilter";
+        let list = FilterList::parse(content);
+        assert_eq!(list.network_filters.len(), 1);
+        assert!(list.network_filters[0].badfilter);
+        assert!(!list.network_filters[0].is_exception);
+    }
+
+    #[test]
+    fn test_parse_important() {
+        let content = "||ads.example.com^$important";
+        let list = FilterList::parse(content);
+        assert_eq!(list.network_filters.len(), 1);
+        assert!(list.network_filters[0].important);
+    }
+
+    #[test]
+    fn test_parse_document() {
+        let content = "||example.com^$document";
+        let list = FilterList::parse(content);
+        assert_eq!(list.network_filters.len(), 1);
+        assert!(list.network_filters[0].document);
+    }
+
+    #[test]
+    fn test_parse_all() {
+        let content = "||tracker.com^$all";
+        let list = FilterList::parse(content);
+        assert_eq!(list.network_filters.len(), 1);
+        let types = list.network_filters[0].resource_types.as_ref().unwrap();
+        assert!(types.contains(&ResourceType::Script));
+        assert!(types.contains(&ResourceType::Image));
+        assert!(types.contains(&ResourceType::Media));
+        assert!(types.contains(&ResourceType::Popup));
+    }
+
+    #[test]
+    fn test_parse_generichide() {
+        let content = "||example.com^$generichide";
+        let list = FilterList::parse(content);
+        assert_eq!(list.network_filters.len(), 1);
+        assert!(list.network_filters[0].generichide);
+    }
+
+    #[test]
+    fn test_parse_combined_badfilter_with_options() {
+        let content = "||ads.example.com^$script,third-party,badfilter";
+        let list = FilterList::parse(content);
+        assert_eq!(list.network_filters.len(), 1);
+        let f = &list.network_filters[0];
+        assert!(f.badfilter);
+        assert!(f.third_party_only);
+        assert!(f
+            .resource_types
+            .as_ref()
+            .unwrap()
+            .contains(&ResourceType::Script));
+    }
+
+    #[test]
+    fn test_parse_important_with_options() {
+        let content = "||ads.example.com^$image,important";
+        let list = FilterList::parse(content);
+        assert_eq!(list.network_filters.len(), 1);
+        let f = &list.network_filters[0];
+        assert!(f.important);
+        assert!(f
+            .resource_types
+            .as_ref()
+            .unwrap()
+            .contains(&ResourceType::Image));
     }
 }
