@@ -260,7 +260,7 @@ impl WryPane {
                     let path = req.uri().path().trim_start_matches('/');
                     let html = match path {
                         "new" => aileron_new_tab_page(),
-                        "terminal" => r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Terminal</title><style>body{background:#141414;color:#4db4ff;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}</style></head><body><p>Native terminal active</p></body></html>"#.into(),
+                        "terminal" => aileron_terminal_page(),
                         "open" => {
                             if let Some(query) = req.uri().query()
                                 && let Some(path_param) = query.split('&')
@@ -297,7 +297,7 @@ a {{ color: #4db4ff; }}
                             )
                         }
                         "settings" => aileron_settings_page(),
-                        _ => aileron_welcome_page(), // "welcome" and anything else
+                        _ => aileron_404_page(&req.uri().to_string()), // "welcome" and anything else
                     };
                     wry::http::Response::builder()
                         .header("Content-Type", "text/html")
@@ -1371,6 +1371,42 @@ pub(crate) fn file_browser_page(uri: &wry::http::Uri) -> String {
     )
 }
 
+pub(crate) fn aileron_404_page(requested_url: &str) -> String {
+    format!(r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Page Not Found</title>
+<style>
+body {{ font-family: monospace; background: #1a1a2e; color: #ccc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+.container {{ text-align: center; }}
+h1 {{ color: #ff6b6b; font-size: 3em; margin-bottom: 0.3em; }}
+p {{ color: #888; margin: 0.5em 0; }}
+a {{ color: #4db4ff; }}
+.url {{ color: #666; font-size: 0.9em; margin-top: 1em; word-break: break-all; }}
+</style></head><body>
+<div class="container">
+<h1>404</h1>
+<p>Page not found</p>
+<p class="url">{url}</p>
+<p><a href="aileron://new">Go to new tab</a></p>
+</div></body></html>"#, url = html_escape(requested_url))
+}
+
+pub(crate) fn aileron_terminal_page() -> String {
+    r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Terminal</title>
+<style>
+body {{ font-family: monospace; background: #1a1a2e; color: #ccc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+.container {{ text-align: center; }}
+h1 {{ color: #4db4ff; }}
+p {{ color: #888; }}
+kbd {{ background: #333; padding: 2px 6px; border-radius: 3px; border: 1px solid #555; }}
+</style></head><body>
+<div class="container">
+<h1>Terminal</h1>
+<p>Use <kbd>Ctrl+Shift+T</kbd> or <kbd>:terminal</kbd> to open a terminal pane.</p>
+<p>The terminal renders directly in this window with native performance.</p>
+</div></body></html>"#.to_string()
+}
+
 pub(crate) fn aileron_settings_page() -> String {
     r#"<!DOCTYPE html>
 <html lang="en">
@@ -1385,7 +1421,7 @@ pub(crate) fn aileron_settings_page() -> String {
   h2 { color: #4db4ff; margin: 1.5em 0 0.5em; font-size: 1.1em; border-bottom: 1px solid #333; padding-bottom: 0.3em; }
   .field { margin: 0.6em 0; }
   label { display: block; margin-bottom: 0.2em; color: #999; font-size: 0.85em; }
-  input[type="text"], input[type="url"], select {
+  input[type="text"], input[type="url"], input[type="number"], select {
     background: #16213e; border: 1px solid #333; color: #e0e0e0;
     padding: 7px 10px; font-family: inherit; font-size: 13px;
     width: 100%; max-width: 480px; border-radius: 4px; outline: none;
@@ -1429,6 +1465,33 @@ pub(crate) fn aileron_settings_page() -> String {
   <label for="restore_session">Restore previous session on startup</label>
 </div>
 
+<h2>Engine</h2>
+<div class="field">
+  <label for="engine_selection">Rendering Engine</label>
+  <select id="engine_selection" aria-label="Rendering engine">
+    <option value="auto">auto</option>
+    <option value="servo">servo</option>
+    <option value="webkit">webkit</option>
+  </select>
+  <span class="subtitle" style="color:#666;font-size:0.8em;margin-top:0.2em;display:block">auto = best engine per site, servo = Servo when available, webkit = always WebKit</span>
+</div>
+
+<h2>Language</h2>
+<div class="field">
+  <label for="language">Interface Language</label>
+  <select id="language" aria-label="Interface language">
+    <option value="en">English</option>
+    <option value="zh">中文</option>
+    <option value="ja">日本語</option>
+    <option value="ko">한국어</option>
+    <option value="de">Deutsch</option>
+    <option value="fr">Français</option>
+    <option value="es">Español</option>
+    <option value="pt">Português</option>
+    <option value="ru">Русский</option>
+  </select>
+</div>
+
 <h2>Appearance</h2>
 <div class="field">
   <label for="tab_layout">Tab Layout</label>
@@ -1460,8 +1523,22 @@ pub(crate) fn aileron_settings_page() -> String {
   <input type="checkbox" id="tracking_protection_enabled" tabindex="9" role="switch" aria-checked="false" />
   <label for="tracking_protection_enabled">Tracking protection</label>
 </div>
+<div class="toggle-row">
+  <input type="checkbox" id="popup_blocker_enabled" role="switch" aria-checked="false" />
+  <label for="popup_blocker_enabled">Block Popups</label>
+</div>
+<div class="field">
+  <label for="adblock_update_interval_hours">Filter List Update Interval (hours)</label>
+  <input type="number" id="adblock_update_interval_hours" min="1" max="168" aria-label="Filter list update interval in hours" />
+  <span class="subtitle" style="color:#666;font-size:0.8em;margin-top:0.2em;display:block">How often to check for filter list updates</span>
+</div>
 
 <h2>Advanced</h2>
+<div class="toggle-row">
+  <input type="checkbox" id="adaptive_quality" role="switch" aria-checked="false" />
+  <label for="adaptive_quality">Adaptive Quality</label>
+</div>
+<span style="color:#666;font-size:0.8em;display:block;margin:-0.3em 0 0.5em 28px">Automatically reduce rendering quality when frame rate drops below 60fps</span>
 <div class="toggle-row">
   <input type="checkbox" id="devtools" tabindex="10" role="switch" aria-checked="false" />
   <label for="devtools">Enable DevTools</label>
@@ -1494,6 +1571,11 @@ pub(crate) fn aileron_settings_page() -> String {
     document.getElementById('devtools').checked = !!cfg.devtools;
     document.getElementById('proxy').value = cfg.proxy || '';
     document.getElementById('custom_css').value = cfg.custom_css || '';
+    document.getElementById('engine_selection').value = cfg.engine_selection || 'auto';
+    document.getElementById('language').value = cfg.language || 'en';
+    document.getElementById('adaptive_quality').checked = !!cfg.adaptive_quality;
+    document.getElementById('popup_blocker_enabled').checked = !!cfg.popup_blocker_enabled;
+    document.getElementById('adblock_update_interval_hours').value = cfg.adblock_update_interval_hours || 24;
     document.querySelectorAll('input[role="switch"]').forEach(function(el) {
       el.setAttribute('aria-checked', el.checked ? 'true' : 'false');
       el.addEventListener('change', function() {
@@ -1520,7 +1602,12 @@ pub(crate) fn aileron_settings_page() -> String {
       tracking_protection_enabled: document.getElementById('tracking_protection_enabled').checked,
       devtools: document.getElementById('devtools').checked,
       proxy: document.getElementById('proxy').value || null,
-      custom_css: document.getElementById('custom_css').value || null
+      custom_css: document.getElementById('custom_css').value || null,
+      engine_selection: document.getElementById('engine_selection').value,
+      language: document.getElementById('language').value || null,
+      adaptive_quality: document.getElementById('adaptive_quality').checked,
+      popup_blocker_enabled: document.getElementById('popup_blocker_enabled').checked,
+      adblock_update_interval_hours: parseInt(document.getElementById('adblock_update_interval_hours').value) || 24
     };
   }
   document.getElementById('save-btn').addEventListener('click', function() {

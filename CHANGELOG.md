@@ -2,6 +2,33 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.10.0 (2026-04-18) — Phase N: Feature Completion
+
+### Settings Page (N.1)
+- Added engine_selection dropdown (auto/servo/webkit)
+- Added language dropdown with native display names (9 languages)
+- Added popup_blocker_enabled checkbox
+- Added adblock_update_interval_hours number input
+- Added adaptive_quality checkbox
+- All fields wired to IPC config save handler
+
+### Extension Content Script Injection (N.2)
+- Implemented ExtensionContentScriptRegistry with URL matching
+- Extension manifests' content_scripts are now registered on load
+- Extension JS/CSS injected into matching pages (document_start + document_idle)
+- AileronScriptingApi.register_content_scripts() fully implemented
+- 11 new tests for registry, matching, dedup, loader integration
+
+### Internal Pages (N.3)
+- Added proper aileron://404 page (was silent redirect to welcome)
+- Added aileron://terminal placeholder with keyboard shortcut info
+- Unknown aileron:// URLs now show 404 with requested URL
+
+### Stats
+- 692 total tests (+11 from v0.9.0)
+- Zero clippy warnings
+- 6 production unwrap() calls (all provably safe)
+
 ## v0.9.0 (2026-04-18) — Phase M: Critical Bug Fixes
 
 ### Security & Correctness

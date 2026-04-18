@@ -8,7 +8,8 @@ use crate::extensions::api::ExtensionApi;
 use crate::extensions::manifest::ExtensionManifest;
 use crate::extensions::runtime::{ConnectInfo, InstalledDetails, MessageSender, Port, RuntimeApi};
 use crate::extensions::scripting::{
-    CssInjection, InjectionResult, InjectionTarget, RegisteredContentScript, ScriptFilter,
+    CssInjection, ExtensionContentScriptEntry, ExtensionContentScriptRegistry, ExtensionRunAt,
+    InjectionResult, InjectionTarget, RegisteredContentScript, RunAt, ScriptFilter,
     ScriptInjection, ScriptingApi,
 };
 use crate::extensions::storage::{StorageApi, StorageArea, StorageChanges, StorageGetKeys};
@@ -16,6 +17,7 @@ use crate::extensions::tabs::{
     ActiveInfo, CaptureOptions, CreateProperties, RemovalInfo, Tab, TabQuery, TabUpdateEvent,
     TabsApi, UpdateProperties,
 };
+use crate::extensions::types::UrlPattern;
 use crate::extensions::types::{
     ExtensionError, ExtensionId, ListenerId, Result, RuntimeMessage, TabId, WindowId,
 };
@@ -532,7 +534,15 @@ impl WebRequestApi for AileronWebRequestApi {
     }
 }
 
-struct AileronScriptingApi;
+struct AileronScriptingApi {
+    registry: ExtensionContentScriptRegistry,
+}
+
+impl AileronScriptingApi {
+    fn new(registry: ExtensionContentScriptRegistry) -> Self {
+        Self { registry }
+    }
+}
 
 impl ScriptingApi for AileronScriptingApi {
     fn execute_script(
@@ -569,24 +579,73 @@ impl ScriptingApi for AileronScriptingApi {
     }
 
     fn register_content_scripts(&self, scripts: Vec<RegisteredContentScript>) -> Result<()> {
-        tracing::warn!(
-            target: "extensions",
-            "scripting.registerContentScripts({} scripts) not yet implemented",
-            scripts.len()
-        );
-        Err(ExtensionError::Unsupported(
-            "scripting.registerContentScripts".into(),
-        ))
+        for script in scripts {
+            let run_at = match script.run_at {
+                RunAt::DocumentIdle => ExtensionRunAt::DocumentIdle,
+                RunAt::DocumentStart => ExtensionRunAt::DocumentStart,
+                RunAt::DocumentEnd => ExtensionRunAt::DocumentEnd,
+            };
+            let entry = ExtensionContentScriptEntry {
+                extension_id: String::new(),
+                script_id: script.id.clone(),
+                js_code: script.js.join("\n"),
+                css_code: script.css.join("\n"),
+                matches: script.matches.iter().map(|p| p.0.clone()).collect(),
+                run_at,
+            };
+            self.registry.register(entry);
+            tracing::info!(
+                target: "extensions",
+                "Registered content script '{}' ({} js files, {} css files)",
+                script.id,
+                script.js.len(),
+                script.css.len()
+            );
+        }
+        Ok(())
     }
 
     fn get_registered_content_scripts(
         &self,
         _filter: Option<ScriptFilter>,
     ) -> Result<Vec<RegisteredContentScript>> {
-        Ok(Vec::new())
+        let all = self.registry.all_scripts();
+        let scripts = all
+            .into_iter()
+            .map(|s| RegisteredContentScript {
+                id: s.script_id,
+                js: if s.js_code.is_empty() {
+                    vec![]
+                } else {
+                    vec![s.js_code]
+                },
+                css: if s.css_code.is_empty() {
+                    vec![]
+                } else {
+                    vec![s.css_code]
+                },
+                matches: s.matches.into_iter().map(UrlPattern).collect(),
+                exclude_matches: vec![],
+                run_at: match s.run_at {
+                    ExtensionRunAt::DocumentIdle => RunAt::DocumentIdle,
+                    ExtensionRunAt::DocumentStart => RunAt::DocumentStart,
+                    ExtensionRunAt::DocumentEnd => RunAt::DocumentEnd,
+                },
+                all_frames: false,
+                match_about_blank: false,
+            })
+            .collect();
+        Ok(scripts)
     }
 
-    fn unregister_content_scripts(&self, _filter: Option<ScriptFilter>) -> Result<()> {
+    fn unregister_content_scripts(&self, filter: Option<ScriptFilter>) -> Result<()> {
+        if let Some(f) = filter
+            && let Some(ids) = f.ids
+        {
+            for id in ids {
+                self.registry.unregister_by_id(&id);
+            }
+        }
         Ok(())
     }
 }
@@ -603,12 +662,24 @@ pub struct AileronExtensionApi {
 
 impl AileronExtensionApi {
     pub fn new(extension_id: ExtensionId, manifest: ExtensionManifest) -> Self {
+        Self::with_registry(
+            extension_id,
+            manifest,
+            ExtensionContentScriptRegistry::new(),
+        )
+    }
+
+    pub fn with_registry(
+        extension_id: ExtensionId,
+        manifest: ExtensionManifest,
+        registry: ExtensionContentScriptRegistry,
+    ) -> Self {
         Self {
             tabs_api: AileronTabsApi::new(),
             storage_api: AileronStorageApi::new(),
             runtime_api: AileronRuntimeApi::new(extension_id.clone(), manifest.clone()),
             web_request_api: AileronWebRequestApi::new(),
-            scripting_api: AileronScriptingApi,
+            scripting_api: AileronScriptingApi::new(registry),
             extension_id,
             manifest,
         }
@@ -620,6 +691,10 @@ impl AileronExtensionApi {
 
     pub fn manifest(&self) -> &ExtensionManifest {
         &self.manifest
+    }
+
+    pub fn content_script_registry(&self) -> &ExtensionContentScriptRegistry {
+        &self.scripting_api.registry
     }
 }
 

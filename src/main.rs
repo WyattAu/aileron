@@ -207,6 +207,10 @@ impl AileronApp {
             info!("Loaded {} extension(s)", loaded_count);
         }
 
+        self.content_scripts.set_extension_registry(
+            app_state.extension_manager.content_script_registry().clone()
+        );
+
         self.egui_winit = Some(winit_state);
         self.gfx = Some(gfx);
         self.app_state = Some(app_state);

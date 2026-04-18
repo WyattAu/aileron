@@ -1,4 +1,101 @@
+use std::sync::Arc;
+use std::sync::RwLock;
+
 use crate::extensions::types::{FrameId, Result, TabId, UrlPattern};
+
+/// An extension content script registered at load time.
+#[derive(Debug, Clone)]
+pub struct ExtensionContentScriptEntry {
+    pub extension_id: String,
+    pub script_id: String,
+    pub js_code: String,
+    pub css_code: String,
+    pub matches: Vec<String>,
+    pub run_at: ExtensionRunAt,
+}
+
+/// Timing for extension content script injection.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ExtensionRunAt {
+    DocumentStart,
+    DocumentEnd,
+    #[default]
+    DocumentIdle,
+}
+
+/// Shared registry for extension content scripts.
+/// Passed to ContentScriptManager, AileronScriptingApi, and ExtensionManager.
+#[derive(Debug, Clone, Default)]
+pub struct ExtensionContentScriptRegistry {
+    scripts: Arc<RwLock<Vec<ExtensionContentScriptEntry>>>,
+}
+
+impl ExtensionContentScriptRegistry {
+    pub fn new() -> Self {
+        Self {
+            scripts: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    pub fn register(&self, entry: ExtensionContentScriptEntry) {
+        let mut scripts = self.scripts.write().unwrap_or_else(|e| e.into_inner());
+        scripts
+            .retain(|s| !(s.extension_id == entry.extension_id && s.script_id == entry.script_id));
+        scripts.push(entry);
+    }
+
+    pub fn unregister_by_extension(&self, extension_id: &str) {
+        let mut scripts = self.scripts.write().unwrap_or_else(|e| e.into_inner());
+        scripts.retain(|s| s.extension_id != extension_id);
+    }
+
+    pub fn unregister_by_id(&self, script_id: &str) {
+        let mut scripts = self.scripts.write().unwrap_or_else(|e| e.into_inner());
+        scripts.retain(|s| s.script_id != script_id);
+    }
+
+    pub fn scripts_for_url(
+        &self,
+        url: &str,
+        run_at: ExtensionRunAt,
+    ) -> Vec<ExtensionContentScriptEntry> {
+        let scripts = self.scripts.read().unwrap_or_else(|e| e.into_inner());
+        scripts
+            .iter()
+            .filter(|s| s.run_at == run_at && s.matches.iter().any(|p| url_matches_pattern(url, p)))
+            .cloned()
+            .collect()
+    }
+
+    pub fn all_scripts(&self) -> Vec<ExtensionContentScriptEntry> {
+        self.scripts
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+}
+
+fn url_matches_pattern(url: &str, pattern: &str) -> bool {
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.is_empty() {
+        return url == pattern;
+    }
+    let mut pos = 0;
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if let Some(found) = url[pos..].find(part) {
+            pos += found + part.len();
+        } else {
+            return false;
+        }
+        if i == parts.len() - 1 && !pattern.ends_with('*') && pos != url.len() {
+            return false;
+        }
+    }
+    true
+}
 
 /// Target for script/CSS injection.
 #[derive(Debug, Clone)]
@@ -196,5 +293,151 @@ mod tests {
             RunAt::DocumentStart => {}
             _ => panic!("Expected DocumentStart"),
         }
+    }
+
+    #[test]
+    fn test_registry_register_and_retrieve() {
+        let registry = ExtensionContentScriptRegistry::new();
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "ext1".into(),
+            script_id: "ext1-0".into(),
+            js_code: "console.log(1)".into(),
+            css_code: String::new(),
+            matches: vec!["https://*.example.com/*".into()],
+            run_at: ExtensionRunAt::DocumentIdle,
+        });
+        let all = registry.all_scripts();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].script_id, "ext1-0");
+    }
+
+    #[test]
+    fn test_registry_unregister_by_extension() {
+        let registry = ExtensionContentScriptRegistry::new();
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "ext-a".into(),
+            script_id: "ext-a-0".into(),
+            js_code: String::new(),
+            css_code: String::new(),
+            matches: vec!["*://*/*".into()],
+            run_at: ExtensionRunAt::DocumentIdle,
+        });
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "ext-b".into(),
+            script_id: "ext-b-0".into(),
+            js_code: String::new(),
+            css_code: String::new(),
+            matches: vec!["*://*/*".into()],
+            run_at: ExtensionRunAt::DocumentIdle,
+        });
+        registry.unregister_by_extension("ext-a");
+        let all = registry.all_scripts();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].extension_id, "ext-b");
+    }
+
+    #[test]
+    fn test_registry_unregister_by_id() {
+        let registry = ExtensionContentScriptRegistry::new();
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "ext1".into(),
+            script_id: "script-1".into(),
+            js_code: String::new(),
+            css_code: String::new(),
+            matches: vec!["*://*/*".into()],
+            run_at: ExtensionRunAt::DocumentIdle,
+        });
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "ext1".into(),
+            script_id: "script-2".into(),
+            js_code: String::new(),
+            css_code: String::new(),
+            matches: vec!["*://*/*".into()],
+            run_at: ExtensionRunAt::DocumentIdle,
+        });
+        registry.unregister_by_id("script-1");
+        let all = registry.all_scripts();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].script_id, "script-2");
+    }
+
+    #[test]
+    fn test_registry_scripts_for_url_filters_by_run_at() {
+        let registry = ExtensionContentScriptRegistry::new();
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "ext1".into(),
+            script_id: "start".into(),
+            js_code: "console.log('start')".into(),
+            css_code: String::new(),
+            matches: vec!["https://*.example.com/*".into()],
+            run_at: ExtensionRunAt::DocumentStart,
+        });
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "ext1".into(),
+            script_id: "idle".into(),
+            js_code: "console.log('idle')".into(),
+            css_code: String::new(),
+            matches: vec!["https://*.example.com/*".into()],
+            run_at: ExtensionRunAt::DocumentIdle,
+        });
+
+        let start = registry.scripts_for_url(
+            "https://www.example.com/page",
+            ExtensionRunAt::DocumentStart,
+        );
+        assert_eq!(start.len(), 1);
+        assert_eq!(start[0].script_id, "start");
+
+        let idle =
+            registry.scripts_for_url("https://www.example.com/page", ExtensionRunAt::DocumentIdle);
+        assert_eq!(idle.len(), 1);
+        assert_eq!(idle[0].script_id, "idle");
+    }
+
+    #[test]
+    fn test_registry_url_matches_pattern() {
+        let registry = ExtensionContentScriptRegistry::new();
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "ext1".into(),
+            script_id: "s1".into(),
+            js_code: String::new(),
+            css_code: String::new(),
+            matches: vec!["https://*.github.com/*".into()],
+            run_at: ExtensionRunAt::DocumentIdle,
+        });
+
+        assert_eq!(
+            registry
+                .scripts_for_url("https://api.github.com/repo", ExtensionRunAt::DocumentIdle)
+                .len(),
+            1
+        );
+        assert!(registry
+            .scripts_for_url("https://google.com", ExtensionRunAt::DocumentIdle)
+            .is_empty());
+    }
+
+    #[test]
+    fn test_registry_deduplicates_on_re_register() {
+        let registry = ExtensionContentScriptRegistry::new();
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "ext1".into(),
+            script_id: "ext1-0".into(),
+            js_code: "old".into(),
+            css_code: String::new(),
+            matches: vec!["*://*/*".into()],
+            run_at: ExtensionRunAt::DocumentIdle,
+        });
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "ext1".into(),
+            script_id: "ext1-0".into(),
+            js_code: "new".into(),
+            css_code: String::new(),
+            matches: vec!["*://*/*".into()],
+            run_at: ExtensionRunAt::DocumentIdle,
+        });
+        let all = registry.all_scripts();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].js_code, "new");
     }
 }

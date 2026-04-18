@@ -76,6 +76,30 @@ pub fn process_wry_events(
                             wry_pane.execute_js(&script.js_code);
                         }
                     }
+                    let ext_scripts = content_scripts.extension_scripts_for_url(&url, RunAt::DocumentIdle);
+                    for ext_script in ext_scripts {
+                        if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
+                            if !ext_script.css_code.is_empty() {
+                                let escaped = ext_script.css_code.replace('\\', "\\\\").replace('`', "\\`").replace('$', "\\$");
+                                wry_pane.execute_js(&format!(
+                                    "setTimeout(function() {{ \
+                                        var s = document.createElement('style'); \
+                                        s.textContent = `{}`; \
+                                        (document.head || document.documentElement).appendChild(s); \
+                                    }}, 0);",
+                                    escaped
+                                ));
+                            }
+                            if !ext_script.js_code.is_empty() {
+                                info!(
+                                    "Injecting extension content script '{}' into {}",
+                                    ext_script.script_id,
+                                    &url[..url.len().min(40)]
+                                );
+                                wry_pane.execute_js(&ext_script.js_code);
+                            }
+                        }
+                    }
                     if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
                         wry_pane.execute_js(aileron::servo::NETWORK_MONITOR_JS);
                         wry_pane.execute_js(aileron::servo::CONSOLE_CAPTURE_JS);
@@ -143,6 +167,28 @@ pub fn process_wry_events(
                                 &url[..url.len().min(40)]
                             );
                             wry_pane.execute_js(&script.js_code);
+                        }
+                    }
+                    let ext_scripts = content_scripts.extension_scripts_for_url(&url, RunAt::DocumentStart);
+                    for ext_script in ext_scripts {
+                        if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
+                            if !ext_script.css_code.is_empty() {
+                                let escaped = ext_script.css_code.replace('\\', "\\\\").replace('`', "\\`").replace('$', "\\$");
+                                wry_pane.execute_js(&format!(
+                                    "var s = document.createElement('style'); \
+                                     s.textContent = `{}`; \
+                                     (document.documentElement || document.head).appendChild(s);",
+                                    escaped
+                                ));
+                            }
+                            if !ext_script.js_code.is_empty() {
+                                info!(
+                                    "Injecting extension document-start script '{}' into {}",
+                                    ext_script.script_id,
+                                    &url[..url.len().min(40)]
+                                );
+                                wry_pane.execute_js(&ext_script.js_code);
+                            }
                         }
                     }
                 }
@@ -225,6 +271,32 @@ pub fn process_offscreen_events(
                             pane.execute_js(&script.js_code);
                         }
                     }
+                    let ext_scripts = content_scripts.extension_scripts_for_url(&url, RunAt::DocumentIdle);
+                    for ext_script in ext_scripts {
+                        if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                            if !ext_script.css_code.is_empty() {
+                                let escaped = ext_script.css_code.replace('\\', "\\\\").replace('`', "\\`").replace('$', "\\$");
+                                pane.execute_js(&format!(
+                                    "setTimeout(function() {{ \
+                                        var s = document.createElement('style'); \
+                                        s.textContent = `{}`; \
+                                        (document.head || document.documentElement).appendChild(s); \
+                                    }}, 0);",
+                                    escaped
+                                ));
+                                pane.mark_dirty();
+                            }
+                            if !ext_script.js_code.is_empty() {
+                                info!(
+                                    "Injecting extension content script '{}' into {}",
+                                    ext_script.script_id,
+                                    &url[..url.len().min(40)]
+                                );
+                                pane.execute_js(&ext_script.js_code);
+                                pane.mark_dirty();
+                            }
+                        }
+                    }
                     if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                         pane.execute_js(aileron::servo::NETWORK_MONITOR_JS);
                         pane.execute_js(aileron::servo::CONSOLE_CAPTURE_JS);
@@ -294,6 +366,30 @@ pub fn process_offscreen_events(
                                 &url[..url.len().min(40)]
                             );
                             pane.execute_js(&script.js_code);
+                            pane.mark_dirty();
+                        }
+                    }
+                    let ext_scripts = content_scripts.extension_scripts_for_url(&url, RunAt::DocumentStart);
+                    for ext_script in ext_scripts {
+                        if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                            if !ext_script.css_code.is_empty() {
+                                let escaped = ext_script.css_code.replace('\\', "\\\\").replace('`', "\\`").replace('$', "\\$");
+                                pane.execute_js(&format!(
+                                    "var s = document.createElement('style'); \
+                                     s.textContent = `{}`; \
+                                     (document.documentElement || document.head).appendChild(s);",
+                                    escaped
+                                ));
+                            }
+                            if !ext_script.js_code.is_empty() {
+                                info!(
+                                    "Injecting extension document-start script '{}' into {}",
+                                    ext_script.script_id,
+                                    &url[..url.len().min(40)]
+                                );
+                                pane.execute_js(&ext_script.js_code);
+                            }
+                            pane.mark_dirty();
                         }
                     }
                 }
@@ -530,6 +626,21 @@ fn handle_ipc_message(
                 if let Some(v) = config_obj.get("custom_css") {
                     app_state.config.custom_css = v.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
                 }
+                if let Some(v) = config_obj.get("engine_selection").and_then(|v| v.as_str()) {
+                    app_state.config.engine_selection = v.to_string();
+                }
+                if let Some(v) = config_obj.get("language") {
+                    app_state.config.language = v.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
+                }
+                if let Some(v) = config_obj.get("adaptive_quality").and_then(|v| v.as_bool()) {
+                    app_state.config.adaptive_quality = v;
+                }
+                if let Some(v) = config_obj.get("popup_blocker_enabled").and_then(|v| v.as_bool()) {
+                    app_state.config.popup_blocker_enabled = v;
+                }
+                if let Some(v) = config_obj.get("adblock_update_interval_hours").and_then(|v| v.as_u64()) {
+                    app_state.config.adblock_update_interval_hours = v;
+                }
                 if let Err(e) = aileron::config::Config::save(&app_state.config) {
                     warn!("Failed to save config: {}", e);
                 }
@@ -623,6 +734,21 @@ fn handle_ipc_message_offscreen(
                 }
                 if let Some(v) = config_obj.get("custom_css") {
                     app_state.config.custom_css = v.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
+                }
+                if let Some(v) = config_obj.get("engine_selection").and_then(|v| v.as_str()) {
+                    app_state.config.engine_selection = v.to_string();
+                }
+                if let Some(v) = config_obj.get("language") {
+                    app_state.config.language = v.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
+                }
+                if let Some(v) = config_obj.get("adaptive_quality").and_then(|v| v.as_bool()) {
+                    app_state.config.adaptive_quality = v;
+                }
+                if let Some(v) = config_obj.get("popup_blocker_enabled").and_then(|v| v.as_bool()) {
+                    app_state.config.popup_blocker_enabled = v;
+                }
+                if let Some(v) = config_obj.get("adblock_update_interval_hours").and_then(|v| v.as_u64()) {
+                    app_state.config.adblock_update_interval_hours = v;
                 }
                 if let Err(e) = aileron::config::Config::save(&app_state.config) {
                     warn!("Failed to save config: {}", e);

@@ -3,11 +3,15 @@ use std::path::{Path, PathBuf};
 
 use crate::extensions::impls::AileronExtensionApi;
 use crate::extensions::manifest::ExtensionManifest;
+use crate::extensions::scripting::{
+    ExtensionContentScriptEntry, ExtensionContentScriptRegistry, ExtensionRunAt,
+};
 use crate::extensions::types::{ExtensionError, ExtensionId};
 
 pub struct ExtensionManager {
     extensions: HashMap<ExtensionId, AileronExtensionApi>,
     extensions_dir: PathBuf,
+    content_script_registry: ExtensionContentScriptRegistry,
 }
 
 impl ExtensionManager {
@@ -15,7 +19,12 @@ impl ExtensionManager {
         Self {
             extensions: HashMap::new(),
             extensions_dir,
+            content_script_registry: ExtensionContentScriptRegistry::new(),
         }
+    }
+
+    pub fn content_script_registry(&self) -> &ExtensionContentScriptRegistry {
+        &self.content_script_registry
     }
 
     pub fn load_all(&mut self) -> Vec<ExtensionId> {
@@ -92,7 +101,69 @@ impl ExtensionManager {
                 .to_string(),
         );
 
-        let api = AileronExtensionApi::new(id.clone(), manifest);
+        let ext_dir = manifest_path.parent().unwrap_or(manifest_path);
+
+        if let Some(content_scripts) = &manifest.content_scripts {
+            for (i, cs) in content_scripts.iter().enumerate() {
+                let js_code = cs
+                    .js
+                    .as_ref()
+                    .map(|files| {
+                        files
+                            .iter()
+                            .filter_map(|f| {
+                                let file_path = ext_dir.join(f);
+                                std::fs::read_to_string(&file_path).ok()
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                    .unwrap_or_default();
+
+                let css_code = cs
+                    .css
+                    .as_ref()
+                    .map(|files| {
+                        files
+                            .iter()
+                            .filter_map(|f| {
+                                let file_path = ext_dir.join(f);
+                                std::fs::read_to_string(&file_path).ok()
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                    .unwrap_or_default();
+
+                let run_at = match cs.run_at.as_deref() {
+                    Some("document_start") => ExtensionRunAt::DocumentStart,
+                    Some("document_end") => ExtensionRunAt::DocumentEnd,
+                    _ => ExtensionRunAt::DocumentIdle,
+                };
+
+                let entry = ExtensionContentScriptEntry {
+                    extension_id: id.0.clone(),
+                    script_id: format!("{}-{}", id.0, i),
+                    js_code,
+                    css_code,
+                    matches: cs.matches.clone(),
+                    run_at,
+                };
+                self.content_script_registry.register(entry);
+                tracing::info!(
+                    target: "extensions",
+                    "Registered {} content script(s) for extension '{}'",
+                    content_scripts.len(),
+                    id.0
+                );
+            }
+        }
+
+        let api = AileronExtensionApi::with_registry(
+            id.clone(),
+            manifest,
+            self.content_script_registry.clone(),
+        );
         self.extensions.insert(id.clone(), api);
         Ok(id)
     }
@@ -224,5 +295,70 @@ mod tests {
         let mut manager = ExtensionManager::new(dir.path().to_path_buf());
         let loaded = manager.load_all();
         assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn test_load_extension_registers_content_scripts() {
+        let dir = tempfile::tempdir().unwrap();
+        let ext_dir = dir.path().join("content-ext");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        std::fs::write(
+            ext_dir.join("manifest.json"),
+            r#"{
+                "manifest_version": 3,
+                "name": "Content Script Extension",
+                "version": "1.0.0",
+                "content_scripts": [{
+                    "matches": ["https://*.example.com/*"],
+                    "js": ["content.js"],
+                    "css": ["style.css"],
+                    "run_at": "document_start"
+                }]
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(ext_dir.join("content.js"), "console.log('injected');").unwrap();
+        std::fs::write(ext_dir.join("style.css"), "body { border: 1px solid red; }").unwrap();
+
+        let mut manager = ExtensionManager::new(dir.path().to_path_buf());
+        let loaded = manager.load_all();
+        assert_eq!(loaded.len(), 1);
+
+        let registry = manager.content_script_registry();
+        let all = registry.all_scripts();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].extension_id, "content-ext");
+        assert!(all[0].script_id.starts_with("content-ext-"));
+        assert!(all[0].js_code.contains("injected"));
+        assert!(all[0].css_code.contains("border"));
+        assert_eq!(all[0].matches, vec!["https://*.example.com/*"]);
+    }
+
+    #[test]
+    fn test_load_extension_content_script_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let ext_dir = dir.path().join("missing-file-ext");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        std::fs::write(
+            ext_dir.join("manifest.json"),
+            r#"{
+                "manifest_version": 3,
+                "name": "Missing File Extension",
+                "version": "1.0.0",
+                "content_scripts": [{
+                    "matches": ["*://*/*"],
+                    "js": ["nonexistent.js"]
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let mut manager = ExtensionManager::new(dir.path().to_path_buf());
+        let loaded = manager.load_all();
+        assert_eq!(loaded.len(), 1);
+
+        let all = manager.content_script_registry().all_scripts();
+        assert_eq!(all.len(), 1);
+        assert!(all[0].js_code.is_empty());
     }
 }

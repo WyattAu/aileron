@@ -3,6 +3,10 @@
 use std::path::PathBuf;
 use tracing::{info, warn};
 
+use crate::extensions::scripting::{
+    ExtensionContentScriptEntry, ExtensionContentScriptRegistry, ExtensionRunAt,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum RunAt {
     DocumentStart,
@@ -25,10 +29,17 @@ pub struct ContentScript {
 pub struct ContentScriptManager {
     scripts: Vec<ContentScript>,
     scripts_dir: PathBuf,
+    extension_registry: Option<ExtensionContentScriptRegistry>,
 }
 
 impl ContentScriptManager {
     pub fn new() -> Self {
+        Self::with_extension_registry(None)
+    }
+
+    pub fn with_extension_registry(
+        extension_registry: Option<ExtensionContentScriptRegistry>,
+    ) -> Self {
         let scripts_dir = directories::ProjectDirs::from("com", "aileron", "Aileron")
             .map(|dirs| dirs.config_dir().join("scripts"))
             .unwrap_or_else(|| PathBuf::from("~/.config/aileron/scripts"));
@@ -36,9 +47,14 @@ impl ContentScriptManager {
         let mut manager = Self {
             scripts: Vec::new(),
             scripts_dir,
+            extension_registry,
         };
         manager.load_all();
         manager
+    }
+
+    pub fn set_extension_registry(&mut self, registry: ExtensionContentScriptRegistry) {
+        self.extension_registry = Some(registry);
     }
 
     fn load_all(&mut self) {
@@ -218,6 +234,22 @@ impl ContentScriptManager {
     pub fn scripts_dir(&self) -> &PathBuf {
         &self.scripts_dir
     }
+
+    pub fn extension_scripts_for_url(
+        &self,
+        url: &str,
+        run_at: RunAt,
+    ) -> Vec<ExtensionContentScriptEntry> {
+        let ext_run_at = match run_at {
+            RunAt::DocumentStart => ExtensionRunAt::DocumentStart,
+            RunAt::DocumentEnd => ExtensionRunAt::DocumentEnd,
+            RunAt::DocumentIdle => ExtensionRunAt::DocumentIdle,
+        };
+        self.extension_registry
+            .as_ref()
+            .map(|r| r.scripts_for_url(url, ext_run_at))
+            .unwrap_or_default()
+    }
 }
 
 impl Default for ContentScriptManager {
@@ -311,6 +343,7 @@ mod tests {
                 },
             ],
             scripts_dir: PathBuf::from("/tmp"),
+            extension_registry: None,
         };
 
         let matches = manager.scripts_for_url("https://api.github.com/user/repo", RunAt::DocumentIdle);
@@ -342,6 +375,7 @@ mod tests {
                 },
             ],
             scripts_dir: PathBuf::from("/tmp"),
+            extension_registry: None,
         };
 
         let start = manager.scripts_for_url("https://www.example.com/page", RunAt::DocumentStart);
@@ -368,6 +402,7 @@ mod tests {
                 },
             ],
             scripts_dir: PathBuf::from("/tmp"),
+            extension_registry: None,
         };
 
         let matches = manager.scripts_for_url("https://sub.example.com/page", RunAt::DocumentIdle);
@@ -384,5 +419,78 @@ mod tests {
             "https://github.com/user/repo",
             "https://github.com"
         ));
+    }
+
+    #[test]
+    fn test_extension_scripts_for_url() {
+        let registry = ExtensionContentScriptRegistry::new();
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "test-ext".into(),
+            script_id: "test-ext-0".into(),
+            js_code: "console.log('ext')".into(),
+            css_code: "body { color: red; }".into(),
+            matches: vec!["https://*.example.com/*".into()],
+            run_at: ExtensionRunAt::DocumentIdle,
+        });
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "other-ext".into(),
+            script_id: "other-ext-0".into(),
+            js_code: "console.log('other')".into(),
+            css_code: String::new(),
+            matches: vec!["https://*.other.com/*".into()],
+            run_at: ExtensionRunAt::DocumentIdle,
+        });
+
+        let manager = ContentScriptManager::with_extension_registry(Some(registry));
+        let matches = manager.extension_scripts_for_url("https://www.example.com/page", RunAt::DocumentIdle);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].script_id, "test-ext-0");
+        assert_eq!(matches[0].js_code, "console.log('ext')");
+        assert_eq!(matches[0].css_code, "body { color: red; }");
+
+        let no_match = manager.extension_scripts_for_url("https://www.nothing.com/page", RunAt::DocumentIdle);
+        assert!(no_match.is_empty());
+    }
+
+    #[test]
+    fn test_extension_scripts_for_url_with_run_at() {
+        let registry = ExtensionContentScriptRegistry::new();
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "test-ext".into(),
+            script_id: "test-ext-start".into(),
+            js_code: "console.log('start')".into(),
+            css_code: String::new(),
+            matches: vec!["https://*.example.com/*".into()],
+            run_at: ExtensionRunAt::DocumentStart,
+        });
+        registry.register(ExtensionContentScriptEntry {
+            extension_id: "test-ext".into(),
+            script_id: "test-ext-idle".into(),
+            js_code: "console.log('idle')".into(),
+            css_code: String::new(),
+            matches: vec!["https://*.example.com/*".into()],
+            run_at: ExtensionRunAt::DocumentIdle,
+        });
+
+        let manager = ContentScriptManager::with_extension_registry(Some(registry));
+
+        let start = manager.extension_scripts_for_url("https://www.example.com/page", RunAt::DocumentStart);
+        assert_eq!(start.len(), 1);
+        assert_eq!(start[0].script_id, "test-ext-start");
+
+        let idle = manager.extension_scripts_for_url("https://www.example.com/page", RunAt::DocumentIdle);
+        assert_eq!(idle.len(), 1);
+        assert_eq!(idle[0].script_id, "test-ext-idle");
+    }
+
+    #[test]
+    fn test_extension_scripts_no_registry() {
+        let manager = ContentScriptManager {
+            scripts: vec![],
+            scripts_dir: PathBuf::from("/tmp"),
+            extension_registry: None,
+        };
+        let results = manager.extension_scripts_for_url("https://example.com", RunAt::DocumentIdle);
+        assert!(results.is_empty());
     }
 }
