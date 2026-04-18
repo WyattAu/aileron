@@ -1,11 +1,11 @@
 # Aileron — Version & State Tracking
 
 ## Current State
-- **Phase:** v0.3.1 (Complete)
-- **Version:** 0.3.1
+- **Phase:** v0.4.0 (Complete)
+- **Version:** 0.4.0
 - **Status:** Complete
 - **Last Updated:** 2026-04-18
-- **Test Count:** 388 lib + 26 integration + 13 startup + 1 offscreen = 428 total
+- **Test Count:** 469 lib + 26 integration + 13 startup + 1 offscreen = 509 total
 - **Zero clippy warnings**
 
 ## Implementation Phases
@@ -26,6 +26,13 @@
 | L | Complete | Pure action dispatch: ActionEffect enum, 30 dispatch tests |
 | M | Complete | Daily Driver Minimum: find-in-page, URL bar editing, download handler, link hints |
 | J.0 | Complete | Polish: nucleo search, smooth scroll, tab pinning, visual bell, Servo stub |
+| K.1 | Complete | WebExtensions API trait definitions (6 traits, full type system) |
+| K.2 | Complete | Cross-platform abstraction (Linux/macOS/Windows paths + cfg) |
+| K.3 | Complete | Advanced ad blocking ($csp, $removeheader, $redirect) |
+| K.4 | Complete | System keyring integration + save-on-submit observer |
+| K.6 | Complete | Frame time profiling (>16.7ms warning) |
+| K.8 | Complete | Accessibility (ARIA labels, keyboard nav, screen reader) |
+| K.9 | Complete | i18n framework (Locale, TrKey, tr()/tr_locale()) |
 
 ## Benchmark Results (criterion --quick)
 | Benchmark | Time | Notes |

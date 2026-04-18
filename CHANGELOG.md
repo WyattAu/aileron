@@ -2,6 +2,51 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.4.0 (2026-04-18)
+
+### WebExtensions API (K.1)
+- **Extension traits**: ExtensionApi, TabsApi, StorageApi, RuntimeApi, WebRequestApi, ScriptingApi
+- **Manifest V3**: JSON parsing with permissions, content_scripts, background scripts
+- **Full type system**: TabInfo, RequestFilter, BlockingResponse, InjectionTarget, etc.
+
+### Advanced Ad Blocking (K.3)
+- **$csp rules**: Content-Security-Policy header injection from filter lists
+- **$removeheader rules**: Strip headers from requests
+- **$redirect rules**: Resource redirection (parsed, not yet applied)
+- **Block counter**: `[AB: N]` in status bar shows blocked requests per session
+
+### Password Manager (K.4)
+- **System keyring**: Store/retrieve credentials via OS keyring (GNOME Keyring/KWallet/Keychain)
+- **Save-on-submit**: Form submission observer JS detects login forms
+- **:keyring-test** command to verify keyring availability
+
+### Cross-Platform Abstraction (K.2)
+- **Platform module**: config_dir, data_dir, cache_dir, downloads_dir with per-OS cfg
+- **OS detection**: is_wayland, is_x11, desktop_environment, os_name
+- **Platform defaults**: macOS sidebar right, Windows native render mode
+- **Refactored**: Config path construction uses platform module
+
+### Internationalization (K.9)
+- **i18n framework**: Locale detection, TrKey, tr()/tr_locale() static string table
+- **Locale enum**: English (extensible)
+- **OnceLock initialization**: Zero-cost after first access
+
+### Performance (K.6)
+- **Frame time profiling**: Logs frames exceeding 16.7ms budget
+
+### Accessibility (K.8)
+- **ARIA labels**: All internal pages (welcome, new tab, settings) have roles and labels
+- **Keyboard navigation**: Settings form is fully keyboard-navigable
+- **Screen reader**: aria-live regions for status updates
+
+### Code Quality
+- Fixed unsafe `set_var`/`remove_var` calls in tests
+
+### Stats
+- 469 total tests (+81 from v0.3.1)
+- Zero clippy warnings
+- ~18,500 lines of Rust
+
 ## v0.3.1 (2026-04-18)
 
 ### Search
