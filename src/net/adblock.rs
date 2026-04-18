@@ -381,6 +381,41 @@ impl AdBlocker {
         ))
     }
 
+    const STUB_GIF: &'static str = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///wAAACH5BAEKAAEALAAAAAABAAEAAAIBRAA7";
+
+    /// Get the redirect URL for a matched filter rule.
+    pub fn get_redirect_url(&self, url: &Url) -> Option<String> {
+        if !self.enabled {
+            return None;
+        }
+
+        let host = match url.host_str() {
+            Some(h) => h.to_lowercase(),
+            None => return None,
+        };
+
+        if self.is_whitelisted(&host) {
+            return None;
+        }
+
+        let url_str = url.as_str().to_lowercase();
+        self.network_filters
+            .iter()
+            .filter(|f| !f.is_exception && f.redirect.is_some())
+            .find(|f| self.pattern_matches_url(f, &url_str, &host))
+            .and_then(|f| {
+                let resource = f.redirect.as_ref()?;
+                match resource.as_str() {
+                    "1x1.gif" | "2x2.png" | "3x2.png" | "1x1-transparent.gif" => {
+                        Some(Self::STUB_GIF.into())
+                    }
+                    "empty.css" | "noop.css" => Some(String::new()),
+                    "empty.js" | "noop.js" => Some(String::new()),
+                    other => Some(format!("data:text/plain,{}", other)),
+                }
+            })
+    }
+
     pub fn rule_count(&self) -> usize {
         self.blocked_domains.len()
             + self.blocked_patterns.len()
@@ -813,5 +848,50 @@ mod tests {
         assert!(blocker.pattern_matches_host(filter, "example.com"));
         assert!(blocker.pattern_matches_host(filter, "sub.example.com"));
         assert!(!blocker.pattern_matches_host(filter, "other.com"));
+    }
+
+    #[test]
+    fn test_get_redirect_url_gif() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||ads.example.com/banner.js$redirect=1x1.gif");
+        blocker.load_from_filter_lists(&[list]);
+
+        let url = Url::parse("https://ads.example.com/banner.js").unwrap();
+        let redirect = blocker.get_redirect_url(&url);
+        assert!(redirect.is_some());
+        assert!(redirect.unwrap().starts_with("data:image/gif"));
+    }
+
+    #[test]
+    fn test_get_redirect_url_no_match() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||ads.example.com/banner.js$redirect=1x1.gif");
+        blocker.load_from_filter_lists(&[list]);
+
+        let url = Url::parse("https://example.com/page").unwrap();
+        assert!(blocker.get_redirect_url(&url).is_none());
+    }
+
+    #[test]
+    fn test_get_redirect_url_disabled() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||ads.example.com/banner.js$redirect=1x1.gif");
+        blocker.load_from_filter_lists(&[list]);
+        blocker.set_enabled(false);
+
+        let url = Url::parse("https://ads.example.com/banner.js").unwrap();
+        assert!(blocker.get_redirect_url(&url).is_none());
+    }
+
+    #[test]
+    fn test_get_redirect_url_fallback() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||ads.example.com/tracker$redirect=my-resource.js");
+        blocker.load_from_filter_lists(&[list]);
+
+        let url = Url::parse("https://ads.example.com/tracker").unwrap();
+        let redirect = blocker.get_redirect_url(&url);
+        assert!(redirect.is_some());
+        assert!(redirect.unwrap().contains("my-resource.js"));
     }
 }

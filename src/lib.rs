@@ -13,6 +13,7 @@ pub mod offscreen_webview;
 pub mod passwords;
 pub mod platform;
 pub mod popup;
+pub mod profiling;
 pub mod scripts;
 pub mod servo;
 pub mod terminal;

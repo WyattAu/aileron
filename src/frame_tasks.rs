@@ -80,6 +80,9 @@ pub fn process_wry_events(
                         wry_pane.execute_js(aileron::servo::NETWORK_MONITOR_JS);
                         wry_pane.execute_js(aileron::servo::CONSOLE_CAPTURE_JS);
                         wry_pane.execute_js(
+                            aileron::passwords::bitwarden::BitwardenClient::form_submit_observer_js()
+                        );
+                        wry_pane.execute_js(
                             "setTimeout(function() { \
                                 if (window._aileron_scroll_pos) { \
                                     window.scrollTo(window._aileron_scroll_pos.x, window._aileron_scroll_pos.y); \
@@ -210,6 +213,9 @@ pub fn process_offscreen_events(
                     if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                         pane.execute_js(aileron::servo::NETWORK_MONITOR_JS);
                         pane.execute_js(aileron::servo::CONSOLE_CAPTURE_JS);
+                        pane.execute_js(
+                            aileron::passwords::bitwarden::BitwardenClient::form_submit_observer_js()
+                        );
                         pane.suppress_context_menu();
                         pane.execute_js(
                             "setTimeout(function() { \
@@ -502,6 +508,27 @@ fn handle_ipc_message(
                 app_state.status_message = "Settings saved".into();
             }
         }
+        Some("credential_save") => {
+            if let (Some(username), Some(password), Some(url)) = (
+                msg.get("username").and_then(|v| v.as_str()),
+                msg.get("password").and_then(|v| v.as_str()),
+                msg.get("url").and_then(|v| v.as_str()),
+            ) {
+                let key = format!("{}@{}", username, url);
+                match aileron::passwords::keyring::store_credential(&key, password) {
+                    Ok(()) => {
+                        info!("Saved credential for {}", username);
+                        app_state.status_message = format!("Credential saved for {}", username);
+                    }
+                    Err(e) => {
+                        warn!("Failed to save credential: {}", e);
+                        app_state.status_message = format!("Credential save failed: {}", e);
+                    }
+                }
+            } else {
+                app_state.status_message = "No pending credentials to save".into();
+            }
+        }
         _ => {}
     }
 }
@@ -574,6 +601,27 @@ fn handle_ipc_message_offscreen(
                     pane.mark_dirty();
                 }
                 app_state.status_message = "Settings saved".into();
+            }
+        }
+        Some("credential_save") => {
+            if let (Some(username), Some(password), Some(url)) = (
+                msg.get("username").and_then(|v| v.as_str()),
+                msg.get("password").and_then(|v| v.as_str()),
+                msg.get("url").and_then(|v| v.as_str()),
+            ) {
+                let key = format!("{}@{}", username, url);
+                match aileron::passwords::keyring::store_credential(&key, password) {
+                    Ok(()) => {
+                        info!("Saved credential for {}", username);
+                        app_state.status_message = format!("Credential saved for {}", username);
+                    }
+                    Err(e) => {
+                        warn!("Failed to save credential: {}", e);
+                        app_state.status_message = format!("Credential save failed: {}", e);
+                    }
+                }
+            } else {
+                app_state.status_message = "No pending credentials to save".into();
             }
         }
         _ => {}

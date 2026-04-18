@@ -876,6 +876,18 @@ impl AppState {
                     if adblock { "ON" } else { "OFF" },
                 );
             }
+            "memory" => {
+                let rss = crate::profiling::memory::process_rss_human();
+                let term_count = self.terminal_pane_ids.len();
+                let total_panes = self.wm.panes().len();
+                let web_count = total_panes - term_count;
+                let estimated = crate::profiling::memory::estimate_pane_memory(web_count, term_count);
+                self.status_message = format!(
+                    "RSS: {} | WebViews: {}x~50MB | Terminals: {}x~3MB | Est pane: {}",
+                    rss, web_count, term_count,
+                    crate::profiling::memory::format_human_bytes(estimated)
+                );
+            }
             "engine" => {
                 self.status_message =
                     "Engine: WebKit (Servo planned for Q3 2026)".into();
@@ -1493,6 +1505,38 @@ impl AppState {
 
         if query == "config-save" {
             self.pending_wry_actions.push_back(WryAction::SaveConfig);
+            return;
+        }
+
+        if query == "memory" {
+            let rss = crate::profiling::memory::process_rss_human();
+            let term_count = self.terminal_pane_ids.len();
+            let total_panes = self.wm.panes().len();
+            let web_count = total_panes - term_count;
+            let estimated = crate::profiling::memory::estimate_pane_memory(web_count, term_count);
+            self.status_message = format!(
+                "RSS: {} | WebViews: {}x~50MB | Terminals: {}x~3MB | Est pane: {}",
+                rss, web_count, term_count,
+                crate::profiling::memory::format_human_bytes(estimated)
+            );
+            return;
+        }
+
+        if query == "credentials-save" {
+            self.pending_wry_actions.push_back(WryAction::RunJs(
+                r#"
+                (function() {
+                    var data = window.__aileron_credential_save;
+                    window.__aileron_credential_save = null;
+                    if (data && data.username && data.password) {
+                        JSON.stringify({type: 'credential_save', username: data.username, password: data.password, url: data.url});
+                    } else {
+                        JSON.stringify({type: 'credential_save', status: 'none'});
+                    }
+                })();
+                "#.into(),
+            ));
+            self.status_message = "Checking for credentials to save...".into();
             return;
         }
 
@@ -2217,8 +2261,8 @@ if (window._terminal && window._terminal.buffer) {{
             let known_commands = [
                 "q", "quit", "open", "ssh", "set", "vs", "sp", "files", "browse",
                 "bw-unlock", "bw-search", "bw-lock", "bw-autofill", "bw-detect",
-                "keyring-test",
-                "adblock-toggle", "adblock-count", "privacy", "https-toggle",
+                "keyring-test", "credentials-save",
+                "adblock-toggle", "adblock-count", "adblock-update", "privacy", "https-toggle",
                 "downloads", "downloads-open", "downloads-dir", "downloads-clear",
                 "import-firefox", "import-chrome",
                 "site-settings", "cookies", "cookies-clear", "cookies-block", "cookies-allow",
@@ -2228,6 +2272,7 @@ if (window._terminal && window._terminal.buffer) {{
                 "inspect", "proxy", "config-save", "clear",
                 "layout-save", "layout-load", "ws-save", "ws-load", "ws-list",
                 "reader", "minimal", "only", "detach",
+                "memory", "perf", "perf-on", "perf-off",
             ];
             let cmd = query;
             let suggestion = known_commands
