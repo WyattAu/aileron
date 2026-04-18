@@ -63,6 +63,14 @@ pub fn build_ui(
                 let pane_count = app_state.wm.leaf_count();
                 ui.label(format!("panes: {}", pane_count));
 
+                if app_state.adblock_blocked_count > 0 {
+                    ui.separator();
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 100, 100),
+                        format!("[AB: {}]", app_state.adblock_blocked_count),
+                    );
+                }
+
                 let git_text = git_status.status_bar_text();
                 if !git_text.is_empty() {
                     ui.separator();

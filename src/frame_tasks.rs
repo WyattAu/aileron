@@ -52,6 +52,7 @@ pub fn process_wry_events(
     wry_panes: &mut WryPaneManager,
     content_scripts: &ContentScriptManager,
     mcp_bridge: &mut McpBridge,
+    adblocker: &aileron::net::adblock::AdBlocker,
 ) {
     let wry_events = wry_panes.poll_all_events();
     for event in wry_events {
@@ -85,6 +86,18 @@ pub fn process_wry_events(
                                 } \
                             }, 100);"
                         );
+                    }
+
+                    let csp_headers = adblocker.get_csp_headers(&url);
+                    if !csp_headers.is_empty() {
+                        let csp = csp_headers.join("; ");
+                        let escaped = csp.replace('\\', "\\\\").replace('\'', "\\'");
+                        if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
+                            wry_pane.execute_js(&format!(
+                                "var meta = document.createElement('meta'); meta['http-equiv'] = 'Content-Security-Policy'; meta.content = '{}'; document.head.appendChild(meta);",
+                                escaped
+                            ));
+                        }
                     }
 
                     // Apply per-site zoom if configured
@@ -166,6 +179,7 @@ pub fn process_offscreen_events(
     offscreen_panes: &mut OffscreenWebViewManager,
     content_scripts: &ContentScriptManager,
     _mcp_bridge: &mut McpBridge,
+    adblocker: &aileron::net::adblock::AdBlocker,
 ) {
     let events = offscreen_panes.drain_all_events();
     for (_pane_id, event) in events {
@@ -204,6 +218,18 @@ pub fn process_offscreen_events(
                                 } \
                             }, 100);"
                         );
+                    }
+
+                    let csp_headers = adblocker.get_csp_headers(&url);
+                    if !csp_headers.is_empty() {
+                        let csp = csp_headers.join("; ");
+                        let escaped = csp.replace('\\', "\\\\").replace('\'', "\\'");
+                        if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                            pane.execute_js(&format!(
+                                "var meta = document.createElement('meta'); meta['http-equiv'] = 'Content-Security-Policy'; meta.content = '{}'; document.head.appendChild(meta);",
+                                escaped
+                            ));
+                        }
                     }
 
                     // Apply per-site zoom if configured

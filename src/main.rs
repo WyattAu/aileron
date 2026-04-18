@@ -809,7 +809,12 @@ impl ApplicationHandler for AileronApp {
             }
 
             WindowEvent::RedrawRequested => {
+                let frame_start = std::time::Instant::now();
                 self.render();
+                let frame_time = frame_start.elapsed();
+                if frame_time.as_millis() > 17 {
+                    tracing::debug!("Frame over budget: {:.1}ms", frame_time.as_secs_f64() * 1000.0);
+                }
             }
 
             WindowEvent::Resized(physical_size) => {
@@ -1340,6 +1345,7 @@ impl ApplicationHandler for AileronApp {
 
         frame_tasks::poll_git_status(&mut self.git_status, &mut self.last_git_poll);
         if let Some(app_state) = &mut self.app_state {
+            app_state.adblock_blocked_count = self.adblocker.blocked_count();
             frame_tasks::auto_save_workspace(app_state, &self.wry_panes);
         }
 
@@ -1353,6 +1359,7 @@ impl ApplicationHandler for AileronApp {
                 &mut self.wry_panes,
                 &self.content_scripts,
                 &mut self.mcp_bridge,
+                &self.adblocker,
             );
         }
 
@@ -1371,6 +1378,7 @@ impl ApplicationHandler for AileronApp {
                 &mut self.offscreen_panes,
                 &self.content_scripts,
                 &mut self.mcp_bridge,
+                &self.adblocker,
             );
         }
 

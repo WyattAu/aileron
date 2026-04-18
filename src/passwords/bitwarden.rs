@@ -211,6 +211,29 @@ impl BitwardenClient {
         self.search(&domain)
     }
 
+    /// JavaScript to detect form submissions and save credentials.
+    pub fn form_submit_observer_js() -> &'static str {
+        r#"
+    (function() {
+        document.addEventListener('submit', function(e) {
+            var form = e.target;
+            var passInput = form.querySelector('input[type="password"]');
+            var userInput = form.querySelector(
+                'input[type="text"], input[type="email"], ' +
+                'input[name="username"], input[name="email"]'
+            );
+            if (passInput && passInput.value && userInput && userInput.value) {
+                window.__aileron_credential_save = {
+                    username: userInput.value,
+                    password: passInput.value,
+                    url: window.location.href
+                };
+            }
+        });
+    })();
+    "#
+    }
+
     /// Generate JavaScript to auto-fill credentials into a form.
     /// The credential values are zeroized after this call returns.
     pub fn autofill_js(&self, credential: &Credential) -> String {

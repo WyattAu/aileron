@@ -1,8 +1,10 @@
 pub mod app;
+pub mod extensions;
 pub mod config;
 pub mod db;
 pub mod gfx;
 pub mod git;
+pub mod i18n;
 pub mod input;
 pub mod lua;
 pub mod mcp;

@@ -415,6 +415,62 @@ impl AdBlocker {
     pub fn filter_list_count(&self) -> usize {
         self.network_filters.len() + self.cosmetic_filters.len()
     }
+
+    pub fn get_csp_headers(&self, url: &str) -> Vec<String> {
+        if !self.enabled {
+            return Vec::new();
+        }
+        let domain = url::Url::parse(url)
+            .ok()
+            .and_then(|u| u.domain().map(|d| d.to_lowercase()))
+            .unwrap_or_default();
+
+        self.network_filters
+            .iter()
+            .filter(|f| {
+                f.csp.is_some()
+                    && !f.is_exception
+                    && self.pattern_matches_host(f, &domain)
+            })
+            .filter_map(|f| f.csp.clone())
+            .collect()
+    }
+
+    pub fn get_headers_to_remove(&self, url: &str) -> Vec<String> {
+        if !self.enabled {
+            return Vec::new();
+        }
+        let domain = url::Url::parse(url)
+            .ok()
+            .and_then(|u| u.domain().map(|d| d.to_lowercase()))
+            .unwrap_or_default();
+
+        self.network_filters
+            .iter()
+            .filter(|f| {
+                f.remove_header.is_some()
+                    && !f.is_exception
+                    && self.pattern_matches_host(f, &domain)
+            })
+            .filter_map(|f| f.remove_header.clone())
+            .collect()
+    }
+
+    fn pattern_matches_host(&self, filter: &NetworkFilter, host: &str) -> bool {
+        if filter.pattern.starts_with("||") {
+            let domain = filter
+                .pattern
+                .strip_prefix("||")
+                .unwrap()
+                .trim_end_matches('^')
+                .split('/')
+                .next()
+                .unwrap_or("");
+            host == domain || host.ends_with(&format!(".{}", domain))
+        } else {
+            false
+        }
+    }
 }
 
 impl Default for AdBlocker {
@@ -693,5 +749,69 @@ mod tests {
             AdBlocker::extract_domain_from_pattern("not_a_domain"),
             None
         );
+    }
+
+    #[test]
+    fn test_get_csp_headers() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||example.com^$csp=script-src 'none'");
+        blocker.load_from_filter_lists(&[list]);
+
+        let headers = blocker.get_csp_headers("https://example.com/page");
+        assert_eq!(headers.len(), 1);
+        assert_eq!(headers[0], "script-src 'none'");
+    }
+
+    #[test]
+    fn test_get_csp_headers_no_match() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||other.com^$csp=script-src 'none'");
+        blocker.load_from_filter_lists(&[list]);
+
+        let headers = blocker.get_csp_headers("https://example.com/page");
+        assert!(headers.is_empty());
+    }
+
+    #[test]
+    fn test_get_csp_headers_disabled() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||example.com^$csp=script-src 'none'");
+        blocker.load_from_filter_lists(&[list]);
+        blocker.set_enabled(false);
+
+        let headers = blocker.get_csp_headers("https://example.com/page");
+        assert!(headers.is_empty());
+    }
+
+    #[test]
+    fn test_get_headers_to_remove() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||example.com^$removeheader=X-Tracking");
+        blocker.load_from_filter_lists(&[list]);
+
+        let headers = blocker.get_headers_to_remove("https://example.com/page");
+        assert_eq!(headers.len(), 1);
+        assert_eq!(headers[0], "X-Tracking");
+    }
+
+    #[test]
+    fn test_get_headers_to_remove_no_match() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||other.com^$removeheader=X-Tracking");
+        blocker.load_from_filter_lists(&[list]);
+
+        let headers = blocker.get_headers_to_remove("https://example.com/page");
+        assert!(headers.is_empty());
+    }
+
+    #[test]
+    fn test_pattern_matches_host_subdomain() {
+        let blocker = AdBlocker::new();
+        let list = FilterList::parse("||example.com^$csp=default-src 'none'");
+        let filter = &list.network_filters[0];
+
+        assert!(blocker.pattern_matches_host(filter, "example.com"));
+        assert!(blocker.pattern_matches_host(filter, "sub.example.com"));
+        assert!(!blocker.pattern_matches_host(filter, "other.com"));
     }
 }

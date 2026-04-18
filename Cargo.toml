@@ -88,6 +88,9 @@ attohttpc = "0.28"
 # Regex (for site settings pattern matching)
 regex = "1"
 
+# System keyring for credential storage
+keyring = "3"
+
 # GTK (required by wry on Linux for WebKitGTK event loop)
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

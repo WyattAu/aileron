@@ -21,6 +21,9 @@ pub struct NetworkFilter {
     pub resource_types: Option<Vec<ResourceType>>,
     pub third_party_only: bool,
     pub domain_specific: Option<String>,
+    pub csp: Option<String>,
+    pub remove_header: Option<String>,
+    pub redirect: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -110,12 +113,21 @@ impl FilterList {
 
         let mut resource_types = None;
         let mut third_party_only = false;
+        let mut csp = None;
+        let mut remove_header = None;
+        let mut redirect = None;
 
         if let Some(opts) = options_str {
             for opt in opts.split(',') {
                 let opt = opt.trim();
                 if opt == "third-party" || opt == "third_party" {
                     third_party_only = true;
+                } else if let Some(val) = opt.strip_prefix("csp=") {
+                    csp = Some(val.to_string());
+                } else if let Some(val) = opt.strip_prefix("removeheader=") {
+                    remove_header = Some(val.to_string());
+                } else if let Some(val) = opt.strip_prefix("redirect=") {
+                    redirect = Some(val.to_string());
                 } else {
                     let rt = match opt {
                         "script" => Some(ResourceType::Script),
@@ -153,6 +165,9 @@ impl FilterList {
             resource_types,
             third_party_only,
             domain_specific,
+            csp,
+            remove_header,
+            redirect,
         }))
     }
 
@@ -525,5 +540,50 @@ mod tests {
             url_to_filename("https://easylist.to/easylist/easylist.txt"),
             "easylist_to"
         );
+    }
+
+    #[test]
+    fn test_parse_csp_option() {
+        let content = "||domain.com^$csp=script-src 'self'";
+        let list = FilterList::parse(content);
+        assert_eq!(list.network_filters.len(), 1);
+        assert_eq!(
+            list.network_filters[0].csp.as_deref(),
+            Some("script-src 'self'")
+        );
+    }
+
+    #[test]
+    fn test_parse_removeheader_option() {
+        let content = "||domain.com^$removeheader=X-Custom-Header";
+        let list = FilterList::parse(content);
+        assert_eq!(list.network_filters.len(), 1);
+        assert_eq!(
+            list.network_filters[0].remove_header.as_deref(),
+            Some("X-Custom-Header")
+        );
+    }
+
+    #[test]
+    fn test_parse_redirect_option() {
+        let content = "||domain.com/ad.js$redirect=noop.js";
+        let list = FilterList::parse(content);
+        assert_eq!(list.network_filters.len(), 1);
+        assert_eq!(list.network_filters[0].redirect.as_deref(), Some("noop.js"));
+    }
+
+    #[test]
+    fn test_parse_combined_with_csp() {
+        let content = "||domain.com^$script,third-party,csp=default-src 'none'";
+        let list = FilterList::parse(content);
+        assert_eq!(list.network_filters.len(), 1);
+        let f = &list.network_filters[0];
+        assert!(f.third_party_only);
+        assert!(f
+            .resource_types
+            .as_ref()
+            .unwrap()
+            .contains(&ResourceType::Script));
+        assert_eq!(f.csp.as_deref(), Some("default-src 'none'"));
     }
 }

@@ -175,6 +175,9 @@ pub struct AppState {
 
     /// Set of pane IDs that are pinned (cannot be closed).
     pub pinned_pane_ids: std::collections::HashSet<uuid::Uuid>,
+
+    /// Adblock blocked request count (updated by main.rs each frame).
+    pub adblock_blocked_count: u64,
 }
 
 impl AppState {
@@ -328,6 +331,7 @@ impl AppState {
             session_dirty: false,
             muted_pane_ids: std::collections::HashSet::new(),
             pinned_pane_ids: std::collections::HashSet::new(),
+            adblock_blocked_count: 0,
         })
     }
 
@@ -1232,6 +1236,15 @@ impl AppState {
                 BitwardenClient::detect_login_forms_js().into(),
             ));
             self.status_message = "Detecting login forms...".into();
+            return;
+        }
+
+        if query == "keyring-test" {
+            if crate::passwords::keyring::is_available() {
+                self.status_message = "System keyring: available".into();
+            } else {
+                self.status_message = "System keyring: not available".into();
+            }
             return;
         }
 
@@ -2204,6 +2217,7 @@ if (window._terminal && window._terminal.buffer) {{
             let known_commands = [
                 "q", "quit", "open", "ssh", "set", "vs", "sp", "files", "browse",
                 "bw-unlock", "bw-search", "bw-lock", "bw-autofill", "bw-detect",
+                "keyring-test",
                 "adblock-toggle", "adblock-count", "privacy", "https-toggle",
                 "downloads", "downloads-open", "downloads-dir", "downloads-clear",
                 "import-firefox", "import-chrome",
