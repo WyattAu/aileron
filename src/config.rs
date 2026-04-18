@@ -382,9 +382,7 @@ impl Config {
 
     /// Get the XDG config directory for Aileron.
     pub fn config_dir() -> PathBuf {
-        directories::ProjectDirs::from("com", "aileron", "Aileron")
-            .map(|dirs| dirs.config_dir().to_path_buf())
-            .unwrap_or_else(|| PathBuf::from("~/.config/aileron"))
+        crate::platform::paths::config_dir()
     }
 
     /// Get the path to the session-active flag file.
@@ -417,9 +415,7 @@ impl Config {
         if let Some(ref custom) = self.init_lua_path {
             PathBuf::from(custom)
         } else {
-            directories::ProjectDirs::from("com", "aileron", "Aileron")
-                .map(|dirs| dirs.config_dir().join("init.lua"))
-                .unwrap_or_else(|| PathBuf::from("~/.config/aileron/init.lua"))
+            crate::platform::paths::config_dir().join("init.lua")
         }
     }
 

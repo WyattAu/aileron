@@ -1,7 +1,7 @@
 pub mod app;
-pub mod extensions;
 pub mod config;
 pub mod db;
+pub mod extensions;
 pub mod gfx;
 pub mod git;
 pub mod i18n;
@@ -11,6 +11,7 @@ pub mod mcp;
 pub mod net;
 pub mod offscreen_webview;
 pub mod passwords;
+pub mod platform;
 pub mod popup;
 pub mod scripts;
 pub mod servo;

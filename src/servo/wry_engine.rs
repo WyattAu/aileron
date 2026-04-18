@@ -902,7 +902,7 @@ pub const SCROLL_RESTORE_JS: &str = r#"
 /// Welcome page shown at `aileron://welcome` (default homepage).
 pub(crate) fn aileron_welcome_page() -> String {
     r#"<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <title>Aileron</title>
 <meta charset="utf-8">
@@ -926,10 +926,10 @@ pub(crate) fn aileron_welcome_page() -> String {
 </style>
 </head>
 <body>
-<div class="container">
+<div class="container" role="main">
   <h1>Aileron</h1>
   <p class="subtitle">Keyboard-Driven Web Environment</p>
-  <div class="keys">
+  <div class="keys" role="list" aria-label="Keyboard shortcuts">
     <div class="section-title">Navigation</div>
     <div class="key-row"><span>Scroll down / up</span><kbd>j</kbd> / <kbd>k</kbd></div>
     <div class="key-row"><span>Scroll left / right</span><kbd>h</kbd> / <kbd>l</kbd></div>
@@ -991,6 +991,7 @@ pub(crate) fn aileron_welcome_page() -> String {
   </div>
   <p class="footer">Type a URL in the command palette and press Enter to navigate. Use <kbd style="color:#4db4ff;background:#222;padding:2px 8px;border-radius:3px;border:1px solid #333">`</kbd> for a terminal, <kbd style="color:#4db4ff;background:#222;padding:2px 8px;border-radius:3px;border:1px solid #333">files</kbd> to browse, or <kbd style="color:#4db4ff;background:#222;padding:2px 8px;border-radius:3px;border:1px solid #333">ssh user@host</kbd> to connect remotely</p>
 </div>
+<div aria-live="polite" id="status-region"></div>
 </body>
 </html>"#.to_string()
 }
@@ -998,7 +999,7 @@ pub(crate) fn aileron_welcome_page() -> String {
 /// New tab page shown at `aileron://new`.
 pub(crate) fn aileron_new_tab_page() -> String {
     r#"<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <title>New Tab</title>
 <meta charset="utf-8">
@@ -1020,34 +1021,37 @@ pub(crate) fn aileron_new_tab_page() -> String {
     transition: border-color 0.15s;
   }
   .shortcut:hover { border-color: #4db4ff; }
+  .shortcut:focus { outline: 2px solid #4db4ff; outline-offset: 2px; }
   .shortcut .name { font-size: 12px; margin-top: 4px; color: #888; }
   .hint { color: #555; font-size: 12px; margin-top: 2em; }
 </style>
 </head>
-<body>
+<body role="main">
 <h1>Aileron</h1>
 <div class="search-box">
-  <input type="text" id="search" placeholder="Search with DuckDuckGo..." autofocus>
+  <label for="search" class="sr-only">Search with DuckDuckGo</label>
+  <input type="text" id="search" placeholder="Search with DuckDuckGo..." autofocus aria-label="Search or enter URL">
 </div>
-<div class="shortcuts">
-  <a class="shortcut" href="https://github.com">
+<nav class="shortcuts" aria-label="Quick links">
+  <a class="shortcut" href="https://github.com" tabindex="0" aria-label="Open GitHub">
     <div style="font-size:20px">GH</div>
     <div class="name">GitHub</div>
   </a>
-  <a class="shortcut" href="https://docs.rs">
+  <a class="shortcut" href="https://docs.rs" tabindex="0" aria-label="Open Docs.rs">
     <div style="font-size:20px">DR</div>
     <div class="name">Docs.rs</div>
   </a>
-  <a class="shortcut" href="aileron://files">
+  <a class="shortcut" href="aileron://files" tabindex="0" aria-label="Open file browser">
     <div style="font-size:20px">&#128193;</div>
     <div class="name">Files</div>
   </a>
-  <a class="shortcut" href="aileron://terminal">
+  <a class="shortcut" href="aileron://terminal" tabindex="0" aria-label="Open terminal">
     <div style="font-size:20px">&#9000;</div>
     <div class="name">Terminal</div>
   </a>
-</div>
+</nav>
 <p class="hint">Type a URL or search query above, or use Ctrl+P for commands</p>
+<div aria-live="polite" id="status-region"></div>
 <script>
 document.getElementById('search').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') {
@@ -1364,7 +1368,7 @@ pub(crate) fn file_browser_page(uri: &wry::http::Uri) -> String {
 
 pub(crate) fn aileron_settings_page() -> String {
     r#"<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Aileron Settings</title>
@@ -1393,33 +1397,37 @@ pub(crate) fn aileron_settings_page() -> String {
   button:focus { outline: 2px solid #4db4ff; outline-offset: 2px; }
   #status { color: #888; margin-top: 0.6em; font-size: 0.85em; min-height: 1.2em; }
   #status.ok { color: #4caf50; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+              overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 </style>
 </head>
 <body>
 <h1>Settings</h1>
 <p class="subtitle">aileron://settings</p>
 
+<form role="form" aria-label="Aileron settings">
+
 <h2>General</h2>
 <div class="field">
   <label for="homepage">Homepage URL</label>
-  <input type="url" id="homepage" tabindex="1" />
+  <input type="url" id="homepage" tabindex="1" aria-label="Homepage URL" />
 </div>
 <div class="field">
   <label for="search_engine">Search Engine</label>
-  <select id="search_engine" tabindex="2">
+  <select id="search_engine" tabindex="2" aria-label="Search engine">
     <option value="https://duckduckgo.com/?q={query}">DuckDuckGo</option>
     <option value="https://www.google.com/search?q={query}">Google</option>
   </select>
 </div>
 <div class="toggle-row">
-  <input type="checkbox" id="restore_session" tabindex="3" />
+  <input type="checkbox" id="restore_session" tabindex="3" role="switch" aria-checked="false" />
   <label for="restore_session">Restore previous session on startup</label>
 </div>
 
 <h2>Appearance</h2>
 <div class="field">
   <label for="tab_layout">Tab Layout</label>
-  <select id="tab_layout" tabindex="4">
+  <select id="tab_layout" tabindex="4" aria-label="Tab layout">
     <option value="sidebar">Sidebar</option>
     <option value="topbar">Top Bar</option>
     <option value="none">None</option>
@@ -1427,43 +1435,44 @@ pub(crate) fn aileron_settings_page() -> String {
 </div>
 <div class="field">
   <label for="tab_sidebar_width">Sidebar Width (px)</label>
-  <input type="text" id="tab_sidebar_width" tabindex="5" />
+  <input type="text" id="tab_sidebar_width" tabindex="5" aria-label="Sidebar width in pixels" />
 </div>
 <div class="toggle-row">
-  <input type="checkbox" id="tab_sidebar_right" tabindex="6" />
+  <input type="checkbox" id="tab_sidebar_right" tabindex="6" role="switch" aria-checked="false" />
   <label for="tab_sidebar_right">Sidebar on right</label>
 </div>
 
 <h2>Privacy</h2>
 <div class="toggle-row">
-  <input type="checkbox" id="adblock_enabled" tabindex="7" />
+  <input type="checkbox" id="adblock_enabled" tabindex="7" role="switch" aria-checked="false" />
   <label for="adblock_enabled">Block ads</label>
 </div>
 <div class="toggle-row">
-  <input type="checkbox" id="https_upgrade_enabled" tabindex="8" />
+  <input type="checkbox" id="https_upgrade_enabled" tabindex="8" role="switch" aria-checked="false" />
   <label for="https_upgrade_enabled">Automatic HTTPS upgrade</label>
 </div>
 <div class="toggle-row">
-  <input type="checkbox" id="tracking_protection_enabled" tabindex="9" />
+  <input type="checkbox" id="tracking_protection_enabled" tabindex="9" role="switch" aria-checked="false" />
   <label for="tracking_protection_enabled">Tracking protection</label>
 </div>
 
 <h2>Advanced</h2>
 <div class="toggle-row">
-  <input type="checkbox" id="devtools" tabindex="10" />
+  <input type="checkbox" id="devtools" tabindex="10" role="switch" aria-checked="false" />
   <label for="devtools">Enable DevTools</label>
 </div>
 <div class="field">
   <label for="proxy">Proxy URL</label>
-  <input type="text" id="proxy" tabindex="11" placeholder="socks5://127.0.0.1:1080" />
+  <input type="text" id="proxy" tabindex="11" placeholder="socks5://127.0.0.1:1080" aria-label="Proxy URL" />
 </div>
 <div class="field">
   <label for="custom_css">Custom CSS Path</label>
-  <input type="text" id="custom_css" tabindex="12" placeholder="/path/to/custom.css" />
+  <input type="text" id="custom_css" tabindex="12" placeholder="/path/to/custom.css" aria-label="Custom CSS file path" />
 </div>
 
-<button id="save-btn" tabindex="13">Save Settings</button>
-<div id="status"></div>
+<button type="button" id="save-btn" tabindex="13" aria-label="Save settings">Save Settings</button>
+</form>
+<div id="status" aria-live="polite"></div>
 
 <script>
 (function() {
@@ -1480,6 +1489,12 @@ pub(crate) fn aileron_settings_page() -> String {
     document.getElementById('devtools').checked = !!cfg.devtools;
     document.getElementById('proxy').value = cfg.proxy || '';
     document.getElementById('custom_css').value = cfg.custom_css || '';
+    document.querySelectorAll('input[role="switch"]').forEach(function(el) {
+      el.setAttribute('aria-checked', el.checked ? 'true' : 'false');
+      el.addEventListener('change', function() {
+        el.setAttribute('aria-checked', el.checked ? 'true' : 'false');
+      });
+    });
   };
   window._onConfigSaved = function() {
     var s = document.getElementById('status');

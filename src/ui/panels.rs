@@ -51,6 +51,8 @@ pub fn build_ui(
     egui::TopBottomPanel::top("status-bar").show(ctx, |ui| {
         egui::menu::bar(ui, |ui| {
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                // TODO(a11y): egui status bar equivalent of aria-live="polite"
+                // for screen reader announcements on mode/status changes
                 let mode_color = match app_state.mode {
                     Mode::Normal => egui::Color32::from_rgb(100, 200, 100),
                     Mode::Insert => accent,
