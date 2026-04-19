@@ -122,6 +122,18 @@ pub struct Config {
     /// Custom overrides take highest priority in auto mode.
     #[serde(default)]
     pub compat_overrides: std::collections::HashMap<String, String>,
+
+    /// Sync target (SSH target or local path). Empty string = disabled.
+    pub sync_target: String,
+    /// Enable E2E encryption for sync.
+    pub sync_encrypted: bool,
+    /// Sync passphrase (stored in config, NOT in code).
+    #[serde(skip_serializing)]
+    pub sync_passphrase: String,
+    /// Enable automatic real-time sync via filesystem watcher.
+    pub sync_auto: bool,
+    /// Auto-sync interval in seconds.
+    pub sync_auto_interval_sec: u64,
 }
 
 /// Color overrides for a custom theme.
@@ -350,6 +362,11 @@ impl Default for Config {
             language: None,
             engine_selection: "webkit".into(),
             compat_overrides: std::collections::HashMap::new(),
+            sync_target: String::new(),
+            sync_encrypted: false,
+            sync_passphrase: String::new(),
+            sync_auto: false,
+            sync_auto_interval_sec: 60,
         }
     }
 }

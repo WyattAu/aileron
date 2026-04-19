@@ -2,6 +2,50 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.11.0 (2026-04-18) — Sync Protocol Implementation
+
+### Sync Engine
+- SyncManager with content-defined chunking (fastcdc) + blake3 hashing
+- SQLite online backup API for safe database snapshots during sync
+- Delta detection: only transfers changed file chunks (not entire files)
+- SyncManifest with JSON serialization for tracking sync state
+
+### E2E Encryption
+- Age encryption layer (X25519 + scrypt passphrase, age spec compliant)
+- encrypt_file/decrypt_file for filesystem operations
+- encrypt_data/decrypt_data for in-memory operations
+- ASCII armor support for transport-safe encoding
+
+### Real-Time Sync
+- Filesystem watcher via notify + notify-debouncer-mini (2s debounce)
+- Background thread monitors config directory for changes
+- Cross-platform (inotify on Linux, FSEvents on macOS, ReadDirectoryChanges on Windows)
+
+### Transport Layer
+- SyncTarget: Local (path) or SSH (user@host:path)
+- Push/pull operations with local staging directory
+- SSH transport via scp (creates remote directory, copies staging)
+- Configurable via :sync-target command
+
+### Commands
+- :sync — push local → remote
+- :sync --pull — pull remote → local
+- :sync --both — bidirectional sync
+- :sync --status — show sync state
+- :sync-watch — start real-time filesystem watcher
+- :sync-stop — stop filesystem watcher
+- :sync-target <target> — set sync target
+
+### Dependencies Added
+- fastcdc 4.0 (content-defined chunking, pure Rust)
+- blake3 1.8 (fast hashing, SIMD-accelerated)
+- notify 8.2 + notify-debouncer-mini 0.7 (filesystem watching)
+- age 0.11 (E2E encryption, age spec compliant)
+
+### Stats
+- 707 total tests (+15 from v0.10.0)
+- Zero clippy warnings
+
 ## v0.10.0 (2026-04-18) — Phase N: Feature Completion
 
 ### Settings Page (N.1)

@@ -16,6 +16,7 @@ pub mod popup;
 pub mod profiling;
 pub mod scripts;
 pub mod servo;
+pub mod sync;
 pub mod terminal;
 pub mod ui;
 pub mod wm;

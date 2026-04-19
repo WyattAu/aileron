@@ -186,6 +186,9 @@ pub struct AppState {
 
     /// Extension manager — loads and manages WebExtensions.
     pub extension_manager: ExtensionManager,
+
+    /// Sync filesystem watcher (started/stopped by sync commands).
+    pub sync_watcher: crate::sync::watcher::SyncWatcher,
 }
 
 impl AppState {
@@ -341,6 +344,7 @@ impl AppState {
             pinned_pane_ids: std::collections::HashSet::new(),
             adblock_blocked_count: 0,
             extension_manager: ExtensionManager::new(Self::extensions_dir()),
+            sync_watcher: crate::sync::watcher::SyncWatcher::new(),
         })
     }
 

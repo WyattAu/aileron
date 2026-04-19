@@ -1,6 +1,6 @@
 [package]
 name = "aileron"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2024"
 description = "A blazingly fast, keyboard-driven web environment for developers"
 license = "MIT"
@@ -27,7 +27,13 @@ egui-winit = "0.31.1"
 nucleo = "0.5.0"
 
 # Database
-rusqlite = { version = "0.32.1", features = ["bundled"] }
+rusqlite = { version = "0.32.1", features = ["bundled", "backup"] }
+
+fastcdc = "4.0"
+blake3 = "1.8"
+notify = { version = "8.2", features = ["crossbeam-channel"] }
+notify-debouncer-mini = { version = "0.7", features = ["crossbeam-channel"] }
+age = { version = "0.11", features = ["armor"] }
 
 # Lua scripting
 mlua = { version = "0.10.3", features = ["lua54", "vendored"] }

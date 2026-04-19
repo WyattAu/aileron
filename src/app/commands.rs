@@ -1728,6 +1728,43 @@ if (window._terminal && window._terminal.buffer) {{
             return;
         }
 
+        // Sync commands
+        if query == "sync" {
+            self.execute_sync_push();
+            return;
+        }
+        if query == "sync --pull" {
+            self.execute_sync_pull();
+            return;
+        }
+        if query == "sync --both" {
+            self.execute_sync_push();
+            self.execute_sync_pull();
+            return;
+        }
+        if query == "sync --status" {
+            self.execute_sync_status();
+            return;
+        }
+        if query == "sync-watch" {
+            self.execute_sync_watch();
+            return;
+        }
+        if query == "sync-stop" {
+            self.execute_sync_stop();
+            return;
+        }
+        if let Some(target) = query.strip_prefix("sync-target ") {
+            let target = target.trim();
+            if target.is_empty() {
+                self.status_message = "Usage: :sync-target <target>".into();
+                return;
+            }
+            self.config.sync_target = target.to_string();
+            self.status_message = format!("Sync target: {}", target);
+            return;
+        }
+
         // Check if it looks like a URL
         if Self::looks_like_url(query) {
             // Try parsing as-is first, then prepend https://
@@ -1764,6 +1801,8 @@ if (window._terminal && window._terminal.buffer) {{
                 "language", "language-list",
                 "engine", "compat-override",
                 "extensions", "extension-load", "extension-info",
+                "sync", "sync --pull", "sync --both", "sync --status",
+                "sync-watch", "sync-stop", "sync-target",
             ];
             let cmd = query;
             let suggestion = known_commands
@@ -2242,5 +2281,128 @@ if (window._terminal && window._terminal.buffer) {{
         } else {
             self.status_message = "No previous pane".into();
         }
+    }
+
+    fn execute_sync_push(&mut self) {
+        if self.config.sync_target.is_empty() {
+            self.status_message = "No sync target set. Use :sync-target <target>".into();
+            return;
+        }
+        let target = match crate::sync::SyncTarget::parse(&self.config.sync_target) {
+            Ok(t) => t,
+            Err(e) => {
+                self.status_message = format!("Invalid sync target: {}", e);
+                return;
+            }
+        };
+
+        let config_dir = crate::config::Config::config_dir();
+        let sm = crate::sync::SyncManager::new(config_dir);
+        let staging = sm.state_dir().to_path_buf();
+
+        if let Err(e) = std::fs::create_dir_all(&staging) {
+            self.status_message = format!("Failed to create staging dir: {}", e);
+            return;
+        }
+
+        if self.config.sync_encrypted {
+            if let Err(e) = sm.create_db_snapshots() {
+                self.status_message = format!("DB snapshot failed: {}", e);
+                return;
+            }
+            self.status_message = "Sync push (encrypted): preparing...".into();
+        } else {
+            if let Err(e) = sm.create_db_snapshots() {
+                self.status_message = format!("DB snapshot failed: {}", e);
+                return;
+            }
+        }
+
+        match crate::sync::transport::push(sm.local_dir(), &staging, &target, self.config.sync_encrypted) {
+            Ok(n) => {
+                let _ = sm.save_manifest();
+                self.status_message = format!(
+                    "Synced {} files to {}",
+                    n,
+                    target.display()
+                );
+            }
+            Err(e) => {
+                self.status_message = format!("Sync push failed: {}", e);
+            }
+        }
+    }
+
+    fn execute_sync_pull(&mut self) {
+        if self.config.sync_target.is_empty() {
+            self.status_message = "No sync target set. Use :sync-target <target>".into();
+            return;
+        }
+        let target = match crate::sync::SyncTarget::parse(&self.config.sync_target) {
+            Ok(t) => t,
+            Err(e) => {
+                self.status_message = format!("Invalid sync target: {}", e);
+                return;
+            }
+        };
+
+        let config_dir = crate::config::Config::config_dir();
+        let sm = crate::sync::SyncManager::new(config_dir);
+        let staging = sm.state_dir().join("incoming");
+        if let Err(e) = std::fs::create_dir_all(&staging) {
+            self.status_message = format!("Failed to create staging dir: {}", e);
+            return;
+        }
+
+        match crate::sync::transport::pull(sm.local_dir(), &staging, &target, self.config.sync_encrypted) {
+            Ok(n) => {
+                self.status_message = format!(
+                    "Pulled {} files from {}",
+                    n,
+                    target.display()
+                );
+            }
+            Err(e) => {
+                self.status_message = format!("Sync pull failed: {}", e);
+            }
+        }
+    }
+
+    fn execute_sync_status(&mut self) {
+        if self.config.sync_target.is_empty() {
+            self.status_message = "Sync: disabled (no target)".into();
+            return;
+        }
+        let config_dir = crate::config::Config::config_dir();
+        let sm = crate::sync::SyncManager::new(config_dir);
+        let manifest = sm.compute_manifest().unwrap_or_default();
+        let parts = [
+            format!("target: {}", self.config.sync_target),
+            format!("encrypted: {}", self.config.sync_encrypted),
+            format!("watcher: {}", if self.sync_watcher.is_running() { "running" } else { "stopped" }),
+            format!("files: {}", manifest.files.len()),
+        ];
+        self.status_message = format!("Sync: {}", parts.join(" | "));
+    }
+
+    fn execute_sync_watch(&mut self) {
+        if self.config.sync_target.is_empty() {
+            self.status_message = "No sync target set. Use :sync-target <target>".into();
+            return;
+        }
+        let config_dir = crate::config::Config::config_dir();
+        match self.sync_watcher.start(&config_dir) {
+            Ok(()) => {
+                self.status_message = "Sync watcher started".into();
+            }
+            Err(e) => {
+                self.status_message = format!("Failed to start watcher: {}", e);
+            }
+        }
+    }
+
+    fn execute_sync_stop(&mut self) {
+        self.sync_watcher.stop();
+        self.status_message = "Sync watcher stopped".into();
     }
 }
