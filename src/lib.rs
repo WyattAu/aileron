@@ -1,6 +1,7 @@
 pub mod app;
 pub mod config;
 pub mod db;
+pub mod downloads;
 pub mod extensions;
 pub mod gfx;
 pub mod git;

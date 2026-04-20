@@ -2,6 +2,7 @@ use tracing::{info, warn};
 
 use crate::app::WryAction;
 use crate::db::bookmarks;
+use crate::downloads::DownloadProgress;
 use crate::extensions::ExtensionId;
 use crate::passwords::BitwardenClient;
 use crate::ui::search::SearchCategory;
@@ -10,6 +11,103 @@ use crate::ui::search::SearchItem;
 use super::AppState;
 
 impl AppState {
+    /// Parse a boolean-like value from a string.
+    /// Returns true unless the string contains "off", "false", or "0".
+    fn parse_bool_value(value: &str) -> bool {
+        !value.contains("off")
+            && !value.contains("false")
+            && !value.contains("0")
+    }
+
+    /// Apply a `:set <key> <value>` command. Returns the status message.
+    fn apply_set_setting(&mut self, key: &str, value: &str) -> String {
+        match key {
+            "search_engine" if !value.is_empty() => {
+                self.config.search_engine = value.to_string();
+                format!("search_engine = {}", value)
+            }
+            "homepage" if !value.is_empty() => {
+                self.config.homepage = value.to_string();
+                format!("homepage = {}", value)
+            }
+            "adblock" => {
+                self.config.adblock_enabled = Self::parse_bool_value(value);
+                format!("adblock = {}", self.config.adblock_enabled)
+            }
+            "https_upgrade" | "https-upgrade" => {
+                self.config.https_upgrade_enabled = Self::parse_bool_value(value);
+                format!("https_upgrade = {}", self.config.https_upgrade_enabled)
+            }
+            "tracking_protection" | "tracking-protection" => {
+                self.config.tracking_protection_enabled = Self::parse_bool_value(value);
+                format!("tracking_protection = {}", self.config.tracking_protection_enabled)
+            }
+            "popup_blocker" | "popup-blocker" | "popups" => {
+                self.config.popup_blocker_enabled = Self::parse_bool_value(value);
+                format!("popup_blocker = {}", self.config.popup_blocker_enabled)
+            }
+            "devtools" => {
+                self.config.devtools = Self::parse_bool_value(value);
+                format!("devtools = {}", self.config.devtools)
+            }
+            "tab_layout" => {
+                let valid = ["sidebar", "topbar", "none"];
+                if valid.contains(&value) {
+                    self.config.tab_layout = value.to_string();
+                    format!("tab_layout = {}", value)
+                } else {
+                    format!("Invalid tab_layout '{}' (try: sidebar, topbar, none)", value)
+                }
+            }
+            "sidebar_width" => {
+                if let Ok(w) = value.parse::<f32>() {
+                    if (100.0..=600.0).contains(&w) {
+                        self.config.tab_sidebar_width = w;
+                        format!("sidebar_width = {}", w)
+                    } else {
+                        "sidebar_width must be between 100 and 600".into()
+                    }
+                } else {
+                    "Invalid number for sidebar_width".into()
+                }
+            }
+            "sidebar_right" => {
+                self.config.tab_sidebar_right = Self::parse_bool_value(value);
+                format!("sidebar_right = {}", self.config.tab_sidebar_right)
+            }
+            "cosmetic_filtering" => {
+                self.config.adblock_cosmetic_filtering = Self::parse_bool_value(value);
+                format!("cosmetic_filtering = {}", self.config.adblock_cosmetic_filtering)
+            }
+            "auto_save" => {
+                self.config.auto_save = Self::parse_bool_value(value);
+                format!("auto_save = {}", self.config.auto_save)
+            }
+            "theme" if !value.is_empty() => {
+                self.config.theme = value.to_string();
+                format!("theme = {}", value)
+            }
+            "adaptive_quality" => {
+                self.config.adaptive_quality = Self::parse_bool_value(value);
+                format!("adaptive_quality = {}", self.config.adaptive_quality)
+            }
+            "sync_encrypted" => {
+                self.config.sync_encrypted = Self::parse_bool_value(value);
+                format!("sync_encrypted = {}", self.config.sync_encrypted)
+            }
+            "sync_auto" => {
+                self.config.sync_auto = Self::parse_bool_value(value);
+                format!("sync_auto = {}", self.config.sync_auto)
+            }
+            _ => {
+                format!(
+                    "Unknown setting: {} (try: search_engine, homepage, adblock, https_upgrade, tracking_protection, popup_blocker, devtools, tab_layout, sidebar_width, sidebar_right, cosmetic_filtering, auto_save, theme, adaptive_quality, sync_encrypted, sync_auto)",
+                    key
+                )
+            }
+        }
+    }
+
     /// Queue a navigation to a URL, applying any Lua URL redirect rules.
     pub(crate) fn navigate_with_redirects(&mut self, mut url: url::Url) {
         self.session_dirty = true;
@@ -263,61 +361,10 @@ impl AppState {
                     let mut parts = rest.splitn(2, ' ');
                     if let Some(key) = parts.next() {
                         let value = parts.next().unwrap_or("");
-                        match key {
-                            "search_engine" if !value.is_empty() => {
-                                self.config.search_engine = value.to_string();
-                                self.status_message = format!("search_engine = {}", value);
-                            }
-                            "homepage" if !value.is_empty() => {
-                                self.config.homepage = value.to_string();
-                                self.status_message = format!("homepage = {}", value);
-                            }
-                            "adblock" => {
-                                self.config.adblock_enabled = !value.contains("off")
-                                    && !value.contains("false")
-                                    && !value.contains("0");
-                                self.status_message = format!(
-                                    "adblock = {}",
-                                    self.config.adblock_enabled
-                                );
-                            }
-                            "https_upgrade" | "https-upgrade" => {
-                                self.config.https_upgrade_enabled = !value.contains("off")
-                                    && !value.contains("false")
-                                    && !value.contains("0");
-                                self.status_message = format!(
-                                    "https_upgrade = {}",
-                                    self.config.https_upgrade_enabled
-                                );
-                            }
-                    "tracking_protection" | "tracking-protection" => {
-                        self.config.tracking_protection_enabled = !value.contains("off")
-                            && !value.contains("false")
-                            && !value.contains("0");
-                        self.status_message = format!(
-                            "tracking_protection = {}",
-                            self.config.tracking_protection_enabled
-                        );
+                        self.status_message = self.apply_set_setting(key, value);
                     }
-                    "popup_blocker" | "popup-blocker" | "popups" => {
-                        self.config.popup_blocker_enabled = !value.contains("off")
-                            && !value.contains("false")
-                            && !value.contains("0");
-                        self.status_message = format!(
-                            "popup_blocker = {}",
-                            self.config.popup_blocker_enabled
-                        );
-                    }
-                    _ => {
-                        self.status_message = format!(
-                            "Unknown setting: {} (try: search_engine, homepage, adblock, https_upgrade, tracking_protection, popup_blocker)",
-                            key
-                        );
-                    }
+                    return;
                 }
-            }
-            return;
-        }
 
         // Explicit navigate: open <url>
         if let Some(url_str) = cmd.strip_prefix("open ") {
@@ -679,20 +726,35 @@ impl AppState {
         }
 
         if query == "downloads" {
-            if let Some(db) = self.db.as_ref() {
-                match crate::db::downloads::recent_downloads(db, 10) {
-                    Ok(entries) => {
-                        if entries.is_empty() {
-                            self.status_message = "No downloads".into();
-                        } else {
-                            let items: Vec<String> = entries.iter().map(|e| {
-                                format!("{} [{}%]", e.filename, e.progress_percent)
-                            }).collect();
-                            self.status_message = format!("Downloads: {}", items.join(", "));
+            let progress = self.download_manager.progress_all();
+            if progress.is_empty() {
+                // Fall back to DB history
+                if let Some(db) = self.db.as_ref() {
+                    match crate::db::downloads::recent_downloads(db, 10) {
+                        Ok(entries) => {
+                            if entries.is_empty() {
+                                self.status_message = "No downloads".into();
+                            } else {
+                                let items: Vec<String> = entries.iter().map(|e| {
+                                    format!("{} [{}]", e.filename, e.status)
+                                }).collect();
+                                self.status_message = format!("Downloads: {}", items.join(", "));
+                            }
                         }
+                        Err(e) => self.status_message = format!("Error: {}", e),
                     }
-                    Err(e) => self.status_message = format!("Error: {}", e),
                 }
+            } else {
+                let items: Vec<String> = progress.iter().map(|p| {
+                    let size_str = if p.total_bytes > 0 {
+                        format!("{}/{}", DownloadProgress::format_bytes(p.received_bytes), DownloadProgress::format_bytes(p.total_bytes))
+                    } else {
+                        DownloadProgress::format_bytes(p.received_bytes)
+                    };
+                    format!("{} [{} {}]", p.filename, p.state, size_str)
+                }).collect();
+                let active = self.download_manager.active_count();
+                self.status_message = format!("Downloads ({} active): {}", active, items.join(" | "));
             }
             return;
         }
@@ -1220,56 +1282,7 @@ impl AppState {
             let mut parts = rest.splitn(2, ' ');
             if let Some(key) = parts.next() {
                 let value = parts.next().unwrap_or("");
-                match key {
-                    "search_engine" if !value.is_empty() => {
-                        self.config.search_engine = value.to_string();
-                        self.status_message = format!("search_engine = {}", value);
-                    }
-                    "homepage" if !value.is_empty() => {
-                        self.config.homepage = value.to_string();
-                        self.status_message = format!("homepage = {}", value);
-                    }
-                    "adblock" => {
-                        self.config.adblock_enabled = !value.contains("off")
-                            && !value.contains("false")
-                            && !value.contains("0");
-                        self.status_message =
-                            format!("adblock = {}", self.config.adblock_enabled);
-                    }
-                    "https_upgrade" | "https-upgrade" => {
-                        self.config.https_upgrade_enabled = !value.contains("off")
-                            && !value.contains("false")
-                            && !value.contains("0");
-                        self.status_message = format!(
-                            "https_upgrade = {}",
-                            self.config.https_upgrade_enabled
-                        );
-                    }
-                    "tracking_protection" | "tracking-protection" => {
-                        self.config.tracking_protection_enabled = !value.contains("off")
-                            && !value.contains("false")
-                            && !value.contains("0");
-                        self.status_message = format!(
-                            "tracking_protection = {}",
-                            self.config.tracking_protection_enabled
-                        );
-                    }
-                    "popup_blocker" | "popup-blocker" | "popups" => {
-                        self.config.popup_blocker_enabled = !value.contains("off")
-                            && !value.contains("false")
-                            && !value.contains("0");
-                        self.status_message = format!(
-                            "popup_blocker = {}",
-                            self.config.popup_blocker_enabled
-                        );
-                    }
-                    _ => {
-                        self.status_message = format!(
-                            "Unknown setting: {} (try: search_engine, homepage, adblock, https_upgrade, tracking_protection, popup_blocker)",
-                            key
-                        );
-                    }
-                }
+                self.status_message = self.apply_set_setting(key, value);
             }
             return;
         }

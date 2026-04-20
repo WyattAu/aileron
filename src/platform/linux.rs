@@ -49,6 +49,16 @@ impl PlatformOps for LinuxPlatform {
     }
 
     fn file_open_dialog(&self, title: &str, filters: &[(&str, &str)]) -> Option<PathBuf> {
+        // Skip GUI dialogs in headless/test environments
+        if std::env::var("AILERON_TESTING").is_ok() {
+            return None;
+        }
+
+        // Check for a display server before attempting GUI dialogs
+        if std::env::var("DISPLAY").is_err() && std::env::var("WAYLAND_DISPLAY").is_err() {
+            return None;
+        }
+
         let dialog_cmd = if Command::new("zenity").arg("--version").output().is_ok() {
             "zenity"
         } else if Command::new("kdialog").arg("--version").output().is_ok() {

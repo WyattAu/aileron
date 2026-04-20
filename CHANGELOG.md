@@ -2,6 +2,44 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.12.0 (2026-04-19) — Settings Completion & Sync UI
+
+### Settings Page Expansion
+- Added **Sync** section: sync target, encryption toggle, passphrase (keyring-backed), auto-sync toggle, interval
+- Added **Theme** picker: dropdown with all 7 built-in themes (dark, light, gruvbox-dark, nord, dracula, solarized-dark, solarized-light)
+- Added **cosmetic filtering** toggle (adblock CSS element hiding)
+- Added **auto-save workspace** toggle
+- Fixed **custom CSS** label: was "Custom CSS Path" but config stores inline CSS, not a file path
+- Search engine dropdown now **dynamically populated** from `config.search_engines` instead of hardcoded DuckDuckGo/Google
+
+### Sync Passphrase Security
+- Sync passphrase is now stored in **system keyring** (GNOME Keyring/KWallet) via `keyring` crate
+- Settings page sends passphrase to keyring, never written to config.toml
+- Passphrase field uses `type="password"` with `autocomplete="new-password"`
+
+### Expanded :set Command
+- Refactored duplicate `:set` handlers into shared `apply_set_setting()` helper method
+- New settings available at runtime via `:set`:
+  - `devtools` — enable/disable developer tools
+  - `tab_layout` — sidebar/topbar/none
+  - `sidebar_width` — pixel width (100-600 range validated)
+  - `sidebar_right` — toggle sidebar position
+  - `cosmetic_filtering` — adblock CSS element hiding
+  - `auto_save` — workspace auto-save
+  - `theme` — color theme selection
+  - `adaptive_quality` — frame rate adaptive rendering
+  - `sync_encrypted` — sync E2E encryption
+  - `sync_auto` — real-time sync via filesystem watcher
+
+### Bug Fixes
+- Fixed `file_open_dialog` tests hanging indefinitely — now checks `AILERON_TESTING` env var before spawning GUI dialogs
+- Fixed `file_open_dialog` early return when no display server available (headless environments)
+
+### Test Results
+- 667 lib tests + 26 integration + 13 startup + 1 offscreen = 707 total, all pass
+- Zero clippy warnings
+- Release build verified
+
 ## v0.11.0 (2026-04-18) — Sync Protocol Implementation
 
 ### Sync Engine

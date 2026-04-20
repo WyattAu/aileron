@@ -1,10 +1,10 @@
 # Aileron — Version & State Tracking
 
 ## Current State
-- **Phase:** Phase N Complete (v0.10.0)
-- **Version:** 0.11.0
-- **Status**: Sync protocol implementation
-- **Last Updated:** 2026-04-18
+- **Phase:** Settings Completion (v0.12.0)
+- **Version:** 0.12.0
+- **Status**: Settings page completion, sync UI, expanded :set commands
+- **Last Updated:** 2026-04-19
 - **Test Count:** 667 lib + 26 integration + 13 startup + 1 offscreen = 707 total
 - **Zero clippy warnings**
 - **Zero unsafe blocks in production**
@@ -39,6 +39,7 @@
 | K.8 | Complete | Accessibility (ARIA labels, keyboard nav, screen reader, focus management) |
 | K.9 | Complete | i18n framework (32 strings, 9 locales, TOML translation files, :language command) |
 | K.10 | Complete | CI/CD (GitHub Actions: Linux test, macOS/Windows check, fmt, clippy) |
+| P | Complete | Settings completion: sync UI, theme picker, search engines, expanded :set commands |
 
 ## Benchmark Results (criterion --quick)
 | Benchmark | Time | Notes |

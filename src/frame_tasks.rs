@@ -197,18 +197,18 @@ pub fn process_wry_events(
                 app_state.status_message = title[..title.len().min(60)].to_string();
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
+                // Use the download manager for actual downloading with progress
+                let dl_id = app_state.download_manager.start(url.as_str(), Some(filename.as_str()));
                 let short_url = if url.len() > 40 { &url[..37] } else { &url };
-                app_state.status_message = format!("Downloading: {} ({})", filename, short_url);
-                info!("Download started: {} from {}", filename, url);
-                if let Some(db) = app_state.db.as_ref()
-                    && let Some(downloads_dir) = directories::UserDirs::new()
-                        .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
-                {
-                    let dest = downloads_dir.join(&filename);
+                app_state.status_message = format!("Download #{}: {} ({})", dl_id, filename, short_url);
+                info!("Download #{} started: {} from {}", dl_id, filename, url);
+                // Record in database for history
+                if let Some(db) = app_state.db.as_ref() {
+                    let dest = app_state.download_manager.downloads_dir().join(filename.as_str());
                     if let Err(e) = aileron::db::downloads::record_download(
                         db,
-                        &url,
-                        &filename,
+                        url.as_str(),
+                        filename.as_str(),
                         &dest.to_string_lossy(),
                     ) {
                         warn!("Failed to record download: {}", e);
@@ -398,18 +398,18 @@ pub fn process_offscreen_events(
                 app_state.status_message = title[..title.len().min(60)].to_string();
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
+                // Use the download manager for actual downloading with progress
+                let dl_id = app_state.download_manager.start(url.as_str(), Some(filename.as_str()));
                 let short_url = if url.len() > 40 { &url[..37] } else { &url };
-                app_state.status_message = format!("Downloading: {} ({})", filename, short_url);
-                info!("Download started: {} from {}", filename, url);
-                if let Some(db) = app_state.db.as_ref()
-                    && let Some(downloads_dir) = directories::UserDirs::new()
-                        .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
-                {
-                    let dest = downloads_dir.join(&filename);
+                app_state.status_message = format!("Download #{}: {} ({})", dl_id, filename, short_url);
+                info!("Download #{} started: {} from {}", dl_id, filename, url);
+                // Record in database for history
+                if let Some(db) = app_state.db.as_ref() {
+                    let dest = app_state.download_manager.downloads_dir().join(filename.as_str());
                     if let Err(e) = aileron::db::downloads::record_download(
                         db,
-                        &url,
-                        &filename,
+                        url.as_str(),
+                        filename.as_str(),
                         &dest.to_string_lossy(),
                     ) {
                         warn!("Failed to record download: {}", e);
@@ -641,6 +641,40 @@ fn handle_ipc_message(
                 if let Some(v) = config_obj.get("adblock_update_interval_hours").and_then(|v| v.as_u64()) {
                     app_state.config.adblock_update_interval_hours = v;
                 }
+                if let Some(v) = config_obj.get("theme").and_then(|v| v.as_str()) {
+                    app_state.config.theme = v.to_string();
+                }
+                if let Some(v) = config_obj.get("adblock_cosmetic_filtering").and_then(|v| v.as_bool()) {
+                    app_state.config.adblock_cosmetic_filtering = v;
+                }
+                if let Some(v) = config_obj.get("auto_save").and_then(|v| v.as_bool()) {
+                    app_state.config.auto_save = v;
+                }
+                if let Some(v) = config_obj.get("sync_target").and_then(|v| v.as_str()) {
+                    app_state.config.sync_target = v.to_string();
+                }
+                if let Some(v) = config_obj.get("sync_encrypted").and_then(|v| v.as_bool()) {
+                    app_state.config.sync_encrypted = v;
+                }
+                // sync_passphrase is stored in keyring, not config — handled below
+                if let Some(v) = config_obj.get("sync_passphrase").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    match aileron::passwords::keyring::store_credential("aileron-sync", v) {
+                        Ok(()) => {
+                            app_state.config.sync_passphrase = v.to_string();
+                            info!("Sync passphrase stored in system keyring");
+                        }
+                        Err(e) => {
+                            warn!("Failed to store sync passphrase in keyring: {}", e);
+                            app_state.status_message = format!("Failed to store passphrase: {}", e);
+                        }
+                    }
+                }
+                if let Some(v) = config_obj.get("sync_auto").and_then(|v| v.as_bool()) {
+                    app_state.config.sync_auto = v;
+                }
+                if let Some(v) = config_obj.get("sync_auto_interval_sec").and_then(|v| v.as_u64()) {
+                    app_state.config.sync_auto_interval_sec = v;
+                }
                 if let Err(e) = aileron::config::Config::save(&app_state.config) {
                     warn!("Failed to save config: {}", e);
                 }
@@ -749,6 +783,40 @@ fn handle_ipc_message_offscreen(
                 }
                 if let Some(v) = config_obj.get("adblock_update_interval_hours").and_then(|v| v.as_u64()) {
                     app_state.config.adblock_update_interval_hours = v;
+                }
+                if let Some(v) = config_obj.get("theme").and_then(|v| v.as_str()) {
+                    app_state.config.theme = v.to_string();
+                }
+                if let Some(v) = config_obj.get("adblock_cosmetic_filtering").and_then(|v| v.as_bool()) {
+                    app_state.config.adblock_cosmetic_filtering = v;
+                }
+                if let Some(v) = config_obj.get("auto_save").and_then(|v| v.as_bool()) {
+                    app_state.config.auto_save = v;
+                }
+                if let Some(v) = config_obj.get("sync_target").and_then(|v| v.as_str()) {
+                    app_state.config.sync_target = v.to_string();
+                }
+                if let Some(v) = config_obj.get("sync_encrypted").and_then(|v| v.as_bool()) {
+                    app_state.config.sync_encrypted = v;
+                }
+                // sync_passphrase is stored in keyring, not config — handled below
+                if let Some(v) = config_obj.get("sync_passphrase").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    match aileron::passwords::keyring::store_credential("aileron-sync", v) {
+                        Ok(()) => {
+                            app_state.config.sync_passphrase = v.to_string();
+                            info!("Sync passphrase stored in system keyring");
+                        }
+                        Err(e) => {
+                            warn!("Failed to store sync passphrase in keyring: {}", e);
+                            app_state.status_message = format!("Failed to store passphrase: {}", e);
+                        }
+                    }
+                }
+                if let Some(v) = config_obj.get("sync_auto").and_then(|v| v.as_bool()) {
+                    app_state.config.sync_auto = v;
+                }
+                if let Some(v) = config_obj.get("sync_auto_interval_sec").and_then(|v| v.as_u64()) {
+                    app_state.config.sync_auto_interval_sec = v;
                 }
                 if let Err(e) = aileron::config::Config::save(&app_state.config) {
                     warn!("Failed to save config: {}", e);

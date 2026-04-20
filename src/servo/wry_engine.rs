@@ -17,6 +17,8 @@
 
 #[cfg(target_os = "linux")]
 use gtk::prelude::{ContainerExt, GtkWindowExt, WidgetExt};
+#[cfg(target_os = "linux")]
+use glib_sys;
 use std::collections::HashMap;
 use std::sync::mpsc;
 use tracing::{info, warn};
@@ -794,9 +796,94 @@ pub fn init_gtk() {
 pub fn pump_gtk() {
     #[cfg(target_os = "linux")]
     {
+        // Capture GLib log messages to diagnose WebKitGTK crashes.
+        // WebKitGTK sometimes emits G_LOG_LEVEL_ERROR messages during draw
+        // propagation that default to SIGTRAP. We intercept these, log them via
+        // tracing, and suppress the fatal signal.
+        unsafe {
+            let log_domain = std::ffi::CString::new("WebKitGTK").unwrap();
+            glib_sys::g_log_set_handler(
+                log_domain.as_ptr(),
+                glib_sys::G_LOG_LEVEL_MASK | glib_sys::G_LOG_FLAG_RECURSION,
+                Some(glib_log_handler),
+                std::ptr::null_mut(),
+            );
+        }
+
         while gtk::events_pending() {
             gtk::main_iteration_do(false);
         }
+    }
+}
+
+/// Custom GLib log handler that captures WebKitGTK critical/error messages
+/// and prevents them from crashing the app via SIGTRAP.
+///
+/// WebKitGTK sometimes emits G_LOG_LEVEL_ERROR messages during draw propagation
+/// when the rendering backend encounters issues. We intercept these, log them via
+/// tracing, and suppress the fatal signal by returning without calling the
+/// default handler.
+/// Custom GLib log handler that captures WebKitGTK critical/error messages
+/// and prevents them from crashing the app via SIGTRAP.
+///
+/// WebKitGTK sometimes emits G_LOG_LEVEL_ERROR messages during draw propagation
+/// when the rendering backend encounters issues. We intercept these, log them via
+/// tracing, and suppress the fatal signal by returning without calling the
+/// default handler.
+#[cfg(target_os = "linux")]
+unsafe extern "C" fn glib_log_handler(
+    log_domain: *const std::os::raw::c_char,
+    log_level: glib_sys::GLogLevelFlags,
+    message: *const std::os::raw::c_char,
+    _user_data: glib_sys::gpointer,
+) {
+    use tracing::{error, warn};
+
+    let domain = if log_domain.is_null() {
+        "*".to_string()
+    } else {
+        unsafe { std::ffi::CStr::from_ptr(log_domain) }
+            .to_string_lossy()
+            .into_owned()
+    };
+
+    let level_bits = log_level;
+    let level = if level_bits & glib_sys::G_LOG_LEVEL_ERROR != 0 {
+        "ERROR"
+    } else if level_bits & glib_sys::G_LOG_LEVEL_CRITICAL != 0 {
+        "CRITICAL"
+    } else if level_bits & glib_sys::G_LOG_LEVEL_WARNING != 0 {
+        "WARNING"
+    } else if level_bits & glib_sys::G_LOG_LEVEL_MESSAGE != 0 {
+        "MESSAGE"
+    } else if level_bits & glib_sys::G_LOG_LEVEL_INFO != 0 {
+        "INFO"
+    } else if level_bits & glib_sys::G_LOG_LEVEL_DEBUG != 0 {
+        "DEBUG"
+    } else {
+        "UNKNOWN"
+    };
+
+    let msg = if message.is_null() {
+        "(null)".to_string()
+    } else {
+        unsafe { std::ffi::CStr::from_ptr(message) }
+            .to_string_lossy()
+            .into_owned()
+    };
+
+    match level {
+        "ERROR" | "CRITICAL" => {
+            error!("[GLib {}::{}] {}", domain, level, msg);
+            // Do NOT call the default handler — that's what causes SIGTRAP.
+            // By returning, we suppress the fatal signal.
+        }
+        "WARNING" => {
+            if domain.contains("WebKit") || domain.contains("Gtk") {
+                warn!("[GLib {}::{}] {}", domain, level, msg);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1456,13 +1543,16 @@ pub(crate) fn aileron_settings_page() -> String {
 <div class="field">
   <label for="search_engine">Search Engine</label>
   <select id="search_engine" tabindex="2" aria-label="Search engine">
-    <option value="https://duckduckgo.com/?q={query}">DuckDuckGo</option>
-    <option value="https://www.google.com/search?q={query}">Google</option>
+    <!-- Populated dynamically from config.search_engines -->
   </select>
 </div>
 <div class="toggle-row">
   <input type="checkbox" id="restore_session" tabindex="3" role="switch" aria-checked="false" />
   <label for="restore_session">Restore previous session on startup</label>
+</div>
+<div class="toggle-row">
+  <input type="checkbox" id="auto_save" role="switch" aria-checked="false" />
+  <label for="auto_save">Auto-save workspace</label>
 </div>
 
 <h2>Engine</h2>
@@ -1510,6 +1600,20 @@ pub(crate) fn aileron_settings_page() -> String {
   <label for="tab_sidebar_right">Sidebar on right</label>
 </div>
 
+<h2>Theme</h2>
+<div class="field">
+  <label for="theme">Color Theme</label>
+  <select id="theme" aria-label="Color theme">
+    <option value="dark">Dark</option>
+    <option value="light">Light</option>
+    <option value="gruvbox-dark">Gruvbox Dark</option>
+    <option value="nord">Nord</option>
+    <option value="dracula">Dracula</option>
+    <option value="solarized-dark">Solarized Dark</option>
+    <option value="solarized-light">Solarized Light</option>
+  </select>
+</div>
+
 <h2>Privacy</h2>
 <div class="toggle-row">
   <input type="checkbox" id="adblock_enabled" tabindex="7" role="switch" aria-checked="false" />
@@ -1526,6 +1630,10 @@ pub(crate) fn aileron_settings_page() -> String {
 <div class="toggle-row">
   <input type="checkbox" id="popup_blocker_enabled" role="switch" aria-checked="false" />
   <label for="popup_blocker_enabled">Block Popups</label>
+</div>
+<div class="toggle-row">
+  <input type="checkbox" id="adblock_cosmetic_filtering" role="switch" aria-checked="false" />
+  <label for="adblock_cosmetic_filtering">Cosmetic filtering (element hiding)</label>
 </div>
 <div class="field">
   <label for="adblock_update_interval_hours">Filter List Update Interval (hours)</label>
@@ -1548,8 +1656,32 @@ pub(crate) fn aileron_settings_page() -> String {
   <input type="text" id="proxy" tabindex="11" placeholder="socks5://127.0.0.1:1080" aria-label="Proxy URL" />
 </div>
 <div class="field">
-  <label for="custom_css">Custom CSS Path</label>
-  <input type="text" id="custom_css" tabindex="12" placeholder="/path/to/custom.css" aria-label="Custom CSS file path" />
+  <label for="custom_css">Custom CSS</label>
+  <input type="text" id="custom_css" tabindex="12" placeholder="body { background: #000 !important; }" aria-label="Custom CSS to inject into pages" />
+</div>
+
+<h2>Sync</h2>
+<div class="field">
+  <label for="sync_target">Sync Target</label>
+  <input type="text" id="sync_target" placeholder="user@host:/path or /local/path" aria-label="Sync target path or SSH destination" />
+  <span class="subtitle" style="color:#666;font-size:0.8em;margin-top:0.2em;display:block">SSH target (user@host:path) or local directory. Empty to disable sync.</span>
+</div>
+<div class="toggle-row">
+  <input type="checkbox" id="sync_encrypted" role="switch" aria-checked="false" />
+  <label for="sync_encrypted">Encrypt sync data</label>
+</div>
+<div class="field">
+  <label for="sync_passphrase">Encryption Passphrase</label>
+  <input type="password" id="sync_passphrase" placeholder="Leave empty to keep current" aria-label="Sync encryption passphrase" autocomplete="new-password" />
+  <span class="subtitle" style="color:#666;font-size:0.8em;margin-top:0.2em;display:block">Required if encryption is enabled. Stored in system keyring, not in config file.</span>
+</div>
+<div class="toggle-row">
+  <input type="checkbox" id="sync_auto" role="switch" aria-checked="false" />
+  <label for="sync_auto">Auto-sync on file changes</label>
+</div>
+<div class="field">
+  <label for="sync_auto_interval_sec">Auto-sync Interval (seconds)</label>
+  <input type="number" id="sync_auto_interval_sec" min="10" max="3600" aria-label="Auto-sync interval in seconds" />
 </div>
 
 <button type="button" id="save-btn" tabindex="13" aria-label="Save settings">Save Settings</button>
@@ -1576,6 +1708,37 @@ pub(crate) fn aileron_settings_page() -> String {
     document.getElementById('adaptive_quality').checked = !!cfg.adaptive_quality;
     document.getElementById('popup_blocker_enabled').checked = !!cfg.popup_blocker_enabled;
     document.getElementById('adblock_update_interval_hours').value = cfg.adblock_update_interval_hours || 24;
+    document.getElementById('theme').value = cfg.theme || 'dark';
+    document.getElementById('adblock_cosmetic_filtering').checked = !!cfg.adblock_cosmetic_filtering;
+    document.getElementById('auto_save').checked = !!cfg.auto_save;
+    document.getElementById('sync_target').value = cfg.sync_target || '';
+    document.getElementById('sync_encrypted').checked = !!cfg.sync_encrypted;
+    document.getElementById('sync_passphrase').value = '';
+    document.getElementById('sync_auto').checked = !!cfg.sync_auto;
+    document.getElementById('sync_auto_interval_sec').value = cfg.sync_auto_interval_sec || 300;
+    // Populate search engine dropdown from config
+    (function() {
+      var sel = document.getElementById('search_engine');
+      sel.innerHTML = '';
+      var engines = cfg.search_engines || {};
+      var current = cfg.search_engine || '';
+      var found = false;
+      Object.keys(engines).forEach(function(name) {
+        var opt = document.createElement('option');
+        opt.value = engines[name];
+        opt.textContent = name;
+        if (engines[name] === current) { opt.selected = true; found = true; }
+        sel.appendChild(opt);
+      });
+      // If current engine not in the list, add it as a custom option
+      if (!found && current) {
+        var opt = document.createElement('option');
+        opt.value = current;
+        opt.textContent = 'Custom';
+        opt.selected = true;
+        sel.appendChild(opt);
+      }
+    })();
     document.querySelectorAll('input[role="switch"]').forEach(function(el) {
       el.setAttribute('aria-checked', el.checked ? 'true' : 'false');
       el.addEventListener('change', function() {
@@ -1607,7 +1770,15 @@ pub(crate) fn aileron_settings_page() -> String {
       language: document.getElementById('language').value || null,
       adaptive_quality: document.getElementById('adaptive_quality').checked,
       popup_blocker_enabled: document.getElementById('popup_blocker_enabled').checked,
-      adblock_update_interval_hours: parseInt(document.getElementById('adblock_update_interval_hours').value) || 24
+      adblock_update_interval_hours: parseInt(document.getElementById('adblock_update_interval_hours').value) || 24,
+      theme: document.getElementById('theme').value,
+      adblock_cosmetic_filtering: document.getElementById('adblock_cosmetic_filtering').checked,
+      auto_save: document.getElementById('auto_save').checked,
+      sync_target: document.getElementById('sync_target').value || '',
+      sync_encrypted: document.getElementById('sync_encrypted').checked,
+      sync_passphrase: document.getElementById('sync_passphrase').value || null,
+      sync_auto: document.getElementById('sync_auto').checked,
+      sync_auto_interval_sec: parseInt(document.getElementById('sync_auto_interval_sec').value) || 300
     };
   }
   document.getElementById('save-btn').addEventListener('click', function() {

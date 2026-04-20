@@ -1,6 +1,6 @@
 [package]
 name = "aileron"
-version = "0.11.0"
+version = "0.12.0"
 edition = "2024"
 description = "A blazingly fast, keyboard-driven web environment for developers"
 license = "MIT"
@@ -11,10 +11,11 @@ anyhow = "1.0.102"
 thiserror = "2.0.18"
 
 # Async runtime
-tokio = { version = "1.51.1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.51.1", features = ["rt-multi-thread", "macros", "io-util", "fs"] }
 
 # Concurrency
 crossbeam-channel = "0.5.15"
+parking_lot = "0.12"
 
 # Graphics
 wgpu = "24.0.5"
@@ -91,6 +92,14 @@ wry = { version = "0.55.0", default-features = false, features = [
 # HTTP client (for downloading filter/privacy lists)
 attohttpc = "0.28"
 
+# Download manager with progress, pause/resume, concurrent downloads
+trauma = "2.4"
+
+# HTTP client with streaming (for download manager)
+# trauma uses reqwest 0.13; we align our direct usage
+reqwest = { version = "0.13", default-features = false, features = ["stream", "rustls"] }
+futures-util = "0.3"
+
 # Regex (for site settings pattern matching)
 regex = "1"
 
@@ -101,6 +110,7 @@ keyring = "3"
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 x11-dl = "2"
+glib-sys = "0.20"
 
 [dev-dependencies]
 # Testing

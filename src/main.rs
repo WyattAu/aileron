@@ -161,7 +161,10 @@ impl AileronApp {
     }
 
     fn init_graphics(&mut self, window: Arc<Window>) {
+        info!("── init_graphics(): Starting ──");
+
         // Create egui context and winit state
+        info!("init_graphics(): Creating egui context...");
         let egui_ctx = egui::Context::default();
         egui_ctx.set_visuals(egui::Visuals::dark());
 
@@ -174,18 +177,25 @@ impl AileronApp {
             None,
         );
 
+        info!("init_graphics(): Creating GPU state (wgpu + Vulkan)...");
         // Create GPU state
         let gfx = match GfxState::new(Arc::clone(&window)) {
             Ok(g) => g,
             Err(e) => {
-                tracing::error!("Failed to initialize GPU: {}", e);
+                tracing::error!("GPU INIT FAILED: {}", e);
+                tracing::error!("This is likely a Vulkan/driver issue. Check:");
+                tracing::error!("  1. Vulkan ICDs installed: ls /usr/share/vulkan/icd.d/");
+                tracing::error!("  2. NVIDIA driver loaded: lsmod | grep nvidia");
+                tracing::error!("  3. Try: LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH aileron");
                 return;
             }
         };
 
+        info!("init_graphics(): GPU initialized, max texture: {}px", gfx.device.limits().max_texture_dimension_2d);
         winit_state.set_max_texture_side(gfx.device.limits().max_texture_dimension_2d as usize);
 
         // Initialize app state with viewport and config
+        info!("init_graphics(): Creating AppState...");
         let size = window.inner_size();
         let viewport = Rect::new(0.0, 0.0, size.width as f64, size.height as f64);
         let mut app_state = match AppState::new(viewport, self.config.clone()) {
@@ -766,6 +776,7 @@ impl ApplicationHandler for AileronApp {
             return;
         }
 
+        info!("── resumed(): Creating window ──");
         let window = Arc::new(
             event_loop
                 .create_window(
@@ -1854,60 +1865,173 @@ mod tests {
 }
 
 fn main() -> anyhow::Result<()> {
-    // Initialize tracing
-    let subscriber = tracing_subscriber::FmtSubscriber::builder()
-        .with_max_level(tracing::Level::INFO)
+    // Install panic hook BEFORE anything else — writes crash report to file
+    install_panic_hook();
+
+    // Initialize tracing to both stderr AND a log file
+    let log_dir = directories::ProjectDirs::from("com", "aileron", "Aileron")
+        .map(|d| d.data_dir().join("logs"))
+        .unwrap_or_else(|| std::path::PathBuf::from("./logs"));
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_file_path = log_dir.join(format!("aileron_{}.log", chrono::Local::now().format("%Y%m%d_%H%M%S")));
+    let log_file = std::fs::File::create(&log_file_path).ok();
+    if log_file.is_some() {
+        eprintln!("[aileron] Logging to: {}", log_file_path.display());
+    }
+
+    // Build subscriber with optional file layer
+    let subscriber = tracing_subscriber::fmt::Subscriber::builder()
+        .with_max_level(tracing::Level::DEBUG)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "aileron=info,wgpu=warn,wry=info".parse().unwrap()),
+                .unwrap_or_else(|_| "aileron=debug,wgpu=warn,wry=debug,webkit2gtk=debug,gdk=debug,gtk=debug,egui=info".parse().unwrap()),
         )
+        .with_writer(std::io::stderr)
         .finish();
+
+    // We can't easily add a file layer with type-compatible subscriber,
+    // so just use stderr + direct file writes via the crash hook
     tracing::subscriber::set_global_default(subscriber)?;
 
-    info!("Aileron v0.1.0-pre-alpha");
+    info!("Aileron v0.12.0");
     info!("Keyboard-Driven Web Environment");
+    info!("OS: {} {}", std::env::consts::OS, std::env::consts::ARCH);
+    info!("PID: {}", std::process::id());
 
-    // On Wayland, wry's GTK fallback creates a standalone gtk::Window which
-    // conflicts with winit's Wayland surface (Error 71: Protocol error).
-    // wry needs an X11 window handle for build_as_child, so we force winit
-    // to use XWayland by unsetting WAYLAND_DISPLAY (winit 0.29+ removed
-    // WINIT_UNIX_BACKEND and uses WAYLAND_DISPLAY/DISPLAY to pick backend).
-    // We also force GDK to use X11 so gtk::init() creates an X11 display.
-    // TODO: Remove when wry supports embedding into a winit Wayland surface.
+    // Log environment info
+    log_environment();
+
+    // Phase 1: Load config
+    info!("── Phase 1: Loading config ──");
     let config = Config::load();
-    if !config.is_offscreen()
-        && std::env::var("WAYLAND_DISPLAY").is_ok()
-    {
-        info!("Wayland detected — using XWayland for wry build_as_child compatibility");
+    info!("Config loaded: render_mode={}, tab_layout={}, theme={}", config.render_mode, config.tab_layout, config.theme);
+
+    // Force GDK_BACKEND=x11 on Wayland so GTK/WebKitGTK can create a GL context.
+    // NVIDIA's Wayland EGL doesn't provide GL through the GDK Wayland backend,
+    // causing "GDK is not able to create a GL context" → SIGTRAP.
+    // We do NOT remove WAYLAND_DISPLAY so winit continues using Wayland directly.
+    if std::env::var("WAYLAND_DISPLAY").is_ok() {
+        info!("Wayland detected — forcing GDK_BACKEND=x11 for GTK/WebKitGTK GL context");
         unsafe {
-            std::env::remove_var("WAYLAND_DISPLAY");
             std::env::set_var("GDK_BACKEND", "x11");
         }
     }
 
-    // Initialize GTK BEFORE creating the event loop (required by wry on Linux)
+    // Phase 2: Initialize GTK
+    info!("── Phase 2: Initializing GTK ──");
     init_gtk();
+    info!("GTK initialized successfully");
 
+    // Phase 3: Create event loop
+    info!("── Phase 3: Creating event loop ──");
     let event_loop = EventLoop::builder().build()?;
+    info!("Event loop created successfully");
 
-    // Workaround: wry's build_as_child creates X11 child windows that winit doesn't
-    // track. When winit processes FocusOut events for these stale windows, the IME
-    // unfocus call produces GLXBadWindow (X error 170) which winit .expect()s on,
-    // crashing the app. Install a custom X error handler that swallows GLXBadWindow.
+    // Workaround: X11 error handler (GTK uses XWayland on Wayland systems)
     #[cfg(target_os = "linux")]
-    if !config.is_offscreen() {
+    {
         unsafe {
             if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
                 (xlib.XSetErrorHandler)(Some(x11_error_handler));
+                info!("X11 error handler installed");
             }
         }
     }
 
-    info!("Entering event loop...");
+    // Phase 4: Create app and run
+    info!("── Phase 4: Creating application ──");
     Config::set_session_active();
     let mut app = AileronApp::new();
+    info!("Application created successfully");
+
+    info!("── Phase 5: Entering event loop ──");
     event_loop.run_app(&mut app)?;
 
     info!("Aileron shutting down.");
     Ok(())
+}
+
+/// Install a panic hook that writes detailed crash info to a file.
+fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        // Write crash report to file
+        let crash_dir = directories::ProjectDirs::from("com", "aileron", "Aileron")
+            .map(|d| d.data_dir().join("crashes"))
+            .unwrap_or_else(|| std::path::PathBuf::from("./crashes"));
+        let _ = std::fs::create_dir_all(&crash_dir);
+
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let crash_path = crash_dir.join(format!("crash_{}.txt", timestamp));
+
+        let report = format!(
+            "=== Aileron Crash Report ===\n\
+             Time: {}\n\
+             OS: {} {}\n\
+             PID: {}\n\
+             Version: 0.12.0\n\n\
+             Panic:\n\
+             {}\n\n\
+             Backtrace:\n\
+             {:?}\n",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            std::process::id(),
+            info,
+            std::backtrace::Backtrace::capture(),
+        );
+
+        let _ = std::fs::write(&crash_path, report);
+        eprintln!("[aileron] CRASH REPORT WRITTEN TO: {}", crash_path.display());
+
+        // Also print to stderr
+        default_hook(info);
+    }));
+}
+
+/// Log environment info for debugging.
+fn log_environment() {
+    info!("WAYLAND_DISPLAY: {:?}", std::env::var("WAYLAND_DISPLAY").ok());
+    info!("DISPLAY: {:?}", std::env::var("DISPLAY").ok());
+    info!("XDG_SESSION_TYPE: {:?}", std::env::var("XDG_SESSION_TYPE").ok());
+    info!("GDK_BACKEND: {:?}", std::env::var("GDK_BACKEND").ok());
+    info!("LD_LIBRARY_PATH: {:?}", std::env::var("LD_LIBRARY_PATH").ok().map(|v| if v.len() > 80 { format!("{}...(truncated)", &v[..80]) } else { v }));
+
+    // Check for Vulkan
+    if let Ok(output) = std::process::Command::new("vulkaninfo").arg("--summary").output() {
+        if output.status.success() {
+            let summary = String::from_utf8_lossy(&output.stdout);
+            for line in summary.lines().take(10) {
+                info!("vulkaninfo: {}", line.trim());
+            }
+        } else {
+            warn!("vulkaninfo failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+    } else {
+        warn!("vulkaninfo not found — Vulkan may not be available");
+    }
+
+    // Check for GPU
+    if let Ok(output) = std::process::Command::new("glxinfo").arg("-B").output()
+        && output.status.success()
+    {
+        for line in String::from_utf8_lossy(&output.stdout).lines().take(5) {
+            info!("glxinfo: {}", line.trim());
+        }
+    }
+
+    // Check wgpu available adapters (quick test)
+    if let Ok(output) = std::process::Command::new("ls").arg("/usr/share/vulkan/icd.d/").output()
+        && output.status.success()
+    {
+        let icds = String::from_utf8_lossy(&output.stdout);
+        info!("Vulkan ICDs: {}", icds.trim());
+    }
+    if let Ok(output) = std::process::Command::new("ls").arg("/etc/vulkan/icd.d/").output()
+        && output.status.success()
+    {
+        let icds = String::from_utf8_lossy(&output.stdout);
+        info!("Vulkan ICDs (etc): {}", icds.trim());
+    }
 }

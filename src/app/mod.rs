@@ -189,6 +189,9 @@ pub struct AppState {
 
     /// Sync filesystem watcher (started/stopped by sync commands).
     pub sync_watcher: crate::sync::watcher::SyncWatcher,
+
+    /// Download manager — handles file downloads with progress tracking.
+    pub download_manager: crate::downloads::DownloadManager,
 }
 
 impl AppState {
@@ -345,6 +348,11 @@ impl AppState {
             adblock_blocked_count: 0,
             extension_manager: ExtensionManager::new(Self::extensions_dir()),
             sync_watcher: crate::sync::watcher::SyncWatcher::new(),
+            download_manager: crate::downloads::DownloadManager::new(
+                directories::UserDirs::new()
+                    .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
+                    .unwrap_or_else(|| std::path::PathBuf::from("./Downloads")),
+            ),
         })
     }
 

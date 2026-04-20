@@ -1,0 +1,367 @@
+# Aileron Master Plan v3 — Phases Q through T
+# Created: 2026-04-19
+# Status: IN PROGRESS
+
+[metadata]
+version = "3.0.0"
+created = "2026-04-19"
+total_phases = 4
+total_tasks = 38
+
+# ─────────────────────────────────────────────
+# Phase Q: Dogfood & Cross-Platform Foundation
+# ─────────────────────────────────────────────
+
+[[task]]
+id = "Q01"
+title = "Add trauma download manager dependency"
+phase = "Q"
+priority = "critical"
+status = "pending"
+description = "Add trauma v2.4 crate as dependency. Create src/downloads/mod.rs with DownloadManager struct wrapping trauma::DownloadManager. Expose async download_start(), download_pause(), download_resume(), download_cancel() methods. Integrate with existing src/db/downloads.rs for persistence."
+depends = []
+
+[[task]]
+id = "Q02"
+title = "Download progress tracking and UI"
+phase = "Q"
+priority = "critical"
+status = "pending"
+description = "Implement progress callbacks from trauma into AppState. Track per-download: bytes_downloaded, total_bytes, speed (bytes/sec), ETA, state (pending/downloading/paused/completed/failed). Add status bar download indicator (animated icon + percentage). Add :downloads command showing active/recent downloads with progress."
+depends = ["Q01"]
+
+[[task]]
+id = "Q03"
+title = "Download manager panel (egui)"
+phase = "Q"
+priority = "high"
+status = "pending"
+description = "Create a downloads panel (toggle with :downloads or keybinding). Shows list of downloads with: filename, size, progress bar, speed, ETA, state. Actions: pause/resume/cancel/retry/open file/open folder. Keyboard navigable. Integrates with egui panels system."
+depends = ["Q02"]
+
+[[task]]
+id = "Q04"
+title = "Cross-platform target smoke tests"
+phase = "Q"
+priority = "high"
+status = "pending"
+description = "Verify cargo build compiles for x86_64-pc-windows-msvc and x86_64-apple-darwin targets. Fix any platform-specific compilation errors (cfg(target_os) guards, conditional deps). Document any blockers in CAPABILITY_MATRIX.md. Ensure no Linux-only assumptions leak into cross-platform code."
+depends = []
+
+[[task]]
+id = "Q05"
+title = "Platform abstraction audit"
+phase = "Q"
+priority = "high"
+status = "pending"
+description = "Audit all code for Linux-only assumptions: GTK-specific code in offscreen_webview.rs, X11-specific hacks in main.rs, hardcoded paths, /dev/ptmx assumptions. Move all platform-specific code behind cfg() guards or PlatformOps trait. Ensure portable-pty and alacritty_terminal paths work on Windows/macOS."
+depends = ["Q04"]
+
+[[task]]
+id = "Q06"
+title = "Windows WebView2 setup"
+phase = "Q"
+priority = "medium"
+status = "pending"
+description = "Add WebView2 bootstrapper for Windows (download Evergreen standalone if not installed). Add wry::webview::WebViewBuilder::with_webview_initializer for Windows-specific config. Test window creation, navigation, and settings page on Windows."
+depends = ["Q05"]
+
+[[task]]
+id = "Q07"
+title = "macOS WKWebView setup"
+phase = "Q"
+priority = "medium"
+status = "pending"
+description = "Add macOS-specific wry configuration (WKWebView preferences, native menu bar integration). Handle macOS window lifecycle (NSApplication delegate). Ensure keybindings work with macOS modifier keys (Cmd vs Ctrl)."
+depends = ["Q05"]
+
+[[task]]
+id = "Q08"
+title = "Real-world testing on CachyOS"
+phase = "Q"
+priority = "critical"
+status = "pending"
+description = "Launch Aileron on actual CachyOS Wayland + NVIDIA RTX 2060. Verify: offscreen rendering works, Vulkan initialization succeeds, terminal emulator renders correctly, all keybindings work without compositor conflicts, settings page loads, web navigation works. Document all issues found and fix."
+depends = []
+
+[[task]]
+id = "Q09"
+title = "Performance profiling on real hardware"
+phase = "Q"
+priority = "medium"
+status = "pending"
+description = "Run Aileron on CachyOS with profiling enabled. Measure: frame times at 60fps target, memory usage with 10+ tabs, terminal scroll latency, webview texture capture overhead. Compare against synthetic benchmarks. Establish real-world performance baseline in .specs/04_performance/baseline_metrics.toml."
+depends = ["Q08"]
+
+[[task]]
+id = "Q10"
+title = "Fix real-world bugs from CachyOS testing"
+phase = "Q"
+priority = "critical"
+status = "pending"
+description = "Fix all issues discovered during Q08/Q09 testing. Likely candidates: Vulkan initialization on NVIDIA, Wayland input scaling, webview focus issues, GTK/Wayland compatibility, font rendering in terminal."
+depends = ["Q08"]
+
+# ─────────────────────────────────────────────
+# Phase R: Servo Integration
+# ─────────────────────────────────────────────
+
+[[task]]
+id = "R01"
+title = "Add servo crate dependency and feature flags"
+phase = "R"
+priority = "critical"
+status = "pending"
+description = "Add servo v0.1.0 as optional dependency with feature flag 'servo-engine'. Add servo features: default, tracing. Gate all servo code behind #[cfg(feature = 'servo-engine')]. Update Cargo.toml with servo, surfman, webrender dependencies."
+depends = []
+
+[[task]]
+id = "R02"
+title = "Implement ServoEmbedder struct"
+phase = "R"
+priority = "critical"
+status = "pending"
+description = "Create src/servo/embedder.rs with ServoEmbedder implementing servo::ServoDelegate and servo::WebViewDelegate traits. Handle: load_started/load_finished, title_changed, history_changed, prompt/alert/confirm dialogs, console messages, navigation requested. Bridge events to AppState via channels."
+depends = ["R01"]
+
+[[task]]
+id = "R03"
+title = "Implement ServoPane rendering"
+phase = "R"
+priority = "critical"
+status = "pending"
+description = "Implement ServoPane in src/servo/servo_engine.rs that renders via servo::WebView. Use capture_screenshot() to get RGBA buffer, convert to egui ColorImage texture. Handle set_size/resize, focus/blur, load_url, evaluate_js. Integrate with existing PaneRenderer trait."
+depends = ["R02"]
+
+[[task]]
+id = "R04"
+title = "Servo texture sharing pipeline"
+phase = "R"
+priority = "high"
+status = "pending"
+description = "Implement efficient texture pipeline from Servo to egui. Use capture_screenshot() RGBA buffer → egui ColorImage → TextureHandle. Add dirty-region tracking to avoid re-capturing unchanged frames. Target: match or exceed WebKitGTK texture capture performance."
+depends = ["R03"]
+
+[[task]]
+id = "R05"
+title = "Servo engine selection integration"
+phase = "R"
+priority = "high"
+status = "pending"
+description = "Wire ServoPane into the existing engine_selection system. When engine_selection='servo' or 'auto': try Servo first, fall back to WebKitGTK on failure. Update compat_overrides to apply per-domain engine choice. Add :engine servo command to switch runtime."
+depends = ["R03"]
+
+[[task]]
+id = "R06"
+title = "Servo JavaScript bridge"
+phase = "R"
+priority = "high"
+status = "pending"
+description = "Implement JS evaluation via servo::WebView::evaluate_js(). Support IPC messages from Servo webviews (equivalent to wry's ipc_handler). Bridge get-config/set-config/credential-save messages. Ensure settings page works identically in Servo."
+depends = ["R03"]
+
+[[task]]
+id = "R07"
+title = "Servo content scripts and user styles"
+phase = "R"
+priority = "medium"
+status = "pending"
+description = "Implement UserContentManager integration for Servo. Inject user scripts (content scripts) and user stylesheets (custom CSS, cosmetic adblock filters). Match existing wry content script injection API."
+depends = ["R03"]
+
+[[task]]
+id = "R08"
+title = "Servo network and privacy"
+phase = "R"
+priority = "medium"
+status = "pending"
+description = "Implement Servo's NetworkManager for: adblock integration (request interception), HTTPS upgrade, tracking protection headers, proxy support. Use Servo's resource interception delegate to filter requests."
+depends = ["R02"]
+
+[[task]]
+id = "R09"
+title = "Servo performance benchmarking"
+phase = "R"
+priority = "medium"
+status = "pending"
+description = "Benchmark Servo vs WebKitGTK on same pages. Measure: page load time, frame capture latency, memory per tab, JS execution speed. Document results. Determine if Servo is ready for production use or needs to stay as opt-in."
+depends = ["R04", "R05"]
+
+[[task]]
+id = "R10"
+title = "Servo upgrade path to v0.2 LTS"
+phase = "R"
+priority = "low"
+status = "pending"
+description = "When Servo v0.2.0 LTS ships (~Oct 2026), upgrade dependency and fix any breaking API changes. Re-run benchmarks. Update servo_embedder_evaluation.md with findings."
+depends = ["R09"]
+
+# ─────────────────────────────────────────────
+# Phase S: WebExtensions & Lua Deepening
+# ─────────────────────────────────────────────
+
+[[task]]
+id = "S01"
+title = "WebExtensions storage persistence"
+phase = "S"
+priority = "critical"
+status = "pending"
+description = "Implement persistent storage for extensions in src/extensions/storage.rs. Use SQLite (existing db module) with tables: ext_storage (extension_id, key, value), ext_permissions (extension_id, permission). Implement StorageArea: local (per-extension), sync (future). Support get/set/remove/clear with change events."
+depends = []
+
+[[task]]
+id = "S02"
+title = "WebExtensions background scripts"
+phase = "S"
+priority = "critical"
+status = "pending"
+description = "Implement background script/service worker lifecycle. Load background.js/scripts from extension manifest. Run in isolated context with access to extension APIs. Support browser.runtime.onMessage for communication with content scripts. Handle extension enable/disable/reload lifecycle."
+depends = ["S01"]
+
+[[task]]
+id = "S03"
+title = "WebExtensions permissions model"
+phase = "S"
+priority = "high"
+status = "pending"
+description = "Implement optional_permissions and permissions request flow. Check manifest permissions on install: tabs, bookmarks, history, storage, webRequest, scripting, notifications. Grant/deny UI in settings. Validate API access against granted permissions at runtime."
+depends = ["S01"]
+
+[[task]]
+id = "S04"
+title = "WebExtensions message passing"
+phase = "S"
+priority = "high"
+status = "pending"
+description = "Implement browser.runtime.sendMessage / onMessage between content scripts and background scripts. Support one-time messages and long-lived ports (connect/connect). Serialize messages as JSON. Add to existing ExtensionContentScriptRegistry."
+depends = ["S02"]
+
+[[task]]
+id = "S05"
+title = "WebExtensions tabs API concrete impl"
+phase = "S"
+priority = "high"
+status = "pending"
+description = "Wire up src/extensions/tabs.rs with real AppState operations. Implement: create, update, remove, query, get, getCurrent, sendMessage, executeScript. Map TabId to internal pane IDs. Support tab events (onCreated, onUpdated, onRemoved, onActivated)."
+depends = ["S01"]
+
+[[task]]
+id = "S06"
+title = "WebExtensions webRequest interception"
+phase = "S"
+priority = "high"
+status = "pending"
+description = "Implement webRequest API in src/extensions/web_request.rs. Interceptor pipeline: onBeforeRequest → onBeforeSendHeaders → onSendHeaders → onHeadersReceived → onAuthRequired → onCompleted. Allow extensions to block/modify/redirect requests. Integrate with existing adblock pipeline."
+depends = ["S03", "S04"]
+
+[[task]]
+id = "S07"
+title = "WebExtensions scripting API"
+phase = "S"
+priority = "medium"
+status = "pending"
+description = "Implement scripting.executeScript and scripting.insertCSS. Allow extensions to programmatically inject JS/CSS into tabs. Support file-based scripts (from extension package) and code-based injection. Return execution results."
+depends = ["S05"]
+
+[[task]]
+id = "S08"
+title = "Lua as main control plane"
+phase = "S"
+priority = "high"
+status = "pending"
+description = "Expand Lua scripting to be the primary automation interface. Add Lua APIs for: extension management (install/enable/disable/list), tab control, download management, sync operations, keybinding overrides at runtime. Lua scripts can orchestrate WebExtensions (e.g., 'when tab loads, run extension X with config Y'). Add lua require() for loading multiple script files."
+depends = ["S01", "S05"]
+
+[[task]]
+id = "S09"
+title = "uBlock Origin compatibility"
+phase = "S"
+priority = "high"
+status = "pending"
+description = "Test uBlock Origin (or uBlock Origin Lite) loading and operation. Identify which WebExtensions APIs it needs. Implement any missing APIs specifically for uBO compatibility. Target: adblock-testpages.com passes all tests through uBO."
+depends = ["S06", "S07"]
+
+[[task]]
+id = "S10"
+title = "Extension marketplace/loading UX"
+phase = "S"
+priority = "medium"
+status = "pending"
+description = "Add extension loading UX: :extensions command to list/enable/disable/remove. Extension settings page section. Load extensions from ~/.config/aileron/extensions/<id>/. Support .xpi and .crx unpacking (zip format). Show extension permissions before install."
+depends = ["S03"]
+
+# ─────────────────────────────────────────────
+# Phase T: Mobile & Future
+# ─────────────────────────────────────────────
+
+[[task]]
+id = "T01"
+title = "Mobile architecture design document"
+phase = "T"
+priority = "high"
+status = "pending"
+description = "Design mobile client architecture. Options: (A) Thin WebSocket client connecting to desktop Aileron, (B) Native mobile app with different UX, (C) Android-only with Termux-style terminal. Evaluate tradeoffs. Document in .specs/02_architecture/mobile_architecture.md. Decision: Aileron Remote Protocol (ARP) over WebSocket."
+depends = []
+
+[[task]]
+id = "T02"
+title = "Aileron Remote Protocol (ARP) spec"
+phase = "T"
+priority = "high"
+status = "pending"
+description = "Design Aileron Remote Protocol: JSON-RPC over WebSocket. Operations: list_tabs, activate_tab, navigate, screenshot (low-res), terminal_input, terminal_output (stream), download_file, get_clipboard, search. Authentication: TLS + token. Rate limiting. Design in .specs/02_architecture/arp_protocol_spec.md."
+depends = ["T01"]
+
+[[task]]
+id = "T03"
+title = "ARP server implementation (desktop side)"
+phase = "T"
+priority = "medium"
+status = "pending"
+description = "Implement ARP server in Aileron desktop. WebSocket listener (configurable port). Handle ARP requests by dispatching to AppState. Stream terminal output. Serve low-res tab screenshots. Auth via token generated on first connection."
+depends = ["T02"]
+
+[[task]]
+id = "T04"
+title = "Mobile client UI design"
+phase = "T"
+priority = "medium"
+status = "pending"
+description = "Design mobile UI: tab carousel (horizontal swipe), tab content view (pinch-zoom), terminal view (virtual keyboard + scroll), command palette (bottom sheet), downloads list. Touch gestures: swipe tabs, pull-to-refresh, long-press context menu. Document as mockups in .specs/05_branding/mobile_ui_design.md."
+depends = ["T01"]
+
+[[task]]
+id = "T05"
+title = "Android client implementation"
+phase = "T"
+priority = "medium"
+status = "pending"
+description = "Implement Android client using Kotlin + Jetpack Compose (or Rust via cargo-ndk + egui-mobile). Connect to desktop via ARP. Implement: tab list, tab viewer (WebView or image stream), terminal (SSH or ARP stream), settings (server address, auth token). Publish to F-Droid."
+depends = ["T02", "T03", "T04"]
+
+[[task]]
+id = "T06"
+title = "iOS client implementation"
+phase = "T"
+priority = "low"
+status = "pending"
+description = "Implement iOS client using Swift + SwiftUI (or Rust via cargo-ndk + egui-mobile). Connect to desktop via ARP. Same features as Android client. No local terminal (iOS restriction). Publish to App Store."
+depends = ["T02", "T03", "T04"]
+
+[[task]]
+id = "T07"
+title = "Servo cross-platform engine"
+phase = "T"
+priority = "medium"
+status = "pending"
+description = "When Servo adds Windows/iOS support, integrate as cross-platform rendering engine. Servo already ships Android aarch64 binary. Goal: single Servo engine across all platforms, replacing wry on mobile."
+depends = ["R09"]
+
+[[task]]
+id = "T08"
+title = "Automated cross-platform CI"
+phase = "T"
+priority = "high"
+status = "pending"
+description = "Expand CI to build and test on: Linux (x86_64, aarch64), Windows (msvc), macOS (x86_64, aarch64). Add cross-compilation matrix. Add integration tests per platform. Add release artifact generation (.deb, .rpm, .msi, .dmg, .AppImage)."
+depends = ["Q04", "Q05"]
