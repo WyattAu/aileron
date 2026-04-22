@@ -160,6 +160,8 @@ impl TabsApi for AileronTabsApi {
 struct AileronStorageArea {
     data: Mutex<HashMap<String, serde_json::Value>>,
     change_callbacks: Mutex<Vec<StorageChangeCallback>>,
+    /// If set, data is persisted to this JSON file on every mutation.
+    storage_file: Option<std::path::PathBuf>,
 }
 
 impl AileronStorageArea {
@@ -167,6 +169,94 @@ impl AileronStorageArea {
         Self {
             data: Mutex::new(HashMap::new()),
             change_callbacks: Mutex::new(Vec::new()),
+            storage_file: None,
+        }
+    }
+
+    /// Create a persistent storage area backed by a JSON file.
+    /// If the file exists, data is loaded from it on creation.
+    /// If the file does not exist, an empty area is created and the
+    /// file will be written on the first mutation.
+    fn with_persistence(storage_file: std::path::PathBuf) -> Self {
+        let initial_data = Self::load_from_file(&storage_file);
+        Self {
+            data: Mutex::new(initial_data),
+            change_callbacks: Mutex::new(Vec::new()),
+            storage_file: Some(storage_file),
+        }
+    }
+
+    fn load_from_file(path: &std::path::Path) -> HashMap<String, serde_json::Value> {
+        if !path.exists() {
+            return HashMap::new();
+        }
+        match std::fs::read_to_string(path) {
+            Ok(content) => match serde_json::from_str(&content) {
+                Ok(data) => data,
+                Err(e) => {
+                    tracing::warn!(
+                        target: "extensions",
+                        "Failed to parse storage file {:?}: {}, starting empty",
+                        path, e
+                    );
+                    HashMap::new()
+                }
+            },
+            Err(e) => {
+                tracing::warn!(
+                    target: "extensions",
+                    "Failed to read storage file {:?}: {}, starting empty",
+                    path, e
+                );
+                HashMap::new()
+            }
+        }
+    }
+
+    fn persist_to_file(&self) {
+        if let Some(ref path) = self.storage_file {
+            let data = self.data.lock().unwrap_or_else(|e| e.into_inner());
+            // Only write if we have data (avoid creating empty files unnecessarily)
+            if data.is_empty() {
+                // Remove the file if it exists and data is empty after clear
+                let _ = std::fs::remove_file(path);
+                return;
+            }
+            match serde_json::to_string_pretty(&*data) {
+                Ok(json) => {
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    if let Err(e) = std::fs::write(path, &json) {
+                        tracing::warn!(
+                            target: "extensions",
+                            "Failed to write storage file {:?}: {}",
+                            path, e
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "extensions",
+                        "Failed to serialize storage data: {}",
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    /// Fire change callbacks for the given changes.
+    fn fire_change_callbacks(&self, changes: StorageChanges, area_name: String) {
+        if changes.is_empty() {
+            return;
+        }
+        let callbacks = self
+            .change_callbacks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for cb in callbacks.iter() {
+            cb(changes.clone(), area_name.clone());
         }
     }
 }
@@ -204,9 +294,14 @@ impl StorageArea for AileronStorageArea {
             .data
             .lock()
             .map_err(|e| ExtensionError::Runtime(format!("Storage lock poisoned: {}", e)))?;
-        for (key, value) in items {
-            data.insert(key, value);
+        let mut changes = StorageChanges::new();
+        for (key, new_value) in items {
+            data.insert(key.clone(), new_value.clone());
+            changes.insert(key, new_value);
         }
+        drop(data);
+        self.fire_change_callbacks(changes, "local".into());
+        self.persist_to_file();
         Ok(())
     }
 
@@ -215,17 +310,32 @@ impl StorageArea for AileronStorageArea {
             .data
             .lock()
             .map_err(|e| ExtensionError::Runtime(format!("Storage lock poisoned: {}", e)))?;
+        let mut changes = StorageChanges::new();
         for key in keys {
-            data.remove(&key);
+            if data.remove(&key).is_some() {
+                // Use null to indicate removal in changes
+                changes.insert(key, serde_json::Value::Null);
+            }
         }
+        drop(data);
+        self.fire_change_callbacks(changes, "local".into());
+        self.persist_to_file();
         Ok(())
     }
 
     fn clear(&self) -> Result<()> {
-        self.data
+        let mut data = self
+            .data
             .lock()
-            .map_err(|e| ExtensionError::Runtime(format!("Storage lock poisoned: {}", e)))?
-            .clear();
+            .map_err(|e| ExtensionError::Runtime(format!("Storage lock poisoned: {}", e)))?;
+        if data.is_empty() {
+            return Ok(());
+        }
+        data.clear();
+        drop(data);
+        // Fire with empty changes to signal clear occurred
+        self.fire_change_callbacks(StorageChanges::new(), "local".into());
+        self.persist_to_file();
         Ok(())
     }
 
@@ -260,11 +370,26 @@ struct AileronStorageApi {
 }
 
 impl AileronStorageApi {
+    /// Create an in-memory (non-persistent) storage API.
     fn new() -> Self {
         Self {
             local: AileronStorageArea::new(),
             sync: AileronStorageArea::new(),
             managed: AileronStorageArea::new(),
+        }
+    }
+
+    /// Create a persistent storage API backed by JSON files.
+    /// Files are stored under `storage_dir/<extension_id>/<area>.json`.
+    fn with_persistence(
+        storage_dir: std::path::PathBuf,
+        extension_id: &ExtensionId,
+    ) -> Self {
+        let ext_dir = storage_dir.join(&extension_id.0);
+        Self {
+            local: AileronStorageArea::with_persistence(ext_dir.join("local.json")),
+            sync: AileronStorageArea::with_persistence(ext_dir.join("sync.json")),
+            managed: AileronStorageArea::with_persistence(ext_dir.join("managed.json")),
         }
     }
 }
@@ -674,9 +799,22 @@ impl AileronExtensionApi {
         manifest: ExtensionManifest,
         registry: ExtensionContentScriptRegistry,
     ) -> Self {
+        Self::with_registry_and_storage(extension_id, manifest, registry, None)
+    }
+
+    pub fn with_registry_and_storage(
+        extension_id: ExtensionId,
+        manifest: ExtensionManifest,
+        registry: ExtensionContentScriptRegistry,
+        storage_dir: Option<std::path::PathBuf>,
+    ) -> Self {
+        let storage_api = match storage_dir {
+            Some(dir) => AileronStorageApi::with_persistence(dir, &extension_id),
+            None => AileronStorageApi::new(),
+        };
         Self {
             tabs_api: AileronTabsApi::new(),
-            storage_api: AileronStorageApi::new(),
+            storage_api,
             runtime_api: AileronRuntimeApi::new(extension_id.clone(), manifest.clone()),
             web_request_api: AileronWebRequestApi::new(),
             scripting_api: AileronScriptingApi::new(registry),
@@ -861,5 +999,193 @@ mod tests {
         let api = make_api();
         let result = api.web_request().remove_listener(ListenerId(999));
         assert!(result.is_err());
+    }
+
+    // ── Persistent Storage Tests ──
+
+    fn make_persistent_api(dir: &std::path::Path) -> AileronExtensionApi {
+        let manifest = ExtensionManifest::from_json(MINIMAL_MANIFEST).unwrap();
+        AileronExtensionApi::with_registry_and_storage(
+            ExtensionId("test-persist".into()),
+            manifest,
+            ExtensionContentScriptRegistry::new(),
+            Some(dir.to_path_buf()),
+        )
+    }
+
+    #[test]
+    fn test_persistent_storage_set_and_reload() {
+        let dir = std::env::temp_dir().join("aileron_test_persist_set");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // Write data
+        {
+            let api = make_persistent_api(&dir);
+            let mut items = HashMap::new();
+            items.insert("key1".into(), serde_json::json!("hello"));
+            items.insert("key2".into(), serde_json::json!(42));
+            api.storage().local().set(items).unwrap();
+        }
+
+        // Reload and verify
+        {
+            let api = make_persistent_api(&dir);
+            let result = api.storage().local().get(StorageGetKeys::All).unwrap();
+            assert_eq!(result.len(), 2);
+            assert_eq!(result.get("key1").unwrap(), &serde_json::json!("hello"));
+            assert_eq!(result.get("key2").unwrap(), &serde_json::json!(42));
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_persistent_storage_remove_and_reload() {
+        let dir = std::env::temp_dir().join("aileron_test_persist_remove");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // Write data
+        {
+            let api = make_persistent_api(&dir);
+            let mut items = HashMap::new();
+            items.insert("a".into(), serde_json::json!(1));
+            items.insert("b".into(), serde_json::json!(2));
+            api.storage().local().set(items).unwrap();
+            api.storage().local().remove(vec!["a".into()]).unwrap();
+        }
+
+        // Reload and verify only "b" remains
+        {
+            let api = make_persistent_api(&dir);
+            let result = api.storage().local().get(StorageGetKeys::All).unwrap();
+            assert_eq!(result.len(), 1);
+            assert!(result.contains_key("b"));
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_persistent_storage_clear_and_reload() {
+        let dir = std::env::temp_dir().join("aileron_test_persist_clear");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // Write data then clear
+        {
+            let api = make_persistent_api(&dir);
+            let mut items = HashMap::new();
+            items.insert("x".into(), serde_json::json!("deleted"));
+            api.storage().local().set(items).unwrap();
+            api.storage().local().clear().unwrap();
+        }
+
+        // Reload and verify empty
+        {
+            let api = make_persistent_api(&dir);
+            let result = api.storage().local().get(StorageGetKeys::All).unwrap();
+            assert!(result.is_empty());
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_persistent_storage_separate_areas() {
+        let dir = std::env::temp_dir().join("aileron_test_persist_areas");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        {
+            let api = make_persistent_api(&dir);
+            let mut items = HashMap::new();
+            items.insert("key".into(), serde_json::json!("local_value"));
+            api.storage().local().set(items.clone()).unwrap();
+            items.insert("key".into(), serde_json::json!("sync_value"));
+            api.storage().sync().set(items).unwrap();
+        }
+
+        {
+            let api = make_persistent_api(&dir);
+            let local = api.storage().local().get(StorageGetKeys::Single("key".into())).unwrap();
+            assert_eq!(local.get("key").unwrap(), &serde_json::json!("local_value"));
+            let sync = api.storage().sync().get(StorageGetKeys::Single("key".into())).unwrap();
+            assert_eq!(sync.get("key").unwrap(), &serde_json::json!("sync_value"));
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_persistent_storage_corrupted_file_graceful() {
+        let dir = std::env::temp_dir().join("aileron_test_persist_corrupt");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(&dir);
+
+        // Write garbage to the storage file
+        let file_path = dir.join("test-persist").join("local.json");
+        let _ = std::fs::create_dir_all(file_path.parent().unwrap());
+        std::fs::write(&file_path, "this is not json {{{").unwrap();
+
+        // Should load gracefully with empty data
+        let api = make_persistent_api(&dir);
+        let result = api.storage().local().get(StorageGetKeys::All).unwrap();
+        assert!(result.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_storage_change_callback_fired_on_set() {
+        let api = make_api();
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let count_clone = call_count.clone();
+
+        api.storage().local().on_changed(Box::new(move |_changes, _area| {
+            count_clone.fetch_add(1, Ordering::Relaxed);
+        }));
+
+        let mut items = HashMap::new();
+        items.insert("key".into(), serde_json::json!("value"));
+        api.storage().local().set(items).unwrap();
+
+        assert_eq!(call_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_storage_change_callback_fired_on_remove() {
+        let api = make_api();
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let count_clone = call_count.clone();
+
+        api.storage().local().on_changed(Box::new(move |_changes, _area| {
+            count_clone.fetch_add(1, Ordering::Relaxed);
+        }));
+
+        let mut items = HashMap::new();
+        items.insert("key".into(), serde_json::json!("value"));
+        api.storage().local().set(items).unwrap();
+
+        api.storage().local().remove(vec!["key".into()]).unwrap();
+        assert_eq!(call_count.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn test_storage_change_callback_not_fired_on_clear_empty() {
+        let api = make_api();
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let count_clone = call_count.clone();
+
+        api.storage().local().on_changed(Box::new(move |_changes, _area| {
+            count_clone.fetch_add(1, Ordering::Relaxed);
+        }));
+
+        // Clear empty storage — no callback should fire
+        api.storage().local().clear().unwrap();
+        assert_eq!(call_count.load(Ordering::Relaxed), 0);
     }
 }

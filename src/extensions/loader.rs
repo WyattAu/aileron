@@ -11,14 +11,17 @@ use crate::extensions::types::{ExtensionError, ExtensionId};
 pub struct ExtensionManager {
     extensions: HashMap<ExtensionId, AileronExtensionApi>,
     extensions_dir: PathBuf,
+    storage_dir: PathBuf,
     content_script_registry: ExtensionContentScriptRegistry,
 }
 
 impl ExtensionManager {
     pub fn new(extensions_dir: PathBuf) -> Self {
+        let storage_dir = extensions_dir.join("storage");
         Self {
             extensions: HashMap::new(),
             extensions_dir,
+            storage_dir,
             content_script_registry: ExtensionContentScriptRegistry::new(),
         }
     }
@@ -159,10 +162,11 @@ impl ExtensionManager {
             }
         }
 
-        let api = AileronExtensionApi::with_registry(
+        let api = AileronExtensionApi::with_registry_and_storage(
             id.clone(),
             manifest,
             self.content_script_registry.clone(),
+            Some(self.storage_dir.clone()),
         );
         self.extensions.insert(id.clone(), api);
         Ok(id)
@@ -178,6 +182,10 @@ impl ExtensionManager {
 
     pub fn extensions_dir(&self) -> &Path {
         &self.extensions_dir
+    }
+
+    pub fn storage_dir(&self) -> &Path {
+        &self.storage_dir
     }
 }
 
