@@ -1,4 +1,5 @@
 use tracing::{info, warn};
+use open::that as open_that;
 use uuid::Uuid;
 
 use aileron::app::{AppState, WryAction};
@@ -219,11 +220,7 @@ pub fn process_wry_events(
                 }
             }
             WryEvent::OpenFile { path } => {
-                let _ = std::process::Command::new("xdg-open")
-                    .arg(&path)
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .spawn();
+                let _ = open_that(&path);
                 app_state.status_message = format!("Opened: {}", path);
             }
             WryEvent::HttpsUpgraded { to, .. } => {
@@ -423,11 +420,7 @@ pub fn process_offscreen_events(
                 }
             }
             WryEvent::OpenFile { path } => {
-                let _ = std::process::Command::new("xdg-open")
-                    .arg(&path)
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .spawn();
+                let _ = open_that(&path);
                 app_state.status_message = format!("Opened: {}", path);
             }
             WryEvent::HttpsUpgraded { to, .. } => {

@@ -41,46 +41,76 @@ pub fn install_panic_hook() {
 
 /// Log environment info for debugging.
 pub fn log_environment() {
-    tracing::info!("WAYLAND_DISPLAY: {:?}", std::env::var("WAYLAND_DISPLAY").ok());
-    tracing::info!("DISPLAY: {:?}", std::env::var("DISPLAY").ok());
-    tracing::info!("XDG_SESSION_TYPE: {:?}", std::env::var("XDG_SESSION_TYPE").ok());
-    tracing::info!("GDK_BACKEND: {:?}", std::env::var("GDK_BACKEND").ok());
-    tracing::info!("LD_LIBRARY_PATH: {:?}", std::env::var("LD_LIBRARY_PATH").ok().map(|v| if v.len() > 80 { format!("{}...(truncated)", &v[..80]) } else { v }));
+    #[cfg(target_os = "linux")]
+    {
+        tracing::info!("WAYLAND_DISPLAY: {:?}", std::env::var("WAYLAND_DISPLAY").ok());
+        tracing::info!("DISPLAY: {:?}", std::env::var("DISPLAY").ok());
+        tracing::info!("XDG_SESSION_TYPE: {:?}", std::env::var("XDG_SESSION_TYPE").ok());
+        tracing::info!("GDK_BACKEND: {:?}", std::env::var("GDK_BACKEND").ok());
+        tracing::info!("LD_LIBRARY_PATH: {:?}", std::env::var("LD_LIBRARY_PATH").ok().map(|v| if v.len() > 80 { format!("{}...(truncated)", &v[..80]) } else { v }));
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        tracing::info!("OS: {}", std::env::consts::OS);
+        tracing::info!("ARCH: {}", std::env::consts::ARCH);
+    }
 
-    // Check for Vulkan
-    if let Ok(output) = std::process::Command::new("vulkaninfo").arg("--summary").output() {
-        if output.status.success() {
-            let summary = String::from_utf8_lossy(&output.stdout);
-            for line in summary.lines().take(10) {
-                tracing::info!("vulkaninfo: {}", line.trim());
+    // Platform-specific GPU diagnostics
+    #[cfg(target_os = "linux")]
+    {
+        // Check for Vulkan
+        if let Ok(output) = std::process::Command::new("vulkaninfo").arg("--summary").output() {
+            if output.status.success() {
+                let summary = String::from_utf8_lossy(&output.stdout);
+                for line in summary.lines().take(10) {
+                    tracing::info!("vulkaninfo: {}", line.trim());
+                }
+            } else {
+                tracing::warn!("vulkaninfo failed: {}", String::from_utf8_lossy(&output.stderr));
             }
         } else {
-            tracing::warn!("vulkaninfo failed: {}", String::from_utf8_lossy(&output.stderr));
+            tracing::warn!("vulkaninfo not found — Vulkan may not be available");
         }
-    } else {
-        tracing::warn!("vulkaninfo not found — Vulkan may not be available");
+
+        // Check for GPU via glxinfo
+        if let Ok(output) = std::process::Command::new("glxinfo").arg("-B").output()
+            && output.status.success()
+        {
+            for line in String::from_utf8_lossy(&output.stdout).lines().take(5) {
+                tracing::info!("glxinfo: {}", line.trim());
+            }
+        }
+
+        // Check Vulkan ICDs
+        if let Ok(output) = std::process::Command::new("ls").arg("/usr/share/vulkan/icd.d/").output()
+            && output.status.success()
+        {
+            let icds = String::from_utf8_lossy(&output.stdout);
+            tracing::info!("Vulkan ICDs: {}", icds.trim());
+        }
+        if let Ok(output) = std::process::Command::new("ls").arg("/etc/vulkan/icd.d/").output()
+            && output.status.success()
+        {
+            let icds = String::from_utf8_lossy(&output.stdout);
+            tracing::info!("Vulkan ICDs (etc): {}", icds.trim());
+        }
     }
 
-    // Check for GPU
-    if let Ok(output) = std::process::Command::new("glxinfo").arg("-B").output()
-        && output.status.success()
+    #[cfg(target_os = "windows")]
     {
-        for line in String::from_utf8_lossy(&output.stdout).lines().take(5) {
-            tracing::info!("glxinfo: {}", line.trim());
-        }
+        tracing::info!("Platform: Windows (GPU diagnostics via DirectX)");
     }
 
-    // Check wgpu available adapters (quick test)
-    if let Ok(output) = std::process::Command::new("ls").arg("/usr/share/vulkan/icd.d/").output()
-        && output.status.success()
+    #[cfg(target_os = "macos")]
     {
-        let icds = String::from_utf8_lossy(&output.stdout);
-        tracing::info!("Vulkan ICDs: {}", icds.trim());
-    }
-    if let Ok(output) = std::process::Command::new("ls").arg("/etc/vulkan/icd.d/").output()
-        && output.status.success()
-    {
-        let icds = String::from_utf8_lossy(&output.stdout);
-        tracing::info!("Vulkan ICDs (etc): {}", icds.trim());
+        if let Ok(output) = std::process::Command::new("system_profiler")
+            .args(["SPDisplaysDataType"])
+            .output()
+        {
+            let info = String::from_utf8_lossy(&output.stdout);
+            for line in info.lines().take(10) {
+                tracing::info!("GPU: {}", line.trim());
+            }
+        }
     }
 }

@@ -109,6 +109,41 @@ impl PlatformOps for LinuxPlatform {
     fn super_key_name(&self) -> &'static str {
         "Super"
     }
+
+    fn shell_command(&self, cmd: &str) -> Vec<String> {
+        vec!["sh".into(), "-c".into(), cmd.into()]
+    }
+
+    fn clipboard_copy(&self, text: &str) -> bool {
+        use std::process::Stdio;
+        // Try Wayland first (wl-copy), then X11 (xclip), then xsel
+        std::process::Command::new("wl-copy")
+            .arg(text)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok()
+            .map(|s| s.success())
+            .unwrap_or(false)
+            || std::process::Command::new("xclip")
+                .args(["-selection", "clipboard"])
+                .arg(text)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .ok()
+                .map(|s| s.success())
+                .unwrap_or(false)
+            || std::process::Command::new("xsel")
+                .args(["--clipboard", "--input"])
+                .arg(text)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .ok()
+                .map(|s| s.success())
+                .unwrap_or(false)
+    }
 }
 
 #[cfg(test)]
@@ -177,5 +212,17 @@ mod tests {
     #[test]
     fn test_linux_file_open_dialog_no_panic() {
         let _ = LinuxPlatform.file_open_dialog("Open", &[]);
+    }
+
+    #[test]
+    fn test_linux_shell_command() {
+        let cmd = LinuxPlatform.shell_command("echo hello");
+        assert_eq!(cmd, vec!["sh", "-c", "echo hello"]);
+    }
+
+    #[test]
+    fn test_linux_clipboard_copy_no_panic() {
+        // May fail if no clipboard tool installed, but must not panic
+        let _ = LinuxPlatform.clipboard_copy("test");
     }
 }

@@ -42,7 +42,7 @@ impl ContentScriptManager {
     ) -> Self {
         let scripts_dir = directories::ProjectDirs::from("com", "aileron", "Aileron")
             .map(|dirs| dirs.config_dir().join("scripts"))
-            .unwrap_or_else(|| PathBuf::from("~/.config/aileron/scripts"));
+            .unwrap_or_else(|| crate::platform::paths::config_dir().join("scripts"));
 
         let mut manager = Self {
             scripts: Vec::new(),

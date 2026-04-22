@@ -59,7 +59,7 @@ const DEFAULT_TRACKING_DOMAINS: &[&str] = &[
 pub fn config_dir() -> PathBuf {
     directories::ProjectDirs::from("com", "aileron", "Aileron")
         .map(|dirs| dirs.config_dir().to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("~/.config/aileron"))
+        .unwrap_or_else(crate::platform::paths::config_dir)
 }
 
 pub fn https_safe_list_path() -> PathBuf {

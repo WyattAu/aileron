@@ -189,16 +189,50 @@ fn import_firefox_history(db: &rusqlite::Connection, places_path: &std::path::Pa
 /// Import bookmarks and history from Chrome.
 /// Returns a status message describing what was imported.
 pub fn import_chrome(db: &rusqlite::Connection) -> String {
-    let home = match std::env::var("HOME") {
-        Ok(h) => h,
-        Err(_) => return "Cannot determine HOME directory".into(),
+    let chrome_dirs: Vec<std::path::PathBuf> = {
+        #[cfg(target_os = "windows")]
+        {
+            let local = std::env::var("LOCALAPPDATA")
+                .unwrap_or_else(|_| r"C:\Users\Default\AppData\Local".into());
+            vec![
+                std::path::PathBuf::from(&local).join("Google").join("Chrome").join("User Data").join("Default"),
+                std::path::PathBuf::from(&local).join("Chromium").join("User Data").join("Default"),
+            ]
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+            vec![
+                std::path::PathBuf::from(&home).join("Library").join("Application Support").join("Google").join("Chrome").join("Default"),
+                std::path::PathBuf::from(&home).join("Library").join("Application Support").join("Chromium").join("Default"),
+            ]
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+            vec![
+                std::path::PathBuf::from(&home).join(".config").join("google-chrome").join("Default"),
+                std::path::PathBuf::from(&home).join(".config").join("chromium").join("Default"),
+                std::path::PathBuf::from(&home).join(".var").join("app").join("com.google.Chrome").join("config").join("google-chrome").join("Default"),
+            ]
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        {
+            vec![]
+        }
     };
 
-    let chrome_dir = std::path::Path::new(&home)
-        .join(".config/google-chrome/Default");
-    if !chrome_dir.exists() {
-        return "Chrome data not found (~/.config/google-chrome/Default)".into();
+    let mut chrome_dir = None;
+    for dir in &chrome_dirs {
+        if dir.exists() {
+            chrome_dir = Some(dir.clone());
+            break;
+        }
     }
+    let chrome_dir = match chrome_dir {
+        Some(d) => d,
+        None => return "Chrome data not found (checked standard paths for your platform)".into(),
+    };
 
     let bookmarks_path = chrome_dir.join("Bookmarks");
     let history_path = chrome_dir.join("History");

@@ -51,6 +51,22 @@ impl PlatformOps for MacOSPlatform {
     fn super_key_name(&self) -> &'static str {
         "Cmd"
     }
+
+    fn shell_command(&self, cmd: &str) -> Vec<String> {
+        vec!["sh".into(), "-c".into(), cmd.into()]
+    }
+
+    fn clipboard_copy(&self, text: &str) -> bool {
+        use std::process::Stdio;
+        std::process::Command::new("pbcopy")
+            .arg(text)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
 }
 
 #[cfg(test)]
@@ -121,5 +137,16 @@ mod tests {
     #[test]
     fn test_macos_show_notification_no_panic() {
         MacOSPlatform.show_notification("test", "body");
+    }
+
+    #[test]
+    fn test_macos_shell_command() {
+        let cmd = MacOSPlatform.shell_command("echo hello");
+        assert_eq!(cmd, vec!["sh", "-c", "echo hello"]);
+    }
+
+    #[test]
+    fn test_macos_clipboard_copy_no_panic() {
+        let _ = MacOSPlatform.clipboard_copy("test");
     }
 }

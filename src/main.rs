@@ -1951,6 +1951,7 @@ fn main() -> anyhow::Result<()> {
     // NVIDIA's Wayland EGL doesn't provide GL through the GDK Wayland backend,
     // causing "GDK is not able to create a GL context" → SIGTRAP.
     // We do NOT remove WAYLAND_DISPLAY so winit continues using Wayland directly.
+    #[cfg(target_os = "linux")]
     if std::env::var("WAYLAND_DISPLAY").is_ok() {
         info!("Wayland detected — forcing GDK_BACKEND=x11 for GTK/WebKitGTK GL context");
         unsafe {
@@ -1962,6 +1963,7 @@ fn main() -> anyhow::Result<()> {
     // "Failed to create GBM buffer" which causes the offscreen pixbuf
     // to remain empty (no visual content rendered).
     // Falls back to the shared GL texture path which works on all GPUs.
+    #[cfg(target_os = "linux")]
     unsafe {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
@@ -1972,6 +1974,7 @@ fn main() -> anyhow::Result<()> {
     // than just a blank GL proxy surface. Without this, GPU-accelerated
     // WebKitGTK renders web content into an OpenGL texture that pixbuf()
     // cannot see — only the GTK widget background is captured.
+    #[cfg(target_os = "linux")]
     unsafe {
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
     }

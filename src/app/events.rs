@@ -276,23 +276,7 @@ impl AppState {
                         && let Some(url) = engine.current_url()
                     {
                         let url_str = url.to_string();
-                        let copied = std::process::Command::new("wl-copy")
-                            .arg(&url_str)
-                            .stdout(std::process::Stdio::null())
-                            .stderr(std::process::Stdio::null())
-                            .status()
-                            .ok()
-                            .map(|s| s.success())
-                            .unwrap_or(false)
-                            || std::process::Command::new("xclip")
-                                .args(["-selection", "clipboard"])
-                                .arg(&url_str)
-                                .stdout(std::process::Stdio::null())
-                                .stderr(std::process::Stdio::null())
-                                .status()
-                                .ok()
-                                .map(|s| s.success())
-                                .unwrap_or(false);
+                        let copied = crate::platform::platform().clipboard_copy(&url_str);
                         if copied {
                             let display = if url_str.len() > 60 {
                                 format!("{}...", &url_str[..57])
@@ -302,7 +286,7 @@ impl AppState {
                             self.status_message = format!("Copied: {}", display);
                         } else {
                             self.status_message =
-                                "Clipboard: install wl-clipboard or xclip".into();
+                                "Clipboard: no clipboard tool available".into();
                         }
                     }
                 }

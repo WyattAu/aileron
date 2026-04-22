@@ -274,7 +274,7 @@ enum ParsedFilter {
 pub fn filter_list_dir() -> PathBuf {
     directories::ProjectDirs::from("com", "aileron", "Aileron")
         .map(|dirs| dirs.config_dir().join("filter_lists"))
-        .unwrap_or_else(|| PathBuf::from("~/.config/aileron/filter_lists"))
+        .unwrap_or_else(|| crate::platform::paths::config_dir().join("filter_lists"))
 }
 
 pub fn ensure_filter_list_dir() -> PathBuf {

@@ -1,4 +1,5 @@
 use tracing::{info, warn};
+use open::that as open_that;
 use crate::app::WryAction;
 use crate::downloads::DownloadProgress;
 use crate::extensions::ExtensionId;
@@ -105,9 +106,7 @@ impl AppState {
                 self.status_message = "Usage: :pdf <path-or-url>".into();
                 return;
             }
-            std::process::Command::new("xdg-open")
-                .arg(path)
-                .spawn()
+            open_that(path)
                 .map_err(|e| self.status_message = format!("!{}", e))
                 .ok();
             self.status_message = format!("Opening PDF: {}", path);
@@ -509,7 +508,10 @@ impl AppState {
                 self.status_message = "Usage: !<command>".into();
                 return;
             }
-            match std::process::Command::new("sh").args(["-c", cmd]).output() {
+            let shell_cmd = crate::platform::platform().shell_command(cmd);
+            let shell = &shell_cmd[0];
+            let args = &shell_cmd[1..];
+            match std::process::Command::new(shell).args(args).output() {
                 Ok(output) => {
                     let stdout =
                         String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -1055,11 +1057,7 @@ impl AppState {
                         Ok(id) => {
                             match crate::db::downloads::get_download_dest_path(db, id) {
                                 Ok(dest) => {
-                                    let _ = std::process::Command::new("xdg-open")
-                                        .arg(&dest)
-                                        .stdout(std::process::Stdio::null())
-                                        .stderr(std::process::Stdio::null())
-                                        .spawn();
+                                    let _ = open_that(&dest);
                                     self.status_message = format!("Opened: {}", dest);
                                 }
                                 Err(e) => self.status_message = format!("Error: {}", e),
@@ -1072,11 +1070,7 @@ impl AppState {
                 if let Some(db) = self.db.as_ref() {
                     match crate::db::downloads::get_download_dest_path(db, id) {
                         Ok(dest) => {
-                            let _ = std::process::Command::new("xdg-open")
-                                .arg(&dest)
-                                .stdout(std::process::Stdio::null())
-                                .stderr(std::process::Stdio::null())
-                                .spawn();
+                            let _ = open_that(&dest);
                             self.status_message = format!("Opened: {}", dest);
                         }
                         Err(e) => self.status_message = format!("Error: {}", e),
@@ -1093,11 +1087,7 @@ impl AppState {
             if let Some(downloads_dir) = directories::UserDirs::new()
                 .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
             {
-                let _ = std::process::Command::new("xdg-open")
-                    .arg(&downloads_dir)
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .spawn();
+                let _ = open_that(&downloads_dir);
                 self.status_message = format!("Opened: {}", downloads_dir.display());
             } else {
                 self.status_message = "Could not determine downloads directory".into();
@@ -1407,7 +1397,9 @@ impl AppState {
                 (pattern, ".")
             };
 
-            let output = if std::path::PathBuf::from("/usr/bin/rg").exists() {
+            let output = if std::path::PathBuf::from("/usr/bin/rg").exists()
+                || std::path::PathBuf::from("/usr/local/bin/rg").exists()
+            {
                 std::process::Command::new("rg")
                     .args(["--no-heading", "-n", "-i", pattern, search_path])
                     .output()

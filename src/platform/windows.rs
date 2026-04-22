@@ -52,6 +52,23 @@ impl PlatformOps for WindowsPlatform {
     fn super_key_name(&self) -> &'static str {
         "Win"
     }
+
+    fn shell_command(&self, cmd: &str) -> Vec<String> {
+        vec!["cmd".into(), "/c".into(), cmd.into()]
+    }
+
+    fn clipboard_copy(&self, text: &str) -> bool {
+        // Windows clipboard via PowerShell — reliable on all modern Windows
+        use std::process::Stdio;
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &format!("Set-Clipboard -Value '{}'", text.replace('\'', "''"))])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
 }
 
 #[cfg(test)]
@@ -122,5 +139,16 @@ mod tests {
     #[test]
     fn test_windows_show_notification_no_panic() {
         WindowsPlatform.show_notification("test", "body");
+    }
+
+    #[test]
+    fn test_windows_shell_command() {
+        let cmd = WindowsPlatform.shell_command("echo hello");
+        assert_eq!(cmd, vec!["cmd", "/c", "echo hello"]);
+    }
+
+    #[test]
+    fn test_windows_clipboard_copy_no_panic() {
+        let _ = WindowsPlatform.clipboard_copy("test");
     }
 }
