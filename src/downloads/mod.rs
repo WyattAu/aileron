@@ -1,7 +1,7 @@
 //! Download manager with progress tracking, pause/resume, and concurrent downloads.
 //!
-//! Built on top of the `trauma` crate for reliable HTTP downloads with resume support.
-//! Integrates with `crate::db::downloads` for persistence.
+//! Uses `reqwest` streaming with HTTP Range headers for reliable downloads
+//! with resume support. Integrates with `crate::db::downloads` for persistence.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
