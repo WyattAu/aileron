@@ -147,6 +147,34 @@ pub trait TabsApi: Send + Sync {
     fn on_activated(&self, callback: Box<dyn Fn(ActiveInfo) + Send + Sync>);
 }
 
+/// Provides tab state snapshots for the extensions Tabs API.
+///
+/// Implementations bridge the gap between the app's internal state
+/// (window manager, engines) and the extension-facing Tab model.
+pub trait TabProvider: Send + Sync {
+    /// List all tabs as Tab structs.
+    fn list_tabs(&self) -> Vec<Tab>;
+
+    /// Get the currently active tab ID, if any.
+    fn active_tab_id(&self) -> Option<TabId>;
+
+    /// Create a new tab with the given URL. Returns the new Tab.
+    fn create_tab(&self, url: url::Url) -> Result<Tab>;
+
+    /// Navigate an existing tab to a new URL.
+    fn navigate_tab(&self, tab_id: TabId, url: url::Url) -> Result<()>;
+
+    /// Close a tab by ID.
+    fn close_tab(&self, tab_id: TabId) -> Result<()>;
+
+    /// Send a message to a tab's content script. Returns response if any.
+    fn send_tab_message(
+        &self,
+        tab_id: TabId,
+        message: RuntimeMessage,
+    ) -> Result<Option<RuntimeMessage>>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

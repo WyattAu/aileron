@@ -167,6 +167,7 @@ impl ExtensionManager {
             manifest,
             self.content_script_registry.clone(),
             Some(self.storage_dir.clone()),
+            None, // tab_provider: wired via set_tab_provider() after construction
         );
         self.extensions.insert(id.clone(), api);
         Ok(id)
