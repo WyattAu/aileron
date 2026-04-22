@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::extensions::impls::AileronExtensionApi;
 use crate::extensions::manifest::ExtensionManifest;
+use crate::extensions::message_bus::MessageBus;
 use crate::extensions::scripting::{
     ExtensionContentScriptEntry, ExtensionContentScriptRegistry, ExtensionRunAt,
 };
@@ -13,6 +14,7 @@ pub struct ExtensionManager {
     extensions_dir: PathBuf,
     storage_dir: PathBuf,
     content_script_registry: ExtensionContentScriptRegistry,
+    message_bus: std::sync::Arc<MessageBus>,
 }
 
 impl ExtensionManager {
@@ -23,6 +25,7 @@ impl ExtensionManager {
             extensions_dir,
             storage_dir,
             content_script_registry: ExtensionContentScriptRegistry::new(),
+            message_bus: std::sync::Arc::new(MessageBus::new()),
         }
     }
 
@@ -168,6 +171,7 @@ impl ExtensionManager {
             self.content_script_registry.clone(),
             Some(self.storage_dir.clone()),
             None, // tab_provider: wired via set_tab_provider() after construction
+            Some(self.message_bus.clone()),
         );
         self.extensions.insert(id.clone(), api);
         Ok(id)
@@ -187,6 +191,11 @@ impl ExtensionManager {
 
     pub fn storage_dir(&self) -> &Path {
         &self.storage_dir
+    }
+
+    /// Get a reference to the shared message bus for external message routing.
+    pub fn message_bus(&self) -> &std::sync::Arc<MessageBus> {
+        &self.message_bus
     }
 }
 

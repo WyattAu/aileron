@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use url::Url;
 
 use crate::extensions::api::ExtensionApi;
 use crate::extensions::manifest::ExtensionManifest;
+use crate::extensions::message_bus::MessageBus;
 use crate::extensions::permissions::{self, Permission};
 use crate::extensions::runtime::{ConnectInfo, InstalledDetails, MessageSender, Port, RuntimeApi};
 use crate::extensions::scripting::{
@@ -465,7 +466,8 @@ impl StorageApi for AileronStorageApi {
 struct AileronRuntimeApi {
     extension_id: ExtensionId,
     manifest: ExtensionManifest,
-    message_callbacks: Mutex<Vec<MessageCallback>>,
+    message_bus: Option<Arc<MessageBus>>,
+    message_callbacks: Arc<Mutex<Vec<MessageCallback>>>,
     connect_callbacks: Mutex<Vec<ConnectCallback>>,
     installed_callbacks: Mutex<Vec<InstalledCallback>>,
     startup_callbacks: Mutex<Vec<StartupCallback>>,
@@ -476,7 +478,45 @@ impl AileronRuntimeApi {
         Self {
             extension_id,
             manifest,
-            message_callbacks: Mutex::new(Vec::new()),
+            message_bus: None,
+            message_callbacks: Arc::new(Mutex::new(Vec::new())),
+            connect_callbacks: Mutex::new(Vec::new()),
+            installed_callbacks: Mutex::new(Vec::new()),
+            startup_callbacks: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn with_message_bus(
+        extension_id: ExtensionId,
+        manifest: ExtensionManifest,
+        message_bus: Arc<MessageBus>,
+    ) -> Self {
+        let callbacks: Arc<Mutex<Vec<MessageCallback>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let cb_clone = callbacks.clone();
+
+        // Register a handler on the bus that invokes our stored callbacks
+        message_bus.register_handler(extension_id.clone(), Box::new(move |msg: RuntimeMessage| {
+            let cbs = cb_clone.lock().unwrap_or_else(|e| e.into_inner());
+            for cb in cbs.iter() {
+                let sender = crate::extensions::runtime::MessageSender {
+                    tab_id: None,
+                    frame_id: None,
+                    url: None,
+                    extension_id: None,
+                };
+                if let Some(response) = cb(msg.clone(), sender) {
+                    return Some(response);
+                }
+            }
+            None
+        }));
+
+        Self {
+            extension_id,
+            manifest,
+            message_bus: Some(message_bus),
+            message_callbacks: callbacks,
             connect_callbacks: Mutex::new(Vec::new()),
             installed_callbacks: Mutex::new(Vec::new()),
             startup_callbacks: Mutex::new(Vec::new()),
@@ -487,22 +527,32 @@ impl AileronRuntimeApi {
 impl RuntimeApi for AileronRuntimeApi {
     fn send_message(
         &self,
-        _extension_id: Option<ExtensionId>,
-        _message: RuntimeMessage,
+        target_id: Option<ExtensionId>,
+        message: RuntimeMessage,
     ) -> Result<Option<RuntimeMessage>> {
-        tracing::warn!(
-            target: "extensions",
-            "runtime.sendMessage not yet implemented"
-        );
-        Ok(None)
+        match &self.message_bus {
+            Some(bus) => {
+                let source = Some(&self.extension_id);
+                let target = target_id.as_ref();
+                Ok(bus.send_message(source, target, message))
+            }
+            None => {
+                tracing::warn!(
+                    target: "extensions",
+                    "runtime.sendMessage: no message bus (extension {})",
+                    self.extension_id.0
+                );
+                Ok(None)
+            }
+        }
     }
 
-    fn connect(&self, _connect_info: ConnectInfo) -> Result<Box<dyn Port>> {
-        tracing::warn!(
-            target: "extensions",
-            "runtime.connect not yet implemented"
+    fn connect(&self, connect_info: ConnectInfo) -> Result<Box<dyn Port>> {
+        let name = connect_info.name.unwrap_or_default();
+        let port: Box<dyn Port> = Box::new(
+            crate::extensions::message_bus::LocalPort::new(&name),
         );
-        Err(ExtensionError::Unsupported("runtime.connect".into()))
+        Ok(port)
     }
 
     fn get_manifest(&self) -> Result<ExtensionManifest> {
@@ -855,16 +905,17 @@ impl AileronExtensionApi {
         manifest: ExtensionManifest,
         registry: ExtensionContentScriptRegistry,
     ) -> Self {
-        Self::with_registry_and_storage(extension_id, manifest, registry, None, None)
+        Self::with_registry_and_storage(extension_id, manifest, registry, None, None, None)
     }
 
-    /// Full constructor with optional persistence and tab provider.
+    /// Full constructor with optional persistence, tab provider, and message bus.
     pub fn with_registry_and_storage(
         extension_id: ExtensionId,
         manifest: ExtensionManifest,
         registry: ExtensionContentScriptRegistry,
         storage_dir: Option<std::path::PathBuf>,
         tab_provider: Option<std::sync::Arc<dyn TabProvider>>,
+        message_bus: Option<Arc<MessageBus>>,
     ) -> Self {
         let storage_api = match storage_dir {
             Some(dir) => AileronStorageApi::with_persistence(dir, &extension_id),
@@ -874,13 +925,21 @@ impl AileronExtensionApi {
             Some(provider) => AileronTabsApi::with_provider(provider),
             None => AileronTabsApi::new(),
         };
+        let runtime_api = match message_bus {
+            Some(bus) => AileronRuntimeApi::with_message_bus(
+                extension_id.clone(),
+                manifest.clone(),
+                bus,
+            ),
+            None => AileronRuntimeApi::new(extension_id.clone(), manifest.clone()),
+        };
         let granted_permissions =
             permissions::parse_permissions(&manifest.permissions);
         let granted_host_permissions = manifest.host_permissions.clone();
         Self {
             tabs_api,
             storage_api,
-            runtime_api: AileronRuntimeApi::new(extension_id.clone(), manifest.clone()),
+            runtime_api,
             web_request_api: AileronWebRequestApi::new(),
             scripting_api: AileronScriptingApi::new(registry),
             extension_id,
@@ -1126,6 +1185,7 @@ mod tests {
             manifest,
             ExtensionContentScriptRegistry::new(),
             Some(dir.to_path_buf()),
+            None,
             None,
         )
     }
