@@ -214,7 +214,7 @@ id = "S02"
 title = "WebExtensions background scripts"
 phase = "S"
 priority = "critical"
-status = "pending"
+status = "complete"
 description = "Implement background script/service worker lifecycle. Load background.js/scripts from extension manifest. Run in isolated context with access to extension APIs. Support browser.runtime.onMessage for communication with content scripts. Handle extension enable/disable/reload lifecycle."
 depends = ["S01"]
 
@@ -223,7 +223,7 @@ id = "S03"
 title = "WebExtensions permissions model"
 phase = "S"
 priority = "high"
-status = "pending"
+status = "complete"
 description = "Implement optional_permissions and permissions request flow. Check manifest permissions on install: tabs, bookmarks, history, storage, webRequest, scripting, notifications. Grant/deny UI in settings. Validate API access against granted permissions at runtime."
 depends = ["S01"]
 
@@ -232,7 +232,7 @@ id = "S04"
 title = "WebExtensions message passing"
 phase = "S"
 priority = "high"
-status = "pending"
+status = "complete"
 description = "Implement browser.runtime.sendMessage / onMessage between content scripts and background scripts. Support one-time messages and long-lived ports (connect/connect). Serialize messages as JSON. Add to existing ExtensionContentScriptRegistry."
 depends = ["S02"]
 

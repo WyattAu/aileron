@@ -522,6 +522,46 @@ impl AileronRuntimeApi {
             startup_callbacks: Mutex::new(Vec::new()),
         }
     }
+
+    /// Fire all registered `on_installed` callbacks with the given details.
+    /// Called by the extension loader after successfully loading an extension.
+    fn fire_installed(&self, details: InstalledDetails) {
+        let cbs = self
+            .installed_callbacks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for cb in cbs.iter() {
+            cb(details.clone());
+        }
+        if !cbs.is_empty() {
+            tracing::debug!(
+                target: "extensions",
+                "Fired {} on_installed callback(s) for extension '{}'",
+                cbs.len(),
+                self.extension_id.0
+            );
+        }
+    }
+
+    /// Fire all registered `on_startup` callbacks.
+    /// Called by the extension loader during browser startup.
+    fn fire_startup(&self) {
+        let cbs = self
+            .startup_callbacks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for cb in cbs.iter() {
+            cb();
+        }
+        if !cbs.is_empty() {
+            tracing::debug!(
+                target: "extensions",
+                "Fired {} on_startup callback(s) for extension '{}'",
+                cbs.len(),
+                self.extension_id.0
+            );
+        }
+    }
 }
 
 impl RuntimeApi for AileronRuntimeApi {
@@ -889,6 +929,7 @@ pub struct AileronExtensionApi {
     scripting_api: AileronScriptingApi,
     granted_permissions: std::collections::HashSet<Permission>,
     granted_host_permissions: Vec<String>,
+    background_script: Option<crate::extensions::types::BackgroundScript>,
 }
 
 impl AileronExtensionApi {
@@ -946,6 +987,7 @@ impl AileronExtensionApi {
             manifest,
             granted_permissions,
             granted_host_permissions,
+            background_script: None,
         }
     }
 
@@ -996,6 +1038,29 @@ impl AileronExtensionApi {
     /// Get the set of granted host permissions.
     pub fn granted_host_permissions(&self) -> &[String] {
         &self.granted_host_permissions
+    }
+
+    /// Get the loaded background script, if any.
+    pub fn background_script(&self) -> Option<&crate::extensions::types::BackgroundScript> {
+        self.background_script.as_ref()
+    }
+
+    /// Set the background script (called during extension loading).
+    pub fn set_background_script(
+        &mut self,
+        script: crate::extensions::types::BackgroundScript,
+    ) {
+        self.background_script = Some(script);
+    }
+
+    /// Fire `on_installed` lifecycle callbacks (called by ExtensionManager after loading).
+    pub fn fire_installed(&self, details: InstalledDetails) {
+        self.runtime_api.fire_installed(details);
+    }
+
+    /// Fire `on_startup` lifecycle callbacks (called by ExtensionManager on browser startup).
+    pub fn fire_startup(&self) {
+        self.runtime_api.fire_startup();
     }
 
     pub fn extension_id(&self) -> &ExtensionId {

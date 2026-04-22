@@ -156,3 +156,12 @@ mod tests {
         assert!(err.is_err());
     }
 }
+
+/// Information about a loaded background script.
+#[derive(Debug, Clone)]
+pub struct BackgroundScript {
+    /// The script source code (JavaScript).
+    pub source: String,
+    /// The filename from the manifest (e.g., "background.js").
+    pub filename: String,
+}
