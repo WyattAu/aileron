@@ -299,8 +299,8 @@ id = "T01"
 title = "Mobile architecture design document"
 phase = "T"
 priority = "high"
-status = "pending"
-description = "Design mobile client architecture. Options: (A) Thin WebSocket client connecting to desktop Aileron, (B) Native mobile app with different UX, (C) Android-only with Termux-style terminal. Evaluate tradeoffs. Document in .specs/02_architecture/mobile_architecture.md. Decision: Aileron Remote Protocol (ARP) over WebSocket."
+status = "complete"
+description = "Design complete: Option A (ARP WebSocket) selected. Thin mobile client connecting to desktop via JSON-RPC 2.0 over WebSocket/TLS. Documented in .specs/02_architecture/mobile_architecture.md. Covers: architecture decision, ARP overview, mobile client structure (Android Kotlin+Compose, iOS Swift+SwiftUI), UI mockups, performance estimates, security model."
 depends = []
 
 [[task]]
@@ -308,8 +308,8 @@ id = "T02"
 title = "Aileron Remote Protocol (ARP) spec"
 phase = "T"
 priority = "high"
-status = "pending"
-description = "Design Aileron Remote Protocol: JSON-RPC over WebSocket. Operations: list_tabs, activate_tab, navigate, screenshot (low-res), terminal_input, terminal_output (stream), download_file, get_clipboard, search. Authentication: TLS + token. Rate limiting. Design in .specs/02_architecture/arp_protocol_spec.md."
+status = "complete"
+description = "Full ARP specification documented in .specs/02_architecture/arp_protocol_spec.md. JSON-RPC 2.0 over WebSocket/TLS. 20+ methods across tabs, terminal, downloads, clipboard, quickmarks. Server-push events with glob pattern matching. Rate limiting, authentication (256-bit token), session management. Wire protocol details, versioning, testing strategy."
 depends = ["T01"]
 
 [[task]]
