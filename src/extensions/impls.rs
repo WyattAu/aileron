@@ -6,6 +6,7 @@ use url::Url;
 
 use crate::extensions::api::ExtensionApi;
 use crate::extensions::manifest::ExtensionManifest;
+use crate::extensions::permissions::{self, Permission};
 use crate::extensions::runtime::{ConnectInfo, InstalledDetails, MessageSender, Port, RuntimeApi};
 use crate::extensions::scripting::{
     CssInjection, ExtensionContentScriptEntry, ExtensionContentScriptRegistry, ExtensionRunAt,
@@ -783,6 +784,8 @@ pub struct AileronExtensionApi {
     runtime_api: AileronRuntimeApi,
     web_request_api: AileronWebRequestApi,
     scripting_api: AileronScriptingApi,
+    granted_permissions: std::collections::HashSet<Permission>,
+    granted_host_permissions: Vec<String>,
 }
 
 impl AileronExtensionApi {
@@ -812,6 +815,9 @@ impl AileronExtensionApi {
             Some(dir) => AileronStorageApi::with_persistence(dir, &extension_id),
             None => AileronStorageApi::new(),
         };
+        let granted_permissions =
+            permissions::parse_permissions(&manifest.permissions);
+        let granted_host_permissions = manifest.host_permissions.clone();
         Self {
             tabs_api: AileronTabsApi::new(),
             storage_api,
@@ -820,7 +826,58 @@ impl AileronExtensionApi {
             scripting_api: AileronScriptingApi::new(registry),
             extension_id,
             manifest,
+            granted_permissions,
+            granted_host_permissions,
         }
+    }
+
+    /// Check if the extension has a specific permission.
+    pub fn has_permission(&self, permission: &str) -> bool {
+        let perm = Permission::parse(permission);
+        self.granted_permissions.contains(&perm)
+    }
+
+    /// Check if an API call is allowed based on manifest permissions.
+    pub fn check_api_permission(&self, api: &str, method: &str) -> Result<()> {
+        if permissions::check_permission(&self.granted_permissions, api, method) {
+            Ok(())
+        } else {
+            let required = permissions::required_permissions(api, method);
+            let names: Vec<String> = required.iter().map(|p| format!("{:?}", p)).collect();
+            Err(ExtensionError::PermissionDenied(format!(
+                "Extension '{}' requires permission '{}' for {}.{}",
+                self.extension_id.0,
+                names.join(", "),
+                api,
+                method
+            )))
+        }
+    }
+
+    /// Check if a URL matches any of the extension's granted host permissions.
+    pub fn has_host_permission(&self, url: &str) -> bool {
+        if self.granted_host_permissions.iter().any(|p| p == "<all_urls>") {
+            return true;
+        }
+        self.granted_host_permissions
+            .iter()
+            .any(|p| permissions::host_permission_matches(p, url))
+    }
+
+    /// Grant an additional permission (for optional_permissions flow).
+    pub fn grant_permission(&mut self, permission: &str) {
+        let perm = Permission::parse(permission);
+        self.granted_permissions.insert(perm);
+    }
+
+    /// Get the set of granted permissions.
+    pub fn granted_permissions(&self) -> &std::collections::HashSet<Permission> {
+        &self.granted_permissions
+    }
+
+    /// Get the set of granted host permissions.
+    pub fn granted_host_permissions(&self) -> &[String] {
+        &self.granted_host_permissions
     }
 
     pub fn extension_id(&self) -> &ExtensionId {
