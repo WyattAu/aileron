@@ -195,7 +195,7 @@ fn test_dispatch_scroll_actions_are_wry_effects() {
 fn test_app_state_keybinding_routing_opens_palette() {
     let viewport = test_viewport();
     let mut state = AppState::new(viewport, Config::default()).unwrap();
-    assert!(!state.command_palette_open);
+    assert!(!state.palette.open);
 
     let event = KeyEvent {
         key: Key::Character('p'),
@@ -205,7 +205,7 @@ fn test_app_state_keybinding_routing_opens_palette() {
     state.process_key_event(event);
 
     assert!(
-        state.command_palette_open,
+        state.palette.open,
         "Ctrl+P should open the command palette via keybinding routing"
     );
 }
@@ -261,7 +261,7 @@ fn test_app_state_command_palette_quit() {
         modifiers: Modifiers::ctrl(),
         physical_key: None,
     });
-    assert!(state.command_palette_open);
+    assert!(state.palette.open);
 
     // Type 'q' into the palette
     state.process_key_event(KeyEvent {

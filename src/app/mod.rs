@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use tracing::{info, warn};
 
+pub mod cmd;
 pub mod commands;
 pub mod dispatch;
 pub mod events;
@@ -80,6 +81,9 @@ pub enum WryAction {
     Print,
     /// Toggle mute on the active pane (pause/mute media elements).
     ToggleMute,
+    /// Capture the current scroll fraction via JS and send it back via IPC.
+    /// Used by the mark-set feature to record the actual scroll position.
+    CaptureScrollFraction,
 }
 
 pub struct AppState {
@@ -87,7 +91,6 @@ pub struct AppState {
     pub mode: Mode,
     pub keybindings: KeybindingRegistry,
     pub should_quit: bool,
-    pub command_palette_open: bool,
     pub command_palette_input: String,
     /// Find-in-page bar state.
     pub find_bar_open: bool,
@@ -165,6 +168,14 @@ pub struct AppState {
     /// Some('g') means "waiting for mark letter to go to".
     pending_mark_action: Option<char>,
 
+    /// Pending mark-set letter. Set when user presses `m` then a letter.
+    /// The JS callback will store the actual scroll fraction once received.
+    pub pending_mark_set: Option<char>,
+
+    /// Pending scroll-to-mark fraction. Set when user jumps to a mark.
+    /// The render loop consumes this to scroll the webview.
+    pub pending_mark_jump: Option<f64>,
+
     /// ID of the previously active pane, for tab-swap.
     last_active_pane_id: Option<uuid::Uuid>,
 
@@ -203,7 +214,6 @@ impl AppState {
         let mode = Mode::Normal;
         let mut keybindings = KeybindingRegistry::default();
         let should_quit = false;
-        let command_palette_open = false;
         let command_palette_input = String::new();
         let find_bar_open = false;
         let find_query = String::new();
@@ -305,12 +315,18 @@ impl AppState {
             }
         };
 
+        // Load quickmarks from database
+        let quickmarks = if let Some(ref conn) = db {
+            crate::db::quickmarks::load_quickmarks(conn).unwrap_or_default()
+        } else {
+            std::collections::HashMap::new()
+        };
+
         Ok(Self {
             wm,
             mode,
             keybindings,
             should_quit,
-            command_palette_open,
             command_palette_input,
             find_bar_open,
             find_query,
@@ -337,9 +353,11 @@ impl AppState {
             pending_tab_close: None,
             pending_new_window: false,
             pending_detach_url: None,
-            quickmarks: std::collections::HashMap::new(),
+            quickmarks,
             marks: std::collections::HashMap::new(),
             pending_mark_action: None,
+            pending_mark_set: None,
+            pending_mark_jump: None,
             last_active_pane_id: None,
             last_auto_save: std::time::Instant::now(),
             session_dirty: false,
@@ -354,6 +372,26 @@ impl AppState {
                     .unwrap_or_else(|| std::path::PathBuf::from("./Downloads")),
             ),
         })
+    }
+
+    /// Store a scroll mark fraction for a pane. Called from the IPC handler
+    /// when the webview reports its scroll position back to Rust.
+    pub fn store_mark_fraction(&mut self, pane_id: uuid::Uuid, mark: char, fraction: f64) {
+        self.marks
+            .entry(pane_id)
+            .or_default()
+            .insert(mark, fraction);
+    }
+
+    /// Load persisted scroll marks from the database for a given URL into the
+    /// in-memory pane marks. Called when a page finishes loading.
+    pub fn load_scroll_marks_for_pane(&mut self, pane_id: uuid::Uuid, url: &str) {
+        if let Some(ref conn) = self.db
+            && let Ok(db_marks) = crate::db::scroll_marks::load_scroll_marks_for_url(conn, url)
+            && !db_marks.is_empty()
+        {
+            self.marks.entry(pane_id).or_default().extend(db_marks);
+        }
     }
 
     fn db_path() -> Result<PathBuf> {
@@ -377,40 +415,40 @@ mod tests {
 
     #[test]
     fn test_looks_like_url_with_scheme() {
-        assert!(AppState::looks_like_url("https://example.com"));
-        assert!(AppState::looks_like_url("http://example.com"));
-        assert!(AppState::looks_like_url("aileron://welcome"));
-        assert!(AppState::looks_like_url("ftp://files.example.com"));
+        assert!(crate::app::cmd::util::looks_like_url("https://example.com"));
+        assert!(crate::app::cmd::util::looks_like_url("http://example.com"));
+        assert!(crate::app::cmd::util::looks_like_url("aileron://welcome"));
+        assert!(crate::app::cmd::util::looks_like_url("ftp://files.example.com"));
     }
 
     #[test]
     fn test_looks_like_url_bare_domain() {
-        assert!(AppState::looks_like_url("example.com"));
-        assert!(AppState::looks_like_url("www.google.com"));
-        assert!(AppState::looks_like_url("rust-lang.org"));
-        assert!(AppState::looks_like_url("sub.domain.example.org"));
+        assert!(crate::app::cmd::util::looks_like_url("example.com"));
+        assert!(crate::app::cmd::util::looks_like_url("www.google.com"));
+        assert!(crate::app::cmd::util::looks_like_url("rust-lang.org"));
+        assert!(crate::app::cmd::util::looks_like_url("sub.domain.example.org"));
     }
 
     #[test]
     fn test_looks_like_url_rejects_non_urls() {
-        assert!(!AppState::looks_like_url("quit"));
-        assert!(!AppState::looks_like_url("vs"));
-        assert!(!AppState::looks_like_url(""));
-        assert!(!AppState::looks_like_url("hello world"));
+        assert!(!crate::app::cmd::util::looks_like_url("quit"));
+        assert!(!crate::app::cmd::util::looks_like_url("vs"));
+        assert!(!crate::app::cmd::util::looks_like_url(""));
+        assert!(!crate::app::cmd::util::looks_like_url("hello world"));
         // "file.txt" looks like a domain (bare domain detection is intentionally permissive)
     }
 
     #[test]
     fn test_looks_like_url_bare_domain_with_path() {
         // Contains '/' so won't match bare domain rule, but doesn't have ://
-        assert!(!AppState::looks_like_url("example.com/path")); // no scheme
+        assert!(!crate::app::cmd::util::looks_like_url("example.com/path")); // no scheme
     }
 
     #[test]
     fn test_looks_like_url_edge_cases() {
-        assert!(!AppState::looks_like_url("a.b")); // TLD "b" is only 1 char
-        assert!(!AppState::looks_like_url(".com")); // starts with dot, first part empty
-        assert!(!AppState::looks_like_url("example.")); // trailing dot, last part empty
+        assert!(!crate::app::cmd::util::looks_like_url("a.b")); // TLD "b" is only 1 char
+        assert!(!crate::app::cmd::util::looks_like_url(".com")); // starts with dot, first part empty
+        assert!(!crate::app::cmd::util::looks_like_url("example.")); // trailing dot, last part empty
     }
 
     #[test]
@@ -490,8 +528,13 @@ mod tests {
         assert!(state.pending_mark_action.is_none());
         assert_eq!(state.status_message, "Mark a set");
 
-        let active_id = state.wm.active_pane_id();
-        assert!(state.marks.get(&active_id).unwrap().contains_key(&'a'));
+        // The mark is stored asynchronously via IPC. Verify the pending state
+        // and that a CaptureScrollFraction action was queued.
+        assert_eq!(state.pending_mark_set, Some('a'));
+        assert!(state.pending_wry_actions.iter().any(|a| matches!(
+            a,
+            WryAction::CaptureScrollFraction
+        )));
     }
 
     #[test]

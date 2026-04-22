@@ -136,6 +136,20 @@ pub fn process_wry_action(
                 pane.execute_js(&js);
             }
         }
+        crate::app::WryAction::CaptureScrollFraction => {
+            // Execute JS that computes the scroll fraction and sends it back via IPC.
+            // The IPC handler in frame_tasks.rs stores it in AppState.marks.
+            let js = r#"(function(){
+                var h = document.documentElement.scrollHeight || document.body.scrollHeight || 1;
+                var y = window.scrollY || window.pageYOffset || 0;
+                window.ipc.postMessage(JSON.stringify({t:'scroll-fraction', frac: y/h}));
+            })()"#;
+            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                wry_pane.execute_js(js);
+            } else if let Some(pane) = offscreen_panes.get(&active_id) {
+                pane.execute_js(js);
+            }
+        }
         crate::app::WryAction::RunJs(js) => {
             if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
                 wry_pane.execute_js(&js);

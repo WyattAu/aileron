@@ -25,16 +25,16 @@ impl AppState {
                 let action = self.palette.handle_input(&key_str);
                 match action {
                     PaletteAction::ItemSelected(item) => {
-                        self.command_palette_open = false;
+                        self.palette.close();
                         self.command_palette_input.clear();
                         self.execute_palette_selection(&item);
                     }
                     PaletteAction::Closed => {
-                        self.command_palette_open = false;
+                        self.palette.close();
                         self.command_palette_input.clear();
                     }
                     PaletteAction::QuerySubmit(query) => {
-                        self.command_palette_open = false;
+                        self.palette.close();
                         self.command_palette_input.clear();
                         self.handle_raw_command(&query);
                     }
@@ -54,16 +54,21 @@ impl AppState {
             let active_id = self.wm.active_pane_id();
             match action {
                 's' => {
-                    self.marks.entry(active_id).or_default().insert(*c, 0.5);
+                    // Store the pending mark letter; JS will send the actual
+                    // scroll fraction via IPC, which is handled in frame_tasks.rs.
+                    self.pending_mark_set = Some(*c);
+                    self.pending_wry_actions.push_back(WryAction::CaptureScrollFraction);
                     self.status_message = format!("Mark {} set", c);
                 }
                 'g' => {
-                    if self
+                    if let Some(frac) = self
                         .marks
                         .get(&active_id)
                         .and_then(|m| m.get(c))
-                        .is_some()
+                        .copied()
                     {
+                        // Set a pending scroll target; the main loop will apply it.
+                        self.pending_mark_jump = Some(frac);
                         self.status_message = format!("Mark {} jumped", c);
                     } else {
                         self.status_message = format!("Mark {} not set", c);
@@ -124,7 +129,7 @@ impl AppState {
                 } else if event.key == Key::Enter {
                     let input = self.command_palette_input.clone();
                     self.execute_command(&input);
-                    self.command_palette_open = false;
+                    self.palette.close();
                     self.command_palette_input.clear();
                 }
             }
@@ -162,7 +167,6 @@ impl AppState {
                     // Refresh items before opening so recent history/bookmarks are current
                     self.refresh_palette_items();
                     self.palette.open();
-                    self.command_palette_open = true;
                     self.command_palette_input.clear();
                     self.status_message = "Command palette".into();
                 }
@@ -248,7 +252,7 @@ impl AppState {
                 ActionEffect::ToggleLinkHints => {
                     self.hint_mode = !self.hint_mode;
                     if self.hint_mode {
-                        self.status_message = "Link hints: type number, Escape to cancel".into();
+                        self.status_message = "Link hints: type letters, Escape to cancel".into();
                     } else {
                         self.status_message.clear();
                     }

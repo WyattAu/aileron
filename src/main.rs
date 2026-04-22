@@ -19,6 +19,7 @@ use aileron::terminal::NativeTerminalManager;
 use aileron::ui::panels;
 use aileron::wm::Rect;
 
+mod bootstrap;
 mod frame_tasks;
 
 /// Custom X11 error handler that swallows GLXBadWindow errors.
@@ -84,6 +85,9 @@ struct AileronApp {
     /// Tracks whether the first frame has rendered (for startup timing).
     first_frame: bool,
 
+    /// Frame counter for diagnostics.
+    frame_count: u64,
+
     /// Instant when the app was created (for startup timing).
     startup_start: std::time::Instant,
 
@@ -148,6 +152,7 @@ impl AileronApp {
             last_git_poll: std::time::Instant::now(),
             popup: PopupManager::new(),
             first_frame: true,
+            frame_count: 0,
             startup_start: std::time::Instant::now(),
             offscreen_panes: OffscreenWebViewManager::new(),
             offscreen_mouse_pressed: false,
@@ -701,10 +706,12 @@ impl AileronApp {
     /// 1. Call capture_frame() to read pixels from the offscreen GTK buffer
     /// 2. Convert BGRA→RGBA
     /// 3. Create or update an egui TextureId
+    ///
+    /// Returns true if any texture was updated (caller should request repaint).
     #[cfg(target_os = "linux")]
-    fn update_webview_textures(&mut self) {
+    fn update_webview_textures(&mut self) -> bool {
         if self.offscreen_panes.is_empty() {
-            return;
+            return false;
         }
 
         let capture_interval = self.adaptive_quality.capture_interval_ms();
@@ -725,8 +732,14 @@ impl AileronApp {
                 .offscreen_last_capture
                 .get(id)
                 .copied()
-                .unwrap_or_else(std::time::Instant::now);
-            if pane.is_dirty() && last.elapsed() >= std::time::Duration::from_millis(capture_interval as u64) {
+                .unwrap_or_else(|| std::time::Instant::now() - std::time::Duration::from_secs(10));
+            let dirty = pane.is_dirty();
+            let elapsed = last.elapsed();
+            if dirty && elapsed >= std::time::Duration::from_millis(capture_interval as u64) {
+                tracing::debug!(
+                    "capture: pane {} dirty={} elapsed={:?}",
+                    &id.to_string()[..8], dirty, elapsed,
+                );
                 if pane.capture_frame().is_some()
                     && let Some(rgba) = pane.frame_rgba()
                 {
@@ -737,6 +750,7 @@ impl AileronApp {
             }
         }
 
+        let mut updated = false;
         for (pane_id, rgba, width, height) in dirty_data {
             let color_image =
                 egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &rgba);
@@ -766,7 +780,9 @@ impl AileronApp {
                     self.webview_texture_handles.insert(pane_id, handle);
                 }
             }
+            updated = true;
         }
+        updated
     }
 }
 
@@ -922,6 +938,10 @@ impl ApplicationHandler for AileronApp {
 
             WindowEvent::RedrawRequested => {
                 let frame_start = std::time::Instant::now();
+                self.frame_count += 1;
+                if self.frame_count <= 3 || self.frame_count.is_multiple_of(300) {
+                    info!("Render frame #{}", self.frame_count);
+                }
                 self.render();
                 let frame_time = frame_start.elapsed();
                 let frame_time_ms = frame_time.as_secs_f64() * 1000.0;
@@ -973,56 +993,55 @@ impl ApplicationHandler for AileronApp {
                 };
 
                 if let Some(app_state) = &mut self.app_state {
-                    // ─── Hint mode: intercept digit keys to follow hinted links ───
+                    // ─── Hint mode: intercept letter keys to follow hinted links ───
                     if app_state.hint_mode {
                         match &key {
-                            aileron::input::Key::Character(c) if c.is_ascii_digit() => {
+                            aileron::input::Key::Character(c) if c.is_ascii_lowercase() => {
                                 app_state.hint_buffer.push(*c);
-                                // Try to click the hinted element
                                 let hint_buf = app_state.hint_buffer.clone();
+                                // Use IPC to get click feedback for auto-exit
                                 let js = format!(
                                     "(function() {{ \
                                         var el = document.querySelector('[data-aileron-hint=\"{}\"]'); \
-                                        if (el) {{ el.click(); return 'clicked'; }} \
+                                        if (el) {{ el.click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
                                         var all = document.querySelectorAll('[data-aileron-hint]'); \
                                         var matches = []; \
                                         all.forEach(function(e) {{ \
                                             if (e.getAttribute('data-aileron-hint').startsWith('{}')) matches.push(e); \
                                         }}); \
-                                        if (matches.length === 1) {{ matches[0].click(); return 'clicked'; }} \
-                                        return 'typing'; \
+                                        if (matches.length === 1) {{ matches[0].click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
                                     }})()",
                                     hint_buf, hint_buf
                                 );
                                 let active_id = app_state.wm.active_pane_id();
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                     wry_pane.execute_js(&js);
-                                    // We can't get the return value from execute_js (it's fire-and-forget),
-                                    // so we clear hints when the buffer length would be unambiguous enough
-                                    // The JS handles click logic internally; we exit hint mode after a short delay
-                                    // or on Escape/non-digit key.
+                                } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                                    pane.execute_js(&js);
+                                    pane.mark_dirty();
                                 }
                                 return;
                             }
                             _ => {
-                                // Any non-digit key exits hint mode
+                                // Any non-letter key exits hint mode
                                 let active_id = app_state.wm.active_pane_id();
                                 app_state.hint_mode = false;
                                 app_state.hint_buffer.clear();
-                                // Inline clear_hints to avoid self borrow conflict
-                                // (self.app_state mut + self.wry_panes immut can't coexist through &mut ref)
+                                app_state.status_message.clear();
+                                let clear_js = r#"
+                                    (function() {
+                                        var style = document.getElementById('__aileron_hints');
+                                        if (style) style.remove();
+                                        document.querySelectorAll('[data-aileron-hint]').forEach(el => {
+                                            el.removeAttribute('data-aileron-hint');
+                                        });
+                                    })();
+                                "#;
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
-                                    wry_pane.execute_js(
-                                        r#"
-                                        (function() {
-                                            var style = document.getElementById('__aileron_hints');
-                                            if (style) style.remove();
-                                            document.querySelectorAll('[data-aileron-hint]').forEach(el => {
-                                                el.removeAttribute('data-aileron-hint');
-                                            });
-                                        })();
-                                        "#,
-                                    );
+                                    wry_pane.execute_js(clear_js);
+                                } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                                    pane.execute_js(clear_js);
+                                    pane.mark_dirty();
                                 }
                                 return;
                             }
@@ -1616,6 +1635,21 @@ impl ApplicationHandler for AileronApp {
 
         frame_tasks::poll_terminal_output(&mut self.terminal_manager);
 
+        // Handle pending mark jumps (scroll to stored position).
+        if let Some(app_state) = &mut self.app_state
+            && let Some(frac) = app_state.pending_mark_jump.take()
+        {
+            let active_id = app_state.wm.active_pane_id();
+            if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                let js = format!(
+                    "window.scrollTo(0, document.documentElement.scrollHeight * {})",
+                    frac
+                );
+                pane.execute_js(&js);
+                pane.mark_dirty();
+            }
+        }
+
         self.reposition_all_panes();
         frame_tasks::pump_gtk_loop();
 
@@ -1623,11 +1657,18 @@ impl ApplicationHandler for AileronApp {
         self.drain_pending_pane_creates();
 
         // Architecture B: capture dirty offscreen frames and update egui textures.
-        self.update_webview_textures();
+        let textures_updated = self.update_webview_textures();
 
+        // Request redraw if:
+        // 1. egui explicitly requested a repaint (UI interaction), OR
+        // 2. A webview texture was updated (new frame from offscreen webview), OR
+        // 3. We have offscreen panes (continuous repaint for async web content)
         if let Some(winit_state) = &self.egui_winit {
             let egui_ctx = winit_state.egui_ctx();
-            if egui_ctx.has_requested_repaint()
+            let needs_repaint = egui_ctx.has_requested_repaint()
+                || textures_updated
+                || !self.offscreen_panes.is_empty();
+            if needs_repaint
                 && let Some(window) = &self.window
             {
                 window.request_redraw();
@@ -1866,7 +1907,7 @@ mod tests {
 
 fn main() -> anyhow::Result<()> {
     // Install panic hook BEFORE anything else — writes crash report to file
-    install_panic_hook();
+    bootstrap::install_panic_hook();
 
     // Initialize tracing to both stderr AND a log file
     let log_dir = directories::ProjectDirs::from("com", "aileron", "Aileron")
@@ -1899,7 +1940,7 @@ fn main() -> anyhow::Result<()> {
     info!("PID: {}", std::process::id());
 
     // Log environment info
-    log_environment();
+    bootstrap::log_environment();
 
     // Phase 1: Load config
     info!("── Phase 1: Loading config ──");
@@ -1916,6 +1957,25 @@ fn main() -> anyhow::Result<()> {
             std::env::set_var("GDK_BACKEND", "x11");
         }
     }
+
+    // Disable WebKitGTK's DMA-BUF renderer on NVIDIA to prevent
+    // "Failed to create GBM buffer" which causes the offscreen pixbuf
+    // to remain empty (no visual content rendered).
+    // Falls back to the shared GL texture path which works on all GPUs.
+    unsafe {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
+    // Disable WebKitGTK's threaded compositor so it renders through cairo
+    // (software path) instead of OpenGL. This is essential for the
+    // OffscreenWindow pixbuf capture to contain actual web content rather
+    // than just a blank GL proxy surface. Without this, GPU-accelerated
+    // WebKitGTK renders web content into an OpenGL texture that pixbuf()
+    // cannot see — only the GTK widget background is captured.
+    unsafe {
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    }
+    info!("Set WEBKIT_DISABLE_COMPOSITING_MODE=1 (forces cairo software rendering for pixbuf capture)");
 
     // Phase 2: Initialize GTK
     info!("── Phase 2: Initializing GTK ──");
@@ -1949,89 +2009,4 @@ fn main() -> anyhow::Result<()> {
 
     info!("Aileron shutting down.");
     Ok(())
-}
-
-/// Install a panic hook that writes detailed crash info to a file.
-fn install_panic_hook() {
-    let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        // Write crash report to file
-        let crash_dir = directories::ProjectDirs::from("com", "aileron", "Aileron")
-            .map(|d| d.data_dir().join("crashes"))
-            .unwrap_or_else(|| std::path::PathBuf::from("./crashes"));
-        let _ = std::fs::create_dir_all(&crash_dir);
-
-        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let crash_path = crash_dir.join(format!("crash_{}.txt", timestamp));
-
-        let report = format!(
-            "=== Aileron Crash Report ===\n\
-             Time: {}\n\
-             OS: {} {}\n\
-             PID: {}\n\
-             Version: 0.12.0\n\n\
-             Panic:\n\
-             {}\n\n\
-             Backtrace:\n\
-             {:?}\n",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            std::env::consts::OS,
-            std::env::consts::ARCH,
-            std::process::id(),
-            info,
-            std::backtrace::Backtrace::capture(),
-        );
-
-        let _ = std::fs::write(&crash_path, report);
-        eprintln!("[aileron] CRASH REPORT WRITTEN TO: {}", crash_path.display());
-
-        // Also print to stderr
-        default_hook(info);
-    }));
-}
-
-/// Log environment info for debugging.
-fn log_environment() {
-    info!("WAYLAND_DISPLAY: {:?}", std::env::var("WAYLAND_DISPLAY").ok());
-    info!("DISPLAY: {:?}", std::env::var("DISPLAY").ok());
-    info!("XDG_SESSION_TYPE: {:?}", std::env::var("XDG_SESSION_TYPE").ok());
-    info!("GDK_BACKEND: {:?}", std::env::var("GDK_BACKEND").ok());
-    info!("LD_LIBRARY_PATH: {:?}", std::env::var("LD_LIBRARY_PATH").ok().map(|v| if v.len() > 80 { format!("{}...(truncated)", &v[..80]) } else { v }));
-
-    // Check for Vulkan
-    if let Ok(output) = std::process::Command::new("vulkaninfo").arg("--summary").output() {
-        if output.status.success() {
-            let summary = String::from_utf8_lossy(&output.stdout);
-            for line in summary.lines().take(10) {
-                info!("vulkaninfo: {}", line.trim());
-            }
-        } else {
-            warn!("vulkaninfo failed: {}", String::from_utf8_lossy(&output.stderr));
-        }
-    } else {
-        warn!("vulkaninfo not found — Vulkan may not be available");
-    }
-
-    // Check for GPU
-    if let Ok(output) = std::process::Command::new("glxinfo").arg("-B").output()
-        && output.status.success()
-    {
-        for line in String::from_utf8_lossy(&output.stdout).lines().take(5) {
-            info!("glxinfo: {}", line.trim());
-        }
-    }
-
-    // Check wgpu available adapters (quick test)
-    if let Ok(output) = std::process::Command::new("ls").arg("/usr/share/vulkan/icd.d/").output()
-        && output.status.success()
-    {
-        let icds = String::from_utf8_lossy(&output.stdout);
-        info!("Vulkan ICDs: {}", icds.trim());
-    }
-    if let Ok(output) = std::process::Command::new("ls").arg("/etc/vulkan/icd.d/").output()
-        && output.status.success()
-    {
-        let icds = String::from_utf8_lossy(&output.stdout);
-        info!("Vulkan ICDs (etc): {}", icds.trim());
-    }
 }

@@ -1,6 +1,8 @@
 pub mod bookmarks;
 pub mod downloads;
 pub mod history;
+pub mod quickmarks;
+pub mod scroll_marks;
 pub mod site_settings;
 pub mod workspaces;
 
@@ -67,7 +69,20 @@ fn init_schema(conn: &Connection) -> Result<()> {
             autoplay_enabled INTEGER,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_site_settings_pattern ON site_settings(pattern, pattern_type);",
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_site_settings_pattern ON site_settings(pattern, pattern_type);
+
+        CREATE TABLE IF NOT EXISTS quickmarks (
+            letter TEXT PRIMARY KEY,
+            url TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS scroll_marks (
+            url TEXT NOT NULL,
+            letter TEXT NOT NULL,
+            fraction REAL NOT NULL,
+            PRIMARY KEY (url, letter)
+        );",
     )?;
     migrate_downloads_table(conn)?;
     Ok(())

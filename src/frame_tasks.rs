@@ -65,6 +65,9 @@ pub fn process_wry_events(
                 app_state.status_message = format!("Loaded: {}", &url[..url.len().min(60)]);
 
                 if !url.starts_with("aileron://") {
+                    // Load persisted scroll marks for this URL
+                    app_state.load_scroll_marks_for_pane(pane_id, &url);
+
                     let matching = content_scripts.scripts_for_url(&url, RunAt::DocumentIdle);
                     for script in matching {
                         if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
@@ -260,6 +263,9 @@ pub fn process_offscreen_events(
                 }
 
                 if !url.starts_with("aileron://") {
+                    // Load persisted scroll marks for this URL
+                    app_state.load_scroll_marks_for_pane(pane_id, &url);
+
                     let matching = content_scripts.scripts_for_url(&url, RunAt::DocumentIdle);
                     for script in matching {
                         if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
@@ -697,13 +703,37 @@ fn handle_ipc_message(
                         app_state.status_message = format!("Credential saved for {}", username);
                     }
                     Err(e) => {
-                        warn!("Failed to save credential: {}", e);
+                        warn!("Failed to store credential: {}", e);
                         app_state.status_message = format!("Credential save failed: {}", e);
                     }
                 }
             } else {
                 app_state.status_message = "No pending credentials to save".into();
             }
+        }
+        Some("scroll-fraction") => {
+            if let Some(frac) = msg.get("frac").and_then(|v| v.as_f64())
+                && let Some(mark_char) = app_state.pending_mark_set.take()
+            {
+                let frac = frac.clamp(0.0, 1.0);
+                app_state.store_mark_fraction(pane_id, mark_char, frac);
+                tracing::debug!("Mark '{}' set at fraction {}", mark_char, frac);
+                // Persist to database keyed by URL
+                if let Some(pane) = wry_panes.get(&pane_id) {
+                    let url = pane.url().to_string();
+                    if let Some(ref conn) = app_state.db
+                        && let Err(e) =
+                            aileron::db::scroll_marks::set_scroll_mark(conn, &url, mark_char, frac)
+                    {
+                        tracing::warn!("Failed to persist scroll mark: {}", e);
+                    }
+                }
+            }
+        }
+        Some("hint-clicked") => {
+            app_state.hint_mode = false;
+            app_state.hint_buffer.clear();
+            app_state.status_message.clear();
         }
         _ => {}
     }
@@ -841,7 +871,7 @@ fn handle_ipc_message_offscreen(
                         app_state.status_message = format!("Credential saved for {}", username);
                     }
                     Err(e) => {
-                        warn!("Failed to save credential: {}", e);
+                        warn!("Failed to store credential: {}", e);
                         app_state.status_message = format!("Credential save failed: {}", e);
                     }
                 }
@@ -849,6 +879,32 @@ fn handle_ipc_message_offscreen(
                 app_state.status_message = "No pending credentials to save".into();
             }
         }
+        Some("scroll-fraction") => {
+            if let Some(frac) = msg.get("frac").and_then(|v| v.as_f64())
+                && let Some(mark_char) = app_state.pending_mark_set.take()
+            {
+                let frac = frac.clamp(0.0, 1.0);
+                app_state.store_mark_fraction(pane_id, mark_char, frac);
+                tracing::debug!("Mark '{}' set at fraction {}", mark_char, frac);
+                // Persist to database keyed by URL
+                if let Some(pane) = offscreen_panes.get(&pane_id) {
+                    let url = pane.url().to_string();
+                    if let Some(ref conn) = app_state.db
+                        && let Err(e) =
+                            aileron::db::scroll_marks::set_scroll_mark(conn, &url, mark_char, frac)
+                    {
+                        tracing::warn!("Failed to persist scroll mark: {}", e);
+                    }
+                }
+            }
+        }
+        Some("hint-clicked") => {
+            app_state.hint_mode = false;
+            app_state.hint_buffer.clear();
+            app_state.status_message.clear();
+        }
         _ => {}
     }
 }
+
+// End of file

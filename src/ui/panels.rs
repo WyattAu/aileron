@@ -163,16 +163,6 @@ pub fn build_ui(
                 let query_snapshot = app_state.palette.query.clone();
                 app_state.palette.update_query(&query_snapshot);
                 app_state.command_palette_input = app_state.palette.query.clone();
-            } else if app_state.command_palette_open {
-                ui.label(":")
-                    .widget_info(|| a11y_info(WidgetType::Label, "Command palette prompt"));
-                let response = ui.add(
-                    egui::TextEdit::singleline(&mut app_state.command_palette_input)
-                        .desired_width(f32::INFINITY)
-                        .hint_text("Enter command..."),
-                );
-                response.widget_info(|| a11y_info(WidgetType::TextEdit, "Command palette"));
-                response.request_focus();
             } else if app_state.url_bar_focused {
                 ui.colored_label(accent, "URL>").widget_info(|| {
                     a11y_info(WidgetType::Label, "URL bar mode indicator: editing")
@@ -334,8 +324,10 @@ pub fn build_ui(
                             let active_id = app_state.wm.active_pane_id();
                             if let Some(wry_pane) = wry_panes.get(&active_id) {
                                 let q = app_state.find_query.replace('\'', "\\'");
+                                // Store query in JS for FindNext/FindPrev reuse
+                                wry_pane.execute_js(&format!("window._aileronFindQuery='{}'", q));
                                 wry_pane.execute_js(&format!(
-                                    "window.find('{}', false, true, true, false, false)",
+                                    "window.find('{}', false, false, true, true, false)",
                                     q
                                 ));
                             }
@@ -346,11 +338,8 @@ pub fn build_ui(
                         if find_next.clicked() {
                             let active_id = app_state.wm.active_pane_id();
                             if let Some(wry_pane) = wry_panes.get(&active_id) {
-                                let q = app_state.find_query.replace('\'', "\\'");
-                                wry_pane.execute_js(&format!(
-                                    "window.find('{}', false, true, true, false, false)",
-                                    q
-                                ));
+                                // find(query, caseSensitive, backwards, findNext, matchCount, wrapAround)
+                                wry_pane.execute_js("window.find(window._aileronFindQuery||'',false,false,true,true,false)");
                             }
                         }
                         let find_prev = ui.button("\u{2191}");
@@ -358,11 +347,7 @@ pub fn build_ui(
                         if find_prev.clicked() {
                             let active_id = app_state.wm.active_pane_id();
                             if let Some(wry_pane) = wry_panes.get(&active_id) {
-                                let q = app_state.find_query.replace('\'', "\\'");
-                                wry_pane.execute_js(&format!(
-                                    "window.find('{}', false, true, false, false, false)",
-                                    q
-                                ));
+                                wry_pane.execute_js("window.find(window._aileronFindQuery||'',false,true,false,true,false)");
                             }
                         }
                         let find_close = ui.button("\u{2715}");
@@ -430,7 +415,6 @@ pub fn build_ui(
                                     if response.clicked() {
                                         let selected = item.clone();
                                         app_state.palette.close();
-                                        app_state.command_palette_open = false;
                                         app_state.command_palette_input.clear();
                                         app_state.execute_palette_selection(&selected);
                                     }
@@ -501,6 +485,10 @@ pub fn build_ui(
                         ));
                         ui.put(screen_rect, image);
                     } else {
+                        tracing::debug!(
+                            "render pane {}: NO texture ({} total)",
+                            &id.to_string()[..8], webview_textures.len(),
+                        );
                         ui.painter().rect_filled(screen_rect, 0.0, bg);
                         ui.painter().rect_stroke(
                             screen_rect,
@@ -548,6 +536,40 @@ pub fn build_ui(
                 ui.monospace("Ctrl+P      Command palette");
                 ui.monospace("Ctrl+E      Open in system browser");
             });
+        } else if offscreen && panes.len() == 1 {
+            // Single-pane offscreen rendering: show the captured webview texture.
+            let available = ui.available_rect_before_wrap();
+            let is_terminal = panes.iter().any(|(id, _)| terminal_manager.is_terminal(id));
+
+            if is_terminal {
+                for (id, _) in &panes {
+                    if let Some(pane) = terminal_manager.get(id) {
+                        let colors = TerminalColors::default();
+                        let metrics = CellMetrics::from_egui(ctx, 14.0);
+                        let selection = pane.selection();
+                        let damage = pane.damage_info();
+                        let bell_flashing = pane.is_bell_flashing();
+                        render_terminal(
+                            ui.painter(),
+                            pane.term(),
+                            available,
+                            &colors,
+                            &metrics,
+                            Some(selection),
+                            &damage,
+                            bell_flashing,
+                        );
+                    }
+                }
+            } else if let Some((_, tex_id)) = panes.iter().find_map(|(id, _)| webview_textures.get_key_value(id)) {
+                let image = egui::Image::new(egui::load::SizedTexture::new(
+                    *tex_id,
+                    available.size(),
+                ));
+                ui.put(available, image);
+            } else {
+                ui.painter().rect_filled(available, 0.0, bg);
+            }
         }
     });
 }

@@ -121,14 +121,12 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
         Action::ScrollRight => vec![ActionEffect::Wry(WryAction::ScrollBy { x: 120.0, y: 0.0 })],
 
         // ─── Clipboard ────────────────────────────────────────────
-        Action::Yank => vec![
-            ActionEffect::Wry(WryAction::RunJs("window.getSelection().toString()".into())),
-            ActionEffect::Status("Selection copied".into()),
-        ],
-        Action::Paste => vec![
-            ActionEffect::Wry(WryAction::RunJs("document.execCommand('paste')".into())),
-            ActionEffect::Status("Paste".into()),
-        ],
+        Action::Yank => vec![ActionEffect::Wry(WryAction::RunJs(
+            r#"(function(){var s=window.getSelection().toString();if(s){navigator.clipboard.writeText(s);window._aileronCopied=s}})()"#.into(),
+        ))],
+        Action::Paste => vec![ActionEffect::Wry(WryAction::RunJs(
+            r#"(function(){navigator.clipboard.readText().then(function(t){document.execCommand('insertText',false,t)})})()"#.into(),
+        ))],
 
         // ─── Pane management (state-dependent, delegated to caller) ─
         Action::SplitVertical => vec![ActionEffect::RequestSplit(SplitDirection::Vertical)],
@@ -188,8 +186,12 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
 
         // ─── Find-in-page ─────────────────────────────────────────
         Action::Find => vec![ActionEffect::OpenFindBar],
-        Action::FindNext => vec![ActionEffect::Status("Find next".into())],
-        Action::FindPrev => vec![ActionEffect::Status("Find prev".into())],
+        Action::FindNext => vec![ActionEffect::Wry(WryAction::RunJs(
+            "window.find(window._aileronFindQuery||'',false,false,false,true,false)".into(),
+        ))],
+        Action::FindPrev => vec![ActionEffect::Wry(WryAction::RunJs(
+            "window.find(window._aileronFindQuery||'',false,true,false,true,false)".into(),
+        ))],
         Action::FindClose => vec![ActionEffect::CloseFindBar],
 
         // ─── Link hints ───────────────────────────────────────────
@@ -204,19 +206,31 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
                         });
                         return 'hints_removed';
                     }
+                    // Vimium-style hint generation: a-z, then aa, ab, ...
+                    function toHint(n) {
+                        var chars = 'asdfghjklqwertyuiopzxcvbnm';
+                        var result = '';
+                        n++;
+                        while (n > 0) {
+                            n--;
+                            result = chars[n % 26] + result;
+                            n = Math.floor(n / 26);
+                        }
+                        return result;
+                    }
                     var style = document.createElement('style');
                     style.id = '__aileron_hints';
-                    style.textContent = '[data-aileron-hint]::after { content: attr(data-aileron-hint); position: absolute; background: #4db4ff; color: #000; font-size: 11px; font-weight: bold; padding: 1px 4px; border-radius: 3px; z-index: 999999; pointer-events: none; font-family: monospace; }';
+                    style.textContent = '[data-aileron-hint]::after { content: attr(data-aileron-hint); position: absolute; background: #4db4ff; color: #000; font-size: 11px; font-weight: bold; padding: 1px 4px; border-radius: 3px; z-index: 999999; pointer-events: none; font-family: monospace; text-transform: uppercase; }';
                     document.head.appendChild(style);
-                    var links = document.querySelectorAll('a[href], button, input[type="submit"], [role="link"]');
+                    var links = document.querySelectorAll('a[href], button, input[type="submit"], [role="link"], input[type="button"]');
                     links.forEach(function(el, i) {
-                        el.setAttribute('data-aileron-hint', String(i));
+                        el.setAttribute('data-aileron-hint', toHint(i));
                     });
                     return 'hints_shown_' + links.length;
                 })();
                 "#.into(),
             )),
-            ActionEffect::Status("Link hints: type number, Enter to follow".into()),
+            ActionEffect::Status("Link hints: type letters, Escape to cancel".into()),
         ],
 
         // ─── Workspace ───────────────────────────────────────────
@@ -393,25 +407,23 @@ mod tests {
     // ─── Clipboard ────────────────────────────────────────────────
 
     #[test]
-    fn test_yank_produces_js_and_status() {
+    fn test_yank_produces_js() {
         let effects = dispatch_action(&Action::Yank);
-        assert_eq!(effects.len(), 2);
-        assert_eq!(status_msg(&effects), Some("Selection copied"));
+        assert_eq!(effects.len(), 1);
         let wry = wry_effects(&effects);
         match &wry[0] {
-            WryAction::RunJs(js) => assert!(js.contains("getSelection")),
+            WryAction::RunJs(js) => assert!(js.contains("getSelection") && js.contains("clipboard")),
             other => panic!("Expected RunJs, got {:?}", other),
         }
     }
 
     #[test]
-    fn test_paste_produces_js_and_status() {
+    fn test_paste_produces_js() {
         let effects = dispatch_action(&Action::Paste);
-        assert_eq!(effects.len(), 2);
-        assert_eq!(status_msg(&effects), Some("Paste"));
+        assert_eq!(effects.len(), 1);
         let wry = wry_effects(&effects);
         match &wry[0] {
-            WryAction::RunJs(js) => assert!(js.contains("paste")),
+            WryAction::RunJs(js) => assert!(js.contains("readText") && js.contains("insertText")),
             other => panic!("Expected RunJs, got {:?}", other),
         }
     }
@@ -583,15 +595,25 @@ mod tests {
     }
 
     #[test]
-    fn test_find_next() {
+    fn test_find_next_produces_js() {
         let effects = dispatch_action(&Action::FindNext);
-        assert_eq!(status_msg(&effects), Some("Find next"));
+        assert_eq!(effects.len(), 1);
+        let wry = wry_effects(&effects);
+        match &wry[0] {
+            WryAction::RunJs(js) => assert!(js.contains("window.find") && js.contains("false,false,true")),
+            other => panic!("Expected RunJs, got {:?}", other),
+        }
     }
 
     #[test]
-    fn test_find_prev() {
+    fn test_find_prev_produces_js() {
         let effects = dispatch_action(&Action::FindPrev);
-        assert_eq!(status_msg(&effects), Some("Find prev"));
+        assert_eq!(effects.len(), 1);
+        let wry = wry_effects(&effects);
+        match &wry[0] {
+            WryAction::RunJs(js) => assert!(js.contains("window.find") && js.contains("false,true,false")),
+            other => panic!("Expected RunJs, got {:?}", other),
+        }
     }
 
     #[test]
@@ -623,7 +645,7 @@ mod tests {
         }
         assert_eq!(
             status_msg(&effects),
-            Some("Link hints: type number, Enter to follow")
+            Some("Link hints: type letters, Escape to cancel")
         );
     }
 

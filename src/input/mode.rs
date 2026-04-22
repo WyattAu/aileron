@@ -37,7 +37,7 @@ pub fn transition(mode: Mode, event: &KeyEvent) -> Option<Mode> {
 
         // Return to Normal mode
         (Mode::Insert, Key::Escape) => Some(Mode::Normal),
-        (Mode::Command, Key::Escape) => Some(Mode::Command),
+        (Mode::Command, Key::Escape) => Some(Mode::Normal),
         // Ctrl+[ also exits to Normal (vim-style)
         (Mode::Insert, Key::CtrlBracket) => Some(Mode::Normal),
 
@@ -191,7 +191,7 @@ mod tests {
                     physical_key: None
                 }
             ),
-            Some(Mode::Command)
+            Some(Mode::Normal)
         );
     }
 

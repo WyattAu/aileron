@@ -1,8 +1,9 @@
 //! Offscreen webview rendering module.
 //!
 //! Architecture B: webviews render into `gtk::OffscreenWindow` buffers,
-//! pixel data is captured via `get_pixbuf()`, uploaded to wgpu textures,
-//! and displayed as egui `Image` widgets.
+//! pixel data is captured via WebKitGTK's `snapshot()` API (which correctly
+//! captures GL-composited content), uploaded to wgpu textures, and displayed
+//! as egui `Image` widgets.
 //!
 //! This eliminates the winit+GTK toolkit conflict that caused crashes
 //! on Wayland and required XWayland workarounds.
@@ -19,7 +20,11 @@ use wry::WebViewBuilderExtUnix;
 use crate::servo::wry_engine::{WryEvent, aileron_welcome_page, aileron_new_tab_page, aileron_settings_page, file_browser_page, percent_decode, html_escape};
 
 #[cfg(target_os = "linux")]
-use gtk::prelude::{GtkWindowExt, OffscreenWindowExt, WidgetExt};
+use gtk::prelude::{GtkWindowExt, OffscreenWindowExt, WidgetExt, BinExt};
+#[cfg(target_os = "linux")]
+use gtk::glib::Cast;
+#[cfg(target_os = "linux")]
+use webkit2gtk::{SnapshotRegion, SnapshotOptions, WebViewExt};
 
 /// Pixel data captured from an offscreen webview.
 #[derive(Debug, Clone)]
@@ -348,26 +353,165 @@ a {{ color: #4db4ff; }}
     }
 
     /// Capture the current frame as pixel data.
+    ///
+    /// Uses WebKitGTK's `snapshot()` API which correctly captures GL-composited
+    /// content (unlike `OffscreenWindow::pixbuf()` which only sees cairo surfaces).
+    /// Falls back to pixbuf for internal `aileron://` pages (which don't need
+    /// snapshot since they're rendered by GTK directly).
     #[cfg(target_os = "linux")]
     pub fn capture_frame(&mut self) -> Option<&FrameData> {
+        // Pump the GTK event loop so pending renders complete.
         while gtk::events_pending() {
             gtk::main_iteration();
         }
 
-        let pixbuf = self.offscreen.pixbuf()?;
+        // Use snapshot for real web content (captures GL-composited content).
+        if self.url.scheme() != "aileron" {
+            if let Some(frame) = self.capture_frame_snapshot() {
+                self.frame = Some(frame);
+                self.dirty = false;
+                return self.frame.as_ref();
+            }
+            // Snapshot failed — fall through to pixbuf.
+            warn!(
+                "capture_frame: snapshot failed for pane {}, trying pixbuf fallback",
+                &self.pane_id.to_string()[..8],
+            );
+        }
+
+        // Fallback: pixbuf (works for aileron:// pages rendered via cairo).
+        self.capture_frame_pixbuf()
+    }
+
+    /// Capture frame via WebKitGTK's snapshot API.
+    ///
+    /// This is the CORRECT way to capture web content from WebKitGTK, as it
+    /// handles both software-rendered and GL-composited content. The snapshot
+    /// API produces a cairo ImageSurface (ARGB32) regardless of the rendering
+    /// pipeline used internally.
+    #[cfg(target_os = "linux")]
+    fn capture_frame_snapshot(&self) -> Option<FrameData> {
+        // Get the WebKitWebView widget embedded in our OffscreenWindow.
+        let child = self.offscreen.child()?;
+        let webview = child.downcast_ref::<webkit2gtk::WebView>()?;
+
+        // Verify we own the GLib MainContext (required by snapshot()).
+        let main_context = gtk::glib::MainContext::ref_thread_default();
+        if !main_context.is_owner() {
+            warn!("capture_frame_snapshot: not MainContext owner");
+            return None;
+        }
+
+        // Set up a channel to receive the async snapshot result.
+        let (tx, rx) = mpsc::channel::<Result<cairo::Surface, gtk::glib::Error>>();
+
+        // Request snapshot of the visible region.
+        webview.snapshot(
+            SnapshotRegion::Visible,
+            SnapshotOptions::NONE,
+            // No cancellable — use gtk::gio to match the gio version webkit2gtk uses.
+            None::<&gtk::gio::Cancellable>,
+            move |result| {
+                let _ = tx.send(result);
+            },
+        );
+
+        // Pump the GLib main loop until the snapshot callback fires.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let result = loop {
+            if let Ok(r) = rx.try_recv() {
+                break r;
+            }
+            if std::time::Instant::now() > deadline {
+                warn!("capture_frame_snapshot: timed out after 2s");
+                return None;
+            }
+            if gtk::events_pending() {
+                gtk::main_iteration();
+            } else {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        };
+
+        let surface: cairo::Surface = match result {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("capture_frame_snapshot: error: {}", e);
+                return None;
+            }
+        };
+
+        // Convert the cairo surface to raw pixel data.
+        // snapshot() returns a cairo_image_surface_t (ARGB32 format).
+        let raw = surface.to_raw_none();
+
+        // Verify it's actually an image surface.
+        // cairo_surface_type_t::Image == 0 (per cairo spec).
+        unsafe {
+            let surface_type = cairo::ffi::cairo_surface_get_type(raw);
+            if surface_type != 0 {
+                warn!("capture_frame_snapshot: surface is not Image (type={})", surface_type);
+                return None;
+            }
+        }
+
+        let width = unsafe { cairo::ffi::cairo_image_surface_get_width(raw) as u32 };
+        let height = unsafe { cairo::ffi::cairo_image_surface_get_height(raw) as u32 };
+        let stride = unsafe { cairo::ffi::cairo_image_surface_get_stride(raw) as u32 };
+
+        if width == 0 || height == 0 {
+            warn!("capture_frame_snapshot: zero dimensions {}x{}", width, height);
+            return None;
+        }
+
+        // Copy pixel data from the cairo surface.
+        // ARGB32 on little-endian = BGRA byte order, matching our FrameData format.
+        let pixels = unsafe {
+            let data_ptr = cairo::ffi::cairo_image_surface_get_data(raw);
+            if data_ptr.is_null() {
+                warn!("capture_frame_snapshot: null pixel data");
+                return None;
+            }
+            let len = (stride as usize) * (height as usize);
+            std::slice::from_raw_parts(data_ptr, len).to_vec()
+        };
+
+        info!(
+            "capture_frame_snapshot: pane {} ok: {}x{} stride={} pixels={}",
+            &self.pane_id.to_string()[..8], width, height, stride, pixels.len(),
+        );
+
+        Some(FrameData { width, height, rowstride: stride, pixels })
+    }
+
+    /// Fallback: capture via OffscreenWindow::pixbuf() (cairo-only rendering).
+    ///
+    /// Only captures GTK widget-level cairo drawing. Does NOT capture
+    /// GL-composited WebKitGTK content. Suitable for aileron:// internal pages
+    /// which are rendered through GTK's software path.
+    #[cfg(target_os = "linux")]
+    fn capture_frame_pixbuf(&mut self) -> Option<&FrameData> {
+        let pixbuf = match self.offscreen.pixbuf() {
+            Some(p) => p,
+            None => {
+                warn!("capture_frame: pixbuf() returned None for pane {}", &self.pane_id.to_string()[..8]);
+                return None;
+            }
+        };
         let width = pixbuf.width() as u32;
         let height = pixbuf.height() as u32;
         let rowstride = pixbuf.rowstride() as u32;
         let pixels = unsafe { pixbuf.pixels().to_vec() };
-
-        self.frame = Some(FrameData {
-            width,
-            height,
-            rowstride,
-            pixels,
-        });
+        if width == 0 || height == 0 || pixels.is_empty() {
+            warn!("capture_frame: empty pixbuf {}x{} ({} bytes) for pane {}", width, height, pixels.len(), &self.pane_id.to_string()[..8]);
+            return None;
+        }
+        info!(
+            "capture_frame: pane {} ok: {}x{} rowstride={} pixels={}",
+            &self.pane_id.to_string()[..8], width, height, rowstride, pixels.len(),
+        );
+        self.frame = Some(FrameData { width, height, rowstride, pixels });
         self.dirty = false;
-
         self.frame.as_ref()
     }
 
