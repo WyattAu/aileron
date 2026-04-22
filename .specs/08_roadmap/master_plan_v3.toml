@@ -205,8 +205,8 @@ id = "S01"
 title = "WebExtensions storage persistence"
 phase = "S"
 priority = "critical"
-status = "pending"
-description = "Implement persistent storage for extensions in src/extensions/storage.rs. Use SQLite (existing db module) with tables: ext_storage (extension_id, key, value), ext_permissions (extension_id, permission). Implement StorageArea: local (per-extension), sync (future). Support get/set/remove/clear with change events."
+status = "complete"
+description = "Implemented persistent storage in src/extensions/impls.rs. AileronStorageArea now supports optional JSON file backend (with_persistence). Loads on construction, writes on mutation. AileronStorageApi::with_persistence() creates 3 areas (local/sync/managed) per extension under extensions_dir/storage/<ext_id>/. Fire on_changed callbacks on set/remove/clear. 8 new tests."
 depends = []
 
 [[task]]
