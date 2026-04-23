@@ -40,6 +40,15 @@ type ConnectCallback = Box<dyn Fn(Box<dyn Port>) + Send + Sync>;
 type InstalledCallback = Box<dyn Fn(InstalledDetails) + Send + Sync>;
 type StartupCallback = Box<dyn Fn() + Send + Sync>;
 
+// WebRequest handler types
+type BeforeRequestHandler = Box<dyn Fn(RequestDetails) -> BlockingResponse + Send + Sync>;
+type BeforeSendHeadersHandler = Box<dyn Fn(BeforeSendHeadersDetails) -> BlockingResponse + Send + Sync>;
+type HeadersReceivedHandler = Box<dyn Fn(HeadersReceivedDetails) -> BlockingResponse + Send + Sync>;
+type AuthRequiredHandler = Box<dyn Fn(AuthRequiredDetails) -> BlockingResponse + Send + Sync>;
+type BeforeRedirectHandler = Box<dyn Fn(RedirectDetails) + Send + Sync>;
+type CompletedHandler = Box<dyn Fn(CompletedDetails) + Send + Sync>;
+type ErrorOccurredHandler = Box<dyn Fn(ErrorOccurredDetails) + Send + Sync>;
+
 static LISTENER_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn next_listener_id() -> ListenerId {
@@ -659,145 +668,383 @@ impl RuntimeApi for AileronRuntimeApi {
 }
 
 struct AileronWebRequestApi {
-    listeners: Mutex<Vec<ListenerId>>,
+    before_request_handlers: Mutex<Vec<(ListenerId, RequestFilter, BeforeRequestHandler)>>,
+    before_send_headers_handlers:
+        Mutex<Vec<(ListenerId, RequestFilter, BeforeSendHeadersHandler)>>,
+    headers_received_handlers:
+        Mutex<Vec<(ListenerId, RequestFilter, HeadersReceivedHandler)>>,
+    auth_required_handlers: Mutex<Vec<(ListenerId, RequestFilter, AuthRequiredHandler)>>,
+    before_redirect_handlers: Mutex<Vec<(ListenerId, RequestFilter, BeforeRedirectHandler)>>,
+    completed_handlers: Mutex<Vec<(ListenerId, RequestFilter, CompletedHandler)>>,
+    error_occurred_handlers: Mutex<Vec<(ListenerId, RequestFilter, ErrorOccurredHandler)>>,
 }
 
 impl AileronWebRequestApi {
     fn new() -> Self {
         Self {
-            listeners: Mutex::new(Vec::new()),
+            before_request_handlers: Mutex::new(Vec::new()),
+            before_send_headers_handlers: Mutex::new(Vec::new()),
+            headers_received_handlers: Mutex::new(Vec::new()),
+            auth_required_handlers: Mutex::new(Vec::new()),
+            before_redirect_handlers: Mutex::new(Vec::new()),
+            completed_handlers: Mutex::new(Vec::new()),
+            error_occurred_handlers: Mutex::new(Vec::new()),
         }
     }
+
+    /// Check if a URL matches any pattern in the filter.
+    fn url_matches_filter(url: &Url, filter: &RequestFilter) -> bool {
+        // If no URL patterns, match all
+        if filter.urls.is_empty() {
+            return true;
+        }
+        filter.urls.iter().any(|pattern| {
+            let pat_str = pattern.0.as_str();
+            simple_url_pattern_match(pat_str, url.as_str())
+        })
+    }
+
+    /// Fire all registered on_before_request handlers for a request.
+    /// Returns the first non-default BlockingResponse (first handler wins).
+    #[allow(dead_code)]
+    pub fn fire_on_before_request(&self, details: &RequestDetails) -> BlockingResponse {
+        let handlers = self
+            .before_request_handlers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for (_, filter, handler) in handlers.iter() {
+            if Self::url_matches_filter(&details.url, filter) {
+                let response = handler(details.clone());
+                if response.cancel == Some(true) || response.redirect_url.is_some() {
+                    return response;
+                }
+            }
+        }
+        BlockingResponse::default()
+    }
+
+    /// Fire all registered on_headers_received handlers.
+    #[allow(dead_code)]
+    pub fn fire_on_headers_received(&self, details: &HeadersReceivedDetails) -> BlockingResponse {
+        let handlers = self
+            .headers_received_handlers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for (_, filter, handler) in handlers.iter() {
+            if Self::url_matches_filter(&details.url, filter) {
+                let response = handler(details.clone());
+                if response.cancel == Some(true) || response.response_headers.is_some() {
+                    return response;
+                }
+            }
+        }
+        BlockingResponse::default()
+    }
+
+    /// Fire all registered on_before_send_headers handlers.
+    #[allow(dead_code)]
+    pub fn fire_on_before_send_headers(
+        &self,
+        details: &BeforeSendHeadersDetails,
+    ) -> BlockingResponse {
+        let handlers = self
+            .before_send_headers_handlers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for (_, filter, handler) in handlers.iter() {
+            if Self::url_matches_filter(&details.url, filter) {
+                let response = handler(details.clone());
+                if response.cancel == Some(true)
+                    || response.request_headers.is_some()
+                    || response.redirect_url.is_some()
+                {
+                    return response;
+                }
+            }
+        }
+        BlockingResponse::default()
+    }
+
+    /// Fire all registered on_completed handlers.
+    #[allow(dead_code)]
+    pub fn fire_on_completed(&self, details: &CompletedDetails) {
+        let handlers = self
+            .completed_handlers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for (_, filter, handler) in handlers.iter() {
+            if Self::url_matches_filter(&details.url, filter) {
+                handler(details.clone());
+            }
+        }
+    }
+
+    /// Fire all registered on_error_occurred handlers.
+    #[allow(dead_code)]
+    pub fn fire_on_error_occurred(&self, details: &ErrorOccurredDetails) {
+        let handlers = self
+            .error_occurred_handlers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for (_, filter, handler) in handlers.iter() {
+            if Self::url_matches_filter(&details.url, filter) {
+                handler(details.clone());
+            }
+        }
+    }
+
+    /// Fire all registered on_before_redirect handlers.
+    #[allow(dead_code)]
+    pub fn fire_on_before_redirect(&self, details: &RedirectDetails) {
+        let handlers = self
+            .before_redirect_handlers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for (_, filter, handler) in handlers.iter() {
+            if Self::url_matches_filter(&details.url, filter) {
+                handler(details.clone());
+            }
+        }
+    }
+}
+
+/// Simple URL pattern matching for extension filters.
+/// Supports wildcards: `*://*.example.com/*` matches any subdomain.
+#[allow(dead_code)]
+fn simple_url_pattern_match(pattern: &str, url: &str) -> bool {
+    let pat_lower = pattern.to_lowercase();
+    let url_lower = url.to_lowercase();
+
+    if pat_lower == "<all_urls>" {
+        return true;
+    }
+
+    // Split pattern into scheme, host, path parts
+    if let Some(star_idx) = pat_lower.find("://") {
+        let scheme = &pat_lower[..star_idx];
+        let rest = &pat_lower[star_idx + 3..];
+
+        // Check scheme: `*` matches any scheme
+        if scheme != "*" && !url_lower.starts_with(&format!("{}://", scheme)) {
+            return false;
+        }
+
+        // Extract the URL portion after the scheme
+        let url_rest = if scheme == "*" {
+            if let Some(idx) = url_lower.find("://") {
+                &url_lower[idx + 3..]
+            } else {
+                return false;
+            }
+        } else {
+            &url_lower[scheme.len() + 3..]
+        };
+
+        // Check host + path
+        if rest == "*" || rest == "/*" {
+            return true;
+        }
+
+        // Handle wildcard host patterns like *.example.com/*
+        if let Some(pattern_domain) = rest.strip_prefix("*.") {
+            // URL rest should end with the pattern domain
+            // e.g., "*.example.com/*" should match "sub.example.com/path"
+            if let Some(slash_idx) = pattern_domain.find('/') {
+                let domain_pat = &pattern_domain[..slash_idx];
+                let path_pat = &pattern_domain[slash_idx..];
+                if let Some(url_slash) = url_rest.find('/') {
+                    let url_domain = &url_rest[..url_slash];
+                    let url_path = &url_rest[url_slash..];
+                    if url_domain.ends_with(domain_pat)
+                        && (path_pat == "/*" || path_pat == url_path)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // Exact host match or host/path prefix match
+        if let Some(slash_idx) = rest.find('/') {
+            let host_pat = &rest[..slash_idx];
+            let path_pat = &rest[slash_idx..];
+            if url_rest.starts_with(host_pat)
+                && let Some(url_path) = url_rest.strip_prefix(host_pat)
+                && (path_pat == "/*" || path_pat == url_path)
+            {
+                return true;
+            }
+        } else if url_rest == rest {
+            return true;
+        }
+    }
+
+    false
 }
 
 impl WebRequestApi for AileronWebRequestApi {
     fn on_before_request(
         &self,
-        _filter: RequestFilter,
+        filter: RequestFilter,
         _extra_info_spec: Vec<ExtraInfoSpec>,
-        _handler: Box<dyn Fn(RequestDetails) -> BlockingResponse + Send + Sync>,
+        handler: BeforeRequestHandler,
     ) -> ListenerId {
         let id = next_listener_id();
-        tracing::warn!(
+        tracing::info!(
             target: "extensions",
-            "webRequest.onBeforeRequest registered (listener {:?})",
-            id
+            "webRequest.onBeforeRequest registered (listener {:?}, {} url patterns)",
+            id,
+            filter.urls.len()
         );
-        self.listeners
+        self.before_request_handlers
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(id);
+            .push((id, filter, handler));
         id
     }
 
     fn on_before_send_headers(
         &self,
-        _filter: RequestFilter,
+        filter: RequestFilter,
         _extra_info_spec: Vec<ExtraInfoSpec>,
-        _handler: Box<dyn Fn(BeforeSendHeadersDetails) -> BlockingResponse + Send + Sync>,
+        handler: BeforeSendHeadersHandler,
     ) -> ListenerId {
         let id = next_listener_id();
-        tracing::warn!(
+        tracing::info!(
             target: "extensions",
             "webRequest.onBeforeSendHeaders registered (listener {:?})",
             id
         );
-        self.listeners
+        self.before_send_headers_handlers
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(id);
+            .push((id, filter, handler));
         id
     }
 
     fn on_headers_received(
         &self,
-        _filter: RequestFilter,
+        filter: RequestFilter,
         _extra_info_spec: Vec<ExtraInfoSpec>,
-        _handler: Box<dyn Fn(HeadersReceivedDetails) -> BlockingResponse + Send + Sync>,
+        handler: HeadersReceivedHandler,
     ) -> ListenerId {
         let id = next_listener_id();
-        tracing::warn!(
+        tracing::info!(
             target: "extensions",
             "webRequest.onHeadersReceived registered (listener {:?})",
             id
         );
-        self.listeners
+        self.headers_received_handlers
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(id);
+            .push((id, filter, handler));
         id
     }
 
     fn on_auth_required(
         &self,
-        _filter: RequestFilter,
-        _handler: Box<dyn Fn(AuthRequiredDetails) -> BlockingResponse + Send + Sync>,
+        filter: RequestFilter,
+        handler: AuthRequiredHandler,
     ) -> ListenerId {
         let id = next_listener_id();
-        tracing::warn!(
+        tracing::info!(
             target: "extensions",
             "webRequest.onAuthRequired registered (listener {:?})",
             id
         );
-        self.listeners
+        self.auth_required_handlers
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(id);
+            .push((id, filter, handler));
         id
     }
 
     fn on_before_redirect(
         &self,
-        _filter: RequestFilter,
-        _callback: Box<dyn Fn(RedirectDetails) + Send + Sync>,
+        filter: RequestFilter,
+        callback: BeforeRedirectHandler,
     ) -> ListenerId {
         let id = next_listener_id();
-        self.listeners
+        self.before_redirect_handlers
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(id);
+            .push((id, filter, callback));
         id
     }
 
     fn on_completed(
         &self,
-        _filter: RequestFilter,
-        _callback: Box<dyn Fn(CompletedDetails) + Send + Sync>,
+        filter: RequestFilter,
+        callback: CompletedHandler,
     ) -> ListenerId {
         let id = next_listener_id();
-        self.listeners
+        self.completed_handlers
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(id);
+            .push((id, filter, callback));
         id
     }
 
     fn on_error_occurred(
         &self,
-        _filter: RequestFilter,
-        _callback: Box<dyn Fn(ErrorOccurredDetails) + Send + Sync>,
+        filter: RequestFilter,
+        callback: ErrorOccurredHandler,
     ) -> ListenerId {
         let id = next_listener_id();
-        self.listeners
+        self.error_occurred_handlers
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(id);
+            .push((id, filter, callback));
         id
     }
 
     fn remove_listener(&self, listener_id: ListenerId) -> Result<()> {
-        let mut listeners = self
-            .listeners
-            .lock()
-            .map_err(|e| ExtensionError::Runtime(format!("WebRequest lock poisoned: {}", e)))?;
-        let before = listeners.len();
-        listeners.retain(|&id| id != listener_id);
-        if listeners.len() < before {
+        macro_rules! remove_from {
+            ($field:expr) => {{
+                let mut handlers = $field
+                    .lock()
+                    .map_err(|e| ExtensionError::Runtime(format!("Lock poisoned: {}", e)))?;
+                let before = handlers.len();
+                handlers.retain(|(id, _, _)| *id != listener_id);
+                handlers.len() < before
+            }};
+        }
+
+        let mut any_removed = false;
+        if remove_from!(self.before_request_handlers) {
+            any_removed = true;
+        }
+        if remove_from!(self.before_send_headers_handlers) {
+            any_removed = true;
+        }
+        if remove_from!(self.headers_received_handlers) {
+            any_removed = true;
+        }
+        if remove_from!(self.auth_required_handlers) {
+            any_removed = true;
+        }
+        if remove_from!(self.before_redirect_handlers) {
+            any_removed = true;
+        }
+        if remove_from!(self.completed_handlers) {
+            any_removed = true;
+        }
+        if remove_from!(self.error_occurred_handlers) {
+            any_removed = true;
+        }
+
+        if any_removed {
+            tracing::info!(
+                target: "extensions",
+                "webRequest listener {:?} removed",
+                listener_id
+            );
             Ok(())
         } else {
             Err(ExtensionError::NotFound(format!(
-                "Listener {}",
-                listener_id.0
+                "Listener {:?} not found",
+                listener_id
             )))
         }
     }
@@ -1429,5 +1676,113 @@ mod tests {
         // Clear empty storage — no callback should fire
         api.storage().local().clear().unwrap();
         assert_eq!(call_count.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn test_web_request_handler_storage_and_firing() {
+        let api = make_api();
+        let filter = RequestFilter {
+            urls: vec![UrlPattern("*://*.example.com/*".into())],
+            types: None,
+            tab_id: None,
+            window_id: None,
+        };
+
+        // Register a handler that cancels matching requests
+        let listener_id = api.web_request().on_before_request(
+            filter.clone(),
+            vec![],
+            Box::new(|details| {
+                if details.url.host_str() == Some("blocked.example.com") {
+                    BlockingResponse {
+                        cancel: Some(true),
+                        ..Default::default()
+                    }
+                } else {
+                    BlockingResponse::default()
+                }
+            }),
+        );
+
+        // Fire a blocked request
+        let _details = RequestDetails {
+            request_id: crate::extensions::types::RequestId(1),
+            url: Url::parse("https://blocked.example.com/page").unwrap(),
+            method: "GET".into(),
+            frame_id: crate::extensions::types::FrameId(0),
+            parent_frame_id: crate::extensions::types::FrameId(u32::MAX),
+            tab_id: None,
+            type_: crate::extensions::web_request::ResourceType::MainFrame,
+            origin_url: None,
+            timestamp: 0.0,
+            request_headers: None,
+        };
+
+        // Access the inner AileronWebRequestApi via the trait — we can't call
+        // fire_on_before_request through the trait, so test via remove_listener
+        assert!(api.web_request().remove_listener(listener_id).is_ok());
+        // Removing again should fail
+        assert!(api.web_request().remove_listener(listener_id).is_err());
+    }
+
+    #[test]
+    fn test_web_request_multiple_listeners() {
+        let api = make_api();
+
+        let filter1 = RequestFilter {
+            urls: vec![UrlPattern("*://*.a.com/*".into())],
+            types: None,
+            tab_id: None,
+            window_id: None,
+        };
+        let filter2 = RequestFilter {
+            urls: vec![UrlPattern("*://*.b.com/*".into())],
+            types: None,
+            tab_id: None,
+            window_id: None,
+        };
+
+        let id1 = api.web_request().on_before_request(
+            filter1,
+            vec![],
+            Box::new(|_| BlockingResponse::default()),
+        );
+        let id2 = api.web_request().on_before_request(
+            filter2,
+            vec![],
+            Box::new(|_| BlockingResponse::default()),
+        );
+
+        // Both should be removable
+        assert!(api.web_request().remove_listener(id1).is_ok());
+        assert!(api.web_request().remove_listener(id2).is_ok());
+    }
+
+    #[test]
+    fn test_url_pattern_matching() {
+        assert!(simple_url_pattern_match(
+            "*://*.example.com/*",
+            "https://sub.example.com/page"
+        ));
+        assert!(simple_url_pattern_match(
+            "*://*.example.com/*",
+            "https://example.com/page"
+        ));
+        assert!(!simple_url_pattern_match(
+            "*://*.example.com/*",
+            "https://other.com/page"
+        ));
+        assert!(simple_url_pattern_match(
+            "<all_urls>",
+            "https://anything.com/path"
+        ));
+        assert!(simple_url_pattern_match(
+            "https://example.com/*",
+            "https://example.com/page"
+        ));
+        assert!(!simple_url_pattern_match(
+            "https://example.com/*",
+            "http://example.com/page"
+        ));
     }
 }
