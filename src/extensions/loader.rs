@@ -261,6 +261,35 @@ impl ExtensionManager {
     pub fn message_bus(&self) -> &std::sync::Arc<MessageBus> {
         &self.message_bus
     }
+
+    /// Unload (disable) a specific extension by ID.
+    /// Returns the removed extension's info, or None if not found.
+    pub fn unload(&mut self, id: &ExtensionId) -> Option<String> {
+        self.extensions.remove(id).map(|api| {
+            let name = api.manifest().name.clone();
+            tracing::info!(
+                target: "extensions",
+                "Unloaded extension '{}' ({})",
+                name,
+                id.0
+            );
+            name
+        })
+    }
+
+    /// Load a single extension from a manifest path.
+    /// Returns the extension ID on success.
+    pub fn load_extension_from_path(
+        &mut self,
+        manifest_path: &Path,
+    ) -> Result<ExtensionId, ExtensionError> {
+        self.load_extension(manifest_path)
+    }
+
+    /// Count of currently loaded extensions.
+    pub fn count(&self) -> usize {
+        self.extensions.len()
+    }
 }
 
 #[cfg(test)]

@@ -1566,17 +1566,28 @@ if (window._terminal && window._terminal.buffer) {{
             let mgr = self.extension_manager.lock().ok()?;
             let ids = mgr.list();
             if ids.is_empty() {
-                self.status_message = "No extensions loaded".into();
+                self.status_message = "No extensions loaded. Use :extension-load to scan, or :extension-install <path> to install.".into();
             } else {
-                let names: Vec<String> = ids
+                let lines: Vec<String> = ids
                     .iter()
                     .map(|id| {
                         mgr.get(id)
-                            .map(|api| api.manifest().name.clone())
+                            .map(|api| {
+                                format!(
+                                    "{} v{} [{}]",
+                                    api.manifest().name,
+                                    api.manifest().version,
+                                    api.extension_id()
+                                )
+                            })
                             .unwrap_or_else(|| id.to_string())
                     })
                     .collect();
-                self.status_message = format!("Extensions: {}", names.join(", "));
+                self.status_message = format!(
+                    "Extensions ({}): {}",
+                    ids.len(),
+                    lines.join(" | ")
+                );
             }
             return Some(());
         }
@@ -1588,6 +1599,87 @@ if (window._terminal && window._terminal.buffer) {{
                 .map(|mut m| m.load_all())
                 .unwrap_or_default();
             self.status_message = format!("Loaded {} extension(s)", loaded.len());
+            return Some(());
+        }
+
+        if query == "extension-open" {
+            let dir = self
+                .extension_manager
+                .lock()
+                .map(|m| m.extensions_dir().to_path_buf())
+                .ok();
+            if let Some(dir) = dir {
+            if dir.exists() {
+                let dir_str = dir.display().to_string();
+                let _ = crate::platform::platform().shell_command(&format!(
+                    "xdg-open \"{}\" 2>/dev/null || open \"{}\" 2>/dev/null || explorer.exe \"{}\"",
+                    dir_str, dir_str, dir_str,
+                ));
+                self.status_message = format!("Opened {}", dir.display());
+                } else {
+                    self.status_message = "Extensions directory does not exist yet".into();
+                }
+            }
+            return Some(());
+        }
+
+        if let Some(id_str) = query.strip_prefix("extension-disable ") {
+            let id_str = id_str.trim();
+            if id_str.is_empty() {
+                self.status_message = "Usage: extension-disable <id>".into();
+                return Some(());
+            }
+            let ext_id = ExtensionId(id_str.to_string());
+            match self
+                .extension_manager
+                .lock()
+                .ok()
+                .and_then(|mut m| m.unload(&ext_id))
+            {
+                Some(name) => {
+                    self.status_message = format!("Disabled extension '{}' ({})", name, id_str);
+                }
+                None => {
+                    self.status_message = format!("Extension '{}' not found", id_str);
+                }
+            }
+            return Some(());
+        }
+
+        if let Some(path_str) = query.strip_prefix("extension-install ") {
+            let path_str = path_str.trim();
+            if path_str.is_empty() {
+                self.status_message = "Usage: extension-install <path-to-extension-dir>".into();
+                return Some(());
+            }
+            let path = std::path::PathBuf::from(path_str);
+            let manifest_path = if path.is_dir() {
+                path.join("manifest.json")
+            } else if path.ends_with("manifest.json") {
+                path
+            } else {
+                self.status_message = "Path must be a directory containing manifest.json".into();
+                return Some(());
+            };
+
+            if !manifest_path.exists() {
+                self.status_message = format!("No manifest.json found at {}", manifest_path.display());
+                return Some(());
+            }
+
+            match self
+                .extension_manager
+                .lock()
+                .ok()
+                .and_then(|mut m| m.load_extension_from_path(&manifest_path).ok())
+            {
+                Some(id) => {
+                    self.status_message = format!("Installed extension '{}' from {}", id.0, path_str);
+                }
+                None => {
+                    self.status_message = format!("Failed to load extension from {}", path_str);
+                }
+            }
             return Some(());
         }
 

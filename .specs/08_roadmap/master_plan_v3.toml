@@ -286,7 +286,7 @@ id = "S10"
 title = "Extension marketplace/loading UX"
 phase = "S"
 priority = "medium"
-status = "pending"
+status = "complete"
 description = "Add extension loading UX: :extensions command to list/enable/disable/remove. Extension settings page section. Load extensions from ~/.config/aileron/extensions/<id>/. Support .xpi and .crx unpacking (zip format). Show extension permissions before install."
 depends = ["S03"]
 
