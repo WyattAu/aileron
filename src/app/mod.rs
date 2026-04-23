@@ -222,11 +222,30 @@ pub struct AppState {
     /// Cached history entries for the history panel.
     pub history_entries: Vec<crate::db::history::HistoryEntry>,
 
+    /// Selected index in the history panel (for j/k navigation).
+    pub history_selected: usize,
+
     /// Whether the tab search panel overlay is open.
     pub tab_search_open: bool,
 
     /// Filter query for the tab search panel.
     pub tab_search_query: String,
+
+    /// Selected index in the tab search panel (for j/k navigation).
+    pub tab_search_selected: usize,
+
+    /// Stack of recently closed tabs for :tab-restore.
+    /// Each entry is (url, title).
+    pub closed_tab_stack: Vec<(String, String)>,
+
+    /// Whether the bookmarks panel overlay is open.
+    pub bookmarks_panel_open: bool,
+
+    /// Cached bookmarks for the bookmarks panel.
+    pub bookmarks_entries: Vec<crate::db::bookmarks::Bookmark>,
+
+    /// Selected index in the bookmarks panel (for j/k navigation).
+    pub bookmarks_selected: usize,
 }
 
 impl AppState {
@@ -406,8 +425,14 @@ impl AppState {
             arp_cmd_receiver: None,
             history_panel_open: false,
             history_entries: Vec::new(),
+            history_selected: 0,
             tab_search_open: false,
             tab_search_query: String::new(),
+            tab_search_selected: 0,
+            closed_tab_stack: Vec::new(),
+            bookmarks_panel_open: false,
+            bookmarks_entries: Vec::new(),
+            bookmarks_selected: 0,
         })
     }
 

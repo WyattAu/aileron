@@ -1,0 +1,479 @@
+# Aileron Master Plan v4 — Dogfood to v1.0
+# Created: 2026-04-23
+# Status: IN PROGRESS
+#
+# v3 completed all unblocked coding tasks (31/38). The remaining 7 tasks
+# are blocked on physical hardware or external dependencies (servo crate).
+#
+# v4 focuses on making Aileron a daily-driver browser through polish,
+# quality-of-life features, and documentation. The goal is v1.0 readiness
+# within 6 months.
+
+[metadata]
+version = "4.0.0"
+created = "2026-04-23"
+total_phases = 5
+total_tasks = 40
+v3_status = "31/38 complete (82%)"
+
+# ─────────────────────────────────────────────
+# Phase U: Keyboard-Driven Polish
+# The core differentiator: everything accessible without a mouse.
+# ─────────────────────────────────────────────
+
+[[task]]
+id = "U01"
+title = "Keyboard navigation for all overlay panels"
+phase = "U"
+priority = "critical"
+status = "pending"
+description = "Add j/k (or arrow keys) navigation to: history panel, tab search panel, command palette results, downloads panel. Enter to select, Escape to close. Currently these panels are mouse-only. This is the #1 usability gap for a keyboard-driven browser."
+depends = []
+
+[[task]]
+id = "U02"
+title = "Keybinding customization via config.toml"
+phase = "U"
+priority = "critical"
+status = "pending"
+description = "Allow users to remap keybindings in config.toml. Format: [keybindings] '<C-p>' = 'command_palette', '<C-t>' = 'split_vertical'. Fall back to defaults for unmapped keys. Parse crossterm-style key notation. Validate on load, warn on conflicts."
+depends = []
+
+[[task]]
+id = "U03"
+title = "Mode indicator in status bar"
+phase = "U"
+priority = "high"
+status = "pending"
+description = "Show current mode (Normal, Insert, Command, Hint, TabSearch) prominently in the status bar. Color-code modes. Show pending operator (e.g., 'd' waiting for motion). This is standard vim behavior that Aileron lacks."
+depends = []
+
+[[task]]
+id = "U04"
+title = "Omnibox frecency ranking"
+phase = "U"
+priority = "high"
+status = "pending"
+description = "Replace simple history search with frecency ranking (frequency * recency). Score = visit_count / log(age_in_hours + 2). Boost bookmarks and open tabs. Deduplicate results (same URL from history + bookmark + open tab → show once). Target: typing 2-3 chars should show the right result."
+depends = []
+
+[[task]]
+id = "U05"
+title = "Omnibox inline bookmarks and open tabs"
+phase = "U"
+priority = "medium"
+status = "pending"
+description = "When typing in the URL bar, show results from: open tabs (prefixed [tab]), bookmarks ([bm]), history ([hist]), and search suggestions ([search]). Category icons. Arrow keys to navigate, Enter to select."
+depends = ["U04"]
+
+[[task]]
+id = "U06"
+title = "Visual split pane resize handles"
+phase = "U"
+priority = "medium"
+status = "pending"
+description = "Add drag handles on split borders in egui. Mouse drag to resize panes. Show resize cursor on hover. Complement existing keyboard resize (resize-pane command)."
+depends = []
+
+[[task]]
+id = "U07"
+title = "Tab reorder via drag or command"
+phase = "U"
+priority = "medium"
+status = "pending"
+description = "Allow reordering tabs in the sidebar. Mouse drag or :tab-move <direction>. Update BSP tree structure accordingly."
+depends = []
+
+[[task]]
+id = "U08"
+title = "Undo close tab (:tab-restore)"
+phase = "U"
+priority = "high"
+status = "pending"
+description = "Maintain a closed-tab stack (URL + title + position). :tab-restore reopens the last closed tab. :tab-restore N restores the Nth most recent. Stack persists within session (not across restarts)."
+depends = []
+
+# ─────────────────────────────────────────────
+# Phase V: Content & Reading Features
+# Features that make Aileron useful for actual browsing.
+# ─────────────────────────────────────────────
+
+[[task]]
+id = "V01"
+title = "Bookmarks panel (:bookmarks)"
+phase = "V"
+priority = "high"
+status = "pending"
+description = "Add :bookmarks command opening an overlay panel. Show all bookmarks with titles, URLs, and folders. Click to navigate. Add :bookmark <name> to bookmark current page. DB schema exists (src/db/bookmarks.rs). Import from Firefox/Chrome."
+depends = []
+
+[[task]]
+id = "V02"
+title = "Bookmark folders and reordering"
+phase = "V"
+priority = "medium"
+status = "pending"
+description = "Support bookmark folders. :bookmark-folder <name> to create. :bookmark <name> <folder> to file. Show folder hierarchy in bookmarks panel."
+depends = ["V01"]
+
+[[task]]
+id = "V03"
+title = "Reader mode (:reader)"
+phase = "V"
+priority = "medium"
+status = "pending"
+description = "Inject readability-style CSS to strip page clutter. Serif font, comfortable line width, no sidebars/ads. Toggle with :reader. Persist preference per-site in site_settings."
+depends = []
+
+[[task]]
+id = "V04"
+title = "Per-site settings UI"
+phase = "V"
+priority = "medium"
+status = "pending"
+description = "Settings page section for per-site overrides. DB schema exists (src/db/site_settings.rs). Allow configuring: zoom level, content filter level, cookie policy, JavaScript toggle, reader mode default, custom CSS injection."
+depends = []
+
+[[task]]
+id = "V05"
+title = "Find and replace in page"
+phase = "V"
+priority = "medium"
+status = "pending"
+description = "Extend :find to support replace. :replace <old> <new>. Show match count. Replace all. Case-sensitive toggle."
+depends = []
+
+[[task]]
+id = "V06"
+title = "Multiple workspace support"
+phase = "V"
+priority = "low"
+status = "pending"
+description = "Quick workspace switching. :ws-next / :ws-prev to cycle. :ws-switch <name> to jump. Show current workspace name in status bar. Auto-save on switch."
+depends = []
+
+# ─────────────────────────────────────────────
+# Phase W: Reliability & Performance
+# Making it fast, stable, and trustworthy.
+# ─────────────────────────────────────────────
+
+[[task]]
+id = "W01"
+title = "Web content crash recovery"
+phase = "W"
+priority = "critical"
+status = "pending"
+description = "When a webview process crashes (WebKitGTK segfault, OOM), detect the crash, log it, and offer to reload the pane. Currently a webview crash leaves a blank pane with no recovery path."
+depends = []
+
+[[task]]
+id = "W02"
+title = "Memory management and tab unloading"
+phase = "W"
+priority = "high"
+status = "pending"
+description = "Track memory per tab. When total memory exceeds threshold (configurable, default 2GB), unload least-recently-used background tabs (replace content with a placeholder). Reload on activate. Show memory usage in :memory command."
+depends = []
+
+[[task]]
+id = "W03"
+title = "Adaptive frame rate for background tabs"
+phase = "W"
+priority = "high"
+status = "pending"
+description = "Background tabs should capture at 1-5fps (or not at all) instead of 30-60fps. Only the active tab gets full frame rate. This is partially implemented (AdaptiveQuality) but needs per-tab granularity."
+depends = []
+
+[[task]]
+id = "W04"
+title = "Startup time optimization"
+phase = "W"
+priority = "medium"
+status = "pending"
+description = "Profile and optimize cold start time. Target: <500ms to first pixel. Defer non-critical initialization (extension loading, filter list updates, git status). Lazy-load offscreen panes."
+depends = []
+
+[[task]]
+id = "W05"
+title = "Graceful degradation on GPU failure"
+phase = "W"
+priority = "medium"
+status = "pending"
+description = "If wgpu initialization fails (no Vulkan/GL), fall back to a pure software rendering mode or show a meaningful error dialog instead of crashing. Currently shows a terminal error message."
+depends = []
+
+[[task]]
+id = "W06"
+title = "Input latency measurement and optimization"
+phase = "W"
+priority = "medium"
+status = "pending"
+description = "Measure key-to-visual latency. Target: <16ms for local keybindings, <50ms for web content input forwarding. Profile and optimize the input→process→render pipeline."
+depends = []
+
+# ─────────────────────────────────────────────
+# Phase X: Integration & Ecosystem
+# Connecting Aileron to the tools developers already use.
+# ─────────────────────────────────────────────
+
+[[task]]
+id = "X01"
+title = "MCP server deepening"
+phase = "X"
+priority = "high"
+status = "pending"
+description = "Expand the MCP (Model Context Protocol) bridge. Add tools for: tab management, bookmark CRUD, history search, screenshot capture, DOM querying. Allow AI assistants (Claude, etc.) to control Aileron via MCP."
+depends = []
+
+[[task]]
+id = "X02"
+title = "Extension API documentation"
+phase = "X"
+priority = "high"
+status = "pending"
+description = "Write comprehensive documentation for the WebExtensions API surface. What's supported, what's stubbed, what's planned. Include examples for: content scripts, background scripts, storage, tabs API, webRequest API."
+depends = []
+
+[[task]]
+id = "X03"
+title = "Lua scripting guide and examples"
+phase = "X"
+priority = "medium"
+status = "pending"
+description = "Write a Lua scripting guide. Cover: keybinding overrides, tab automation, extension management, event hooks. Include 5+ practical examples (e.g., 'auto-dark-mode by time', 'open reading list on startup')."
+depends = []
+
+[[task]]
+id = "X04"
+title = "Settings page completeness"
+phase = "X"
+priority = "medium"
+status = "pending"
+description = "Every :set command should have a corresponding UI in the settings page. Currently many settings are CLI-only. Add: theme picker, keybinding display, tab layout options, privacy settings, extension management UI."
+depends = []
+
+[[task]]
+id = "X05"
+title = "Firefox/Chrome bookmark import UI"
+phase = "X"
+priority = "low"
+status = "pending"
+description = "The import commands exist (:import-firefox, :import-chrome) but there's no UI. Add import button in settings or bookmarks panel with progress indicator."
+depends = ["V01"]
+
+# ─────────────────────────────────────────────
+# Phase Y: Documentation & Release
+# Preparing for public visibility.
+# ─────────────────────────────────────────────
+
+[[task]]
+id = "Y01"
+title = "User-facing README"
+phase = "Y"
+priority = "high"
+status = "pending"
+description = "Write a proper README.md: what is Aileron, screenshots, installation (Arch/AUR, cargo, Nix), quick start, keybinding reference, configuration, extension development, contributing."
+depends = []
+
+[[task]]
+id = "Y02"
+title = "Keybinding reference card"
+phase = "Y"
+priority = "high"
+status = "pending"
+description = "Generate a complete keybinding reference. Include all modes (Normal, Insert, Command, Hint). Format as markdown table and optionally as a :help command showing a navigable reference."
+depends = []
+
+[[task]]
+id = "Y03"
+title = "Configuration reference"
+phase = "Y"
+priority = "medium"
+status = "pending"
+description = "Document every config.toml field with type, default, description, and examples. Generate from Config struct with doc comments."
+depends = []
+
+[[task]]
+id = "Y04"
+title = "Aileron website / landing page"
+phase = "Y"
+priority = "medium"
+status = "pending"
+description = "Simple landing page: hero (keyboard-driven browser for developers), features, screenshots, install guide, architecture overview. Host on GitHub Pages."
+depends = ["Y01"]
+
+[[task]]
+id = "Y05"
+title = "v1.0 release criteria and preparation"
+phase = "Y"
+priority = "high"
+status = "pending"
+description = "Define v1.0 criteria: all critical U/W tasks complete, README complete, no known data-loss bugs, 90%+ test coverage on critical paths, passes 1-week dogfood test. Prepare CHANGELOG, release notes, tag."
+depends = ["Y01", "Y02", "U01", "U02", "W01"]
+
+# ─────────────────────────────────────────────
+# Carried over from v3 (blocked)
+# These remain blocked on external dependencies.
+# ─────────────────────────────────────────────
+
+[[task]]
+id = "Q06"
+title = "Windows WebView2 setup (BLOCKED)"
+phase = "Q"
+priority = "medium"
+status = "blocked"
+description = "Requires Windows machine. Add WebView2 bootstrapper, test window creation/navigation/settings."
+depends = []
+
+[[task]]
+id = "Q07"
+title = "macOS WKWebView setup (BLOCKED)"
+phase = "Q"
+priority = "medium"
+status = "blocked"
+description = "Requires macOS machine. Add WKWebView config, native menu bar, macOS keybinding mapping."
+depends = []
+
+[[task]]
+id = "Q08"
+title = "Real-world testing on CachyOS (BLOCKED)"
+phase = "Q"
+priority = "critical"
+status = "blocked"
+description = "Requires CachyOS + NVIDIA RTX 2060. Test offscreen rendering, Vulkan init, keybindings, Wayland compatibility."
+depends = []
+
+[[task]]
+id = "Q09"
+title = "Performance profiling on real hardware (BLOCKED)"
+phase = "Q"
+priority = "medium"
+status = "blocked"
+description = "Requires physical machine. Frame times, memory with 10+ tabs, terminal latency, texture capture overhead."
+depends = ["Q08"]
+
+[[task]]
+id = "Q10"
+title = "Fix real-world bugs from CachyOS testing (BLOCKED)"
+phase = "Q"
+priority = "critical"
+status = "blocked"
+description = "Fix issues found during Q08/Q09."
+depends = ["Q08"]
+
+[[task]]
+id = "R01"
+title = "Servo crate dependency (BLOCKED)"
+phase = "R"
+priority = "critical"
+status = "blocked"
+description = "Blocked on servo crate stability (est. Oct 2026). Add servo v0.1.0 as optional dependency with feature flag."
+depends = []
+
+[[task]]
+id = "R02"
+title = "ServoEmbedder struct (BLOCKED)"
+phase = "R"
+priority = "critical"
+status = "blocked"
+description = "Blocked on R01. Implement ServoDelegate and WebViewDelegate traits."
+depends = ["R01"]
+
+[[task]]
+id = "R03"
+title = "ServoPane rendering (BLOCKED)"
+phase = "R"
+priority = "critical"
+status = "blocked"
+description = "Blocked on R02. Render via servo::WebView, capture RGBA buffer, convert to egui texture."
+depends = ["R02"]
+
+[[task]]
+id = "R04"
+title = "Servo texture sharing pipeline (BLOCKED)"
+phase = "R"
+priority = "high"
+status = "blocked"
+description = "Blocked on R03. Efficient RGBA buffer → egui texture pipeline with dirty-region tracking."
+depends = ["R03"]
+
+[[task]]
+id = "R05"
+title = "Servo engine selection integration (BLOCKED)"
+phase = "R"
+priority = "high"
+status = "blocked"
+description = "Blocked on R03. Wire into engine_selection system, add :engine servo command."
+depends = ["R03"]
+
+[[task]]
+id = "R06"
+title = "Servo JavaScript bridge (BLOCKED)"
+phase = "R"
+priority = "high"
+status = "blocked"
+description = "Blocked on R03. JS evaluation, IPC messages, settings page compatibility."
+depends = ["R03"]
+
+[[task]]
+id = "R07"
+title = "Servo content scripts and user styles (BLOCKED)"
+phase = "R"
+priority = "medium"
+status = "blocked"
+description = "Blocked on R03. UserContentManager integration for scripts and stylesheets."
+depends = ["R03"]
+
+[[task]]
+id = "R08"
+title = "Servo network and privacy (BLOCKED)"
+phase = "R"
+priority = "medium"
+status = "blocked"
+description = "Blocked on R02. Adblock integration, HTTPS upgrade, tracking protection via resource interception."
+depends = ["R02"]
+
+[[task]]
+id = "R09"
+title = "Servo performance benchmarking (BLOCKED)"
+phase = "R"
+priority = "medium"
+status = "blocked"
+description = "Blocked on R04, R05. Benchmark Servo vs WebKitGTK."
+depends = ["R04", "R05"]
+
+[[task]]
+id = "R10"
+title = "Servo upgrade to v0.2 LTS (BLOCKED)"
+phase = "R"
+priority = "low"
+status = "blocked"
+description = "Blocked on R09. Upgrade when Servo v0.2.0 LTS ships (~Oct 2026)."
+depends = ["R09"]
+
+[[task]]
+id = "T05"
+title = "Android client implementation (BLOCKED)"
+phase = "T"
+priority = "medium"
+status = "blocked"
+description = "Requires Android SDK. Kotlin + Compose or Rust via cargo-ndk + egui-mobile. Connect via ARP."
+depends = []
+
+[[task]]
+id = "T06"
+title = "iOS client implementation (BLOCKED)"
+phase = "T"
+priority = "low"
+status = "blocked"
+description = "Requires macOS + Xcode. Swift + SwiftUI. No local terminal (iOS restriction)."
+depends = []
+
+[[task]]
+id = "T07"
+title = "Servo cross-platform engine (BLOCKED)"
+phase = "T"
+priority = "medium"
+status = "blocked"
+description = "Blocked on R09. When Servo adds Windows/iOS support, integrate as cross-platform engine."
+depends = ["R09"]

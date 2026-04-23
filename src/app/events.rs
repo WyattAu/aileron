@@ -9,6 +9,102 @@ use super::WryAction;
 
 impl AppState {
     pub fn process_key_event(&mut self, event: KeyEvent) {
+        // History panel: j/k and arrow navigation
+        if self.history_panel_open {
+            match &event.key {
+                Key::Character('j') | Key::Down => {
+                    if !self.history_entries.is_empty() {
+                        self.history_selected = (self.history_selected + 1)
+                            .min(self.history_entries.len() - 1);
+                    }
+                    return;
+                }
+                Key::Character('k') | Key::Up => {
+                    self.history_selected = self.history_selected.saturating_sub(1);
+                    return;
+                }
+                Key::Enter => {
+                    if let Some(entry) = self.history_entries.get(self.history_selected)
+                        && let Ok(url) = url::Url::parse(&entry.url)
+                    {
+                        self.pending_wry_actions.push_back(WryAction::Navigate(url));
+                    }
+                    self.history_panel_open = false;
+                    self.history_entries.clear();
+                    return;
+                }
+                // Escape handled in main.rs
+                _ => {}
+            }
+        }
+
+        // Tab search panel: j/k navigation (only when TextEdit not focused)
+        if self.tab_search_open {
+            match &event.key {
+                Key::Down => {
+                    self.tab_search_selected = self.tab_search_selected.saturating_sub(1);
+                    return;
+                }
+                Key::Up => {
+                    self.tab_search_selected = self.tab_search_selected.saturating_sub(1);
+                    return;
+                }
+                Key::Enter => {
+                    let panes = self.wm.panes();
+                    let ids: Vec<_> = panes.iter().map(|(id, _)| *id).collect();
+                    if let Some(id) = ids.get(self.tab_search_selected) {
+                        self.wm.set_active_pane(*id);
+                    }
+                    self.tab_search_open = false;
+                    return;
+                }
+                // Escape handled in main.rs
+                _ => {}
+            }
+        }
+
+        // Bookmarks panel: j/k navigation
+        if self.bookmarks_panel_open {
+            match &event.key {
+                Key::Character('j') | Key::Down => {
+                    if !self.bookmarks_entries.is_empty() {
+                        self.bookmarks_selected = (self.bookmarks_selected + 1)
+                            .min(self.bookmarks_entries.len() - 1);
+                    }
+                    return;
+                }
+                Key::Character('k') | Key::Up => {
+                    self.bookmarks_selected = self.bookmarks_selected.saturating_sub(1);
+                    return;
+                }
+                Key::Enter => {
+                    if let Some(bm) = self.bookmarks_entries.get(self.bookmarks_selected)
+                        && let Ok(url) = url::Url::parse(&bm.url)
+                    {
+                        self.pending_wry_actions.push_back(WryAction::Navigate(url));
+                    }
+                    self.bookmarks_panel_open = false;
+                    self.bookmarks_entries.clear();
+                    return;
+                }
+                Key::Character('d') => {
+                    // d to delete selected bookmark
+                    if let Some(bm) = self.bookmarks_entries.get(self.bookmarks_selected) {
+                        if let Some(db) = self.db.as_ref() {
+                            let _ = crate::db::bookmarks::remove_bookmark_by_id(db, bm.id);
+                        }
+                        let removed_id = bm.id;
+                        self.bookmarks_entries.retain(|b| b.id != removed_id);
+                        if self.bookmarks_selected >= self.bookmarks_entries.len() {
+                            self.bookmarks_selected = self.bookmarks_entries.len().saturating_sub(1);
+                        }
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         // If palette is open, route input to it
         if self.palette.open {
             let key_str: Option<String> = match &event.key {

@@ -282,6 +282,86 @@ impl AppState {
         if query == "tabs" {
             self.tab_search_open = !self.tab_search_open;
             self.tab_search_query.clear();
+            self.tab_search_selected = 0;
+            return;
+        }
+
+        // Tab restore command
+        if let Some(rest) = query.strip_prefix("tab-restore ") {
+            // :tab-restore N — restore the Nth most recent closed tab
+            if let Ok(n) = rest.trim().parse::<usize>() {
+                if n == 0 {
+                    // :tab-restore 0 = most recent
+                    if let Some((url, _title)) = self.closed_tab_stack.pop() {
+                        if let Ok(parsed) = url::Url::parse(&url) {
+                            self.pending_wry_actions.push_back(WryAction::Navigate(parsed));
+                            self.status_message = format!("Restored: {}", url);
+                        }
+                    } else {
+                        self.status_message = "No closed tabs to restore".into();
+                    }
+                } else if let Some((url, _title)) = self.closed_tab_stack.get(n.saturating_sub(1)) {
+                    let url_clone = url.clone();
+                    if let Ok(parsed) = url::Url::parse(&url_clone) {
+                        self.pending_wry_actions.push_back(WryAction::Navigate(parsed));
+                        self.status_message = format!("Restored: {}", url_clone);
+                    }
+                } else {
+                    self.status_message = format!("No closed tab at index {}", n);
+                }
+                return;
+            }
+        }
+        if query == "tab-restore" {
+            // :tab-restore (no arg) = restore most recent
+            if let Some((url, _title)) = self.closed_tab_stack.pop() {
+                if let Ok(parsed) = url::Url::parse(&url) {
+                    self.pending_wry_actions.push_back(WryAction::Navigate(parsed));
+                    self.status_message = format!("Restored: {}", url);
+                }
+            } else {
+                self.status_message = "No closed tabs to restore".into();
+            }
+            return;
+        }
+
+        // Bookmarks command
+        if self.cmd_bookmarks(query).is_some() { return; }
+
+        // Reader mode command
+        if query == "reader" {
+            let reader_css = r#"
+                (function() {
+                    if (document.getElementById('__aileron_reader')) {
+                        document.getElementById('__aileron_reader').remove();
+                        return;
+                    }
+                    var style = document.createElement('style');
+                    style.id = '__aileron_reader';
+                    style.textContent = `
+                        body { background: #1a1a2e !important; color: #e0e0e0 !important; }
+                        body * { background: transparent !important; color: #e0e0e0 !important;
+                                 font-family: Georgia, 'Times New Roman', serif !important;
+                                 line-height: 1.7 !important; }
+                        article, main, .content, .post, .entry { max-width: 680px !important;
+                            margin: 40px auto !important; padding: 0 20px !important; }
+                        nav, header, footer, aside, .sidebar, .ad, .advertisement,
+                        .social-share, .comments, .related, .newsletter, .popup,
+                        [class*="ad-"], [class*="sidebar"], [id*="sidebar"] {
+                            display: none !important; }
+                        img { max-width: 100% !important; height: auto !important; margin: 1em 0 !important; }
+                        a { color: #7eb8f7 !important; }
+                        pre, code { background: #2a2a3e !important; color: #c0c0c0 !important;
+                                    padding: 2px 6px !important; border-radius: 3px !important; }
+                        blockquote { border-left: 3px solid #4db4ff !important; padding-left: 1em !important;
+                                    color: #b0b0b0 !important; }
+                    `;
+                    document.head.appendChild(style);
+                    window.ipc.postMessage(JSON.stringify({t:'reader-toggled', enabled: true}));
+                })()
+            "#;
+            self.pending_wry_actions.push_back(WryAction::RunJs(reader_css.into()));
+            self.status_message = "Reader mode toggled".into();
             return;
         }
 
@@ -767,7 +847,9 @@ impl AppState {
                 "extensions", "extension-load", "extension-info",
                 "arp-start", "arp-stop", "arp-status", "arp-token",
                 "history", "history-clear",
-                "tabs",
+                "tabs", "tab-restore",
+                "bookmarks", "bookmark",
+                "reader",
                 "sync", "sync --pull", "sync --both", "sync --status",
                 "sync-watch", "sync-stop", "sync-target",
             ];
@@ -1125,6 +1207,7 @@ impl AppState {
                     match crate::db::history::recent_entries(db, 100) {
                         Ok(entries) => {
                             self.history_entries = entries;
+                            self.history_selected = 0;
                             self.history_panel_open = true;
                         }
                         Err(e) => {
@@ -1150,6 +1233,79 @@ impl AppState {
                 Some(())
             }
             _ => None,
+        }
+    }
+
+    /// Handle bookmark commands: bookmarks (panel), bookmark <url> (add), bookmark-clear.
+    fn cmd_bookmarks(&mut self, query: &str) -> Option<()> {
+        match query {
+            "bookmarks" => {
+                // Toggle bookmarks panel
+                if self.bookmarks_panel_open {
+                    self.bookmarks_panel_open = false;
+                    self.bookmarks_entries.clear();
+                } else if let Some(db) = self.db.as_ref() {
+                    match crate::db::bookmarks::all_bookmarks(db) {
+                        Ok(entries) => {
+                            self.bookmarks_entries = entries;
+                            self.bookmarks_selected = 0;
+                            self.bookmarks_panel_open = true;
+                        }
+                        Err(e) => {
+                            self.status_message = format!("Bookmarks error: {}", e);
+                        }
+                    }
+                }
+                Some(())
+            }
+            "bookmark-clear" => {
+                if let Some(db) = self.db.as_ref() {
+                    match crate::db::bookmarks::clear_bookmarks(db) {
+                        Ok(count) => {
+                            self.status_message = format!("Cleared {} bookmarks", count);
+                            self.bookmarks_panel_open = false;
+                            self.bookmarks_entries.clear();
+                        }
+                        Err(e) => {
+                            self.status_message = format!("Failed to clear bookmarks: {}", e);
+                        }
+                    }
+                }
+                Some(())
+            }
+            _ => {
+                // :bookmark <url> — bookmark current page or specified URL
+                if let Some(url_str) = query.strip_prefix("bookmark ") {
+                    let url_to_save = if url_str.trim().is_empty() {
+                        // Bookmark current active tab
+                        None // will be filled below
+                    } else {
+                        Some(url_str.trim().to_string())
+                    };
+
+                    if let Some(db) = self.db.as_ref() {
+                        let (url, title) = if let Some(u) = url_to_save {
+                            (u, String::new())
+                        } else {
+                            // Need active tab URL — but we don't have wry_panes here
+                            // Use a pending action approach instead
+                            self.status_message = "Usage: :bookmark <url>".into();
+                            return Some(());
+                        };
+
+                        match crate::db::bookmarks::add_bookmark(db, &url, &title) {
+                            Ok(id) => {
+                                self.status_message = format!("Bookmarked: {} (id={})", url, id);
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Bookmark failed: {}", e);
+                            }
+                        }
+                    }
+                    return Some(());
+                }
+                None
+            }
         }
     }
 

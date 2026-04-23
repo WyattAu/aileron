@@ -1093,6 +1093,11 @@ impl ApplicationHandler for AileronApp {
                         app_state.tab_search_open = false;
                         return;
                     }
+                    if app_state.bookmarks_panel_open && key == aileron::input::Key::Escape {
+                        app_state.bookmarks_panel_open = false;
+                        app_state.bookmarks_entries.clear();
+                        return;
+                    }
                     // Track pane count before processing key
                     let pane_ids_before: std::collections::HashSet<uuid::Uuid> = app_state
                         .wm
@@ -1135,6 +1140,22 @@ impl ApplicationHandler for AileronApp {
                     }
 
                     for pid in &closed_pane_ids {
+                        // Save closed tab info for :tab-restore
+                        let url = self.wry_panes.url_for(pid)
+                            .map(|u| u.to_string())
+                            .unwrap_or_default();
+                        let title = self.wry_panes.get(pid)
+                            .map(|p| p.title().to_string())
+                            .unwrap_or_default();
+                        if !url.is_empty()
+                            && let Some(app_state) = &mut self.app_state
+                        {
+                            app_state.closed_tab_stack.push((url, title));
+                            // Limit stack to 50 entries
+                            if app_state.closed_tab_stack.len() > 50 {
+                                app_state.closed_tab_stack.remove(0);
+                            }
+                        }
                         self.remove_wry_pane_for(pid);
                     }
 

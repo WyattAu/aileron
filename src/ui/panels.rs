@@ -474,9 +474,10 @@ pub fn build_ui(
                             );
                         }
                         let mut navigate_to: Option<url::Url> = None;
-                        for entry in &app_state.history_entries {
+                        for (i, entry) in app_state.history_entries.iter().enumerate() {
+                            let is_selected = i == app_state.history_selected;
                             let response = ui.selectable_label(
-                                false,
+                                is_selected,
                                 egui::RichText::new(format!(
                                     "{}  {}  [{}×]",
                                     entry.title,
@@ -484,10 +485,15 @@ pub fn build_ui(
                                     entry.visit_count,
                                 ))
                                 .size(13.0)
-                                .color(text),
+                                .color(if is_selected { accent } else { text }),
                             );
                             if response.clicked() {
                                 navigate_to = url::Url::parse(&entry.url).ok();
+                                app_state.history_selected = i;
+                            }
+                            // Scroll selected item into view
+                            if is_selected {
+                                response.scroll_to_me(Some(egui::Align::Center));
                             }
                             // Tooltip with full URL and timestamp
                             response.on_hover_text(format!(
@@ -565,6 +571,7 @@ pub fn build_ui(
                 egui::ScrollArea::vertical()
                     .max_height(300.0)
                     .show(ui, |ui| {
+                        let mut visible_index = 0usize;
                         for (id, _rect) in &panes {
                             let url = wry_panes.url_for(id)
                                 .map(|u| u.to_string())
@@ -584,6 +591,7 @@ pub fn build_ui(
                             }
 
                             let is_active = *id == active_id;
+                            let is_selected = visible_index == app_state.tab_search_selected;
                             let is_terminal = app_state.terminal_pane_ids.contains(id);
                             let prefix = if is_terminal { "[term] " } else { "" };
                             let marker = if is_active { " ●" } else { "" };
@@ -591,19 +599,29 @@ pub fn build_ui(
                             ui.horizontal(|ui| {
                                 let label = format!("{}{}{}  {}", prefix, title, marker, url);
                                 let response = ui.selectable_label(
-                                    is_active,
+                                    is_selected || is_active,
                                     egui::RichText::new(label)
                                         .size(13.0)
-                                        .color(if is_active { accent } else { text }),
+                                        .color(if is_selected { accent } else if is_active { text } else { dim }),
                                 );
                                 if response.clicked() {
                                     switch_to = Some(*id);
+                                    app_state.tab_search_selected = visible_index;
+                                }
+                                if is_selected {
+                                    response.scroll_to_me(Some(egui::Align::Center));
                                 }
 
                                 if ui.small_button("✕").clicked() {
                                     close_tab = Some(*id);
                                 }
                             });
+                            visible_index += 1;
+                        }
+
+                        // Clamp selection to visible count
+                        if visible_index > 0 && app_state.tab_search_selected >= visible_index {
+                            app_state.tab_search_selected = visible_index - 1;
                         }
 
                         if panes.is_empty() {
@@ -618,6 +636,100 @@ pub fn build_ui(
                     let _ = app_state.wm.close(id);
                     app_state.session_dirty = true;
                 }
+            });
+    }
+
+    // ─── Bookmarks Panel ───
+    if app_state.bookmarks_panel_open {
+        let bg = egui::Color32::from_rgb(0x19, 0x19, 0x20);
+        let accent = egui::Color32::from_rgb(0x4d, 0xb4, 0xff);
+        let text = egui::Color32::from_rgb(0xd4, 0xd4, 0xd4);
+
+        egui::Window::new("bookmarks")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(550.0)
+            .default_height(450.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .frame(egui::Frame::new()
+                .fill(bg)
+                .inner_margin(12.0)
+                .corner_radius(6.0)
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x40, 0x40, 0x50))))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Bookmarks")
+                            .size(16.0)
+                            .color(accent)
+                            .strong(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("✕").clicked() {
+                            app_state.bookmarks_panel_open = false;
+                            app_state.bookmarks_entries.clear();
+                        }
+                    });
+                });
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                egui::ScrollArea::vertical()
+                    .max_height(380.0)
+                    .show(ui, |ui| {
+                        if app_state.bookmarks_entries.is_empty() {
+                            ui.label(
+                                egui::RichText::new("No bookmarks")
+                                    .color(egui::Color32::GRAY),
+                            );
+                        }
+                        let mut navigate_to: Option<url::Url> = None;
+                        let mut delete_id: Option<i64> = None;
+                        for (i, bm) in app_state.bookmarks_entries.iter().enumerate() {
+                            let is_selected = i == app_state.bookmarks_selected;
+                            ui.horizontal(|ui| {
+                                let label = format!("{}  {}", bm.title, bm.url);
+                                let response = ui.selectable_label(
+                                    is_selected,
+                                    egui::RichText::new(label)
+                                        .size(13.0)
+                                        .color(if is_selected { accent } else { text }),
+                                );
+                                if response.clicked() {
+                                    navigate_to = url::Url::parse(&bm.url).ok();
+                                    app_state.bookmarks_selected = i;
+                                }
+                                if is_selected {
+                                    response.scroll_to_me(Some(egui::Align::Center));
+                                }
+                                response.on_hover_text(format!(
+                                    "Created: {}\nID: {}",
+                                    bm.created_at, bm.id
+                                ));
+                                if ui.small_button("✕").clicked() {
+                                    delete_id = Some(bm.id);
+                                }
+                            });
+                        }
+                        if let Some(url) = navigate_to {
+                            app_state
+                                .pending_wry_actions
+                                .push_back(crate::app::WryAction::Navigate(url));
+                            app_state.bookmarks_panel_open = false;
+                            app_state.bookmarks_entries.clear();
+                        }
+                        if let Some(id) = delete_id
+                            && let Some(db) = app_state.db.as_ref()
+                        {
+                            let _ = crate::db::bookmarks::remove_bookmark_by_id(db, id);
+                            app_state.bookmarks_entries.retain(|b| b.id != id);
+                            if app_state.bookmarks_selected >= app_state.bookmarks_entries.len() {
+                                app_state.bookmarks_selected = app_state.bookmarks_entries.len().saturating_sub(1);
+                            }
+                        }
+                    });
             });
     }
 
