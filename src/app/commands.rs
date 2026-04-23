@@ -312,6 +312,13 @@ impl AppState {
                 return;
             }
         }
+
+        // Help panel
+        if query == "help" || query == "?" {
+            self.help_panel_open = true;
+            return;
+        }
+
         if query == "tab-restore" {
             // :tab-restore (no arg) = restore most recent
             if let Some((url, _title)) = self.closed_tab_stack.pop() {
@@ -321,6 +328,23 @@ impl AppState {
                 }
             } else {
                 self.status_message = "No closed tabs to restore".into();
+            }
+            return;
+        }
+
+        // Tab unload: close least-recently-focused background pane
+        if query == "tab-unload" {
+            if let Some(lru_id) = self.find_lru_pane() {
+                // Save to closed tab stack for possible restore
+                let panes = self.wm.panes();
+                if let Some((_, _)) = panes.iter().find(|(id, _)| *id == lru_id) {
+                    // We can't easily get URL/title from BspTree here,
+                    // but main.rs captures it before removing
+                    self.pending_tab_close = Some(lru_id);
+                    self.status_message = "Unloading least-recently-used pane".into();
+                }
+            } else {
+                self.status_message = "Only one pane open, nothing to unload".into();
             }
             return;
         }
@@ -362,6 +386,20 @@ impl AppState {
             "#;
             self.pending_wry_actions.push_back(WryAction::RunJs(reader_css.into()));
             self.status_message = "Reader mode toggled".into();
+            return;
+        }
+
+        // Crash recovery: reload the pane that last crashed
+        if query == "crash-reload" {
+            if let Some(url) = self.crashed_pane_url.take() {
+                self.webview_crash_detected = false;
+                if let Ok(parsed) = url::Url::parse(&url) {
+                    self.pending_wry_actions.push_back(WryAction::Navigate(parsed));
+                    self.status_message = format!("Reloaded crashed pane: {}", url);
+                }
+            } else {
+                self.status_message = "No crash to recover from".into();
+            }
             return;
         }
 
@@ -827,7 +865,7 @@ impl AppState {
         } else {
             // Try fuzzy suggestion before falling back to search
             let known_commands = [
-                "q", "quit", "open", "ssh", "set", "vs", "sp", "files", "browse",
+                "q", "quit", "open", "help", "?", "ssh", "set", "vs", "sp", "files", "browse",
                 "bw-unlock", "bw-search", "bw-lock", "bw-autofill", "bw-detect",
                 "keyring-test", "credentials-save",
                 "adblock-toggle", "adblock-count", "adblock-update", "privacy", "https-toggle",
@@ -847,9 +885,10 @@ impl AppState {
                 "extensions", "extension-load", "extension-info",
                 "arp-start", "arp-stop", "arp-status", "arp-token",
                 "history", "history-clear",
-                "tabs", "tab-restore",
+                "tabs", "tab-restore", "tab-unload",
                 "bookmarks", "bookmark",
                 "reader",
+                "crash-reload",
                 "sync", "sync --pull", "sync --both", "sync --status",
                 "sync-watch", "sync-stop", "sync-target",
             ];

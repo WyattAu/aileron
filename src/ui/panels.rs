@@ -67,8 +67,26 @@ pub fn build_ui(
                     Mode::Insert => accent,
                     Mode::Command => egui::Color32::from_rgb(255, 200, 100),
                 };
-                let mode_str = app_state.mode.as_str();
-                ui.colored_label(mode_color, mode_str).widget_info(|| {
+                let mut mode_str = app_state.mode.as_str().to_string();
+
+                // Show sub-mode indicators
+                if app_state.hint_mode {
+                    mode_str = format!("{} HINT[{}]", mode_str, &app_state.hint_buffer);
+                } else if app_state.find_bar_open {
+                    mode_str = format!("{} FIND", mode_str);
+                } else if app_state.url_bar_focused {
+                    mode_str = format!("{} URL", mode_str);
+                } else if app_state.tab_search_open {
+                    mode_str = format!("{} TABS", mode_str);
+                } else if app_state.history_panel_open {
+                    mode_str = format!("{} HIST", mode_str);
+                } else if app_state.bookmarks_panel_open {
+                    mode_str = format!("{} BM", mode_str);
+                } else if app_state.help_panel_open {
+                    mode_str = format!("{} HELP", mode_str);
+                }
+
+                ui.colored_label(mode_color, &mode_str).widget_info(|| {
                     a11y_info(WidgetType::Label, format!("Current mode: {}", mode_str))
                 });
 
@@ -219,9 +237,113 @@ pub fn build_ui(
                                     app_state.omnibox_results.clear();
                                     app_state.last_omnibox_query.clear();
                                 }
-                            });
+                    });
+            });
+    }
+
+    // Help panel overlay
+    if app_state.help_panel_open {
+        let help_sections: &[(&str, &[(&str, &str)])] = &[
+            ("Navigation", &[
+                ("j / k", "Scroll down / up"),
+                ("Ctrl+D / Ctrl+U", "Half page down / up"),
+                ("Ctrl+F", "Find in page"),
+                ("G / gg", "Scroll to bottom / top"),
+                ("H / L", "Go back / forward"),
+                ("f", "Toggle link hints"),
+                ("r", "Reload page"),
+                ("m' / 'a", "Set / jump to scroll mark"),
+            ]),
+            ("Panes & Tabs", &[
+                ("Ctrl+W / Ctrl+S", "Split vertical / horizontal"),
+                ("Ctrl+H/J/K/L", "Navigate panes"),
+                ("q", "Close pane"),
+                ("w", "Close all panes except current"),
+                ("Ctrl+Shift+D", "Detach pane to popup"),
+                ("Ctrl+Shift+P", "Pin / unpin pane"),
+                (":tab-restore", "Reopen closed tab"),
+                (":tabs", "Search open tabs"),
+            ]),
+            ("Modes", &[
+                ("i", "Enter Insert mode"),
+                ("Esc", "Return to Normal mode"),
+                ("Ctrl+P", "Open command palette"),
+                (":help", "Show this help panel"),
+            ]),
+            ("URL & Search", &[
+                ("o <url>", "Open URL"),
+                ("O <url>", "Open in new tab"),
+                ("y", "Copy URL to clipboard"),
+                ("Ctrl+E", "Open in system browser"),
+                (":engine <name>", "Switch search engine"),
+                ("a-s / a-S", "Save / search quickmark"),
+            ]),
+            ("Privacy & Security", &[
+                ("Ctrl+B", "Toggle bookmark"),
+                (":bookmarks", "View bookmarks"),
+                (":adblock-toggle", "Toggle ad block"),
+                (":privacy", "Privacy dashboard"),
+                (":cookies", "View cookies"),
+                (":site-settings", "Per-site settings"),
+            ]),
+            ("Terminal", &[
+                ("`", "Open terminal pane"),
+                (":ssh <host>", "SSH quick-connect"),
+                (":terminal-clear", "Clear terminal"),
+                (":terminal-search", "Search scrollback"),
+                (":! <cmd>", "Run shell command"),
+            ]),
+            ("Developer", &[
+                ("F12", "Toggle dev tools"),
+                ("Ctrl+Shift+N", "Network log"),
+                ("Ctrl+Shift+J", "Console log"),
+                (":inspect", "WebKit inspector"),
+                (":gs / :gl / :gd", "Git status / log / diff"),
+                (":grep <pat>", "Search project (ripgrep)"),
+            ]),
+            ("Sessions", &[
+                (":ws-save <name>", "Save workspace"),
+                (":ws-load <name>", "Load workspace"),
+                (":ws-list", "List workspaces"),
+                (":layout-save <n>", "Save layout"),
+                (":layout-load <n>", "Load layout"),
+            ]),
+        ];
+
+        egui::Window::new("Help")
+            .default_width(640.0)
+            .default_height(520.0)
+            .resizable(true)
+            .collapsible(false)
+            .frame(egui::Frame::new().fill(bg))
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.screen_rect().center())
+            .show(ctx, |ui| {
+                ui.strong("Aileron Keybindings");
+                ui.label("Press Esc or ? to close");
+                ui.separator();
+
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for (section, bindings) in help_sections {
+                        ui.collapsing(*section, |ui| {
+                            egui::Grid::new(format!("help_grid_{section}"))
+                                .num_columns(2)
+                                .striped(true)
+                                .min_col_width(140.0)
+                                .show(ui, |ui| {
+                                    for (key, desc) in *bindings {
+                                        ui.label(
+                                            egui::RichText::new(*key).color(accent),
+                                        );
+                                        ui.label(*desc);
+                                        ui.end_row();
+                                    }
+                                });
                         });
-                }
+                    }
+                });
+            });
+    }
 
                 if ui.input(|i| i.key_pressed(egui::Key::ArrowDown))
                     && app_state.omnibox_selected

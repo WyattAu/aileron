@@ -140,6 +140,13 @@ pub struct Config {
     /// ARP auth token. Generated via `:arp-token`. None = no auth (warning).
     #[serde(skip_serializing)]
     pub arp_token: Option<String>,
+
+    /// Custom keybinding overrides. Format: `"<key>" = "<action>"`.
+    /// Keys use crossterm notation: `<C-p>` for Ctrl+P, `<A-S>` for Alt+Shift+S.
+    /// Actions match the Action enum in src/input/keybindings.rs.
+    /// Example: `"<C-p>" = "OpenCommandPalette"`, `"j" = "ScrollDown"`.
+    #[serde(default)]
+    pub keybindings: std::collections::HashMap<String, String>,
 }
 
 /// Color overrides for a custom theme.
@@ -375,6 +382,7 @@ impl Default for Config {
             sync_auto_interval_sec: 60,
             arp_port: None,
             arp_token: None,
+            keybindings: std::collections::HashMap::new(),
         }
     }
 }

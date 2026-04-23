@@ -19,6 +19,9 @@ pub fn poll_git_status(git_status: &mut GitStatus, last_git_poll: &mut std::time
 }
 
 pub fn auto_save_workspace(app_state: &mut AppState, wry_panes: &WryPaneManager) {
+    // Track pane focus changes for LRU unloading
+    app_state.update_pane_focus_tracking();
+
     if !app_state.config.auto_save {
         return;
     }

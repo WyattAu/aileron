@@ -323,6 +323,139 @@ impl KeybindingRegistry {
         self.bindings.get(&combo)
     }
 
+    /// Apply custom keybinding overrides from config.
+    /// Format: `"<key>" = "<Action>"` where key uses crossterm notation:
+    /// - `"j"` - bare character key (Normal mode)
+    /// - `"<C-p>"` - Ctrl+P (Normal mode)
+    /// - `"<A-S>"` - Alt+Shift+S
+    /// - `"<C-S-i>"` - Ctrl+Shift+I
+    /// - `"<F1>"` - function keys
+    ///
+    /// Returns the number of bindings applied.
+    pub fn apply_config_overrides(&mut self, overrides: &std::collections::HashMap<String, String>) -> usize {
+        let mut applied = 0usize;
+        for (key_str, action_str) in overrides {
+            let combo = match Self::parse_key_combo(key_str) {
+                Some(c) => c,
+                None => {
+                    tracing::warn!(target: "keybindings", "Failed to parse key: {}", key_str);
+                    continue;
+                }
+            };
+            let action = match Self::parse_action(action_str) {
+                Some(a) => a,
+                None => {
+                    tracing::warn!(target: "keybindings", "Unknown action: {}", action_str);
+                    continue;
+                }
+            };
+            self.register(combo, action);
+            applied += 1;
+        }
+        applied
+    }
+
+    /// Parse a key string in crossterm-like notation.
+    fn parse_key_combo(s: &str) -> Option<KeyCombo> {
+        let s = s.trim();
+        // Strip angle brackets: <C-p> → C-p
+        let inner = s.strip_prefix('<').and_then(|r| r.strip_suffix('>')).unwrap_or(s);
+
+        let mut modifiers = Modifiers::none();
+        let mut key_part = inner;
+
+        // Parse modifier prefixes: C- for Ctrl, A- for Alt, S- for Shift, F1-F12
+        loop {
+            if let Some(rest) = key_part.strip_prefix("C-") {
+                modifiers.ctrl = true;
+                key_part = rest;
+            } else if let Some(rest) = key_part.strip_prefix("A-") {
+                modifiers.alt = true;
+                key_part = rest;
+            } else if let Some(rest) = key_part.strip_prefix("S-") {
+                modifiers.shift = true;
+                key_part = rest;
+            } else {
+                break;
+            }
+        }
+
+        let key = if key_part.starts_with('F') && key_part.len() <= 3 {
+            // Function key: F1-F12
+            let num: u8 = key_part[1..].parse().ok()?;
+            if num == 0 || num > 12 { return None; }
+            Key::F(num)
+        } else if key_part.len() == 1 {
+            Key::Character(key_part.chars().next()?)
+        } else {
+            // Special keys
+            match key_part {
+                "Enter" | "Return" => Key::Enter,
+                "Escape" | "Esc" => Key::Escape,
+                "Backspace" | "BS" => Key::Backspace,
+                "Tab" => Key::Tab,
+                "Space" | "SPC" => Key::Character(' '),
+                _ => return None,
+            }
+        };
+
+        Some(KeyCombo::new(Mode::Normal, modifiers, key))
+    }
+
+    /// Parse an action string into an Action variant.
+    fn parse_action(s: &str) -> Option<Action> {
+        match s.trim() {
+            "ScrollDown" => Some(Action::ScrollDown),
+            "ScrollUp" => Some(Action::ScrollUp),
+            "ScrollLeft" => Some(Action::ScrollLeft),
+            "ScrollRight" => Some(Action::ScrollRight),
+            "HalfPageDown" => Some(Action::HalfPageDown),
+            "HalfPageUp" => Some(Action::HalfPageUp),
+            "ScrollTop" => Some(Action::ScrollTop),
+            "ScrollBottom" => Some(Action::ScrollBottom),
+            "SplitVertical" | "vs" => Some(Action::SplitVertical),
+            "SplitHorizontal" | "sp" => Some(Action::SplitHorizontal),
+            "ClosePane" | "CloseTab" => Some(Action::ClosePane),
+            "CloseOtherPanes" => Some(Action::CloseOtherPanes),
+            "NavigateUp" => Some(Action::NavigateUp),
+            "NavigateDown" => Some(Action::NavigateDown),
+            "NavigateLeft" => Some(Action::NavigateLeft),
+            "NavigateRight" => Some(Action::NavigateRight),
+            "NavigateBack" => Some(Action::NavigateBack),
+            "NavigateForward" => Some(Action::NavigateForward),
+            "Reload" => Some(Action::Reload),
+            "BookmarkToggle" => Some(Action::BookmarkToggle),
+            "OpenCommandPalette" | "CommandPalette" => Some(Action::OpenCommandPalette),
+            "OpenExternalBrowser" => Some(Action::OpenExternalBrowser),
+            "EnterInsertMode" | "InsertMode" => Some(Action::EnterInsertMode),
+            "ToggleDevTools" | "DevTools" => Some(Action::ToggleDevTools),
+            "NewTab" => Some(Action::NewTab),
+            "Yank" => Some(Action::Yank),
+            "Paste" => Some(Action::Paste),
+            "CopyUrl" => Some(Action::CopyUrl),
+            "Find" => Some(Action::Find),
+            "FindNext" => Some(Action::FindNext),
+            "FindPrev" => Some(Action::FindPrev),
+            "FindClose" => Some(Action::FindClose),
+            "ToggleLinkHints" | "Hints" => Some(Action::ToggleLinkHints),
+            "SaveWorkspace" => Some(Action::SaveWorkspace),
+            "OpenTerminal" => Some(Action::OpenTerminal),
+            "NewWindow" => Some(Action::NewWindow),
+            "ZoomIn" => Some(Action::ZoomIn),
+            "ZoomOut" => Some(Action::ZoomOut),
+            "ZoomReset" => Some(Action::ZoomReset),
+            "ToggleReaderMode" | "Reader" => Some(Action::ToggleReaderMode),
+            "ToggleMinimalMode" | "Minimal" => Some(Action::ToggleMinimalMode),
+            "ToggleNetworkLog" => Some(Action::ToggleNetworkLog),
+            "ToggleConsoleLog" => Some(Action::ToggleConsoleLog),
+            "DetachPane" | "Detach" => Some(Action::DetachPane),
+            "Print" => Some(Action::Print),
+            "PinPane" | "Pin" => Some(Action::PinPane),
+            "Quit" => Some(Action::Quit),
+            _ => None,
+        }
+    }
+
     /// Count of registered bindings.
     pub fn len(&self) -> usize {
         self.bindings.len()

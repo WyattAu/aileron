@@ -1,6 +1,6 @@
 # Aileron
 
-**v0.8.0** — 678 tests, ~28,000 Rust LOC
+**v0.15.0** — 806 tests, ~38,000 Rust LOC
 
 **The terminal for the web.** A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals. Written in Rust with wry (WebKitGTK) for web rendering and egui for the UI overlay.
 
@@ -12,8 +12,13 @@
 - **Tiling pane management** — BSP tree layout with vertical/horizontal splits, pane navigation, and close
 - **Command palette** — `Ctrl+P` fuzzy search (Nucleo engine) across history, bookmarks, commands, and custom Lua commands
 - **Lua scripting** — `init.lua` for custom keybindings, commands, URL redirect rules, and themes
+- **Keybinding customization** — override default keybindings via `config.toml` `[keybindings]` section
 - **Workspace persistence** — save/restore pane layouts with URLs via `:ws-save` / `:ws-load`; auto-save every 30s for crash recovery
+- **Tab management** — `:tab-restore` to reopen closed tabs, `:tab-unload` to free LRU background pane, `:tabs` to search open tabs
+- **Help panel** — `:help` shows full keybinding reference with collapsible sections
+- **Crash recovery** — `:crash-reload` reloads a pane after web content crash
 - **MCP bridge** — built-in Model Context Protocol server (stdio transport) so LLMs can browse the web
+- **ARP (Aileron Remote Protocol)** — WebSocket server for mobile clients, tab sync, clipboard sharing
 - **Sync protocol** — WebDAV + E2EE specification ready for implementation
 - **Cross-platform** — PlatformOps trait for Linux, macOS, Windows
 
@@ -117,10 +122,10 @@ LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH" ./target/debug/aileron
 ## Test
 
 ```bash
-# Unit tests (678 tests)
+# Unit tests (806 tests)
 cargo test --lib -- --test-threads=4
 
-# Integration tests (26 tests)
+# Integration tests
 cargo test --test integration_smoke
 
 # All tests + clippy (zero warnings)
@@ -193,6 +198,7 @@ flatpak run com.github.WyattAu.aileron
 | Command | Description |
 |---------|-------------|
 | `:open <url>` | Navigate to URL |
+| `:help` / `:?` | Show keybinding reference panel |
 | `:! <command>` | Run shell command, show output |
 | `:set <key> <value>` | Change config at runtime (search_engine, homepage, adblock, https_upgrade, tracking_protection, popup_blocker) |
 | `:m<letter> <url>` | Set quickmark |
@@ -262,6 +268,10 @@ flatpak run com.github.WyattAu.aileron
 | `:perf` | Show performance overlay |
 | `:perf-on` / `:perf-off` | Toggle performance overlay |
 | `:memory` | Show memory usage statistics |
+| `:tab-restore [n]` | Restore recently closed tab |
+| `:tab-unload` | Unload least-recently-used background pane |
+| `:crash-reload` | Reload pane after web content crash |
+| `:arp-start` / `:arp-stop` / `:arp-status` | Start/stop/status of Aileron Remote Protocol |
 
 ## Configuration
 
@@ -310,6 +320,14 @@ auto_save_interval = 30
 
 # Developer
 devtools = false
+
+# Keybinding overrides (applied on top of defaults)
+[keybindings]
+# Format: "<key>" = "<Action>"
+# Keys use crossterm notation: j, <C-p>, <A-S>, <C-S-i>, <F1>
+# Actions: PascalCase (ScrollDown) or shorthand (vs, sp, Hints)
+# "k" = "ScrollUp"
+# "<C-S-k>" = "ScrollUp"
 
 # Compatibility overrides
 [compat_overrides]
@@ -366,15 +384,19 @@ src/
   main.rs              — Event loop, wry pane management, egui UI
   app/mod.rs           — AppState (mode machine, palette, keybindings, dispatch bridge)
   app/dispatch.rs      — Pure action dispatch (Action → ActionEffect)
-  input/               — Key mapping, mode transitions, keybinding registry, event router
+  app/commands.rs      — Ex-command handler (60+ commands)
+  app/events.rs        — Key event routing, panel keyboard navigation
+  input/               — Key mapping, mode transitions, keybinding registry with config overrides
   wm/                  — BSP tree (tiling), rectangle math, pane metadata
   servo/               — PaneStateManager, PaneRenderer trait, WryPaneManager, ServoPane (skeleton)
   terminal/            — Native terminal (alacritty_terminal + portable_pty + egui painter)
-  ui/                  — Command palette (Nucleo fuzzy search), panels, omnibox, find bar
+  ui/                  — Command palette (Nucleo fuzzy search), panels, omnibox, find bar, help panel
   db/                  — SQLite: history, bookmarks, workspaces, downloads, site_settings
   lua/                 — Lua sandbox, API bindings (cmd, keymap, theme, url)
+  arp/                 — Aileron Remote Protocol (WebSocket server, tab sync, clipboard sharing)
   mcp/                 — MCP JSON-RPC server, tools, stdio transport
   net/                 — AdBlocker (EasyList parser), filter_list (network/cosmetic), privacy (HTTPS upgrade, tracking protection)
+  downloads/           — Download manager (async, resume, progress tracking)
   extensions/          — WebExtensions support (6 API traits, extension loading, lifecycle)
   i18n/                — Internationalization (9 languages, locale resolution, message catalog)
   passwords/           — Password manager (credential storage, OAuth detection, multi-step login flows, Bitwarden client)
@@ -383,12 +405,13 @@ src/
   gfx/                 — wgpu surface + egui renderer setup
   git.rs               — Git repo detection, status bar integration
   popup.rs             — Standalone popup window management
-  frame_tasks.rs       — Frame-level task execution
+  frame_tasks.rs       — Frame-level task execution, auto-save, ARP sync
   offscreen_webview.rs — Offscreen webview texture compositing
   wry_actions.rs       — WryAction queue utilities
   sync.rs              — Sync protocol specification (WebDAV + E2EE)
+  profiling/           — Memory profiling, performance monitoring
 tests/
-  integration_smoke.rs — 26 cross-module integration tests
+  integration_smoke.rs — Cross-module integration tests
 ```
 
 ### Action Dispatch Pattern

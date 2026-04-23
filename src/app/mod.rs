@@ -182,6 +182,10 @@ pub struct AppState {
     /// ID of the previously active pane, for tab-swap.
     last_active_pane_id: Option<uuid::Uuid>,
 
+    /// Per-pane last-focus timestamp for LRU tab unloading.
+    /// Updated each time a pane becomes active.
+    pane_last_focus: std::collections::HashMap<uuid::Uuid, std::time::Instant>,
+
     /// Timestamp of last auto-save. Used for debouncing.
     pub last_auto_save: std::time::Instant,
 
@@ -246,6 +250,18 @@ pub struct AppState {
 
     /// Selected index in the bookmarks panel (for j/k navigation).
     pub bookmarks_selected: usize,
+
+    /// Whether the help panel overlay is open.
+    pub help_panel_open: bool,
+
+    /// Whether a webview crash was detected this frame (for recovery UI).
+    pub webview_crash_detected: bool,
+
+    /// URL of the pane that crashed (for reload recovery).
+    pub crashed_pane_url: Option<String>,
+
+    /// ID of the pane that crashed.
+    pub crashed_pane_id: Option<uuid::Uuid>,
 }
 
 impl AppState {
@@ -256,6 +272,14 @@ impl AppState {
         let wm = BspTree::new(viewport, initial_url.clone());
         let mode = Mode::Normal;
         let mut keybindings = KeybindingRegistry::default();
+
+        // Apply custom keybinding overrides from config
+        if !config.keybindings.is_empty() {
+            let applied = keybindings.apply_config_overrides(&config.keybindings);
+            if applied > 0 {
+                info!("Applied {} custom keybinding(s)", applied);
+            }
+        }
         let should_quit = false;
         let command_palette_input = String::new();
         let find_bar_open = false;
@@ -409,6 +433,7 @@ impl AppState {
             pending_mark_set: None,
             pending_mark_jump: None,
             last_active_pane_id: None,
+            pane_last_focus: std::collections::HashMap::new(),
             last_auto_save: std::time::Instant::now(),
             session_dirty: false,
             muted_pane_ids: std::collections::HashSet::new(),
@@ -433,6 +458,10 @@ impl AppState {
             bookmarks_panel_open: false,
             bookmarks_entries: Vec::new(),
             bookmarks_selected: 0,
+            help_panel_open: false,
+            webview_crash_detected: false,
+            crashed_pane_url: None,
+            crashed_pane_id: None,
         })
     }
 
@@ -443,6 +472,43 @@ impl AppState {
             .entry(pane_id)
             .or_default()
             .insert(mark, fraction);
+    }
+
+    /// Record that a pane was focused. Call when active pane changes.
+    pub fn record_pane_focus(&mut self, pane_id: uuid::Uuid) {
+        self.pane_last_focus
+            .insert(pane_id, std::time::Instant::now());
+    }
+
+    /// Call each frame to track pane focus changes.
+    /// Compares current active pane to last recorded and updates timestamps.
+    pub fn update_pane_focus_tracking(&mut self) {
+        let active_id = self.wm.active_pane_id();
+        let now = std::time::Instant::now();
+        self.pane_last_focus
+            .entry(active_id)
+            .and_modify(|t| {
+                // Only update if not recently recorded (avoid thrashing)
+                if now.duration_since(*t) > std::time::Duration::from_millis(100) {
+                    *t = now;
+                }
+            })
+            .or_insert(now);
+    }
+
+    /// Find the least-recently-focused pane (excluding the active pane).
+    /// Returns None if there is only one pane.
+    pub fn find_lru_pane(&self) -> Option<uuid::Uuid> {
+        let active_id = self.wm.active_pane_id();
+        let mut best: Option<(uuid::Uuid, std::time::Instant)> = None;
+        for (id, instant) in &self.pane_last_focus {
+            if *id != active_id
+                && best.is_none_or(|(_, b)| *instant < b)
+            {
+                best = Some((*id, *instant));
+            }
+        }
+        best.map(|(id, _)| id)
     }
 
     /// Look up a quickmark URL by its key character.

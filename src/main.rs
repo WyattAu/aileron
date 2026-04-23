@@ -1098,6 +1098,10 @@ impl ApplicationHandler for AileronApp {
                         app_state.bookmarks_entries.clear();
                         return;
                     }
+                    if app_state.help_panel_open && key == aileron::input::Key::Escape {
+                        app_state.help_panel_open = false;
+                        return;
+                    }
                     // Track pane count before processing key
                     let pane_ids_before: std::collections::HashSet<uuid::Uuid> = app_state
                         .wm
