@@ -250,7 +250,7 @@ id = "S06"
 title = "WebExtensions webRequest interception"
 phase = "S"
 priority = "high"
-status = "pending"
+status = "complete"
 description = "Implement webRequest API in src/extensions/web_request.rs. Interceptor pipeline: onBeforeRequest → onBeforeSendHeaders → onSendHeaders → onHeadersReceived → onAuthRequired → onCompleted. Allow extensions to block/modify/redirect requests. Integrate with existing adblock pipeline."
 depends = ["S03", "S04"]
 
