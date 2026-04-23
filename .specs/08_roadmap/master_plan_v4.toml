@@ -10,11 +10,13 @@
 # within 6 months.
 
 [metadata]
-version = "4.0.0"
+version = "4.1.0"
 created = "2026-04-23"
+last_updated = "2026-04-24"
 total_phases = 5
 total_tasks = 40
 v3_status = "31/38 complete (82%)"
+v4_status = "17/40 unblocked complete (43%), 13 pending, 18 blocked"
 
 # ─────────────────────────────────────────────
 # Phase U: Keyboard-Driven Polish
@@ -26,7 +28,7 @@ id = "U01"
 title = "Keyboard navigation for all overlay panels"
 phase = "U"
 priority = "critical"
-status = "pending"
+status = "done"
 description = "Add j/k (or arrow keys) navigation to: history panel, tab search panel, command palette results, downloads panel. Enter to select, Escape to close. Currently these panels are mouse-only. This is the #1 usability gap for a keyboard-driven browser."
 depends = []
 
@@ -35,7 +37,7 @@ id = "U02"
 title = "Keybinding customization via config.toml"
 phase = "U"
 priority = "critical"
-status = "pending"
+status = "done"
 description = "Allow users to remap keybindings in config.toml. Format: [keybindings] '<C-p>' = 'command_palette', '<C-t>' = 'split_vertical'. Fall back to defaults for unmapped keys. Parse crossterm-style key notation. Validate on load, warn on conflicts."
 depends = []
 
@@ -44,7 +46,7 @@ id = "U03"
 title = "Mode indicator in status bar"
 phase = "U"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Show current mode (Normal, Insert, Command, Hint, TabSearch) prominently in the status bar. Color-code modes. Show pending operator (e.g., 'd' waiting for motion). This is standard vim behavior that Aileron lacks."
 depends = []
 
@@ -53,7 +55,7 @@ id = "U04"
 title = "Omnibox frecency ranking"
 phase = "U"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Replace simple history search with frecency ranking (frequency * recency). Score = visit_count / log(age_in_hours + 2). Boost bookmarks and open tabs. Deduplicate results (same URL from history + bookmark + open tab → show once). Target: typing 2-3 chars should show the right result."
 depends = []
 
@@ -62,7 +64,7 @@ id = "U05"
 title = "Omnibox inline bookmarks and open tabs"
 phase = "U"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "When typing in the URL bar, show results from: open tabs (prefixed [tab]), bookmarks ([bm]), history ([hist]), and search suggestions ([search]). Category icons. Arrow keys to navigate, Enter to select."
 depends = ["U04"]
 
@@ -89,7 +91,7 @@ id = "U08"
 title = "Undo close tab (:tab-restore)"
 phase = "U"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Maintain a closed-tab stack (URL + title + position). :tab-restore reopens the last closed tab. :tab-restore N restores the Nth most recent. Stack persists within session (not across restarts)."
 depends = []
 
@@ -103,7 +105,7 @@ id = "V01"
 title = "Bookmarks panel (:bookmarks)"
 phase = "V"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Add :bookmarks command opening an overlay panel. Show all bookmarks with titles, URLs, and folders. Click to navigate. Add :bookmark <name> to bookmark current page. DB schema exists (src/db/bookmarks.rs). Import from Firefox/Chrome."
 depends = []
 
@@ -121,7 +123,7 @@ id = "V03"
 title = "Reader mode (:reader)"
 phase = "V"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Inject readability-style CSS to strip page clutter. Serif font, comfortable line width, no sidebars/ads. Toggle with :reader. Persist preference per-site in site_settings."
 depends = []
 
@@ -139,7 +141,7 @@ id = "V05"
 title = "Find and replace in page"
 phase = "V"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Extend :find to support replace. :replace <old> <new>. Show match count. Replace all. Case-sensitive toggle."
 depends = []
 
@@ -162,7 +164,7 @@ id = "W01"
 title = "Web content crash recovery"
 phase = "W"
 priority = "critical"
-status = "pending"
+status = "done"
 description = "When a webview process crashes (WebKitGTK segfault, OOM), detect the crash, log it, and offer to reload the pane. Currently a webview crash leaves a blank pane with no recovery path."
 depends = []
 
@@ -171,7 +173,7 @@ id = "W02"
 title = "Memory management and tab unloading"
 phase = "W"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Track memory per tab. When total memory exceeds threshold (configurable, default 2GB), unload least-recently-used background tabs (replace content with a placeholder). Reload on activate. Show memory usage in :memory command."
 depends = []
 
@@ -180,7 +182,7 @@ id = "W03"
 title = "Adaptive frame rate for background tabs"
 phase = "W"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Background tabs should capture at 1-5fps (or not at all) instead of 30-60fps. Only the active tab gets full frame rate. This is partially implemented (AdaptiveQuality) but needs per-tab granularity."
 depends = []
 
@@ -189,7 +191,7 @@ id = "W04"
 title = "Startup time optimization"
 phase = "W"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Profile and optimize cold start time. Target: <500ms to first pixel. Defer non-critical initialization (extension loading, filter list updates, git status). Lazy-load offscreen panes."
 depends = []
 
@@ -198,7 +200,7 @@ id = "W05"
 title = "Graceful degradation on GPU failure"
 phase = "W"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "If wgpu initialization fails (no Vulkan/GL), fall back to a pure software rendering mode or show a meaningful error dialog instead of crashing. Currently shows a terminal error message."
 depends = []
 
@@ -271,7 +273,7 @@ id = "Y01"
 title = "User-facing README"
 phase = "Y"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Write a proper README.md: what is Aileron, screenshots, installation (Arch/AUR, cargo, Nix), quick start, keybinding reference, configuration, extension development, contributing."
 depends = []
 
@@ -280,7 +282,7 @@ id = "Y02"
 title = "Keybinding reference card"
 phase = "Y"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Generate a complete keybinding reference. Include all modes (Normal, Insert, Command, Hint). Format as markdown table and optionally as a :help command showing a navigable reference."
 depends = []
 
@@ -289,7 +291,7 @@ id = "Y03"
 title = "Configuration reference"
 phase = "Y"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Document every config.toml field with type, default, description, and examples. Generate from Config struct with doc comments."
 depends = []
 
