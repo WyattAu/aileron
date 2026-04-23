@@ -271,6 +271,7 @@ flatpak run com.github.WyattAu.aileron
 | `:tab-restore [n]` | Restore recently closed tab |
 | `:tab-unload` | Unload least-recently-used background pane |
 | `:crash-reload` | Reload pane after web content crash |
+| `:replace <old> <new> [case]` | Find and replace in page content |
 | `:arp-start` / `:arp-stop` / `:arp-status` | Start/stop/status of Aileron Remote Protocol |
 
 ## Configuration
@@ -280,60 +281,69 @@ flatpak run com.github.WyattAu.aileron
 Aileron looks for `~/.config/aileron/config.toml`:
 
 ```toml
-homepage = "aileron://welcome"
-window_width = 1280
-window_height = 800
+# ── General ──────────────────────────────────────
+homepage = "aileron://welcome"         # Start page URL
+window_width = 1280                    # Default window width (px)
+window_height = 800                   # Default window height (px)
+devtools = false                      # Enable WebKit devtools
 
-# Privacy
-adblock_enabled = true
-adblock_filter_lists = ["https://easylist.to/easylist/easylist.txt", "https://easylist.to/easylist/easyprivacy.txt"]
-adblock_cosmetic_filtering = true
-adblock_update_interval_hours = 24
-https_upgrade_enabled = true
-tracking_protection_enabled = true
-popup_blocker_enabled = true
+# ── Privacy ─────────────────────────────────────
+adblock_enabled = true                # Block ads from filter lists
+adblock_filter_lists = ["https://easylist.to/easylist/easylist.txt"]
+adblock_cosmetic_filtering = true     # Hide ad elements via CSS
+adblock_update_interval_hours = 24    # Filter list update frequency
+https_upgrade_enabled = true          # Auto-upgrade HTTP to HTTPS
+tracking_protection_enabled = true    # Block tracker domains + DNT headers
+popup_blocker_enabled = true          # Block unwanted window.open()
 
-# Appearance
-theme = "dark"
-tab_layout = "sidebar"
-tab_sidebar_width = 180.0
-tab_sidebar_right = false
-language = "en"  # "en" | "zh" | "ja" | "ko" | "de" | "fr" | "es" | "pt" | "ru"
-custom_css = ""  # Path to custom CSS file or inline CSS
+# ── Appearance ──────────────────────────────────
+theme = "dark"                        # "dark" | "light" | custom name
+tab_layout = "sidebar"                # "sidebar" | "topbar" | "none"
+tab_sidebar_width = 180.0             # Sidebar width in pixels
+tab_sidebar_right = false             # Sidebar on right side
+language = "en"                       # UI language (ISO 639-1)
+custom_css = ""                       # Inline CSS or path to CSS file
 
-# Rendering
-render_mode = "offscreen"
-engine_selection = "auto"  # "auto" | "servo" | "webkit"
-adaptive_quality = true
+# ── Rendering ──────────────────────────────────
+render_mode = "offscreen"             # "offscreen" (texture) | "native" (window)
+engine_selection = "auto"             # "auto" | "webkit" | "servo"
+adaptive_quality = true               # Reduce frame rate when slow
 
-# Search
+# ── Search ──────────────────────────────────────
 search_engine = "https://duckduckgo.com/?q={query}"
-palette_max_results = 20
+palette_max_results = 20              # Command palette result limit
 
-# Session
-restore_session = false
-auto_save = true
-auto_save_interval = 30
+# ── Session ─────────────────────────────────────
+restore_session = false               # Restore last workspace on startup
+auto_save = true                      # Auto-save workspace for crash recovery
+auto_save_interval = 30               # Auto-save interval (seconds)
+init_lua_path = ""                    # Path to custom init.lua
 
-# Proxy
+# ── Proxy ───────────────────────────────────────
 # proxy = "socks5://127.0.0.1:1080"
 
-# Developer
-devtools = false
+# ── Sync ────────────────────────────────────────
+sync_target = ""                      # SSH target or local path
+sync_encrypted = false                # E2EE for sync
+sync_auto = false                     # Auto-sync via filesystem watcher
+sync_auto_interval_sec = 300          # Auto-sync interval
 
-# Keybinding overrides (applied on top of defaults)
+# ── ARP (Remote Protocol) ──────────────────────
+arp_port = 19743                      # WebSocket server port
+
+# ── Keybinding overrides (applied on top of defaults) ──
 [keybindings]
 # Format: "<key>" = "<Action>"
-# Keys use crossterm notation: j, <C-p>, <A-S>, <C-S-i>, <F1>
-# Actions: PascalCase (ScrollDown) or shorthand (vs, sp, Hints)
+# Keys: crossterm notation — j, <C-p>, <A-S>, <C-S-i>, <F1>-<F12>
+# Actions: PascalCase or shorthand (ScrollDown, vs, sp, Hints)
 # "k" = "ScrollUp"
 # "<C-S-k>" = "ScrollUp"
 
-# Compatibility overrides
+# ── Per-domain engine overrides ────────────────
 [compat_overrides]
-# "example.com" = { js = true, adblock = false }
+# "example.com" = "webkit"
 
-# Custom themes
+# ── Custom themes ──────────────────────────────
 [themes.mytheme]
 bg = "#1a1a2e"
 fg = "#e0e0e0"

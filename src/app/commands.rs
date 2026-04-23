@@ -403,6 +403,40 @@ impl AppState {
             return;
         }
 
+        // Find and replace in page
+        if let Some(args) = query.strip_prefix("replace ") {
+            let parts: Vec<&str> = args.splitn(3, ' ').collect();
+            if parts.len() >= 2 {
+                let old_text = parts[0];
+                let new_text = parts[1];
+                let case_sensitive = parts.len() >= 3 && parts[2] == "case";
+                let flags = if case_sensitive { "g" } else { "gi" };
+                let js = format!(
+                    r#"(function() {{
+                        let count = 0;
+                        function walk(node) {{
+                            if (node.nodeType === 3) {{
+                                let re = new RegExp("{old_text}", "{flags}");
+                                let m = node.textContent.match(re);
+                                if (m) count += m.length;
+                                node.textContent = node.textContent.replace(re, "{new_text}");
+                            }} else {{
+                                for (let c of node.childNodes) walk(c);
+                            }}
+                        }}
+                        walk(document.body);
+                        return count;
+                    }})()"#
+                );
+                self.pending_wry_actions.push_back(WryAction::RunJs(js));
+                let mode_str = if case_sensitive { "case-sensitive" } else { "case-insensitive" };
+                self.status_message = format!("Replacing '{}' with '{}' ({})", old_text, new_text, mode_str);
+            } else {
+                self.status_message = "Usage: :replace <old> <new> [case]".into();
+            }
+            return;
+        }
+
         if query == "import-firefox" {
             if let Some(db) = self.db.as_ref() {
                 self.status_message = super::cmd::import::import_firefox(db);
@@ -878,6 +912,7 @@ impl AppState {
                 "inspect", "proxy", "config-save", "clear",
                 "layout-save", "layout-load", "ws-save", "ws-load", "ws-list",
                 "reader", "minimal", "only", "detach",
+                "replace",
                 "memory", "perf", "perf-on", "perf-off",
                 "adaptive-quality", "adaptive_quality",
                 "language", "language-list",

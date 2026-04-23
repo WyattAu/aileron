@@ -66,6 +66,50 @@ pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Histor
     Ok(entries)
 }
 
+/// Search history with frecency ranking.
+/// Score = visit_count / log2(age_in_hours + 2).
+/// Returns entries sorted by frecency score (highest first).
+pub fn search_frecency(conn: &Connection, query: &str, limit: usize) -> Result<Vec<(HistoryEntry, f64)>> {
+    // Fetch more candidates than needed, then rank and truncate
+    let pattern = format!("%{}%", query);
+    let candidate_limit = (limit * 5).max(50);
+    let mut stmt = conn.prepare(
+        "SELECT id, url, title, visited_at, visit_count FROM history
+         WHERE url LIKE ?1 OR title LIKE ?1
+         ORDER BY visit_count DESC, visited_at DESC LIMIT ?2",
+    )?;
+    let entries: Vec<HistoryEntry> = stmt
+        .query_map(params![pattern, candidate_limit as i64], |row| {
+            Ok(HistoryEntry {
+                id: row.get(0)?,
+                url: row.get(1)?,
+                title: row.get(2)?,
+                visited_at: row.get(3)?,
+                visit_count: row.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let now_ts = chrono::Utc::now().timestamp();
+    let mut scored: Vec<(HistoryEntry, f64)> = entries
+        .into_iter()
+        .map(|entry| {
+            // Parse visited_at as datetime and compute age in hours
+            let age_hours = chrono::DateTime::parse_from_rfc3339(&format!("{}T00:00:00Z", entry.visited_at))
+                .ok()
+                .map(|dt| (now_ts - dt.timestamp()).max(1) as f64 / 3600.0)
+                .unwrap_or(720.0); // default 30 days if parsing fails
+            let visit_count = entry.visit_count.max(1) as f64;
+            let frecency = visit_count / (age_hours + 2.0).log2().max(1.0);
+            (entry, frecency)
+        })
+        .collect();
+
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(limit);
+    Ok(scored)
+}
+
 pub fn prune_old(conn: &Connection, days: u32) -> Result<usize> {
     let deleted = conn.execute(
         "DELETE FROM history WHERE visited_at < datetime('now', ?1)",

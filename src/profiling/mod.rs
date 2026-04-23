@@ -131,6 +131,8 @@ const MAX_QUALITY: f32 = 1.0;
 const QUALITY_REDUCTION_STEP: f32 = 0.2;
 const QUALITY_RECOVERY_STEP: f32 = 0.1;
 const BASE_CAPTURE_INTERVAL_MS: u32 = 33;
+/// Background (non-active) panes capture at this interval regardless of quality.
+const BACKGROUND_CAPTURE_INTERVAL_MS: u32 = 500; // ~2fps
 
 pub struct AdaptiveQuality {
     quality_level: f32,
@@ -189,15 +191,26 @@ impl AdaptiveQuality {
         false
     }
 
+    /// Whether to aggressively skip non-active panes (when quality is very low).
     pub fn should_skip_non_active(&self) -> bool {
         self.enabled && self.quality_level < 0.6
     }
 
+    /// Capture interval for the active pane.
     pub fn capture_interval_ms(&self) -> u32 {
         if !self.enabled {
             return BASE_CAPTURE_INTERVAL_MS;
         }
         (BASE_CAPTURE_INTERVAL_MS as f32 / self.quality_level).round() as u32
+    }
+
+    /// Capture interval for background (non-active) panes.
+    /// Much lower than active pane to save CPU/GPU.
+    pub fn background_capture_interval_ms(&self) -> u32 {
+        if !self.enabled {
+            return BASE_CAPTURE_INTERVAL_MS;
+        }
+        BACKGROUND_CAPTURE_INTERVAL_MS
     }
 
     pub fn enabled(&self) -> bool {

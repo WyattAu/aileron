@@ -1,6 +1,6 @@
 use egui_wgpu::ScreenDescriptor;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, warn};
 use winit::window::Window;
 
 /// Holds all wgpu + egui rendering state.
@@ -13,37 +13,79 @@ pub struct GfxState {
     pub surface_format: wgpu::TextureFormat,
 }
 
+/// GPU backend combinations to try, in order of preference.
+fn backend_options() -> [wgpu::Backends; 3] {
+    [
+        wgpu::Backends::VULKAN | wgpu::Backends::GL,
+        wgpu::Backends::GL,
+        wgpu::Backends::VULKAN,
+    ]
+}
+
 impl GfxState {
     /// Initialize wgpu + egui renderer for the given window.
-    /// Must be called from a context where blocking is acceptable (e.g., `resumed`).
+    /// Tries multiple GPU backend combinations with graceful fallback.
     pub fn new(window: Arc<Window>) -> anyhow::Result<Self> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN | wgpu::Backends::GL,
-            ..Default::default()
-        });
+        let mut last_err = String::new();
+        let mut result: Option<(wgpu::Instance, wgpu::Surface, wgpu::Adapter)> = None;
 
-        let surface = instance.create_surface(Arc::clone(&window))?;
+        for backends in backend_options() {
+            let inst = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                backends,
+                ..Default::default()
+            });
 
-        let adapter = pollster::block_on(async {
-            instance
-                .request_adapter(&wgpu::RequestAdapterOptions {
-                    compatible_surface: Some(&surface),
+            let surf = match inst.create_surface(Arc::clone(&window)) {
+                Ok(s) => s,
+                Err(e) => {
+                    last_err = format!("Surface creation failed (backends {:?}): {}", backends, e);
+                    warn!("{}", last_err);
+                    continue;
+                }
+            };
+
+            let adapter = pollster::block_on(async {
+                let opts = wgpu::RequestAdapterOptions {
+                    compatible_surface: Some(&surf),
                     power_preference: wgpu::PowerPreference::HighPerformance,
                     ..Default::default()
+                };
+                inst.request_adapter(&opts).await
+            });
+
+            // Fallback to low power adapter
+            let adapter = adapter.or_else(|| {
+                pollster::block_on(async {
+                    let opts = wgpu::RequestAdapterOptions {
+                        compatible_surface: Some(&surf),
+                        power_preference: wgpu::PowerPreference::LowPower,
+                        ..Default::default()
+                    };
+                    inst.request_adapter(&opts).await
                 })
-                .await
-        })
-        .ok_or_else(|| {
-            let vk_icd = std::env::var("VK_ICD_FILENAMES").unwrap_or_default();
-            let wayland_display = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
-            let gl_renderer = std::env::var("GLES_VERSION").unwrap_or_default();
+            });
+
+            if let Some(a) = adapter {
+                result = Some((inst, surf, a));
+                break;
+            }
+            last_err = format!(
+                "No adapter found (backends {:?}). VK_ICD_FILENAMES={} WAYLAND_DISPLAY={}",
+                backends,
+                std::env::var("VK_ICD_FILENAMES").unwrap_or_default(),
+                std::env::var("WAYLAND_DISPLAY").unwrap_or_default(),
+            );
+            warn!("{}", last_err);
+        }
+
+        let (instance, surface, adapter) = result.ok_or_else(|| {
             anyhow::anyhow!(
-                "No suitable GPU adapter found. \
-                 Vulkan/GL surface creation failed.\n\
-                 Hints:\n  - VK_ICD_FILENAMES={}\n  - WAYLAND_DISPLAY={}\n  - GLES_VERSION={}\n  - Try: WINIT_UNIX_BACKEND=x11",
-                if vk_icd.is_empty() { "(not set)" } else { &vk_icd },
-                if wayland_display.is_empty() { "(not set)" } else { &wayland_display },
-                if gl_renderer.is_empty() { "(not set)" } else { &gl_renderer },
+                "No suitable GPU adapter found after trying all backend combinations.\n\
+                 Last error: {}\n\
+                 Hints:\n  - Ensure Vulkan or OpenGL drivers are installed\n  \
+                 - Try: WINIT_UNIX_BACKEND=x11\n  \
+                 - Check: vulkaninfo | head -20",
+                last_err
             )
         })?;
 
@@ -74,8 +116,7 @@ impl GfxState {
             .copied()
             .unwrap_or(surface_capabilities.formats[0]);
 
-        // Prefer Opaque alpha mode — Aileron has a solid dark background,
-        // no transparency needed. Avoids alpha compositing artifacts on NVIDIA.
+        // Prefer Opaque alpha mode
         let alpha_mode = surface_capabilities
             .alpha_modes
             .iter()
@@ -100,9 +141,9 @@ impl GfxState {
         let egui_renderer = egui_wgpu::Renderer::new(
             &device,
             surface_format,
-            None,  // depth_format
-            1,     // msaa_samples
-            false, // dithering
+            None,
+            1,
+            false,
         );
 
         info!("Graphics initialized (format: {:?})", surface_format);

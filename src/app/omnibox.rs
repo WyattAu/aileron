@@ -4,6 +4,12 @@ use crate::ui::search::SearchItem;
 
 use super::AppState;
 
+/// A scored omnibox result, used for merging duplicates and ranking.
+struct ScoredResult {
+    item: SearchItem,
+    score: f64,
+}
+
 impl AppState {
     pub fn update_omnibox(&mut self, query: &str) {
         self.omnibox_results.clear();
@@ -20,57 +26,118 @@ impl AppState {
         let looks_like_url = query.contains("://") || query.starts_with("aileron://")
             || (query.contains('.') && !query.contains(' '));
 
+        let mut scored: Vec<ScoredResult> = Vec::new();
+
+        // 1. Navigation / search result (always first, score 1000)
         if looks_like_url {
             let url = if query.contains("://") || query.starts_with("aileron://") {
                 query.to_string()
             } else {
                 format!("https://{}", query)
             };
-            self.omnibox_results.push(SearchItem {
-                id: format!("nav:{}", url),
-                label: url.clone(),
-                description: "Navigate to URL".to_string(),
-                category: SearchCategory::Command,
+            scored.push(ScoredResult {
+                item: SearchItem {
+                    id: format!("nav:{}", url),
+                    label: url.clone(),
+                    description: "Navigate to URL".to_string(),
+                    category: SearchCategory::Command,
+                },
+                score: 1000.0,
             });
         } else {
             let search_url = self.config.search_url(query)
                 .map(|u| u.to_string())
                 .unwrap_or_default();
-            self.omnibox_results.push(SearchItem {
-                id: format!("search:{}", query),
-                label: format!("Search: {}", query),
-                description: search_url,
-                category: SearchCategory::Command,
+            scored.push(ScoredResult {
+                item: SearchItem {
+                    id: format!("search:{}", query),
+                    label: format!("Search: {}", query),
+                    description: search_url,
+                    category: SearchCategory::Command,
+                },
+                score: 1000.0,
             });
         }
 
         if let Some(db) = self.db.as_ref() {
-            if let Ok(bookmarks) = bookmarks::search_bookmarks(db, query, 5) {
-                for bm in bookmarks {
-                    self.omnibox_results.push(SearchItem {
-                        id: format!("bookmark:{}", bm.url),
-                        label: bm.title,
-                        description: bm.url,
-                        category: SearchCategory::Bookmark,
+            // 2. Open tabs (score 900) — deduplicate with history/bookmarks
+            let pane_list = self.wm.panes();
+            let mut open_tab_entries: Vec<(String, String)> = Vec::new();
+            for (pane_id, _) in &pane_list {
+                if let Some(state) = self.engines.get(pane_id) {
+                    let url_str = state.current_url().map(|u| u.to_string()).unwrap_or_default();
+                    let title = state.title().to_string();
+                    if !url_str.is_empty() {
+                        open_tab_entries.push((url_str, title));
+                    }
+                }
+            }
+            for (tab_url, tab_title) in &open_tab_entries {
+                if tab_url.contains(query) || tab_title.contains(query) {
+                    scored.push(ScoredResult {
+                        item: SearchItem {
+                            id: format!("tab:{}", tab_url),
+                            label: tab_title.clone(),
+                            description: format!("[tab] {}", tab_url),
+                            category: SearchCategory::OpenTab,
+                        },
+                        score: 900.0,
                     });
                 }
             }
 
-            if let Ok(history) = crate::db::history::search(db, query, 5) {
-                for h in history {
-                    self.omnibox_results.push(SearchItem {
-                        id: format!("history:{}", h.url),
-                        label: h.url.clone(),
-                        description: format!("visited {} times", h.visit_count),
-                        category: SearchCategory::History,
+            // 3. Bookmarks (score 800)
+            if let Ok(bms) = bookmarks::search_bookmarks(db, query, 10) {
+                for bm in bms {
+                    scored.push(ScoredResult {
+                        item: SearchItem {
+                            id: format!("bookmark:{}", bm.url),
+                            label: bm.title,
+                            description: format!("[bm] {}", bm.url),
+                            category: SearchCategory::Bookmark,
+                        },
+                        score: 800.0,
+                    });
+                }
+            }
+
+            // 4. History with frecency ranking (score = frecency * 100)
+            if let Ok(entries) = crate::db::history::search_frecency(db, query, 10) {
+                for (h, frecency) in entries {
+                    scored.push(ScoredResult {
+                        item: SearchItem {
+                            id: format!("history:{}", h.url),
+                            label: h.url.clone(),
+                            description: format!("[hist] {} ({} visits)", h.title, h.visit_count),
+                            category: SearchCategory::History,
+                        },
+                        score: frecency * 100.0,
                     });
                 }
             }
         }
 
-        if self.omnibox_results.len() > 10 {
-            self.omnibox_results.truncate(10);
-        }
+        // Deduplicate: keep highest-scoring entry per URL
+        let mut seen_urls: std::collections::HashSet<String> = std::collections::HashSet::new();
+        scored.retain(|s| {
+            // nav: and search: are unique prefixes, always keep
+            if s.item.id.starts_with("nav:") || s.item.id.starts_with("search:") {
+                return true;
+            }
+            // Extract URL from id (bookmark:, history:, tab:)
+            let url_key = s.item.id.split_once(':').map(|x| x.1).unwrap_or(&s.item.id);
+            seen_urls.insert(url_key.to_string())
+        });
+
+        // Sort by score descending
+        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Extract items, cap at 10
+        self.omnibox_results = scored
+            .into_iter()
+            .take(10)
+            .map(|s| s.item)
+            .collect();
     }
 
     pub fn handle_omnibox_select(&mut self, index: usize) {
@@ -97,6 +164,27 @@ impl AppState {
             {
                 self.navigate_with_redirects(parsed);
                 self.status_message = format!("Opening: {}", url);
+            } else if let Some(url) = id.strip_prefix("tab:")
+                && let Ok(parsed) = url::Url::parse(url)
+            {
+                // Switch to the already-open tab instead of navigating
+                let url_str = url.to_string();
+                let switched = self.wm.panes().iter().any(|(pane_id, _)| {
+                    self.engines.get(pane_id)
+                        .is_some_and(|state| {
+                            state.current_url().map(|u| u.to_string()).as_deref() == Some(&url_str)
+                            && {
+                                self.wm.set_active_pane(*pane_id);
+                                true
+                            }
+                        })
+                });
+                if !switched {
+                    self.navigate_with_redirects(parsed);
+                    self.status_message = format!("Opening: {}", url);
+                } else {
+                    self.status_message = format!("Switched to tab: {}", label);
+                }
             }
         }
     }

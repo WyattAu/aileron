@@ -736,6 +736,7 @@ impl AileronApp {
         }
 
         let capture_interval = self.adaptive_quality.capture_interval_ms();
+        let bg_capture_interval = self.adaptive_quality.background_capture_interval_ms();
         let skip_non_active = self.adaptive_quality.should_skip_non_active();
         let active_id = self
             .app_state
@@ -745,9 +746,18 @@ impl AileronApp {
         let mut dirty_data: Vec<(uuid::Uuid, Vec<u8>, u32, u32)> = Vec::new();
 
         for (id, pane) in self.offscreen_panes.iter_mut() {
+            // When quality is very low, skip non-active panes entirely
             if skip_non_active && active_id.is_some_and(|aid| aid != *id) {
                 continue;
             }
+
+            // Background panes use a much lower capture rate
+            let is_active = active_id.is_some_and(|aid| aid == *id);
+            let interval_ms = if is_active {
+                capture_interval
+            } else {
+                bg_capture_interval
+            };
 
             let last = self
                 .offscreen_last_capture
@@ -756,10 +766,10 @@ impl AileronApp {
                 .unwrap_or_else(|| std::time::Instant::now() - std::time::Duration::from_secs(10));
             let dirty = pane.is_dirty();
             let elapsed = last.elapsed();
-            if dirty && elapsed >= std::time::Duration::from_millis(capture_interval as u64) {
+            if dirty && elapsed >= std::time::Duration::from_millis(interval_ms as u64) {
                 tracing::debug!(
-                    "capture: pane {} dirty={} elapsed={:?}",
-                    &id.to_string()[..8], dirty, elapsed,
+                    "capture: pane {} dirty={} elapsed={:?} active={} interval={}ms",
+                    &id.to_string()[..8], dirty, elapsed, is_active, interval_ms,
                 );
                 if pane.capture_frame().is_some()
                     && let Some(rgba) = pane.frame_rgba()
