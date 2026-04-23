@@ -3,6 +3,70 @@ use std::sync::RwLock;
 
 use crate::extensions::types::{FrameId, Result, TabId, UrlPattern};
 
+/// A pending script or CSS injection queued by the Scripting API.
+#[derive(Debug, Clone)]
+pub struct PendingInjection {
+    /// Target tab ID.
+    pub tab_id: TabId,
+    /// Target frame IDs (None = all frames).
+    pub frame_ids: Option<Vec<FrameId>>,
+    /// The JavaScript code to execute.
+    pub js_code: Option<String>,
+    /// The CSS code to insert.
+    pub css_code: Option<String>,
+    /// Unique injection key for removal (used by remove_css).
+    pub key: Option<String>,
+}
+
+/// Shared queue for pending script/CSS injections.
+/// Pushed by ScriptingApi, drained by frame_tasks during navigation.
+#[derive(Debug, Clone, Default)]
+pub struct PendingInjections {
+    injections: Arc<RwLock<Vec<PendingInjection>>>,
+}
+
+impl PendingInjections {
+    pub fn new() -> Self {
+        Self {
+            injections: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    /// Queue a JS injection.
+    pub fn push_js(&self, tab_id: TabId, js_code: String) {
+        self.injections
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(PendingInjection {
+                tab_id,
+                frame_ids: None,
+                js_code: Some(js_code),
+                css_code: None,
+                key: None,
+            });
+    }
+
+    /// Queue a CSS injection with a key for later removal.
+    pub fn push_css(&self, tab_id: TabId, css_code: String, key: String) {
+        self.injections
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(PendingInjection {
+                tab_id,
+                frame_ids: None,
+                js_code: None,
+                css_code: Some(css_code),
+                key: Some(key),
+            });
+    }
+
+    /// Drain all pending injections.
+    pub fn drain(&self) -> Vec<PendingInjection> {
+        let mut injections = self.injections.write().unwrap_or_else(|e| e.into_inner());
+        std::mem::take(&mut *injections)
+    }
+}
+
 /// An extension content script registered at load time.
 #[derive(Debug, Clone)]
 pub struct ExtensionContentScriptEntry {

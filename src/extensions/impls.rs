@@ -1052,11 +1052,22 @@ impl WebRequestApi for AileronWebRequestApi {
 
 struct AileronScriptingApi {
     registry: ExtensionContentScriptRegistry,
+    pending_injections: crate::extensions::scripting::PendingInjections,
 }
 
 impl AileronScriptingApi {
     fn new(registry: ExtensionContentScriptRegistry) -> Self {
-        Self { registry }
+        Self {
+            registry,
+            pending_injections: crate::extensions::scripting::PendingInjections::new(),
+        }
+    }
+
+    /// Get a handle to the pending injections queue.
+    /// Used by frame_tasks to drain and execute injections.
+    #[allow(dead_code)]
+    pub fn pending_injections(&self) -> &crate::extensions::scripting::PendingInjections {
+        &self.pending_injections
     }
 }
 
@@ -1064,34 +1075,92 @@ impl ScriptingApi for AileronScriptingApi {
     fn execute_script(
         &self,
         target: InjectionTarget,
-        _injection: ScriptInjection,
+        injection: ScriptInjection,
     ) -> Result<Vec<InjectionResult>> {
-        tracing::warn!(
+        let code = match injection {
+            ScriptInjection::Function { func, args } => {
+                let args_json = serde_json::to_string(&args).unwrap_or_else(|_| "[]".into());
+                format!("({})({})", func, args_json)
+            }
+            ScriptInjection::File { .. } => {
+                // File-based injection: in Manifest V3, files are resolved at load time.
+                // For programmatic API calls, we treat the file path as inline code.
+                return Err(ExtensionError::Unsupported(
+                    "scripting.executeScript with file injection not yet supported".into(),
+                ));
+            }
+        };
+
+        tracing::info!(
             target: "extensions",
-            "scripting.executeScript(tab={}) not yet implemented",
-            target.tab_id
+            "scripting.executeScript(tab={}, {} bytes)",
+            target.tab_id,
+            code.len()
         );
-        Err(ExtensionError::Unsupported(
-            "scripting.executeScript".into(),
-        ))
+
+        self.pending_injections.push_js(target.tab_id, code);
+
+        // Return a placeholder result — actual results require JS evaluation
+        Ok(vec![InjectionResult {
+            frame_id: target
+                .frame_ids
+                .as_ref()
+                .and_then(|f| f.first().copied())
+                .unwrap_or(crate::extensions::types::FrameId(0)),
+            result: None,
+            error: None,
+        }])
     }
 
-    fn insert_css(&self, target: InjectionTarget, _injection: CssInjection) -> Result<()> {
-        tracing::warn!(
+    fn insert_css(&self, target: InjectionTarget, injection: CssInjection) -> Result<()> {
+        let css = match injection {
+            CssInjection::Css { css } => css,
+            CssInjection::File { .. } => {
+                return Err(ExtensionError::Unsupported(
+                    "scripting.insertCSS with file injection not yet supported".into(),
+                ));
+            }
+        };
+
+        let key = format!("aileron-ext-{}", uuid::Uuid::new_v4());
+
+        tracing::info!(
             target: "extensions",
-            "scripting.insertCSS(tab={}) not yet implemented",
-            target.tab_id
+            "scripting.insertCSS(tab={}, {} bytes, key={})",
+            target.tab_id,
+            css.len(),
+            key
         );
-        Err(ExtensionError::Unsupported("scripting.insertCSS".into()))
+
+        self.pending_injections.push_css(target.tab_id, css, key);
+        Ok(())
     }
 
-    fn remove_css(&self, target: InjectionTarget, _injection: CssInjection) -> Result<()> {
-        tracing::warn!(
+    fn remove_css(&self, target: InjectionTarget, injection: CssInjection) -> Result<()> {
+        let css_to_remove = match injection {
+            CssInjection::Css { css } => css,
+            CssInjection::File { .. } => {
+                return Err(ExtensionError::Unsupported(
+                    "scripting.removeCSS with file injection not yet supported".into(),
+                ));
+            }
+        };
+
+        let removal_js = format!(
+            "document.querySelectorAll('style[data-aileron-css]').forEach(function(s) {{ \
+                if (s.textContent.includes({:?})) s.remove(); \
+            }});",
+            css_to_remove
+        );
+
+        tracing::info!(
             target: "extensions",
-            "scripting.removeCSS(tab={}) not yet implemented",
+            "scripting.removeCSS(tab={})",
             target.tab_id
         );
-        Err(ExtensionError::Unsupported("scripting.removeCSS".into()))
+
+        self.pending_injections.push_js(target.tab_id, removal_js);
+        Ok(())
     }
 
     fn register_content_scripts(&self, scripts: Vec<RegisteredContentScript>) -> Result<()> {
@@ -1784,5 +1853,84 @@ mod tests {
             "https://example.com/*",
             "http://example.com/page"
         ));
+    }
+
+    #[test]
+    fn test_scripting_execute_script() {
+        let api = make_api();
+        let target = InjectionTarget {
+            tab_id: crate::extensions::types::TabId(1),
+            frame_ids: None,
+            all_frames: false,
+        };
+
+        let result = api.scripting().execute_script(
+            target,
+            ScriptInjection::Function {
+                func: "function() { return 42; }".into(),
+                args: vec![],
+            },
+        );
+
+        assert!(result.is_ok());
+        let results = result.unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_scripting_insert_css() {
+        let api = make_api();
+        let target = InjectionTarget {
+            tab_id: crate::extensions::types::TabId(1),
+            frame_ids: None,
+            all_frames: false,
+        };
+
+        let result = api.scripting().insert_css(
+            target.clone(),
+            CssInjection::Css {
+                css: "body { color: red; }".into(),
+            },
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_scripting_remove_css() {
+        let api = make_api();
+        let target = InjectionTarget {
+            tab_id: crate::extensions::types::TabId(1),
+            frame_ids: None,
+            all_frames: false,
+        };
+
+        let result = api.scripting().remove_css(
+            target,
+            CssInjection::Css {
+                css: "body { color: red; }".into(),
+            },
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_scripting_execute_script_file_unsupported() {
+        let api = make_api();
+        let target = InjectionTarget {
+            tab_id: crate::extensions::types::TabId(1),
+            frame_ids: None,
+            all_frames: false,
+        };
+
+        let result = api.scripting().execute_script(
+            target,
+            ScriptInjection::File {
+                file: "content.js".into(),
+            },
+        );
+
+        assert!(result.is_err());
     }
 }

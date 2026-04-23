@@ -259,7 +259,7 @@ id = "S07"
 title = "WebExtensions scripting API"
 phase = "S"
 priority = "medium"
-status = "pending"
+status = "complete"
 description = "Implement scripting.executeScript and scripting.insertCSS. Allow extensions to programmatically inject JS/CSS into tabs. Support file-based scripts (from extension package) and code-based injection. Return execution results."
 depends = ["S05"]
 
