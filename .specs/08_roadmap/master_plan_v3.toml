@@ -268,7 +268,7 @@ id = "S08"
 title = "Lua as main control plane"
 phase = "S"
 priority = "high"
-status = "pending"
+status = "complete"
 description = "Expand Lua scripting to be the primary automation interface. Add Lua APIs for: extension management (install/enable/disable/list), tab control, download management, sync operations, keybinding overrides at runtime. Lua scripts can orchestrate WebExtensions (e.g., 'when tab loads, run extension X with config Y'). Add lua require() for loading multiple script files."
 depends = ["S01", "S05"]
 

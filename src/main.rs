@@ -203,7 +203,7 @@ impl AileronApp {
         info!("init_graphics(): Creating AppState...");
         let size = window.inner_size();
         let viewport = Rect::new(0.0, 0.0, size.width as f64, size.height as f64);
-        let mut app_state = match AppState::new(viewport, self.config.clone()) {
+        let app_state = match AppState::new(viewport, self.config.clone()) {
             Ok(s) => {
                 info!(
                     "Application state initialized with {} panes",
@@ -217,14 +217,20 @@ impl AileronApp {
             }
         };
 
-        let loaded_count = app_state.extension_manager.load_all().len();
+        let loaded_count = app_state
+            .extension_manager
+            .lock()
+            .map(|mut m| m.load_all().len())
+            .unwrap_or(0);
         if loaded_count > 0 {
             info!("Loaded {} extension(s)", loaded_count);
         }
 
-        self.content_scripts.set_extension_registry(
-            app_state.extension_manager.content_script_registry().clone()
-        );
+        if let Ok(mgr) = app_state.extension_manager.lock() {
+            self.content_scripts.set_extension_registry(
+                mgr.content_script_registry().clone()
+            );
+        }
 
         self.egui_winit = Some(winit_state);
         self.gfx = Some(gfx);

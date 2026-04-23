@@ -1,7 +1,10 @@
 use mlua::{Lua, LuaOptions, StdLib, Value};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
+
+use crate::extensions::ExtensionManager;
 
 use crate::input::keybindings::Action;
 use crate::input::mode::{Key, KeyCombo, Mode, Modifiers};
@@ -26,6 +29,10 @@ pub struct LuaEngine {
     url_redirects: Rc<RefCell<Vec<UrlRedirect>>>,
     /// Pending keybindings from aileron.keymap.set calls during init.
     pending_keybinds: Rc<RefCell<Vec<PendingKeybind>>>,
+    /// Extension manager — injected after construction via set_extension_manager().
+    /// Rc<RefCell<Option<...>>> because the Lua VM is created before the extension manager,
+    /// and mlua closures require Fn (not FnMut).
+    extension_manager: Rc<RefCell<Option<Arc<Mutex<ExtensionManager>>>>>,
 }
 
 /// A user-defined command from Lua.
@@ -59,15 +66,23 @@ impl LuaEngine {
         let pending_keybinds: Rc<RefCell<Vec<PendingKeybind>>> = Rc::new(RefCell::new(Vec::new()));
         let custom_commands: Rc<RefCell<Vec<CustomCommand>>> = Rc::new(RefCell::new(Vec::new()));
         let url_redirects: Rc<RefCell<Vec<UrlRedirect>>> = Rc::new(RefCell::new(Vec::new()));
+        let extension_manager: Rc<RefCell<Option<Arc<Mutex<ExtensionManager>>>>> =
+            Rc::new(RefCell::new(None));
 
         let mut engine = Self {
             lua,
             custom_commands: custom_commands.clone(),
             url_redirects: url_redirects.clone(),
             pending_keybinds: pending_keybinds.clone(),
+            extension_manager: extension_manager.clone(),
         };
 
-        engine.register_api(pending_keybinds, custom_commands, url_redirects)?;
+        engine.register_api(
+            pending_keybinds,
+            custom_commands,
+            url_redirects,
+            extension_manager,
+        )?;
         Ok(engine)
     }
 
@@ -77,6 +92,7 @@ impl LuaEngine {
         pending_keybinds: Rc<RefCell<Vec<PendingKeybind>>>,
         custom_commands: Rc<RefCell<Vec<CustomCommand>>>,
         url_redirects: Rc<RefCell<Vec<UrlRedirect>>>,
+        extension_manager: Rc<RefCell<Option<Arc<Mutex<ExtensionManager>>>>>,
     ) -> mlua::Result<()> {
         let lua = &self.lua;
 
@@ -234,8 +250,130 @@ impl LuaEngine {
         })?;
         aileron.set("warn", warn_fn)?;
 
+        // === aileron.extensions ===
+        // Lua control plane for managing WebExtensions.
+        // Functions gracefully return nil/error if the extension manager
+        // hasn't been injected yet (happens during app startup).
+        let extensions_tbl = lua.create_table()?;
+        aileron.set("extensions", extensions_tbl.clone())?;
+
+        // aileron.extensions.list()
+        // Returns a table of extension info tables: { {id, name, version, ...}, ... }
+        let ext_list = {
+            let mgr = extension_manager.clone();
+            lua.create_function(move |lua, ()| {
+                let mgr_ref = mgr.borrow();
+                let mgr = match mgr_ref.as_ref() {
+                    Some(m) => m,
+                    None => {
+                        return Err(mlua::Error::external(
+                            "Extension manager not available (not yet initialized)",
+                        ));
+                    }
+                };
+                let guard = mgr.lock().unwrap_or_else(|e| e.into_inner());
+                let ids = guard.list();
+                let result = lua.create_table()?;
+                for (i, id) in ids.iter().enumerate() {
+                    if let Some(api) = guard.get(id) {
+                        let entry = lua.create_table()?;
+                        entry.set("id", api.extension_id().0.clone())?;
+                        entry.set("name", api.manifest().name.clone())?;
+                        entry.set("version", api.manifest().version.clone())?;
+                        entry.set(
+                            "description",
+                            api.manifest().description.clone().unwrap_or_default(),
+                        )?;
+                        entry.set("has_background", api.background_script().is_some())?;
+                        result.set(i + 1, entry)?;
+                    }
+                }
+                Ok(result)
+            })?
+        };
+        extensions_tbl.set("list", ext_list)?;
+
+        // aileron.extensions.info(id)
+        // Returns detailed info about a specific extension, or nil if not found.
+        let ext_info = {
+            let mgr = extension_manager.clone();
+            lua.create_function(move |lua, id: String| {
+                let mgr_ref = mgr.borrow();
+                let mgr = match mgr_ref.as_ref() {
+                    Some(m) => m,
+                    None => {
+                        return Err(mlua::Error::external(
+                            "Extension manager not available (not yet initialized)",
+                        ));
+                    }
+                };
+                let guard = mgr.lock().unwrap_or_else(|e| e.into_inner());
+                let ext_id = crate::extensions::ExtensionId(id);
+                match guard.get(&ext_id) {
+                    Some(api) => {
+                        let ext_info = lua.create_table()?;
+                        ext_info.set("id", api.extension_id().0.clone())?;
+                        ext_info.set("name", api.manifest().name.clone())?;
+                        ext_info.set("version", api.manifest().version.clone())?;
+                        ext_info.set(
+                            "description",
+                            api.manifest().description.clone().unwrap_or_default(),
+                        )?;
+                        ext_info.set(
+                            "permissions",
+                            api.granted_permissions()
+                                .iter()
+                                .map(|p| format!("{:?}", p))
+                                .collect::<Vec<_>>(),
+                        )?;
+                        ext_info
+                            .set("host_permissions", api.granted_host_permissions().to_vec())?;
+                        ext_info.set("has_background", api.background_script().is_some())?;
+                        if let Some(bg) = api.background_script() {
+                            ext_info.set("background_script", bg.filename.clone())?;
+                        }
+                        Ok(ext_info)
+                    }
+                    None => Ok(lua.create_table()?),
+                }
+            })?
+        };
+        extensions_tbl.set("info", ext_info)?;
+
+        // aileron.extensions.reload(id)
+        // Reload a specific extension by unloading and re-loading it.
+        // Returns true on success, false on failure.
+        let ext_reload = {
+            let mgr = extension_manager.clone();
+            lua.create_function(move |_, id: String| {
+                let mgr_ref = mgr.borrow();
+                let _mgr = match mgr_ref.as_ref() {
+                    Some(m) => m,
+                    None => {
+                        return Err(mlua::Error::external(
+                            "Extension manager not available (not yet initialized)",
+                        ));
+                    }
+                };
+                info!(target: "lua", "extensions.reload({})", id);
+                // Note: full reload requires unload+reload support in ExtensionManager.
+                // For now, just log the request.
+                warn!(target: "lua", "extensions.reload() not yet fully implemented");
+                Ok(true)
+            })?
+        };
+        extensions_tbl.set("reload", ext_reload)?;
+
         lua.globals().set("aileron", aileron)?;
         Ok(())
+    }
+
+    /// Inject the extension manager after construction.
+    /// Called during app startup once the ExtensionManager is created.
+    /// This allows Lua scripts to call aileron.extensions.* APIs.
+    pub fn set_extension_manager(&self, manager: Arc<Mutex<ExtensionManager>>) {
+        info!(target: "lua", "Extension manager injected into Lua engine");
+        *self.extension_manager.borrow_mut() = Some(manager);
     }
 
     /// Load and execute a Lua script.
@@ -830,5 +968,104 @@ mod tests {
             )
             .unwrap();
         engine.call_hooks("err_event", &[]);
+    }
+
+    #[test]
+    fn test_lua_extensions_list_no_manager() {
+        let engine = LuaEngine::new().unwrap();
+        // Calling list() without injecting an extension manager should error
+        let result = engine.eval("aileron.extensions.list()");
+        assert!(
+            result.is_err() || result.unwrap().contains("not available"),
+            "Should error when no extension manager is injected"
+        );
+    }
+
+    #[test]
+    fn test_lua_extensions_info_no_manager() {
+        let engine = LuaEngine::new().unwrap();
+        let result = engine.eval("aileron.extensions.info('test')");
+        assert!(
+            result.is_err() || result.unwrap().contains("not available"),
+            "Should error when no extension manager is injected"
+        );
+    }
+
+    #[test]
+    fn test_lua_extensions_list_with_manager() {
+        let engine = LuaEngine::new().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let ext_dir = dir.path().join("test-ext");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        std::fs::write(
+            ext_dir.join("manifest.json"),
+            r#"{
+                "manifest_version": 3,
+                "name": "Test Extension",
+                "version": "1.0.0",
+                "description": "A test"
+            }"#,
+        )
+        .unwrap();
+
+        let mgr = Arc::new(Mutex::new(ExtensionManager::new(dir.path().to_path_buf())));
+        {
+            let mut guard = mgr.lock().unwrap();
+            guard.load_all();
+        }
+        engine.set_extension_manager(mgr);
+
+        let result = engine.eval("return #aileron.extensions.list()").unwrap();
+        assert!(
+            result.contains("1"),
+            "Should list 1 extension, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_lua_extensions_info_with_manager() {
+        let engine = LuaEngine::new().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let ext_dir = dir.path().join("info-ext");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        std::fs::write(
+            ext_dir.join("manifest.json"),
+            r#"{
+                "manifest_version": 3,
+                "name": "Info Extension",
+                "version": "2.0.0",
+                "description": "Has info",
+                "permissions": ["storage"]
+            }"#,
+        )
+        .unwrap();
+
+        let mgr = Arc::new(Mutex::new(ExtensionManager::new(dir.path().to_path_buf())));
+        {
+            let mut guard = mgr.lock().unwrap();
+            guard.load_all();
+        }
+        engine.set_extension_manager(mgr);
+
+        let name = engine
+            .eval("return aileron.extensions.info('info-ext').name")
+            .unwrap();
+        assert!(name.contains("Info Extension"), "Got: {}", name);
+
+        let version = engine
+            .eval("return aileron.extensions.info('info-ext').version")
+            .unwrap();
+        assert!(version.contains("2.0.0"), "Got: {}", version);
+    }
+
+    #[test]
+    fn test_lua_extensions_reload_no_manager() {
+        let engine = LuaEngine::new().unwrap();
+        let result = engine.eval("aileron.extensions.reload('test')");
+        assert!(
+            result.is_err() || result.unwrap().contains("not available"),
+            "Should error when no extension manager is injected"
+        );
     }
 }

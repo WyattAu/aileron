@@ -1563,15 +1563,15 @@ if (window._terminal && window._terminal.buffer) {{
     /// Handle extension and language commands.
     fn cmd_extensions_language(&mut self, query: &str) -> Option<()> {
         if query == "extensions" {
-            let ids = self.extension_manager.list();
+            let mgr = self.extension_manager.lock().ok()?;
+            let ids = mgr.list();
             if ids.is_empty() {
                 self.status_message = "No extensions loaded".into();
             } else {
                 let names: Vec<String> = ids
                     .iter()
                     .map(|id| {
-                        self.extension_manager
-                            .get(id)
+                        mgr.get(id)
                             .map(|api| api.manifest().name.clone())
                             .unwrap_or_else(|| id.to_string())
                     })
@@ -1582,7 +1582,11 @@ if (window._terminal && window._terminal.buffer) {{
         }
 
         if query == "extension-load" {
-            let loaded = self.extension_manager.load_all();
+            let loaded = self
+                .extension_manager
+                .lock()
+                .map(|mut m| m.load_all())
+                .unwrap_or_default();
             self.status_message = format!("Loaded {} extension(s)", loaded.len());
             return Some(());
         }
@@ -1594,17 +1598,25 @@ if (window._terminal && window._terminal.buffer) {{
                 return Some(());
             }
             let ext_id = ExtensionId(id_str.to_string());
-            match self.extension_manager.get(&ext_id) {
-                Some(api) => {
-                    let m = api.manifest();
-                    let perms = if m.permissions.is_empty() {
+            match self.extension_manager.lock().ok().and_then(|m| {
+                m.get(&ext_id).map(|api| {
+                    (
+                        api.manifest().name.clone(),
+                        api.manifest().version.clone(),
+                        api.extension_id().0.clone(),
+                        api.manifest().permissions.clone(),
+                    )
+                })
+            }) {
+                Some((name, version, id, permissions)) => {
+                    let perms = if permissions.is_empty() {
                         String::new()
                     } else {
-                        format!(" | perms: {}", m.permissions.join(", "))
+                        format!(" | perms: {}", permissions.join(", "))
                     };
                     self.status_message = format!(
                         "{} v{} ({}){}",
-                        m.name, m.version, api.extension_id(), perms,
+                        name, version, id, perms,
                     );
                 }
                 None => {

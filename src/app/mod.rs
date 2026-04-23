@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
 
 pub mod cmd;
@@ -196,7 +197,8 @@ pub struct AppState {
     pub adblock_blocked_count: u64,
 
     /// Extension manager — loads and manages WebExtensions.
-    pub extension_manager: ExtensionManager,
+    /// Wrapped in Arc<Mutex<>> so the Lua engine can share access.
+    pub extension_manager: Arc<Mutex<ExtensionManager>>,
 
     /// Sync filesystem watcher (started/stopped by sync commands).
     pub sync_watcher: crate::sync::watcher::SyncWatcher,
@@ -322,6 +324,13 @@ impl AppState {
             std::collections::HashMap::new()
         };
 
+        // Create extension manager and inject into Lua engine
+        let extension_manager =
+            Arc::new(Mutex::new(ExtensionManager::new(Self::extensions_dir())));
+        if let Some(ref engine) = lua_engine {
+            engine.set_extension_manager(extension_manager.clone());
+        }
+
         Ok(Self {
             wm,
             mode,
@@ -364,7 +373,7 @@ impl AppState {
             muted_pane_ids: std::collections::HashSet::new(),
             pinned_pane_ids: std::collections::HashSet::new(),
             adblock_blocked_count: 0,
-            extension_manager: ExtensionManager::new(Self::extensions_dir()),
+            extension_manager: extension_manager.clone(),
             sync_watcher: crate::sync::watcher::SyncWatcher::new(),
             download_manager: crate::downloads::DownloadManager::new(
                 directories::UserDirs::new()
