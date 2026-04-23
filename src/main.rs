@@ -22,27 +22,42 @@ use aileron::wm::Rect;
 mod bootstrap;
 mod frame_tasks;
 
-/// Custom X11 error handler that swallows GLXBadWindow errors.
+/// Custom X11 error handler that swallows benign X11 errors.
 ///
 /// wry's build_as_child creates X11 child windows that winit doesn't own.
 /// When winit's IME tries to unfocus these windows, it triggers GLXBadWindow
 /// (error code 170) which winit's event processor .expect()s on, crashing the app.
-/// This handler intercepts GLXBadWindow and returns 0 (ignored) to prevent the crash.
+/// This handler intercepts known benign errors and returns 0 (ignored).
+/// All other errors are logged but still swallowed to prevent Xlib abort().
 #[cfg(target_os = "linux")]
 unsafe extern "C" fn x11_error_handler(
     _display: *mut x11_dl::xlib::Display,
     event: *mut x11_dl::xlib::XErrorEvent,
 ) -> std::os::raw::c_int {
-    // SAFETY: This is an X11 error handler callback. We only read the error_code
-    // field from the XErrorEvent struct, which is always valid when called by Xlib.
     if !event.is_null() {
         let error = unsafe { &*event };
-        if error.error_code == 170 {
-            // Swallow GLXBadWindow — this is from wry's child windows
-            return 0;
+        match error.error_code {
+            170 => {
+                // GLXBadWindow — wry's child windows, benign
+            }
+            169 => {
+                // GLXBadDrawable — also from wry child windows
+            }
+            3 => {
+                // BadWindow — stale window reference, benign
+            }
+            _ => {
+                tracing::warn!(
+                    target: "x11",
+                    "Unhandled X11 error (code {}): request={} minor={}",
+                    error.error_code,
+                    error.request_code,
+                    error.minor_code,
+                );
+            }
         }
     }
-    1 // Return non-zero for unhandled errors (triggers Xlib's default handler)
+    0 // Always return 0 — never let Xlib's default handler (which calls abort)
 }
 
 /// Heights (in logical pixels) for the egui panels.
@@ -1054,7 +1069,7 @@ impl ApplicationHandler for AileronApp {
                         }
                     }
 
-                    // Escape closes find bar first, then URL bar, then normal key processing
+                    // Escape closes find bar first, then URL bar, then history panel
                     if app_state.find_bar_open && key == aileron::input::Key::Escape {
                         app_state.find_bar_open = false;
                         app_state.find_query.clear();
@@ -1067,6 +1082,15 @@ impl ApplicationHandler for AileronApp {
                     if app_state.url_bar_focused && key == aileron::input::Key::Escape {
                         app_state.url_bar_focused = false;
                         app_state.url_bar_input.clear();
+                        return;
+                    }
+                    if app_state.history_panel_open && key == aileron::input::Key::Escape {
+                        app_state.history_panel_open = false;
+                        app_state.history_entries.clear();
+                        return;
+                    }
+                    if app_state.tab_search_open && key == aileron::input::Key::Escape {
+                        app_state.tab_search_open = false;
                         return;
                     }
                     // Track pane count before processing key
@@ -1490,6 +1514,8 @@ impl ApplicationHandler for AileronApp {
         if let Some(app_state) = &mut self.app_state {
             app_state.adblock_blocked_count = self.adblocker.blocked_count();
             frame_tasks::auto_save_workspace(app_state, &self.wry_panes);
+            frame_tasks::push_tabs_to_arp(app_state, &self.wry_panes);
+            frame_tasks::process_arp_commands(app_state);
         }
 
         {
@@ -1953,38 +1979,21 @@ fn main() -> anyhow::Result<()> {
     let config = Config::load();
     info!("Config loaded: render_mode={}, tab_layout={}, theme={}", config.render_mode, config.tab_layout, config.theme);
 
-    // Force GDK_BACKEND=x11 on Wayland so GTK/WebKitGTK can create a GL context.
-    // NVIDIA's Wayland EGL doesn't provide GL through the GDK Wayland backend,
-    // causing "GDK is not able to create a GL context" → SIGTRAP.
-    // We do NOT remove WAYLAND_DISPLAY so winit continues using Wayland directly.
-    #[cfg(target_os = "linux")]
-    if std::env::var("WAYLAND_DISPLAY").is_ok() {
-        info!("Wayland detected — forcing GDK_BACKEND=x11 for GTK/WebKitGTK GL context");
-        unsafe {
-            std::env::set_var("GDK_BACKEND", "x11");
-        }
-    }
-
     // Disable WebKitGTK's DMA-BUF renderer on NVIDIA to prevent
     // "Failed to create GBM buffer" which causes the offscreen pixbuf
     // to remain empty (no visual content rendered).
     // Falls back to the shared GL texture path which works on all GPUs.
+    // Only set this on NVIDIA GPUs — AMD/Intel benefit from DMA-BUF.
     #[cfg(target_os = "linux")]
     unsafe {
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        let is_nvidia = std::fs::read_to_string("/sys/class/drm/card0/device/vendor")
+            .map(|v| v.trim() == "0x10de\n")
+            .unwrap_or(false);
+        if is_nvidia {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            info!("NVIDIA GPU detected — disabled DMA-BUF renderer (shared GL fallback)");
+        }
     }
-
-    // Disable WebKitGTK's threaded compositor so it renders through cairo
-    // (software path) instead of OpenGL. This is essential for the
-    // OffscreenWindow pixbuf capture to contain actual web content rather
-    // than just a blank GL proxy surface. Without this, GPU-accelerated
-    // WebKitGTK renders web content into an OpenGL texture that pixbuf()
-    // cannot see — only the GTK widget background is captured.
-    #[cfg(target_os = "linux")]
-    unsafe {
-        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-    }
-    info!("Set WEBKIT_DISABLE_COMPOSITING_MODE=1 (forces cairo software rendering for pixbuf capture)");
 
     // Phase 2: Initialize GTK
     info!("── Phase 2: Initializing GTK ──");

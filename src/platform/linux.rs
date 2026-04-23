@@ -1,9 +1,29 @@
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 
 use super::traits::PlatformOps;
 
 pub struct LinuxPlatform;
+
+impl LinuxPlatform {
+    /// Pipe text to a command's stdin for clipboard operations.
+    /// Returns true if the command succeeded.
+    fn pipe_clipboard(cmd: &str, args: &[&str], text: &str) -> bool {
+        std::process::Command::new(cmd)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()
+            .and_then(|mut child| {
+                child.stdin.as_mut()?.write_all(text.as_bytes()).ok()?;
+                child.wait().ok()
+            })
+            .is_some_and(|exit| exit.success())
+    }
+}
 
 impl PlatformOps for LinuxPlatform {
     fn downloads_dir(&self) -> PathBuf {
@@ -22,10 +42,8 @@ impl PlatformOps for LinuxPlatform {
     }
 
     fn is_wayland(&self) -> bool {
+        // Rely solely on WAYLAND_DISPLAY — XDG_SESSION_TYPE can be stale from SSH sessions
         std::env::var("WAYLAND_DISPLAY").is_ok()
-            || std::env::var("XDG_SESSION_TYPE")
-                .map(|s| s == "wayland")
-                .unwrap_or(false)
     }
 
     fn is_x11(&self) -> bool {
@@ -115,34 +133,49 @@ impl PlatformOps for LinuxPlatform {
     }
 
     fn clipboard_copy(&self, text: &str) -> bool {
-        use std::process::Stdio;
-        // Try Wayland first (wl-copy), then X11 (xclip), then xsel
+        // Try Wayland first (wl-copy), then X11 (xclip via stdin), then xsel via stdin
+        // wl-copy handles multiline correctly via arg
         std::process::Command::new("wl-copy")
             .arg(text)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status()
             .ok()
             .map(|s| s.success())
             .unwrap_or(false)
-            || std::process::Command::new("xclip")
-                .args(["-selection", "clipboard"])
-                .arg(text)
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
+            || Self::pipe_clipboard("xclip", &["-selection", "clipboard"], text)
+            || Self::pipe_clipboard("xsel", &["--clipboard", "--input"], text)
+    }
+
+    fn clipboard_paste(&self) -> Option<String> {
+        // Try Wayland first (wl-paste), then X11 (xclip -o), then xsel --clipboard --output
+        let wayland_out = std::process::Command::new("wl-paste")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success() && !o.stdout.is_empty())
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+
+        wayland_out.or_else(|| {
+            std::process::Command::new("xclip")
+                .args(["-selection", "clipboard", "-o"])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output()
                 .ok()
-                .map(|s| s.success())
-                .unwrap_or(false)
-            || std::process::Command::new("xsel")
-                .args(["--clipboard", "--input"])
-                .arg(text)
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
+                .filter(|o| o.status.success() && !o.stdout.is_empty())
+                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        }).or_else(|| {
+            std::process::Command::new("xsel")
+                .args(["--clipboard", "--output"])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output()
                 .ok()
-                .map(|s| s.success())
-                .unwrap_or(false)
+                .filter(|o| o.status.success() && !o.stdout.is_empty())
+                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        })
     }
 }
 
@@ -224,5 +257,11 @@ mod tests {
     fn test_linux_clipboard_copy_no_panic() {
         // May fail if no clipboard tool installed, but must not panic
         let _ = LinuxPlatform.clipboard_copy("test");
+    }
+
+    #[test]
+    fn test_linux_clipboard_paste_no_panic() {
+        // May return None if no clipboard tool installed, but must not panic
+        let _ = LinuxPlatform.clipboard_paste();
     }
 }

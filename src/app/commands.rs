@@ -238,6 +238,9 @@ impl AppState {
         // Extensions/language commands
         if self.cmd_extensions_language(query).is_some() { return; }
 
+        // ARP (Aileron Remote Protocol) commands
+        if self.cmd_arp(query).is_some() { return; }
+
         // Tools commands (grep, git, terminal, print)
         if self.cmd_tools(query).is_some() { return; }
 
@@ -271,6 +274,16 @@ impl AppState {
 
         // Downloads commands
         if self.cmd_downloads(query).is_some() { return; }
+
+        // History command
+        if self.cmd_history(query).is_some() { return; }
+
+        // Tab search command
+        if query == "tabs" {
+            self.tab_search_open = !self.tab_search_open;
+            self.tab_search_query.clear();
+            return;
+        }
 
         if query == "import-firefox" {
             if let Some(db) = self.db.as_ref() {
@@ -752,6 +765,9 @@ impl AppState {
                 "language", "language-list",
                 "engine", "compat-override",
                 "extensions", "extension-load", "extension-info",
+                "arp-start", "arp-stop", "arp-status", "arp-token",
+                "history", "history-clear",
+                "tabs",
                 "sync", "sync --pull", "sync --both", "sync --status",
                 "sync-watch", "sync-stop", "sync-target",
             ];
@@ -1095,6 +1111,46 @@ impl AppState {
             return Some(());
         }
         None
+    }
+
+    /// Handle history commands: history, history-clear.
+    fn cmd_history(&mut self, query: &str) -> Option<()> {
+        match query {
+            "history" => {
+                // Toggle history panel open/closed
+                if self.history_panel_open {
+                    self.history_panel_open = false;
+                    self.history_entries.clear();
+                } else if let Some(db) = self.db.as_ref() {
+                    match crate::db::history::recent_entries(db, 100) {
+                        Ok(entries) => {
+                            self.history_entries = entries;
+                            self.history_panel_open = true;
+                        }
+                        Err(e) => {
+                            self.status_message = format!("History error: {}", e);
+                        }
+                    }
+                }
+                Some(())
+            }
+            "history-clear" => {
+                if let Some(db) = self.db.as_ref() {
+                    match crate::db::history::clear_history(db) {
+                        Ok(count) => {
+                            self.status_message = format!("Cleared {} history entries", count);
+                            self.history_panel_open = false;
+                            self.history_entries.clear();
+                        }
+                        Err(e) => {
+                            self.status_message = format!("Failed to clear history: {}", e);
+                        }
+                    }
+                }
+                Some(())
+            }
+            _ => None,
+        }
     }
 
     /// Handle clear/privacy commands: clear <history|bookmarks|workspaces|cookies|all>,
@@ -1774,6 +1830,84 @@ if (window._terminal && window._terminal.buffer) {{
         None
     }
 
+    /// Handle ARP (Aileron Remote Protocol) commands.
+    fn cmd_arp(&mut self, query: &str) -> Option<()> {
+        if query == "arp-start" {
+            if let Some(ref server) = self.arp_server
+                && server.is_running()
+            {
+                self.status_message = format!(
+                    "ARP server already running on ws://{}:{}",
+                    server.host(),
+                    server.port(),
+                );
+                return Some(());
+            }
+            let config = crate::arp::ArpConfig {
+                port: self.config.arp_port.unwrap_or(19743),
+                token: self.config.arp_token.clone(),
+                ..Default::default()
+            };
+            match crate::arp::ArpServer::new(config) {
+                Ok((server, receiver)) => {
+                    match server.start() {
+                        Ok(()) => {
+                            self.status_message = format!(
+                                "ARP server started on ws://127.0.0.1:{}",
+                                server.port(),
+                            );
+                            self.arp_server = Some(server);
+                            self.arp_cmd_receiver = Some(std::sync::Mutex::new(receiver));
+                        }
+                        Err(e) => {
+                            self.status_message = format!("ARP server start failed: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    self.status_message = format!("ARP server creation failed: {}", e);
+                }
+            }
+            return Some(());
+        }
+
+        if query == "arp-stop" {
+            if let Some(ref server) = self.arp_server {
+                server.stop();
+                self.status_message = "ARP server stopped".into();
+            } else {
+                self.status_message = "ARP server is not running".into();
+            }
+            return Some(());
+        }
+
+        if query == "arp-status" {
+            match self.arp_server {
+                Some(ref server) => {
+                    let state = if server.is_running() { "running" } else { "stopped" };
+                    self.status_message = format!(
+                        "ARP server: {} on ws://127.0.0.1:{}",
+                        state,
+                        server.port(),
+                    );
+                }
+                None => {
+                    self.status_message = "ARP server: not created (use :arp-start)".into();
+                }
+            }
+            return Some(());
+        }
+
+        if query == "arp-token" {
+            let token = uuid::Uuid::new_v4().to_string().replace('-', "");
+            self.status_message = format!("Generated ARP token: {}", token);
+            self.config.arp_token = Some(token);
+            return Some(());
+        }
+
+        None
+    }
+
 }
 
 #[cfg(test)]
@@ -1966,5 +2100,33 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("memory");
         assert!(state.status_message.contains("RSS"));
+    }
+
+    #[test]
+    fn test_history_toggle() {
+        let mut state = make_state();
+        // History panel opens (entries may be empty without DB)
+        state.handle_raw_command("history");
+        assert!(state.history_panel_open);
+        // Toggle off
+        state.handle_raw_command("history");
+        assert!(!state.history_panel_open);
+    }
+
+    #[test]
+    fn test_history_clear() {
+        let mut state = make_state();
+        state.handle_raw_command("history-clear");
+        // Should not panic, message indicates action taken
+        assert!(!state.status_message.is_empty());
+    }
+
+    #[test]
+    fn test_tabs_toggle() {
+        let mut state = make_state();
+        state.handle_raw_command("tabs");
+        assert!(state.tab_search_open);
+        state.handle_raw_command("tabs");
+        assert!(!state.tab_search_open);
     }
 }

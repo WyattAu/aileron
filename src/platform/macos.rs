@@ -67,6 +67,16 @@ impl PlatformOps for MacOSPlatform {
             .map(|s| s.success())
             .unwrap_or(false)
     }
+
+    fn clipboard_paste(&self) -> Option<String> {
+        std::process::Command::new("pbpaste")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success() && !o.stdout.is_empty())
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+    }
 }
 
 #[cfg(test)]

@@ -18,7 +18,7 @@ impl GfxState {
     /// Must be called from a context where blocking is acceptable (e.g., `resumed`).
     pub fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN,
+            backends: wgpu::Backends::VULKAN | wgpu::Backends::GL,
             ..Default::default()
         });
 
@@ -28,32 +28,35 @@ impl GfxState {
             instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     compatible_surface: Some(&surface),
+                    power_preference: wgpu::PowerPreference::HighPerformance,
                     ..Default::default()
                 })
                 .await
         })
         .ok_or_else(|| {
-            // Provide helpful error message for common issues
             let vk_icd = std::env::var("VK_ICD_FILENAMES").unwrap_or_default();
             let wayland_display = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
+            let gl_renderer = std::env::var("GLES_VERSION").unwrap_or_default();
             anyhow::anyhow!(
                 "No suitable GPU adapter found. \
-                 Vulkan surface creation failed.\n\
-                 Hints:\n  - VK_ICD_FILENAMES={}\n  - WAYLAND_DISPLAY={}\n  - Try: WINIT_UNIX_BACKEND=x11",
+                 Vulkan/GL surface creation failed.\n\
+                 Hints:\n  - VK_ICD_FILENAMES={}\n  - WAYLAND_DISPLAY={}\n  - GLES_VERSION={}\n  - Try: WINIT_UNIX_BACKEND=x11",
                 if vk_icd.is_empty() { "(not set)" } else { &vk_icd },
                 if wayland_display.is_empty() { "(not set)" } else { &wayland_display },
+                if gl_renderer.is_empty() { "(not set)" } else { &gl_renderer },
             )
         })?;
 
         info!("GPU adapter: {:?}", adapter.get_info());
 
         let (device, queue) = pollster::block_on(async {
+            let adapter_limits = adapter.limits();
             adapter
                 .request_device(
                     &wgpu::DeviceDescriptor {
                         label: Some("aileron-device"),
                         required_features: wgpu::Features::empty(),
-                        required_limits: wgpu::Limits::default(),
+                        required_limits: adapter_limits,
                         ..Default::default()
                     },
                     None,
@@ -71,6 +74,15 @@ impl GfxState {
             .copied()
             .unwrap_or(surface_capabilities.formats[0]);
 
+        // Prefer Opaque alpha mode — Aileron has a solid dark background,
+        // no transparency needed. Avoids alpha compositing artifacts on NVIDIA.
+        let alpha_mode = surface_capabilities
+            .alpha_modes
+            .iter()
+            .find(|m| **m == wgpu::CompositeAlphaMode::Opaque)
+            .copied()
+            .unwrap_or(surface_capabilities.alpha_modes[0]);
+
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
@@ -79,9 +91,9 @@ impl GfxState {
                 width: window.inner_size().width,
                 height: window.inner_size().height,
                 present_mode: wgpu::PresentMode::AutoVsync,
-                alpha_mode: surface_capabilities.alpha_modes[0],
+                alpha_mode,
                 view_formats: vec![],
-                desired_maximum_frame_latency: 2,
+                desired_maximum_frame_latency: 1,
             },
         );
 
@@ -116,9 +128,9 @@ impl GfxState {
                     width,
                     height,
                     present_mode: wgpu::PresentMode::AutoVsync,
-                    alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                    alpha_mode: wgpu::CompositeAlphaMode::Opaque,
                     view_formats: vec![],
-                    desired_maximum_frame_latency: 2,
+                    desired_maximum_frame_latency: 1,
                 },
             );
         }

@@ -85,6 +85,8 @@ pub enum WryAction {
     /// Capture the current scroll fraction via JS and send it back via IPC.
     /// Used by the mark-set feature to record the actual scroll position.
     CaptureScrollFraction,
+    /// Set the system clipboard contents.
+    SetClipboard(String),
 }
 
 pub struct AppState {
@@ -205,6 +207,26 @@ pub struct AppState {
 
     /// Download manager — handles file downloads with progress tracking.
     pub download_manager: crate::downloads::DownloadManager,
+
+    /// ARP server — Aileron Remote Protocol for mobile clients.
+    /// Created on demand via `:arp-start` command.
+    pub arp_server: Option<crate::arp::ArpServer>,
+
+    /// ARP command receiver — polled each frame to process mobile mutations.
+    /// Stored separately because it must not be dropped while the server runs.
+    pub arp_cmd_receiver: Option<std::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<crate::arp::ArpCommand>>>,
+
+    /// Whether the history panel overlay is open.
+    pub history_panel_open: bool,
+
+    /// Cached history entries for the history panel.
+    pub history_entries: Vec<crate::db::history::HistoryEntry>,
+
+    /// Whether the tab search panel overlay is open.
+    pub tab_search_open: bool,
+
+    /// Filter query for the tab search panel.
+    pub tab_search_query: String,
 }
 
 impl AppState {
@@ -380,6 +402,12 @@ impl AppState {
                     .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
                     .unwrap_or_else(|| std::path::PathBuf::from("./Downloads")),
             ),
+            arp_server: None,
+            arp_cmd_receiver: None,
+            history_panel_open: false,
+            history_entries: Vec::new(),
+            tab_search_open: false,
+            tab_search_query: String::new(),
         })
     }
 
@@ -390,6 +418,16 @@ impl AppState {
             .entry(pane_id)
             .or_default()
             .insert(mark, fraction);
+    }
+
+    /// Look up a quickmark URL by its key character.
+    pub fn quickmarks_get(&self, key: &char) -> Option<url::Url> {
+        self.quickmarks.get(key).and_then(|s| url::Url::parse(s).ok())
+    }
+
+    /// Get all quickmarks as (key, url) pairs.
+    pub fn quickmarks_list(&self) -> Vec<(char, String)> {
+        self.quickmarks.iter().map(|(k, v)| (*k, v.clone())).collect()
     }
 
     /// Load persisted scroll marks from the database for a given URL into the

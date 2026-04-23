@@ -14,8 +14,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  linux-test:
-    name: Linux Test
+  test:
+    name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -44,47 +44,53 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target/
-          key: linux-test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            linux-test-${{ runner.os }}-
+            test-${{ runner.os }}-
+
+      - name: Check compilation
+        run: cargo check
 
       - name: Clippy (zero warnings)
         run: cargo clippy -- -D warnings
 
       - name: Run library tests
-        run: cargo test --lib -- --test-threads=4
+        run: AILERON_TESTING=1 cargo test --lib -- --test-threads=4
 
       - name: Run integration smoke test
-        run: cargo test --test integration_smoke
+        run: AILERON_TESTING=1 cargo test --test integration_smoke -- --test-threads=4
 
       - name: Run startup test
-        run: cargo test --test startup_test
+        run: AILERON_TESTING=1 cargo test --test startup_test -- --test-threads=4
+
+      - name: Cross-compile check (x86_64-unknown-linux-gnu)
+        run: cargo check --target x86_64-unknown-linux-gnu
 
       - name: Build release
         run: cargo build --release
 
-  linux-check:
-    name: Linux Check
-    runs-on: ubuntu-latest
+  cross-compile:
+    name: Cross-compile (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            webkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libssl-dev \
-            libsqlite3-dev \
-            libvulkan-dev \
-            pkg-config \
-            clang
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Cache Cargo artifacts
         uses: actions/cache@v4
@@ -93,15 +99,12 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target/
-          key: linux-check-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cross-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            linux-check-${{ runner.os }}-
+            cross-${{ matrix.target }}-
 
-      - name: cargo check
-        run: cargo check
-
-      - name: cargo check (x86_64-unknown-linux-gnu)
-        run: cargo check --target x86_64-unknown-linux-gnu
+      - name: Check compilation
+        run: cargo check --target ${{ matrix.target }}
 
   fmt:
     name: Rustfmt
@@ -118,56 +121,3 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all -- --check
-
-  macos-check:
-    name: macOS Check
-    runs-on: macos-latest
-    timeout-minutes: 20
-    if: github.event_name == 'push'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target/
-          key: macos-check-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            macos-check-${{ runner.os }}-
-
-      - name: cargo check
-        run: cargo check
-
-  windows-check:
-    name: Windows Check
-    runs-on: windows-latest
-    timeout-minutes: 20
-    if: github.event_name == 'push'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target/
-          key: windows-check-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            windows-check-${{ runner.os }}-
-
-      - name: cargo check
-        continue-on-error: true
-        run: cargo check

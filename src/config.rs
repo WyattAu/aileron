@@ -134,6 +134,12 @@ pub struct Config {
     pub sync_auto: bool,
     /// Auto-sync interval in seconds.
     pub sync_auto_interval_sec: u64,
+
+    /// ARP (Aileron Remote Protocol) server port. None = default 19743.
+    pub arp_port: Option<u16>,
+    /// ARP auth token. Generated via `:arp-token`. None = no auth (warning).
+    #[serde(skip_serializing)]
+    pub arp_token: Option<String>,
 }
 
 /// Color overrides for a custom theme.
@@ -367,6 +373,8 @@ impl Default for Config {
             sync_passphrase: String::new(),
             sync_auto: false,
             sync_auto_interval_sec: 60,
+            arp_port: None,
+            arp_token: None,
         }
     }
 }

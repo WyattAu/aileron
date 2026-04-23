@@ -2,7 +2,7 @@
 //!
 //! Extracted from main.rs to reduce the size of the event loop.
 
-use tracing::info;
+use tracing::{info, warn};
 
 /// Process a single WryAction against the wry pane manager.
 ///
@@ -582,6 +582,17 @@ pub fn process_wry_action(
                 wry_pane.execute_js(js);
             } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
                 pane.execute_js(js);
+            }
+        }
+        crate::app::WryAction::SetClipboard(text) => {
+            let copied = crate::platform::platform().clipboard_copy(&text);
+            if !copied {
+                warn!("SetClipboard failed");
+            }
+            if let Some(app_state) = app_state
+                && copied
+            {
+                app_state.status_message = "Clipboard updated (via ARP)".into();
             }
         }
     }

@@ -20,4 +20,7 @@ pub trait PlatformOps: Send + Sync {
 
     /// Copy text to the system clipboard. Returns true on success.
     fn clipboard_copy(&self, text: &str) -> bool;
+
+    /// Read text from the system clipboard. Returns the clipboard contents on success.
+    fn clipboard_paste(&self) -> Option<String>;
 }

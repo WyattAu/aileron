@@ -427,6 +427,200 @@ pub fn build_ui(
         }
     }
 
+    // ─── History Panel ───
+    if app_state.history_panel_open {
+        let bg = egui::Color32::from_rgb(0x19, 0x19, 0x20);
+        let accent = egui::Color32::from_rgb(0x4d, 0xb4, 0xff);
+        let text = egui::Color32::from_rgb(0xd4, 0xd4, 0xd4);
+
+        egui::Window::new("History")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(600.0)
+            .default_height(500.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .frame(egui::Frame::new()
+                .fill(bg)
+                .inner_margin(12.0)
+                .corner_radius(6.0)
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x40, 0x40, 0x50))))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("History")
+                            .size(16.0)
+                            .color(accent)
+                            .strong(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("✕").clicked() {
+                            app_state.history_panel_open = false;
+                            app_state.history_entries.clear();
+                        }
+                    });
+                });
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                egui::ScrollArea::vertical()
+                    .max_height(430.0)
+                    .show(ui, |ui| {
+                        if app_state.history_entries.is_empty() {
+                            ui.label(
+                                egui::RichText::new("No history entries")
+                                    .color(egui::Color32::GRAY),
+                            );
+                        }
+                        let mut navigate_to: Option<url::Url> = None;
+                        for entry in &app_state.history_entries {
+                            let response = ui.selectable_label(
+                                false,
+                                egui::RichText::new(format!(
+                                    "{}  {}  [{}×]",
+                                    entry.title,
+                                    entry.url,
+                                    entry.visit_count,
+                                ))
+                                .size(13.0)
+                                .color(text),
+                            );
+                            if response.clicked() {
+                                navigate_to = url::Url::parse(&entry.url).ok();
+                            }
+                            // Tooltip with full URL and timestamp
+                            response.on_hover_text(format!(
+                                "{}\nVisited: {}\nVisits: {}",
+                                entry.url, entry.visited_at, entry.visit_count
+                            ));
+                        }
+                        if let Some(url) = navigate_to {
+                            app_state
+                                .pending_wry_actions
+                                .push_back(crate::app::WryAction::Navigate(url));
+                            app_state.history_panel_open = false;
+                            app_state.history_entries.clear();
+                        }
+                    });
+            });
+    }
+
+    // ─── Tab Search Panel ───
+    if app_state.tab_search_open {
+        let bg = egui::Color32::from_rgb(0x19, 0x19, 0x20);
+        let accent = egui::Color32::from_rgb(0x4d, 0xb4, 0xff);
+        let text = egui::Color32::from_rgb(0xd4, 0xd4, 0xd4);
+        let dim = egui::Color32::from_rgb(0x88, 0x88, 0x88);
+
+        egui::Window::new("tab-search")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(500.0)
+            .default_height(400.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .frame(egui::Frame::new()
+                .fill(bg)
+                .inner_margin(12.0)
+                .corner_radius(6.0)
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x40, 0x40, 0x50))))
+            .show(ctx, |ui| {
+                // Header
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Tabs")
+                            .size(16.0)
+                            .color(accent)
+                            .strong(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("✕").clicked() {
+                            app_state.tab_search_open = false;
+                        }
+                    });
+                });
+
+                // Search filter
+                let search_response = ui.add(
+                    egui::TextEdit::singleline(&mut app_state.tab_search_query)
+                        .hint_text("Filter tabs...")
+                        .desired_width(f32::INFINITY)
+                        .text_color(text),
+                );
+                search_response.request_focus();
+
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                // Tab list with fuzzy filter
+                let query = app_state.tab_search_query.to_lowercase();
+                let panes = app_state.wm.panes();
+                let active_id = app_state.wm.active_pane_id();
+
+                let mut switch_to: Option<uuid::Uuid> = None;
+                let mut close_tab: Option<uuid::Uuid> = None;
+
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        for (id, _rect) in &panes {
+                            let url = wry_panes.url_for(id)
+                                .map(|u| u.to_string())
+                                .unwrap_or_default();
+                            let title = wry_panes.get(id)
+                                .map(|p| p.title().to_string())
+                                .unwrap_or_default();
+
+                            // Simple substring filter (not fuzzy, but good enough)
+                            if !query.is_empty() {
+                                let matches = title.to_lowercase().contains(&query)
+                                    || url.to_lowercase().contains(&query)
+                                    || id.to_string().starts_with(&query);
+                                if !matches {
+                                    continue;
+                                }
+                            }
+
+                            let is_active = *id == active_id;
+                            let is_terminal = app_state.terminal_pane_ids.contains(id);
+                            let prefix = if is_terminal { "[term] " } else { "" };
+                            let marker = if is_active { " ●" } else { "" };
+
+                            ui.horizontal(|ui| {
+                                let label = format!("{}{}{}  {}", prefix, title, marker, url);
+                                let response = ui.selectable_label(
+                                    is_active,
+                                    egui::RichText::new(label)
+                                        .size(13.0)
+                                        .color(if is_active { accent } else { text }),
+                                );
+                                if response.clicked() {
+                                    switch_to = Some(*id);
+                                }
+
+                                if ui.small_button("✕").clicked() {
+                                    close_tab = Some(*id);
+                                }
+                            });
+                        }
+
+                        if panes.is_empty() {
+                            ui.label(egui::RichText::new("No open tabs").color(dim));
+                        }
+                    });
+
+                if let Some(id) = switch_to {
+                    app_state.wm.set_active_pane(id);
+                }
+                if let Some(id) = close_tab {
+                    let _ = app_state.wm.close(id);
+                    app_state.session_dirty = true;
+                }
+            });
+    }
+
     egui::CentralPanel::default().show(ctx, |ui| {
         let panes = app_state.wm.panes();
         let active_id = app_state.wm.active_pane_id();

@@ -13,6 +13,9 @@ thiserror = "2.0.18"
 # Async runtime
 tokio = { version = "1.51.1", features = ["rt-multi-thread", "macros", "io-util", "fs"] }
 
+# WebSocket server (for ARP mobile protocol)
+tokio-tungstenite = "0.26"
+
 # Concurrency
 crossbeam-channel = "0.5.15"
 parking_lot = "0.12"

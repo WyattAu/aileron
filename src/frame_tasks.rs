@@ -3,6 +3,7 @@ use open::that as open_that;
 use uuid::Uuid;
 
 use aileron::app::{AppState, WryAction};
+use aileron::arp::ArpCommand;
 use aileron::git::GitStatus;
 use aileron::mcp::{McpBridge, McpCommand};
 use aileron::scripts::{ContentScriptManager, RunAt};
@@ -43,6 +44,139 @@ pub fn auto_save_workspace(app_state: &mut AppState, wry_panes: &WryPaneManager)
             }
             Err(e) => {
                 tracing::warn!("Auto-save failed: {}", e);
+            }
+        }
+    }
+}
+
+/// Push current tab state to the ARP server (if running).
+/// Called every frame but only serializes when the server is active.
+pub fn push_tabs_to_arp(app_state: &AppState, wry_panes: &WryPaneManager) {
+    let server = match &app_state.arp_server {
+        Some(s) if s.is_running() => s,
+        _ => return,
+    };
+
+    let active_id = app_state.wm.active_pane_id();
+    let pane_ids = wry_panes.pane_ids();
+
+    let tabs: Vec<serde_json::Value> = pane_ids
+        .iter()
+        .filter_map(|id| {
+            let url = wry_panes.url_for(id)?;
+            let title = wry_panes
+                .get(id)
+                .map(|p| p.title().to_string())
+                .unwrap_or_default();
+            Some(serde_json::json!({
+                "id": id.to_string(),
+                "url": url.as_str(),
+                "title": title,
+                "active": active_id == *id,
+                "muted": app_state.muted_pane_ids.contains(id),
+                "pinned": app_state.pinned_pane_ids.contains(id),
+            }))
+        })
+        .collect();
+
+    server.set_tabs(tabs);
+
+    // Push quickmarks state
+    let quickmarks: Vec<serde_json::Value> = app_state
+        .quickmarks_list()
+        .iter()
+        .map(|(key, url)| serde_json::json!({
+            "key": key.to_string(),
+            "url": url,
+        }))
+        .collect();
+    server.set_quickmarks(quickmarks);
+}
+
+/// Process pending ARP commands from mobile clients.
+/// Dispatches mutations (tab create, navigate, close, etc.) to AppState/WryActions.
+pub fn process_arp_commands(app_state: &mut AppState) {
+    let receiver = match &app_state.arp_cmd_receiver {
+        Some(r) => r,
+        None => return,
+    };
+
+    let mut guard = match receiver.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+
+    while let Ok(cmd) = guard.try_recv() {
+        match cmd {
+            ArpCommand::TabCreate { url } => {
+                let active = app_state.wm.active_pane_id();
+                match app_state.wm.split(active, aileron::wm::SplitDirection::Vertical, 0.5) {
+                    Ok(new_id) => {
+                        let target_url = url
+                            .and_then(|u| url::Url::parse(&u).ok())
+                            .unwrap_or_else(|| url::Url::parse("aileron://newtab").unwrap());
+                        app_state.engines.create_pane(new_id, target_url);
+                        app_state.session_dirty = true;
+                    }
+                    Err(e) => {
+                        warn!(target: "arp", "Tab create failed: {}", e);
+                    }
+                }
+            }
+            ArpCommand::TabNavigate { tab_id: _, url } => {
+                match url::Url::parse(&url) {
+                    Ok(parsed) => {
+                        app_state.pending_wry_actions.push_back(WryAction::Navigate(parsed));
+                        app_state.session_dirty = true;
+                    }
+                    Err(e) => {
+                        warn!(target: "arp", "Tab navigate invalid URL: {}", e);
+                    }
+                }
+            }
+            ArpCommand::TabClose { tab_id } => {
+                let target = tab_id.unwrap_or_else(|| app_state.wm.active_pane_id());
+                match app_state.wm.close(target) {
+                    Ok(_next) => {
+                        app_state.session_dirty = true;
+                    }
+                    Err(e) => {
+                        warn!(target: "arp", "Tab close failed: {}", e);
+                    }
+                }
+            }
+            ArpCommand::TabActivate { tab_id } => {
+                app_state.wm.set_active_pane(tab_id);
+            }
+            ArpCommand::TabGoBack { tab_id: _ } => {
+                app_state.pending_wry_actions.push_back(WryAction::Back);
+            }
+            ArpCommand::TabGoForward { tab_id: _ } => {
+                app_state.pending_wry_actions.push_back(WryAction::Forward);
+            }
+            ArpCommand::TabReload { tab_id: _ } => {
+                app_state.pending_wry_actions.push_back(WryAction::Reload);
+            }
+            ArpCommand::ClipboardSet { text } => {
+                app_state.pending_wry_actions.push_back(WryAction::SetClipboard(text));
+            }
+            ArpCommand::ClipboardGet { request_id } => {
+                let contents = aileron::platform::platform().clipboard_paste()
+                    .unwrap_or_default();
+                if let Some(server) = &app_state.arp_server {
+                    server.notify(
+                        "clipboard.contents",
+                        serde_json::json!({
+                            "request_id": request_id,
+                            "text": contents,
+                        }),
+                    );
+                }
+            }
+            ArpCommand::QuickmarkOpen { key } => {
+                if let Some(url) = app_state.quickmarks_get(&key) {
+                    app_state.pending_wry_actions.push_back(WryAction::Navigate(url));
+                }
             }
         }
     }
