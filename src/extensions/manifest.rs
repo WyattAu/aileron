@@ -20,6 +20,12 @@ pub struct ExtensionManifest {
     pub options_ui: Option<OptionsUi>,
     pub web_accessible_resources: Option<Vec<String>>,
     pub commands: Option<HashMap<String, Command>>,
+    /// Declarative Net Request rule resources (used by uBlock Origin Lite).
+    #[serde(default)]
+    pub declarative_net_request: Option<DeclarativeNetRequest>,
+    /// Extension icons (various sizes).
+    #[serde(default)]
+    pub icons: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -27,6 +33,22 @@ pub struct Background {
     pub service_worker: Option<String>,
     pub scripts: Option<Vec<String>>,
     pub persistent: Option<bool>,
+}
+
+/// Declarative Net Request configuration (used by uBlock Origin Lite).
+/// Stores references to static rule files shipped with the extension.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DeclarativeNetRequest {
+    #[serde(default)]
+    pub rule_resources: Option<Vec<RuleResource>>,
+}
+
+/// A static rule resource file reference.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct RuleResource {
+    pub id: String,
+    pub enabled: Option<bool>,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -245,5 +267,119 @@ mod tests {
                 assert_eq!(map.get("48").unwrap(), "icon48.png");
             }
         }
+    }
+
+    #[test]
+    fn test_parse_ubo_style_manifest() {
+        // Simulates a uBlock Origin Lite style manifest
+        let json = r#"{
+            "manifest_version": 3,
+            "name": "uBlock Origin Lite",
+            "version": "2024.1.0",
+            "description": "An efficient blocker for Chromium, Firefox",
+            "permissions": [
+                "alarms",
+                "declarativeNetRequest",
+                "scripting",
+                "storage",
+                "tabs",
+                "webRequest",
+                "webRequestBlocking"
+            ],
+            "host_permissions": ["<all_urls>"],
+            "background": {
+                "service_worker": "background.js"
+            },
+            "content_scripts": [
+                {
+                    "matches": ["http://*/*", "https://*/*"],
+                    "js": ["content_script.js"],
+                    "css": ["ublock.css"],
+                    "run_at": "document_start"
+                }
+            ],
+            "declarative_net_request": {
+                "rule_resources": [
+                    {
+                        "id": "default",
+                        "enabled": true,
+                        "path": "rulesets/default.json"
+                    },
+                    {
+                        "id": "annoyances",
+                        "enabled": false,
+                        "path": "rulesets/annoyances.json"
+                    }
+                ]
+            },
+            "icons": {
+                "16": "img/icon_16.png",
+                "32": "img/icon_32.png",
+                "128": "img/icon_128.png"
+            },
+            "web_accessible_resources": [
+                "img/*",
+                "web_accessible_resources/*"
+            ],
+            "options_ui": {
+                "page": "dashboard.html",
+                "open_in_tab": true
+            }
+        }"#;
+
+        let manifest = ExtensionManifest::from_json(json).unwrap();
+        assert_eq!(manifest.name, "uBlock Origin Lite");
+        assert_eq!(manifest.version, "2024.1.0");
+
+        // Check permissions
+        assert!(manifest.has_permission("declarativeNetRequest"));
+        assert!(manifest.has_permission("webRequest"));
+        assert!(manifest.has_permission("scripting"));
+
+        // Check host permissions
+        assert_eq!(manifest.host_permissions.len(), 1);
+        assert_eq!(manifest.host_permissions[0], "<all_urls>");
+
+        // Check background
+        assert!(manifest.background.is_some());
+        let bg = manifest.background.as_ref().unwrap();
+        assert_eq!(bg.service_worker.as_deref(), Some("background.js"));
+
+        // Check content scripts
+        assert!(manifest.content_scripts.is_some());
+        let cs = manifest.content_scripts.as_ref().unwrap();
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0].js.as_ref().unwrap()[0], "content_script.js");
+
+        // Check declarative_net_request
+        assert!(manifest.declarative_net_request.is_some());
+        let dnr = manifest.declarative_net_request.as_ref().unwrap();
+        assert!(dnr.rule_resources.is_some());
+        let rules = dnr.rule_resources.as_ref().unwrap();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].id, "default");
+        assert_eq!(rules[0].path, "rulesets/default.json");
+        assert_eq!(rules[1].enabled, Some(false));
+
+        // Check icons
+        assert!(manifest.icons.is_some());
+        let icons = manifest.icons.as_ref().unwrap();
+        assert_eq!(icons.get("128").unwrap(), "img/icon_128.png");
+    }
+
+    #[test]
+    fn test_parse_manifest_unknown_fields_ignored() {
+        // Manifests may have extra fields we don't care about
+        let json = r#"{
+            "manifest_version": 3,
+            "name": "Test",
+            "version": "1.0.0",
+            "unknown_field": "ignored",
+            "another_unknown": 42,
+            "deep": { "nested": "ignored too" }
+        }"#;
+
+        let manifest = ExtensionManifest::from_json(json).unwrap();
+        assert_eq!(manifest.name, "Test");
     }
 }

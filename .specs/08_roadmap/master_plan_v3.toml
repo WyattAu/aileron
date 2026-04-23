@@ -241,7 +241,7 @@ id = "S05"
 title = "WebExtensions tabs API concrete impl"
 phase = "S"
 priority = "high"
-status = "pending"
+status = "complete"
 description = "Wire up src/extensions/tabs.rs with real AppState operations. Implement: create, update, remove, query, get, getCurrent, sendMessage, executeScript. Map TabId to internal pane IDs. Support tab events (onCreated, onUpdated, onRemoved, onActivated)."
 depends = ["S01"]
 
@@ -277,7 +277,7 @@ id = "S09"
 title = "uBlock Origin compatibility"
 phase = "S"
 priority = "high"
-status = "pending"
+status = "complete"
 description = "Test uBlock Origin (or uBlock Origin Lite) loading and operation. Identify which WebExtensions APIs it needs. Implement any missing APIs specifically for uBO compatibility. Target: adblock-testpages.com passes all tests through uBO."
 depends = ["S06", "S07"]
 
