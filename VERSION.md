@@ -1,14 +1,13 @@
 # Aileron — Version & State Tracking
 
 ## Current State
-- **Phase:** Settings Completion (v0.12.0)
-- **Version:** 0.12.0
-- **Status**: Settings page completion, sync UI, expanded :set commands
-- **Last Updated:** 2026-04-19
-- **Test Count:** 667 lib + 26 integration + 13 startup + 1 offscreen = 707 total
+- **Phase:** v5 Dogfood & Ship (Track A: Stability + Track B: Polish)
+- **Version:** 0.16.0
+- **Status**: Stability hardening, polish, release engineering
+- **Last Updated:** 2026-04-24
+- **Test Count:** 806 lib tests
 - **Zero clippy warnings**
-- **Zero unsafe blocks in production**
-- **Production unwrap() calls: 6 (all provably safe)**
+- **13 legitimate unsafe blocks** (3 X11 FFI, 6 cairo/gtk, 4 GLib)
 - **Release profile: LTO + strip + panic=abort**
 
 ## Implementation Phases
@@ -40,6 +39,14 @@
 | K.9 | Complete | i18n framework (32 strings, 9 locales, TOML translation files, :language command) |
 | K.10 | Complete | CI/CD (GitHub Actions: Linux test, macOS/Windows check, fmt, clippy) |
 | P | Complete | Settings completion: sync UI, theme picker, search engines, expanded :set commands |
+| U | Complete | Keyboard nav, keybinding config, mode indicator, omnibox frecency, inline bookmarks, drag resize, tab swap, undo close, find-replace |
+| V | Complete | Bookmarks panel, folders, reader mode, per-site settings, workspace cycling |
+| W | Complete | Crash-reload, tab-unload LRU, adaptive framerate, startup optimization, GPU fallback, input latency tracker |
+| X | Complete | MCP tools, extension API docs, Lua scripting guide, bookmark import UI |
+| Y | Complete | README, help panel, config reference, landing page, v1.0 roadmap |
+| v5 Track A | In Progress | Stability: navigation error detection, crash watchdog, keyup, popup blocker |
+| v5 Track B | In Progress | Polish: new tab page, download progress, g<url> quick navigate |
+| v5 Track C | Pending | Release: VERSION.md, CHANGELOG, AUR PKGBUILD, man page, desktop entry |
 
 ## Benchmark Results (criterion --quick)
 | Benchmark | Time | Notes |
@@ -65,8 +72,9 @@
 | dispatch_print_action | 14 ns | Single action dispatch |
 
 ## Binary Size
-- **Release binary:** 24 MB (stripped)
+- **Release binary:** ~21 MB (stripped)
 - **Target architecture:** x86_64 Linux
+- **Total Rust code:** ~39,000 lines across 104 files
 
 ## Key Discoveries
 1. wry cannot render to wgpu texture — always paints to its own native surface
@@ -76,6 +84,8 @@
 5. Nix `vulkan-loader` has no ICD files — system Vulkan at `/usr/lib`
 6. MCP tools are `Send+Sync` but wry panes are `!Send+!Sync` — bridged via `Arc<RwLock<>>` + `mpsc`
 7. Bitwarden CLI `search()` needed ID extraction — fixed with `VaultItem` struct
+8. wry `PageLoadEvent` has no failure variant — error detection requires JS init script + IPC
+9. wry `with_new_window_req_handler` takes `(String, NewWindowFeatures) -> NewWindowResponse`
 
 ## Architecture Decisions
 - **ADR-001:** Servo dependency broken — use `WebEngine` trait abstraction, wry now
@@ -83,3 +93,5 @@
 - **ADR-003:** GTK fallback for Wayland (standalone gtk::Window + gtk::Fixed)
 - **ADR-004:** Native terminal emulator
 - **ADR-005:** Architecture D — Hybrid Servo+WebKitGTK
+- **ADR-006:** Error detection via JS init script + IPC (no wry load failure event)
+- **ADR-007:** Crash watchdog via activity timestamp tracking on offscreen panes

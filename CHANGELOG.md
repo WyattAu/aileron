@@ -2,6 +2,80 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.16.0 (2026-04-24) — Dogfood Hardening & Polish
+
+### Stability (Track A)
+- **Navigation failure detection** (A01): `ERROR_MONITOR_JS` initialization script detects
+  WebKitGTK error pages (DNS, TLS, connection failures) by checking title patterns and
+  empty pages. Reports via IPC `__aileron_nav_error__|url|message` and redirects to
+  `aileron://error` page with details.
+- **WebView crash detection** (A02): `OffscreenWebView` tracks `last_activity_time` and
+  `loading` state. 15-second watchdog timer detects stalled loading panes, populates
+  `webview_crash_detected`/`crashed_pane_url` fields for `:crash-reload` recovery.
+- **Keyup event forwarding** (A03): Added `ElementState::Released` handler in main.rs
+  that forwards keyup events to active offscreen webview in insert mode. Fixes shift-release
+  not ending text selection in web content.
+- **Popup blocker** (A04): `with_new_window_req_handler` on both native and offscreen
+  `WebViewBuilder`. Reads `config.popup_blocker_enabled` (default: true). Plumbs
+  `popup_blocker` param through entire `create_pane`/`new`/`make_builder` chain.
+
+### Polish (Track B)
+- **Enhanced new tab page** (B01): Requests bookmarks and recent history via IPC
+  (`get-newtab-data` handler). Shows bookmark tiles with initial letters, recent history
+  items with hostnames, and built-in links to Files, Terminal, Bookmarks, History.
+  Keyboard shortcut hints in footer.
+- **Download progress indicator** (B02): Status bar shows active download percentage
+  and speed (e.g., `DL 45% (2.3 MB/s)`) with green color when downloads are in progress.
+- **`g <url>` quick navigate** (B05): Opens URL in new tab via horizontal split.
+  Auto-prepends `https://` if no scheme present.
+
+### Commands Added
+- `:g <url>` — Open URL in a new pane (horizontal split)
+
+## v0.15.0 (2026-04-23) — Feature Completeness Sprint
+
+### Features (Phase U-Y, 40 tasks)
+- **Keyboard navigation** (U01): `j`/`k` scroll in panels, `J`/`K` switch tabs, `Enter` activate
+- **Keybinding configuration** (U02): TOML `[keybindings]` section, `c`/`C`/`d`/`D`/`u`/`r`/`H`/`L`/`R`/`y`/`Y`/`p`/`P` support, applied after defaults
+- **Mode indicator** (U03): Status bar shows `[N]`/`[I]`/`[C]` with accent color
+- **Omnibox frecency** (U04): Tab/search=1000, open tabs=900, bookmarks=800, history=frecency×100
+- **Bookmark folders** (V02): DB schema with nullable folder column, panel group headers, `:bookmark <url> [folder]`
+- **Reader mode** (V03): Article extraction via JS, clean display
+- **Per-site settings** (V04): `:site-settings` overlay panel, zoom/JS/cookies/adblock per domain
+- **Workspace cycling** (V06): Index-based cycling, workspace name in status bar
+- **Drag resize handles** (U06): 6px invisible strips at split borders, cursor change, accent highlight
+- **Tab move swap** (U07): Actual BSP pane ID swap via `swap_pane_ids()`
+- **Undo close tab** (U08): Closed tab stack (50 max), `:tab-restore` command
+- **Find & replace** (U05): `:find <query>`, `:replace <old> <new>`
+- **MCP tools** (X01): `list-tabs`, `bookmark-crud`, `history-search` with request-response pattern
+- **Extension API docs** (X02): `docs/extension-api.md` (426 lines)
+- **Lua scripting guide** (X03): `docs/lua-scripting.md` (242 lines)
+- **Bookmark import** (X05): Firefox/Chrome import buttons in bookmarks panel
+- **Landing page** (Y04): `docs/index.html` (172 lines)
+- **Crash-reload** (W01): Auto-reload crashed webviews
+- **Tab unload LRU** (W02): Unload least-recently-used tabs
+- **Adaptive framerate** (W03): Active 30fps, background 2fps
+- **Input latency tracker** (W06): `:stats` command showing avg/max/p99
+
+## v0.14.0 (2026-04-22) — Ecosystem & Documentation
+
+### Documentation
+- README.md with features, installation, keyboard shortcuts
+- Help panel (`:help`) with command reference
+- Configuration reference (`:config`)
+
+## v0.13.0 (2026-04-21) — Reliability & Performance
+
+### Reliability
+- Crash-reload infrastructure with `webview_crash_detected` state
+- Tab unload LRU with configurable threshold
+- Background tab adaptive framerate (2fps)
+
+### Performance
+- GPU fallback chain: VULKAN|GL → GL → VULKAN
+- Startup optimization with lazy initialization
+- Input latency tracking with `:stats` command
+
 ## v0.12.0 (2026-04-19) — Settings Completion & Sync UI
 
 ### Settings Page Expansion
