@@ -279,9 +279,149 @@ impl McpTool for BrowserGetTextTool {
 
         if result.is_empty() || result == "String(\"\")" {
             Ok("No visible text content found on the page.".into())
-        } else {
-            Ok(result)
+         } else {
+             Ok(result)
+         }
+     }
+}
+
+// ── List Tabs Tool ──────────────────────────────────────────────
+
+struct ListTabsTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl ListTabsTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for ListTabsTool {
+    fn name(&self) -> &str { "list_tabs" }
+    fn description(&self) -> &str { "List all open tabs with URLs and titles" }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({ "type": "object", "properties": {} })
+    }
+    fn execute(&self, _args: &serde_json::Value) -> anyhow::Result<String> {
+        let (response_tx, response_rx) = std::sync::mpsc::channel();
+        self.command_tx
+            .send(McpCommand::ListTabs { response_tx })
+            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+        response_rx.recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
+    }
+}
+
+// ── Bookmark CRUD Tool ──────────────────────────────────────────
+
+struct BookmarkCrudTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl BookmarkCrudTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for BookmarkCrudTool {
+    fn name(&self) -> &str { "bookmark_crud" }
+    fn description(&self) -> &str { "List, add, or remove bookmarks. Action: list/add/remove." }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "action": { "type": "string", "enum": ["list", "add", "remove"], "description": "CRUD action" },
+                "url": { "type": "string", "description": "URL (for add/remove)" },
+                "title": { "type": "string", "description": "Title (for add)" },
+                "folder": { "type": "string", "description": "Folder name (optional, for add)" },
+            },
+            "required": ["action"],
+        })
+    }
+    fn execute(&self, args: &serde_json::Value) -> anyhow::Result<String> {
+        let action = args["action"].as_str().unwrap_or("list");
+        match action {
+            "list" => {
+                let (response_tx, response_rx) = std::sync::mpsc::channel();
+                self.command_tx
+                    .send(McpCommand::ListBookmarks { response_tx })
+                    .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+                response_rx.recv_timeout(std::time::Duration::from_secs(5))
+                    .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
+            }
+            "add" => {
+                let url = args["url"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'url'"))?;
+                let title = args["title"].as_str().unwrap_or(url);
+                let folder = args["folder"].as_str().unwrap_or("");
+                let (response_tx, response_rx) = std::sync::mpsc::channel();
+                self.command_tx
+                    .send(McpCommand::AddBookmark {
+                        url: url.into(),
+                        title: title.into(),
+                        folder: folder.into(),
+                        response_tx,
+                    })
+                    .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+                response_rx.recv_timeout(std::time::Duration::from_secs(5))
+                    .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
+            }
+            "remove" => {
+                let url = args["url"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'url'"))?;
+                let (response_tx, response_rx) = std::sync::mpsc::channel();
+                self.command_tx
+                    .send(McpCommand::RemoveBookmark {
+                        url: url.into(),
+                        response_tx,
+                    })
+                    .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+                response_rx.recv_timeout(std::time::Duration::from_secs(5))
+                    .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
+            }
+            other => Err(anyhow::anyhow!("Unknown action: {}", other)),
         }
+    }
+}
+
+// ── History Search Tool ──────────────────────────────────────────
+
+struct HistorySearchTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl HistorySearchTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for HistorySearchTool {
+    fn name(&self) -> &str { "history_search" }
+    fn description(&self) -> &str { "Search browsing history by query string" }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "Search query" },
+                "limit": { "type": "integer", "description": "Max results (default 10)" },
+            },
+            "required": ["query"],
+        })
+    }
+    fn execute(&self, args: &serde_json::Value) -> anyhow::Result<String> {
+        let query = args["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query'"))?;
+        let limit = args["limit"].as_u64().unwrap_or(10) as usize;
+        let (response_tx, response_rx) = std::sync::mpsc::channel();
+        self.command_tx
+            .send(McpCommand::SearchHistory {
+                query: query.into(),
+                limit,
+                response_tx,
+            })
+            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+        response_rx.recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
     }
 }
 
@@ -398,8 +538,11 @@ pub fn create_tools(
         Box::new(BrowserNavigateTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserGetTextTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserFillFormTool::new(state.clone(), command_tx.clone())),
-        Box::new(RunJsTool::new(state, command_tx)),
+        Box::new(RunJsTool::new(state.clone(), command_tx.clone())),
         Box::new(SearchWebTool),
+        Box::new(ListTabsTool::new(command_tx.clone())),
+        Box::new(BookmarkCrudTool::new(command_tx.clone())),
+        Box::new(HistorySearchTool::new(command_tx)),
     ]
 }
 
@@ -522,7 +665,7 @@ mod tests {
         let state = McpState::default();
         let (tx, _) = std::sync::mpsc::channel();
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 6);
+        assert_eq!(tools.len(), 9);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_navigate"));
@@ -530,6 +673,9 @@ mod tests {
         assert!(names.contains(&"browser_fill_form"));
         assert!(names.contains(&"run_js"));
         assert!(names.contains(&"search_web"));
+        assert!(names.contains(&"list_tabs"));
+        assert!(names.contains(&"bookmark_crud"));
+        assert!(names.contains(&"history_search"));
     }
 
     #[test]

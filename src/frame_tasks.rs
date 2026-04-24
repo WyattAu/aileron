@@ -609,6 +609,7 @@ pub fn process_mcp_commands(
     mcp_bridge: &McpBridge,
     wry_panes: &mut WryPaneManager,
     active_id: Uuid,
+    app_state: &AppState,
 ) {
     let mcp_commands: Vec<McpCommand> = mcp_bridge.poll_commands().collect();
 
@@ -644,6 +645,82 @@ pub fn process_mcp_commands(
                     .map(|p| p.title().to_string())
                     .unwrap_or_default();
                 let _ = response_tx.send((url, title));
+            }
+            McpCommand::ListBookmarks { response_tx } => {
+                let result = if let Some(db) = app_state.db.as_ref() {
+                    match aileron::db::bookmarks::all_bookmarks(db) {
+                        Ok(bms) => {
+                            let lines: Vec<String> = bms.iter().map(|b| {
+                                let folder = if b.folder.is_empty() { "".into() } else { format!("[{}] ", b.folder) };
+                                format!("{}{} - {}", folder, b.title, b.url)
+                            }).collect();
+                            lines.join("\n")
+                        }
+                        Err(e) => format!("Error: {}", e),
+                    }
+                } else {
+                    "Error: No database".into()
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::AddBookmark { url, title, folder, response_tx } => {
+                let result = if let Some(db) = app_state.db.as_ref() {
+                    match aileron::db::bookmarks::add_bookmark_with_folder(db, &url, &title, &folder) {
+                        Ok(id) => format!("Bookmarked (id={}) {}", id, url),
+                        Err(e) => format!("Error: {}", e),
+                    }
+                } else {
+                    "Error: No database".into()
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::RemoveBookmark { url, response_tx } => {
+                let result = if let Some(db) = app_state.db.as_ref() {
+                    match aileron::db::bookmarks::remove_bookmark(db, &url) {
+                        Ok(true) => format!("Removed bookmark: {}", url),
+                        Ok(false) => format!("Not bookmarked: {}", url),
+                        Err(e) => format!("Error: {}", e),
+                    }
+                } else {
+                    "Error: No database".into()
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::SearchHistory { query, limit, response_tx } => {
+                let result = if let Some(db) = app_state.db.as_ref() {
+                    match aileron::db::history::search(db, &query, limit) {
+                        Ok(entries) => {
+                            let lines: Vec<String> = entries.iter().map(|h| {
+                                format!("{} - {} ({} visits)", h.title, h.url, h.visit_count)
+                            }).collect();
+                            lines.join("\n")
+                        }
+                        Err(e) => format!("Error: {}", e),
+                    }
+                } else {
+                    "Error: No database".into()
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::ListTabs { response_tx } => {
+                let active = app_state.wm.active_pane_id();
+                let pane_ids: Vec<Uuid> = app_state.wm.panes().iter().map(|(id, _)| *id).collect();
+                let lines: Vec<String> = pane_ids.iter().enumerate().map(|(i, id)| {
+                    let marker = if *id == active { " [active]" } else { "" };
+                    let url = wry_panes.get(id)
+                        .map(|p| p.url().to_string())
+                        .unwrap_or_else(|| "about:blank".into());
+                    let title = wry_panes.get(id)
+                        .map(|p| p.title().to_string())
+                        .unwrap_or_else(|| "(untitled)".into());
+                    format!("{}. {} - {}{}", i + 1, title, url, marker)
+                }).collect();
+                let result = if lines.is_empty() {
+                    "No tabs open.".into()
+                } else {
+                    lines.join("\n")
+                };
+                let _ = response_tx.send(result);
             }
         }
     }

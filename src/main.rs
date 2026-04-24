@@ -1686,7 +1686,7 @@ impl ApplicationHandler for AileronApp {
             .as_ref()
             .map(|s| s.wm.active_pane_id())
             .unwrap_or_default();
-        frame_tasks::process_mcp_commands(&self.mcp_bridge, &mut self.wry_panes, active_id);
+        frame_tasks::process_mcp_commands(&self.mcp_bridge, &mut self.wry_panes, active_id, self.app_state.as_ref().unwrap());
 
         if let Some(close_id) = self
             .app_state

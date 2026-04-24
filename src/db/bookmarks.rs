@@ -12,18 +12,45 @@ pub struct Bookmark {
     pub id: i64,
     pub url: String,
     pub title: String,
+    pub folder: String,
     pub created_at: String,
 }
 
 /// Add a bookmark. Returns the new bookmark's ID.
-/// If the URL is already bookmarked, updates the title.
+/// If the URL is already bookmarked, updates the title and folder.
 pub fn add_bookmark(conn: &Connection, url: &str, title: &str) -> Result<i64> {
+    add_bookmark_with_folder(conn, url, title, "")
+}
+
+/// Add a bookmark with an optional folder.
+pub fn add_bookmark_with_folder(conn: &Connection, url: &str, title: &str, folder: &str) -> Result<i64> {
     conn.execute(
-        "INSERT INTO bookmarks (url, title) VALUES (?1, ?2)
-         ON CONFLICT(url) DO UPDATE SET title = excluded.title",
-        params![url, title],
+        "INSERT INTO bookmarks (url, title, folder) VALUES (?1, ?2, ?3)
+         ON CONFLICT(url) DO UPDATE SET title = excluded.title, folder = excluded.folder",
+        params![url, title, folder],
     )?;
     Ok(conn.last_insert_rowid())
+}
+
+/// Set the folder for a bookmark by ID.
+pub fn set_bookmark_folder(conn: &Connection, id: i64, folder: &str) -> Result<bool> {
+    let rows = conn.execute(
+        "UPDATE bookmarks SET folder = ?1 WHERE id = ?2",
+        params![folder, id],
+    )?;
+    Ok(rows > 0)
+}
+
+/// Get all distinct folder names.
+pub fn list_folders(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT folder FROM bookmarks WHERE folder != '' ORDER BY folder"
+    )?;
+    let folders = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(folders)
 }
 
 /// Remove a bookmark by URL.
@@ -52,14 +79,15 @@ pub fn is_bookmarked(conn: &Connection, url: &str) -> bool {
 /// Get all bookmarks, ordered by creation date (newest first).
 pub fn all_bookmarks(conn: &Connection) -> Result<Vec<Bookmark>> {
     let mut stmt =
-        conn.prepare("SELECT id, url, title, created_at FROM bookmarks ORDER BY created_at DESC")?;
+        conn.prepare("SELECT id, url, title, folder, created_at FROM bookmarks ORDER BY folder, created_at DESC")?;
     let bookmarks = stmt
         .query_map([], |row| {
             Ok(Bookmark {
                 id: row.get(0)?,
                 url: row.get(1)?,
                 title: row.get(2)?,
-                created_at: row.get(3)?,
+                folder: row.get(3)?,
+                created_at: row.get(4)?,
             })
         })?
         .filter_map(|r| {
@@ -76,7 +104,7 @@ pub fn all_bookmarks(conn: &Connection) -> Result<Vec<Bookmark>> {
 pub fn search_bookmarks(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Bookmark>> {
     let pattern = format!("%{}%", query);
     let mut stmt = conn.prepare(
-        "SELECT id, url, title, created_at FROM bookmarks
+        "SELECT id, url, title, folder, created_at FROM bookmarks
          WHERE url LIKE ?1 OR title LIKE ?1
          ORDER BY created_at DESC
          LIMIT ?2",
@@ -87,7 +115,8 @@ pub fn search_bookmarks(conn: &Connection, query: &str, limit: usize) -> Result<
                 id: row.get(0)?,
                 url: row.get(1)?,
                 title: row.get(2)?,
-                created_at: row.get(3)?,
+                folder: row.get(3)?,
+                created_at: row.get(4)?,
             })
         })?
         .filter_map(|r| r.ok())
@@ -125,6 +154,7 @@ mod tests {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 url TEXT NOT NULL UNIQUE,
                 title TEXT NOT NULL DEFAULT '',
+                folder TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );",
         )

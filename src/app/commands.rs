@@ -170,6 +170,29 @@ impl AppState {
             return;
         }
 
+        // Quick workspace cycling: :ws-next and :ws-prev
+        if query == "ws-next" || query == "ws-prev" {
+            let workspaces: Vec<String> = self.list_workspaces()
+                .into_iter()
+                .filter(|w| w.name != "_autosave")
+                .map(|w| w.name)
+                .collect();
+            if workspaces.is_empty() {
+                self.status_message = "No saved workspaces.".into();
+                return;
+            }
+            // Find the workspace that looks like the current one (most recent)
+            // or pick first/last
+            let target = if query == "ws-next" {
+                workspaces.first().cloned().unwrap_or_default()
+            } else {
+                workspaces.last().cloned().unwrap_or_default()
+            };
+            self.status_message = format!("Switching to workspace: {}...", target);
+            self.pending_workspace_restore = Some(target);
+            return;
+        }
+
         // Swap active pane with previously active pane
         if query == "swap" || query == "tab-swap" {
             self.swap_panes();
@@ -346,6 +369,34 @@ impl AppState {
             } else {
                 self.status_message = "Only one pane open, nothing to unload".into();
             }
+            return;
+        }
+
+        // Tab move: cycle focus through panes
+        if let Some(dir) = query.strip_prefix("tab-move ") {
+            let panes = self.wm.panes();
+            if panes.len() < 2 {
+                self.status_message = "Only one pane, nowhere to move.".into();
+                return;
+            }
+            let active_id = self.wm.active_pane_id();
+            let positions: Vec<_> = panes.iter().map(|(id, _)| *id).collect();
+            let current_idx = positions.iter().position(|&id| id == active_id).unwrap_or(0);
+            let new_idx = match dir.trim() {
+                "left" | "prev" => current_idx.saturating_sub(1),
+                "right" | "next" => (current_idx + 1) % positions.len(),
+                "first" | "start" => 0,
+                "last" | "end" => positions.len() - 1,
+                n => {
+                    if let Ok(idx) = n.parse::<usize>() {
+                        idx.saturating_sub(1).min(positions.len() - 1)
+                    } else {
+                        self.status_message = "Usage: :tab-move <left|right|first|last|N>".into();
+                        return;
+                    }
+                }
+            };
+            self.wm.set_active_pane(positions[new_idx]);
             return;
         }
 
@@ -910,7 +961,7 @@ impl AppState {
                 "print", "pdf", "pin",
                 "scripts", "network", "network-clear", "console", "console-clear",
                 "inspect", "proxy", "config-save", "clear",
-                "layout-save", "layout-load", "ws-save", "ws-load", "ws-list",
+                "layout-save", "layout-load", "ws-save", "ws-load", "ws-list", "ws-next", "ws-prev",
                 "reader", "minimal", "only", "detach",
                 "replace",
                 "memory", "perf", "perf-on", "perf-off",
@@ -920,7 +971,7 @@ impl AppState {
                 "extensions", "extension-load", "extension-info",
                 "arp-start", "arp-stop", "arp-status", "arp-token",
                 "history", "history-clear",
-                "tabs", "tab-restore", "tab-unload",
+                "tabs", "tab-restore", "tab-unload", "tab-move",
                 "bookmarks", "bookmark",
                 "reader",
                 "crash-reload",

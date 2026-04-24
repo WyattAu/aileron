@@ -13,7 +13,7 @@ use std::sync::{mpsc, Arc, RwLock};
 pub enum McpCommand {
     /// Navigate the active wry pane to a URL.
     Navigate { url: String },
-    /// Execute JavaScript in the active wry pane and return the result.
+    /// Execute JavaScript in the active pane and return the result.
     ExecuteJs {
         code: String,
         response_tx: mpsc::Sender<String>,
@@ -21,6 +21,32 @@ pub enum McpCommand {
     /// Get the current URL and title of the active pane.
     GetActivePane {
         response_tx: mpsc::Sender<(String, String)>,
+    },
+    /// List all bookmarks from the database.
+    ListBookmarks {
+        response_tx: mpsc::Sender<String>,
+    },
+    /// Add a bookmark to the database.
+    AddBookmark {
+        url: String,
+        title: String,
+        folder: String,
+        response_tx: mpsc::Sender<String>,
+    },
+    /// Remove a bookmark from the database.
+    RemoveBookmark {
+        url: String,
+        response_tx: mpsc::Sender<String>,
+    },
+    /// Search browsing history.
+    SearchHistory {
+        query: String,
+        limit: usize,
+        response_tx: mpsc::Sender<String>,
+    },
+    /// List all open tabs with URLs and titles.
+    ListTabs {
+        response_tx: mpsc::Sender<String>,
     },
 }
 

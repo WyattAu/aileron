@@ -500,3 +500,77 @@ mod tests {
         assert!(s.dropped_frames >= 1);
     }
 }
+
+/// Tracks input latency from key press to frame render.
+/// Records the last N latency samples for display.
+pub struct InputLatencyTracker {
+    samples: VecDeque<f64>,
+    max_samples: usize,
+    last_key_time: Option<Instant>,
+}
+
+impl Default for InputLatencyTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl InputLatencyTracker {
+    pub fn new() -> Self {
+        Self {
+            samples: VecDeque::new(),
+            max_samples: 60,
+            last_key_time: None,
+        }
+    }
+
+    /// Call when a key event is received.
+    pub fn record_key_press(&mut self) {
+        self.last_key_time = Some(Instant::now());
+    }
+
+    /// Call when a frame finishes rendering. Computes latency from last key press.
+    pub fn record_frame_end(&mut self) {
+        if let Some(key_time) = self.last_key_time.take() {
+            let latency_ms = key_time.elapsed().as_secs_f64() * 1000.0;
+            self.samples.push_back(latency_ms);
+            if self.samples.len() > self.max_samples {
+                self.samples.pop_front();
+            }
+        }
+    }
+
+    /// Get the average latency in milliseconds.
+    pub fn avg_latency_ms(&self) -> f64 {
+        if self.samples.is_empty() {
+            return 0.0;
+        }
+        self.samples.iter().sum::<f64>() / self.samples.len() as f64
+    }
+
+    /// Get the maximum latency in milliseconds.
+    pub fn max_latency_ms(&self) -> f64 {
+        self.samples.iter().copied().fold(0.0_f64, f64::max)
+    }
+
+    /// Get the 99th percentile latency in milliseconds.
+    pub fn p99_latency_ms(&self) -> f64 {
+        if self.samples.is_empty() {
+            return 0.0;
+        }
+        let mut sorted: Vec<f64> = self.samples.iter().copied().collect();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let idx = ((sorted.len() as f64) * 0.99) as usize;
+        sorted[idx.min(sorted.len() - 1)]
+    }
+
+    /// Get the number of recorded samples.
+    pub fn sample_count(&self) -> usize {
+        self.samples.len()
+    }
+
+    /// Clear all samples.
+    pub fn clear(&mut self) {
+        self.samples.clear();
+    }
+}
