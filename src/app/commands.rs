@@ -139,6 +139,7 @@ impl AppState {
                     pane_urls: std::collections::HashMap::new(),
                 });
             self.status_message = format!("Saving workspace: {}...", name);
+            self.current_workspace_name = name.to_string();
             return;
         }
 
@@ -166,6 +167,7 @@ impl AppState {
             // Workspace restore requires main.rs to rebuild wry panes.
             // Store the requested workspace name for main.rs to pick up.
             self.pending_workspace_restore = Some(name.to_string());
+            self.current_workspace_name = name.to_string();
             self.status_message = format!("Restoring workspace: {}...", name);
             return;
         }
@@ -181,14 +183,20 @@ impl AppState {
                 self.status_message = "No saved workspaces.".into();
                 return;
             }
-            // Find the workspace that looks like the current one (most recent)
-            // or pick first/last
-            let target = if query == "ws-next" {
-                workspaces.first().cloned().unwrap_or_default()
-            } else {
-                workspaces.last().cloned().unwrap_or_default()
+            // Find current workspace index for proper cycling
+            let current_idx = workspaces.iter().position(|w| w == &self.current_workspace_name);
+            let target = match (query, current_idx) {
+                ("ws-next", Some(idx)) => {
+                    workspaces.get((idx + 1) % workspaces.len()).cloned().unwrap_or_default()
+                }
+                ("ws-prev", Some(idx)) => {
+                    let prev = if idx == 0 { workspaces.len() - 1 } else { idx - 1 };
+                    workspaces.get(prev).cloned().unwrap_or_default()
+                }
+                _ => workspaces.first().cloned().unwrap_or_default(),
             };
             self.status_message = format!("Switching to workspace: {}...", target);
+            self.current_workspace_name = target.clone();
             self.pending_workspace_restore = Some(target);
             return;
         }
@@ -283,6 +291,22 @@ impl AppState {
                 rss, web_count, term_count,
                 crate::profiling::memory::format_human_bytes(estimated)
             );
+            return;
+        }
+
+        if query == "stats" {
+            let lat = &self.input_latency;
+            self.status_message = if lat.sample_count() == 0 {
+                "No latency samples yet. Press some keys.".into()
+            } else {
+                format!(
+                    "Input latency — avg: {:.1}ms | max: {:.1}ms | p99: {:.1}ms ({} samples)",
+                    lat.avg_latency_ms(),
+                    lat.max_latency_ms(),
+                    lat.p99_latency_ms(),
+                    lat.sample_count(),
+                )
+            };
             return;
         }
 
@@ -396,7 +420,16 @@ impl AppState {
                     }
                 }
             };
-            self.wm.set_active_pane(positions[new_idx]);
+            if new_idx != current_idx {
+                let target_id = positions[new_idx];
+                if self.wm.swap_pane_ids(active_id, target_id) {
+                    self.status_message = format!("Swapped pane positions: {} → {}", current_idx + 1, new_idx + 1);
+                } else {
+                    self.status_message = "Failed to swap panes.".into();
+                }
+            } else {
+                self.status_message = "Already at target position.".into();
+            }
             return;
         }
 
@@ -964,7 +997,7 @@ impl AppState {
                 "layout-save", "layout-load", "ws-save", "ws-load", "ws-list", "ws-next", "ws-prev",
                 "reader", "minimal", "only", "detach",
                 "replace",
-                "memory", "perf", "perf-on", "perf-off",
+                "memory", "stats", "perf", "perf-on", "perf-off",
                 "adaptive-quality", "adaptive_quality",
                 "language", "language-list",
                 "engine", "compat-override",
@@ -1400,27 +1433,25 @@ impl AppState {
             }
             _ => {
                 // :bookmark <url> — bookmark current page or specified URL
-                if let Some(url_str) = query.strip_prefix("bookmark ") {
-                    let url_to_save = if url_str.trim().is_empty() {
-                        // Bookmark current active tab
-                        None // will be filled below
+                if let Some(rest) = query.strip_prefix("bookmark ") {
+                    let rest = rest.trim();
+                    if rest.is_empty() {
+                        self.status_message = "Usage: :bookmark <url> [folder]".into();
+                        return Some(());
+                    }
+                    // Parse optional folder: "url [folder]" or just "url"
+                    let parts: Vec<&str> = rest.rsplitn(2, ' ').collect();
+                    let (url, folder) = if parts.len() == 2 {
+                        (parts[1].trim(), parts[0].trim())
                     } else {
-                        Some(url_str.trim().to_string())
+                        (parts[0].trim(), "")
                     };
 
                     if let Some(db) = self.db.as_ref() {
-                        let (url, title) = if let Some(u) = url_to_save {
-                            (u, String::new())
-                        } else {
-                            // Need active tab URL — but we don't have wry_panes here
-                            // Use a pending action approach instead
-                            self.status_message = "Usage: :bookmark <url>".into();
-                            return Some(());
-                        };
-
-                        match crate::db::bookmarks::add_bookmark(db, &url, &title) {
+                        match crate::db::bookmarks::add_bookmark_with_folder(db, url, "", folder) {
                             Ok(id) => {
-                                self.status_message = format!("Bookmarked: {} (id={})", url, id);
+                                let folder_msg = if folder.is_empty() { String::new() } else { format!(" [{}]", folder) };
+                                self.status_message = format!("Bookmarked: {}{} (id={})", url, folder_msg, id);
                             }
                             Err(e) => {
                                 self.status_message = format!("Bookmark failed: {}", e);

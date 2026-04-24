@@ -96,6 +96,16 @@ pub fn build_ui(
                 ui.label(format!("panes: {}", pane_count))
                     .widget_info(|| a11y_info(WidgetType::Label, format!("Panes: {}", pane_count)));
 
+                if app_state.current_workspace_name != "default" {
+                    ui.separator();
+                    let ws_name = app_state.current_workspace_name.clone();
+                    ui.colored_label(
+                        egui::Color32::from_rgb(180, 180, 255),
+                        format!("[{}]", ws_name),
+                    )
+                    .widget_info(|| a11y_info(WidgetType::Label, format!("Workspace: {}", app_state.current_workspace_name)));
+                }
+
                 if app_state.adblock_blocked_count > 0 {
                     ui.separator();
                     let blocked = app_state.adblock_blocked_count;
@@ -798,43 +808,64 @@ pub fn build_ui(
                 ui.separator();
                 ui.add_space(4.0);
 
-                egui::ScrollArea::vertical()
-                    .max_height(380.0)
-                    .show(ui, |ui| {
-                        if app_state.bookmarks_entries.is_empty() {
-                            ui.label(
-                                egui::RichText::new("No bookmarks")
-                                    .color(egui::Color32::GRAY),
-                            );
-                        }
-                        let mut navigate_to: Option<url::Url> = None;
-                        let mut delete_id: Option<i64> = None;
-                        for (i, bm) in app_state.bookmarks_entries.iter().enumerate() {
-                            let is_selected = i == app_state.bookmarks_selected;
-                            ui.horizontal(|ui| {
-                                let label = format!("{}  {}", bm.title, bm.url);
-                                let response = ui.selectable_label(
-                                    is_selected,
-                                    egui::RichText::new(label)
-                                        .size(13.0)
-                                        .color(if is_selected { accent } else { text }),
-                                );
-                                if response.clicked() {
-                                    navigate_to = url::Url::parse(&bm.url).ok();
-                                    app_state.bookmarks_selected = i;
-                                }
-                                if is_selected {
-                                    response.scroll_to_me(Some(egui::Align::Center));
-                                }
-                                response.on_hover_text(format!(
-                                    "Created: {}\nID: {}",
-                                    bm.created_at, bm.id
-                                ));
-                                if ui.small_button("✕").clicked() {
-                                    delete_id = Some(bm.id);
-                                }
-                            });
-                        }
+                 egui::ScrollArea::vertical()
+                     .max_height(380.0)
+                     .show(ui, |ui| {
+                         if app_state.bookmarks_entries.is_empty() {
+                             ui.label(
+                                 egui::RichText::new("No bookmarks")
+                                     .color(egui::Color32::GRAY),
+                             );
+                         }
+                         let mut navigate_to: Option<url::Url> = None;
+                         let mut delete_id: Option<i64> = None;
+
+                         // Group bookmarks by folder for display
+                         let mut last_folder = String::new();
+                         for (i, bm) in app_state.bookmarks_entries.iter().enumerate() {
+                             // Show folder header when folder changes
+                             if last_folder != bm.folder {
+                                 last_folder.clone_from(&bm.folder);
+                                 let folder_label = if bm.folder.is_empty() {
+                                     "📌 Unsorted"
+                                 } else {
+                                     bm.folder.as_str()
+                                 };
+                                 ui.colored_label(
+                                     egui::Color32::from_rgb(140, 180, 255),
+                                     egui::RichText::new(format!("  {}", folder_label))
+                                         .size(12.0)
+                                         .strong(),
+                                 );
+                                 ui.add_space(2.0);
+                             }
+
+                             let is_selected = i == app_state.bookmarks_selected;
+                             ui.horizontal(|ui| {
+                                 let label = format!("{}  {}", bm.title, bm.url);
+                                 let response = ui.selectable_label(
+                                     is_selected,
+                                     egui::RichText::new(label)
+                                         .size(13.0)
+                                         .color(if is_selected { accent } else { text }),
+                                 );
+                                 if response.clicked() {
+                                     navigate_to = url::Url::parse(&bm.url).ok();
+                                     app_state.bookmarks_selected = i;
+                                 }
+                                 if is_selected {
+                                     response.scroll_to_me(Some(egui::Align::Center));
+                                 }
+                                 response.on_hover_text(format!(
+                                     "Folder: {} | Created: {}\nID: {}",
+                                     if bm.folder.is_empty() { "(unsorted)" } else { &bm.folder },
+                                     bm.created_at, bm.id
+                                 ));
+                                 if ui.small_button("✕").clicked() {
+                                     delete_id = Some(bm.id);
+                                 }
+                             });
+                         }
                         if let Some(url) = navigate_to {
                             app_state
                                 .pending_wry_actions
@@ -933,6 +964,80 @@ pub fn build_ui(
                     egui::Stroke::new(2.0, border_color),
                     egui::epaint::StrokeKind::Middle,
                 );
+            }
+
+            // Draw interactive resize handles on split borders
+            let borders = app_state.wm.split_borders();
+            let available = ui.available_rect_before_wrap();
+            let handle_thickness = 6.0; // pixels of draggable area
+            for (pos, direction, pane_a_id, _pane_b_id) in &borders {
+                let handle_rect = match direction {
+                    crate::wm::rect::SplitDirection::Horizontal => {
+                        // Vertical border line at x=pos
+                        let x = available.min.x + *pos as f32;
+                        egui::Rect::from_min_max(
+                            egui::pos2(x - handle_thickness / 2.0, available.min.y),
+                            egui::pos2(x + handle_thickness / 2.0, available.max.y),
+                        )
+                    }
+                    crate::wm::rect::SplitDirection::Vertical => {
+                        // Horizontal border line at y=pos
+                        let y = available.min.y + *pos as f32;
+                        egui::Rect::from_min_max(
+                            egui::pos2(available.min.x, y - handle_thickness / 2.0),
+                            egui::pos2(available.max.x, y + handle_thickness / 2.0),
+                        )
+                    }
+                };
+
+                let response = ui.allocate_rect(handle_rect, egui::Sense::drag());
+                let hovering = response.hovered();
+                if hovering {
+                    // Change cursor
+                    ui.ctx().set_cursor_icon(match direction {
+                        crate::wm::rect::SplitDirection::Horizontal => egui::CursorIcon::ResizeColumn,
+                        crate::wm::rect::SplitDirection::Vertical => egui::CursorIcon::ResizeRow,
+                    });
+                }
+                if response.drag_started() {
+                    ui.ctx().set_cursor_icon(match direction {
+                        crate::wm::rect::SplitDirection::Horizontal => egui::CursorIcon::ResizeColumn,
+                        crate::wm::rect::SplitDirection::Vertical => egui::CursorIcon::ResizeRow,
+                    });
+                }
+                if response.dragged() {
+                    let delta = response.drag_delta();
+                    let amount = match direction {
+                        crate::wm::rect::SplitDirection::Horizontal => delta.x,
+                        crate::wm::rect::SplitDirection::Vertical => delta.y,
+                    };
+                    // Apply resize to both adjacent panes
+                    let viewport = app_state.wm.panes().iter().find_map(|(id, r)| {
+                        if *id == *pane_a_id { Some(*r) } else { None }
+                    });
+                    if let Some(viewport) = viewport {
+                        let resize_amount = match direction {
+                            crate::wm::rect::SplitDirection::Horizontal => {
+                                (amount as f64) / viewport.w.max(1.0)
+                            }
+                            crate::wm::rect::SplitDirection::Vertical => {
+                                (amount as f64) / viewport.h.max(1.0)
+                            }
+                        };
+                        let _ = app_state.wm.resize_pane(*pane_a_id, resize_amount as f64);
+                    }
+                }
+
+                // Draw subtle visual indicator on hover
+                if hovering || response.dragged() {
+                    let highlight = egui::Color32::from_rgba_premultiplied(
+                        accent.r(),
+                        accent.g(),
+                        accent.b(),
+                        60,
+                    );
+                    ui.painter().rect_filled(handle_rect, 0.0, highlight);
+                }
             }
         } else if wry_panes.is_empty() && (!offscreen || webview_textures.is_empty()) {
             let available = ui.available_rect_before_wrap();

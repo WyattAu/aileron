@@ -887,7 +887,8 @@ impl ApplicationHandler for AileronApp {
 
                 if let Some(workspace) = to_restore {
                     info!("Auto-restoring workspace: {}", workspace.name);
-                    app_state.pending_workspace_restore = Some(workspace.name);
+                    app_state.pending_workspace_restore = Some(workspace.name.clone());
+                    app_state.current_workspace_name = workspace.name;
                     app_state.session_dirty = true;
                 }
             }
@@ -1121,6 +1122,7 @@ impl ApplicationHandler for AileronApp {
                         .collect();
 
                     app_state.process_key_event(aileron_event);
+                    app_state.input_latency.record_key_press();
 
                     let pane_ids_after: std::collections::HashSet<uuid::Uuid> = app_state
                         .wm
@@ -1608,6 +1610,9 @@ impl ApplicationHandler for AileronApp {
 
         if let Some(ws_name) = ws_name {
             info!("Restoring workspace: {}", ws_name);
+            if let Some(app_state) = self.app_state.as_mut() {
+                app_state.current_workspace_name = ws_name.clone();
+            }
 
             let viewport = match &self.window {
                 Some(w) => {
@@ -1725,6 +1730,11 @@ impl ApplicationHandler for AileronApp {
 
         // Architecture B: capture dirty offscreen frames and update egui textures.
         let textures_updated = self.update_webview_textures();
+
+        // Record frame end for input latency measurement.
+        if let Some(app_state) = &mut self.app_state {
+            app_state.input_latency.record_frame_end();
+        }
 
         // Request redraw if:
         // 1. egui explicitly requested a repaint (UI interaction), OR

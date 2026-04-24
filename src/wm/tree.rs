@@ -312,6 +312,51 @@ impl BspTree {
         self.root.as_ref().map_or(0, Self::leaf_count_node)
     }
 
+    /// Collect all split borders as (position, direction, pane_a_id, pane_b_id).
+    /// A horizontal split produces a vertical border line, and vice versa.
+    pub fn split_borders(&self) -> Vec<(f64, SplitDirection, Uuid, Uuid)> {
+        let mut borders = Vec::new();
+        if let Some(ref root) = self.root {
+            Self::collect_split_borders(root, &mut borders);
+        }
+        borders
+    }
+
+    fn collect_split_borders(
+        node: &BspNode,
+        borders: &mut Vec<(f64, SplitDirection, Uuid, Uuid)>,
+    ) {
+        match node {
+            BspNode::Split { direction, ratio, rect, left, right, .. } => {
+                // Find the leftmost/topmost pane ID in the left subtree
+                // and the rightmost/bottommost pane ID in the right subtree
+                let left_ids = Self::collect_leaf_ids(left);
+                let right_ids = Self::collect_leaf_ids(right);
+                if let (Some(&id_a), Some(&id_b)) = (left_ids.first(), right_ids.first()) {
+                    let pos = match direction {
+                        SplitDirection::Horizontal => rect.x + rect.w * ratio,
+                        SplitDirection::Vertical => rect.y + rect.h * ratio,
+                    };
+                    borders.push((pos, *direction, id_a, id_b));
+                }
+                Self::collect_split_borders(left, borders);
+                Self::collect_split_borders(right, borders);
+            }
+            BspNode::Leaf { .. } => {}
+        }
+    }
+
+    fn collect_leaf_ids(node: &BspNode) -> Vec<Uuid> {
+        match node {
+            BspNode::Leaf { pane, .. } => vec![pane.id],
+            BspNode::Split { left, right, .. } => {
+                let mut ids = Self::collect_leaf_ids(left);
+                ids.extend(Self::collect_leaf_ids(right));
+                ids
+            }
+        }
+    }
+
     fn leaf_count_node(node: &BspNode) -> usize {
         match node {
             BspNode::Leaf { .. } => 1,
@@ -332,6 +377,50 @@ impl BspTree {
             }
         }
         None
+    }
+
+    /// Swap the UUIDs of two leaf panes, effectively exchanging their positions.
+    /// Returns true if both panes were found and swapped.
+    pub fn swap_pane_ids(&mut self, id_a: Uuid, id_b: Uuid) -> bool {
+        if id_a == id_b {
+            return false;
+        }
+        if let Some(ref mut root) = self.root {
+            let found_a = Self::pane_exists(root, &id_a);
+            let found_b = Self::pane_exists(root, &id_b);
+            if !found_a || !found_b {
+                return false;
+            }
+            Self::swap_ids_in_node(root, &id_a, &id_b);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn pane_exists(node: &BspNode, pane_id: &Uuid) -> bool {
+        match node {
+            BspNode::Leaf { pane, .. } => &pane.id == pane_id,
+            BspNode::Split { left, right, .. } => {
+                Self::pane_exists(left, pane_id) || Self::pane_exists(right, pane_id)
+            }
+        }
+    }
+
+    fn swap_ids_in_node(node: &mut BspNode, id_a: &Uuid, id_b: &Uuid) {
+        match node {
+            BspNode::Leaf { pane, .. } => {
+                if &pane.id == id_a {
+                    pane.id = *id_b;
+                } else if &pane.id == id_b {
+                    pane.id = *id_a;
+                }
+            }
+            BspNode::Split { left, right, .. } => {
+                Self::swap_ids_in_node(left, id_a, id_b);
+                Self::swap_ids_in_node(right, id_a, id_b);
+            }
+        }
     }
 
     /// Resize a pane by adjusting the ratio of its parent split.

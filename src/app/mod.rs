@@ -140,6 +140,10 @@ pub struct AppState {
     /// Consumed by main.rs which rebuilds the wry panes.
     pub pending_workspace_restore: Option<String>,
 
+    /// Name of the currently active workspace. Displayed in status bar.
+    /// Updated on workspace save, load, and restore.
+    pub current_workspace_name: String,
+
     /// Set of pane IDs that should be terminal panes (not web panes).
     /// main.rs checks this when creating wry panes and uses the terminal
     /// custom protocol + IPC handler instead of regular web navigation.
@@ -192,6 +196,9 @@ pub struct AppState {
     /// Whether the user has interacted with this session.
     /// Prevents auto-saving a fresh session (just the homepage).
     pub session_dirty: bool,
+
+    /// Tracks key-to-frame latency for profiling.
+    pub input_latency: crate::profiling::InputLatencyTracker,
 
     /// Set of pane IDs that are muted (media paused + muted).
     pub muted_pane_ids: std::collections::HashSet<uuid::Uuid>,
@@ -421,6 +428,7 @@ impl AppState {
             config,
             pending_wry_actions: VecDeque::new(),
             pending_workspace_restore: None,
+            current_workspace_name: "default".into(),
             terminal_pane_ids: std::collections::HashSet::new(),
             bitwarden: BitwardenClient::new(),
             pending_terminal_command: None,
@@ -436,6 +444,7 @@ impl AppState {
             pane_last_focus: std::collections::HashMap::new(),
             last_auto_save: std::time::Instant::now(),
             session_dirty: false,
+            input_latency: crate::profiling::InputLatencyTracker::new(),
             muted_pane_ids: std::collections::HashSet::new(),
             pinned_pane_ids: std::collections::HashSet::new(),
             adblock_blocked_count: 0,
