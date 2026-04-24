@@ -916,6 +916,26 @@ impl AppState {
             return;
         }
 
+        // g<url> — open URL in a new tab/pane (splits horizontally)
+        if query.starts_with("g ") && query.len() > 2 {
+            let target = query[2..].trim();
+            if !target.is_empty() {
+                let url_str = if target.contains("://") {
+                    target.to_string()
+                } else {
+                    format!("https://{}", target)
+                };
+                if let Ok(url) = url::Url::parse(&url_str) {
+                    self.pending_new_tab_url = Some(url);
+                    self.execute_action(&crate::input::Action::SplitHorizontal);
+                    return;
+                } else {
+                    self.status_message = "Invalid URL".into();
+                }
+            }
+            return;
+        }
+
         // Sync commands
         if query == "sync" {
             self.status_message = super::cmd::sync::execute_sync_push(
@@ -997,7 +1017,8 @@ impl AppState {
         } else {
             // Try fuzzy suggestion before falling back to search
             let known_commands = [
-                "q", "quit", "open", "help", "?", "ssh", "set", "vs", "sp", "files", "browse",
+                 "q", "quit", "open", "help", "?", "ssh", "set", "vs", "sp", "files", "browse",
+                 "g",
                 "bw-unlock", "bw-search", "bw-lock", "bw-autofill", "bw-detect",
                 "keyring-test", "credentials-save",
                 "adblock-toggle", "adblock-count", "adblock-update", "privacy", "https-toggle",

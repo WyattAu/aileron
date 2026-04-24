@@ -268,7 +268,10 @@ impl AppState {
                 }
                 ActionEffect::RequestSplit(direction) => {
                     let active = self.wm.active_pane_id();
-                    let new_url = url::Url::parse("aileron://new").unwrap();
+                    let new_url = self
+                        .pending_new_tab_url
+                        .take()
+                        .unwrap_or_else(|| url::Url::parse("aileron://new").unwrap());
                     match self.wm.split(active, *direction, 0.5) {
                         Ok(new_id) => {
                             self.engines.create_pane(new_id, new_url);

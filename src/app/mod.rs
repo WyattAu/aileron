@@ -282,6 +282,9 @@ pub struct AppState {
 
     /// ID of the pane that crashed.
     pub crashed_pane_id: Option<uuid::Uuid>,
+
+    /// Pending URL to open in a new tab (set by :g <url> command).
+    pub pending_new_tab_url: Option<url::Url>,
 }
 
 impl AppState {
@@ -491,6 +494,7 @@ impl AppState {
             crashed_pane_url: None,
             pending_import: None,
             crashed_pane_id: None,
+            pending_new_tab_url: None,
         })
     }
 
