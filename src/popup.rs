@@ -54,6 +54,7 @@ impl PopupManager {
             bounds,
             blocked_domains,
             devtools,
+            false, // Don't block popups from the popup manager itself
         ) {
             Ok(wry_pane) => {
                 self.windows.insert(

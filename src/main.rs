@@ -321,6 +321,7 @@ impl AileronApp {
             wry_rect,
             blocked_domains,
             self.config.devtools,
+            self.config.popup_blocker_enabled,
         ) {
             Ok(()) => {
                 if is_terminal {
@@ -415,7 +416,7 @@ impl AileronApp {
 
         #[cfg(target_os = "linux")]
         match self.offscreen_panes.create_pane(
-            pane_id, url, width, height, blocked_domains, self.config.devtools
+            pane_id, url, width, height, blocked_domains, self.config.devtools, self.config.popup_blocker_enabled
         ) {
             Ok(()) => {
                 if is_terminal {
@@ -1218,6 +1219,37 @@ impl ApplicationHandler for AileronApp {
                 }
             }
 
+            // Forward keyup events to the active offscreen webview (needed for
+            // proper key state tracking in web content — e.g., shift-release
+            // ending text selection).
+            WindowEvent::KeyboardInput {
+                event:
+                    winit::event::KeyEvent {
+                        physical_key,
+                        logical_key,
+                        state: winit::event::ElementState::Released,
+                        ..
+                    },
+                ..
+            } => {
+                if let Some(app_state) = &self.app_state
+                    && app_state.mode == aileron::input::Mode::Insert
+                {
+                    let active_id = app_state.wm.active_pane_id();
+                    if !self.terminal_manager.is_terminal(&active_id) {
+                        let key = aileron::input::map_key(*physical_key, logical_key);
+                        if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                            let (js_key, js_code) = key_to_js(&key);
+                            let mods = aileron::offscreen_webview::modifiers_js(
+                                self.modifiers.ctrl, self.modifiers.alt,
+                                self.modifiers.shift, self.modifiers.super_key,
+                            );
+                            pane.forward_key_event("keyup", &js_key, &js_code, &mods);
+                        }
+                    }
+                }
+            }
+
             WindowEvent::DroppedFile(path) => {
                 info!("File dropped: {:?}", path);
             }
@@ -1601,6 +1633,8 @@ impl ApplicationHandler for AileronApp {
                 &mut self.mcp_bridge,
                 &self.adblocker,
             );
+            // Check for webview crashes (stalled loading panes)
+            frame_tasks::check_offscreen_crashes(app_state, &mut self.offscreen_panes);
         }
 
         let ws_name = self

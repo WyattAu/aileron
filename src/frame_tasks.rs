@@ -573,6 +573,33 @@ pub fn process_offscreen_events(
     }
 }
 
+/// Check all offscreen panes for crash detection.
+/// A pane is considered crashed if it has been loading for >15 seconds
+/// with no activity (no events, no frame updates).
+pub fn check_offscreen_crashes(
+    app_state: &mut AppState,
+    offscreen_panes: &mut OffscreenWebViewManager,
+) {
+    let crash_timeout = std::time::Duration::from_secs(15);
+
+    for (pane_id, pane) in offscreen_panes.iter_mut() {
+        if pane.is_crashed(crash_timeout) && !app_state.webview_crash_detected {
+            let url = pane.url().to_string();
+            warn!(
+                "WebView crash detected in pane {}: stalled while loading {}",
+                &pane_id.to_string()[..8],
+                &url[..url.len().min(80)]
+            );
+            app_state.webview_crash_detected = true;
+            app_state.crashed_pane_url = Some(url);
+            app_state.crashed_pane_id = Some(*pane_id);
+            app_state.status_message =
+                "WebView appears crashed — type :crash-reload to recover".into();
+            pane.set_loading(false);
+        }
+    }
+}
+
 pub fn process_pending_wry_actions(
     app_state: &mut Option<AppState>,
     wry_panes: &mut WryPaneManager,
@@ -807,6 +834,29 @@ fn handle_ipc_message(
     pane_id: Uuid,
     message: &str,
 ) {
+    // Check for navigation error detection from ERROR_MONITOR_JS
+    if let Some(error_msg) = message.strip_prefix("__aileron_nav_error__|") {
+        let parts: Vec<&str> = error_msg.splitn(2, '|').collect();
+        let failed_url = parts.first().copied().unwrap_or("unknown");
+        let error_detail = parts.get(1).copied().unwrap_or("Unknown error");
+        info!(
+            "Navigation error detected in pane {}: {} — {}",
+            &pane_id.to_string()[..8],
+            failed_url,
+            error_detail
+        );
+        app_state.status_message = format!("Load failed: {}", &error_detail[..error_detail.len().min(60)]);
+        // Navigate to our error page
+        if let Some(pane) = wry_panes.get_mut(&pane_id) {
+            let display_msg = format!("Failed to load: {}\n\n{}", failed_url, error_detail);
+            let encoded = urlencoding::encode(&display_msg);
+            if let Ok(error_url) = url::Url::parse(&format!("aileron://error?msg={}", encoded)) {
+                pane.navigate(&error_url);
+            }
+        }
+        return;
+    }
+
     let msg: serde_json::Value = match serde_json::from_str(message) {
         Ok(m) => m,
         Err(_) => return,
@@ -973,6 +1023,29 @@ fn handle_ipc_message_offscreen(
     pane_id: Uuid,
     message: &str,
 ) {
+    // Check for navigation error detection from ERROR_MONITOR_JS
+    if let Some(error_msg) = message.strip_prefix("__aileron_nav_error__|") {
+        let parts: Vec<&str> = error_msg.splitn(2, '|').collect();
+        let failed_url = parts.first().copied().unwrap_or("unknown");
+        let error_detail = parts.get(1).copied().unwrap_or("Unknown error");
+        info!(
+            "Navigation error detected in offscreen pane {}: {} — {}",
+            &pane_id.to_string()[..8],
+            failed_url,
+            error_detail
+        );
+        app_state.status_message = format!("Load failed: {}", &error_detail[..error_detail.len().min(60)]);
+        if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+            let display_msg = format!("Failed to load: {}\n\n{}", failed_url, error_detail);
+            let encoded = urlencoding::encode(&display_msg);
+            if let Ok(error_url) = url::Url::parse(&format!("aileron://error?msg={}", encoded)) {
+                pane.navigate(&error_url);
+                pane.mark_dirty();
+            }
+        }
+        return;
+    }
+
     let msg: serde_json::Value = match serde_json::from_str(message) {
         Ok(m) => m,
         Err(_) => return,

@@ -65,6 +65,10 @@ pub struct OffscreenWebView {
     dirty: bool,
     /// Receiver for navigation events from wry callbacks.
     event_rx: mpsc::Receiver<WryEvent>,
+    /// Last time we received any event or frame update from this pane.
+    last_activity_time: std::time::Instant,
+    /// Whether a load is in progress (set on LoadStarted, cleared on LoadComplete).
+    loading: bool,
 }
 
 impl OffscreenWebView {
@@ -81,6 +85,7 @@ impl OffscreenWebView {
         height: i32,
         blocked_domains: Vec<String>,
         devtools: bool,
+        popup_blocker: bool,
     ) -> Result<Self, wry::Error> {
         Self::new_with_privacy(
             pane_id,
@@ -91,6 +96,7 @@ impl OffscreenWebView {
             true,
             true,
             devtools,
+            popup_blocker,
         )
     }
 
@@ -106,6 +112,7 @@ impl OffscreenWebView {
         https_upgrade_enabled: bool,
         tracking_protection_enabled: bool,
         devtools: bool,
+        popup_blocker: bool,
     ) -> Result<Self, wry::Error> {
         let offscreen = gtk::OffscreenWindow::new();
         offscreen.set_default_size(width, height);
@@ -132,6 +139,7 @@ impl OffscreenWebView {
             .with_url(&url_str)
             .with_devtools(devtools)
             .with_initialization_script(&privacy_script)
+            .with_initialization_script(crate::servo::wry_engine::ERROR_MONITOR_JS)
             .with_custom_protocol("aileron".into(), {
                 let open_tx = event_tx.clone();
                 move |_webview_id, req| {
@@ -225,6 +233,14 @@ a {{ color: #4db4ff; }}
                     }
                 true
             })
+            // Popup blocker: block window.open() / target="_blank" navigations
+            .with_new_window_req_handler(move |_url: String, _features: wry::NewWindowFeatures| {
+                if popup_blocker {
+                    wry::NewWindowResponse::Deny
+                } else {
+                    wry::NewWindowResponse::Allow
+                }
+            })
             .with_on_page_load_handler({
                 let tx = event_tx.clone();
                 move |event: PageLoadEvent, url: String| {
@@ -296,6 +312,8 @@ a {{ color: #4db4ff; }}
             height,
             dirty: true,
             event_rx,
+            last_activity_time: std::time::Instant::now(),
+            loading: false,
         })
     }
 
@@ -303,12 +321,27 @@ a {{ color: #4db4ff; }}
     pub fn drain_events(&mut self) -> Vec<WryEvent> {
         let mut events = Vec::new();
         while let Ok(event) = self.event_rx.try_recv() {
-            if let WryEvent::HttpsUpgraded { to, .. } = &event
-                && let Ok(https_url) = Url::parse(to)
-            {
-                self.url = https_url;
-                self.dirty = true;
-                let _ = self.webview.load_url(to);
+            match &event {
+                WryEvent::LoadStarted { .. } => {
+                    self.loading = true;
+                    self.last_activity_time = std::time::Instant::now();
+                }
+                WryEvent::LoadComplete { .. } => {
+                    self.loading = false;
+                    self.last_activity_time = std::time::Instant::now();
+                }
+                WryEvent::TitleChanged { .. } => {
+                    self.last_activity_time = std::time::Instant::now();
+                }
+                WryEvent::HttpsUpgraded { to, .. } => {
+                    if let Ok(https_url) = Url::parse(to) {
+                        self.url = https_url;
+                        self.dirty = true;
+                        let _ = self.webview.load_url(to);
+                    }
+                    self.last_activity_time = std::time::Instant::now();
+                }
+                _ => {}
             }
             events.push(event);
         }
@@ -322,6 +355,8 @@ a {{ color: #4db4ff; }}
         } else {
             self.url = url.clone();
             self.dirty = true;
+            self.loading = true;
+            self.last_activity_time = std::time::Instant::now();
         }
     }
 
@@ -566,6 +601,26 @@ a {{ color: #4db4ff; }}
     /// Mark the webview as needing re-capture.
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
+        self.last_activity_time = std::time::Instant::now();
+    }
+
+    /// Check if this pane appears crashed: loading started but no
+    /// activity for longer than the given timeout.
+    pub fn is_crashed(&self, timeout: std::time::Duration) -> bool {
+        self.loading && self.last_activity_time.elapsed() > timeout
+    }
+
+    /// Whether a page load is currently in progress.
+    pub fn is_loading(&self) -> bool {
+        self.loading
+    }
+
+    /// Mark that loading has completed (used by external callers).
+    pub fn set_loading(&mut self, loading: bool) {
+        self.loading = loading;
+        if loading {
+            self.last_activity_time = std::time::Instant::now();
+        }
     }
 
     /// Forward a mouse event to the webview via JavaScript.
@@ -701,6 +756,7 @@ impl OffscreenWebViewManager {
         height: i32,
         blocked_domains: Vec<String>,
         devtools: bool,
+        popup_blocker: bool,
     ) -> Result<(), wry::Error> {
         let pane = OffscreenWebView::new(
             pane_id,
@@ -709,6 +765,7 @@ impl OffscreenWebViewManager {
             height,
             blocked_domains,
             devtools,
+            popup_blocker,
         )?;
         self.panes.insert(pane_id, pane);
         Ok(())
@@ -727,6 +784,7 @@ impl OffscreenWebViewManager {
         https_upgrade_enabled: bool,
         tracking_protection_enabled: bool,
         devtools: bool,
+        popup_blocker: bool,
     ) -> Result<(), wry::Error> {
         let pane = OffscreenWebView::new_with_privacy(
             pane_id,
@@ -737,6 +795,7 @@ impl OffscreenWebViewManager {
             https_upgrade_enabled,
             tracking_protection_enabled,
             devtools,
+            popup_blocker,
         )?;
         self.panes.insert(pane_id, pane);
         Ok(())

@@ -99,6 +99,7 @@ impl WryPane {
         bounds: Rect,
         blocked_domains: Vec<String>,
         devtools: bool,
+        popup_blocker: bool,
     ) -> Result<Self, wry::Error>
     where
         W: HasWindowHandle,
@@ -109,7 +110,7 @@ impl WryPane {
 
         // === Path 1: Try build_as_child (X11) ===
         // Builder is built inline so event_tx isn't lost if this path fails.
-        match Self::make_builder(&url_str, pid, event_tx.clone(), blocked_domains.clone(), devtools)
+        match Self::make_builder(&url_str, pid, event_tx.clone(), blocked_domains.clone(), devtools, popup_blocker)
             .with_bounds(bounds)
             .build_as_child(parent)
         {
@@ -144,7 +145,7 @@ impl WryPane {
         // === Path 2: GTK window fallback (Wayland) ===
         #[cfg(target_os = "linux")]
         {
-            Self::create_gtk_pane(pid, initial_url, bounds, event_tx, event_rx, devtools)
+            Self::create_gtk_pane(pid, initial_url, bounds, event_tx, event_rx, devtools, popup_blocker)
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -165,6 +166,7 @@ impl WryPane {
         event_tx: mpsc::Sender<WryEvent>,
         event_rx: mpsc::Receiver<WryEvent>,
         devtools: bool,
+        popup_blocker: bool,
     ) -> Result<Self, wry::Error> {
         let url_str = initial_url.as_str().to_string();
 
@@ -189,7 +191,7 @@ impl WryPane {
         gtk_window.set_child(Some(&fixed));
 
         // Build the webview inside the GTK container using the SAME event_tx
-        let builder = Self::make_builder(&url_str, pane_id, event_tx, Vec::new(), devtools);
+        let builder = Self::make_builder(&url_str, pane_id, event_tx, Vec::new(), devtools, popup_blocker);
 
         let webview = builder.build_gtk(&fixed)?;
 
@@ -221,12 +223,14 @@ impl WryPane {
         event_tx: mpsc::Sender<WryEvent>,
         blocked_domains: Vec<String>,
         devtools: bool,
+        popup_blocker: bool,
     ) -> WebViewBuilder<'static> {
-        Self::make_builder_with_privacy(url_str, pid, event_tx, blocked_domains, true, true, devtools)
+        Self::make_builder_with_privacy(url_str, pid, event_tx, blocked_domains, true, true, devtools, popup_blocker)
     }
 
     /// Build a WebViewBuilder with common configuration and privacy settings.
     /// The event_tx is moved into the builder's closures.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_builder_with_privacy(
         url_str: &str,
         pid: Uuid,
@@ -235,6 +239,7 @@ impl WryPane {
         https_upgrade_enabled: bool,
         tracking_protection_enabled: bool,
         devtools: bool,
+        popup_blocker: bool,
     ) -> WebViewBuilder<'static> {
         let https_safe_list = if https_upgrade_enabled {
             crate::net::privacy::load_https_safe_list()
@@ -253,6 +258,7 @@ impl WryPane {
         WebViewBuilder::new()
             .with_url(url_str)
             .with_devtools(devtools)
+            .with_initialization_script(ERROR_MONITOR_JS)
             .with_initialization_script(&privacy_script)
             // Custom protocol for aileron:// internal pages
             .with_custom_protocol("aileron".into(), {
@@ -350,6 +356,17 @@ a {{ color: #4db4ff; }}
                     }
                 true
             })
+            // Popup blocker: block window.open() / target="_blank" navigations
+            .with_new_window_req_handler(move |_url: String, _features: wry::NewWindowFeatures| {
+                // If popup blocker is enabled, block all new window requests.
+                // Users can still open links in new tabs via keybindings.
+                if popup_blocker {
+                    warn!("Popup blocked: {}", _url);
+                    wry::NewWindowResponse::Deny
+                } else {
+                    wry::NewWindowResponse::Allow
+                }
+            })
             // Track page load events
             .with_on_page_load_handler({
                 let tx = event_tx.clone();
@@ -359,7 +376,12 @@ a {{ color: #4db4ff; }}
                             pane_id: pid,
                             url: url.clone(),
                         },
-                        PageLoadEvent::Finished => WryEvent::LoadComplete { pane_id: pid, url },
+                        PageLoadEvent::Finished => {
+                            // Check for error state: if _aileron_last_error is set,
+                            // or if the title looks like a WebKit error page, send an event
+                            // that the frame loop can use to show a custom error page.
+                            WryEvent::LoadComplete { pane_id: pid, url }
+                        }
                     });
                 }
             })
@@ -628,6 +650,7 @@ impl WryPaneManager {
     }
 
     /// Create a new WryPane. Tries X11 child first, falls back to GTK window.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_pane<W>(
         &mut self,
         parent: &W,
@@ -636,11 +659,12 @@ impl WryPaneManager {
         bounds: Rect,
         blocked_domains: Vec<String>,
         devtools: bool,
+        popup_blocker: bool,
     ) -> Result<(), wry::Error>
     where
         W: HasWindowHandle,
     {
-        let pane = WryPane::new(parent, pane_id, initial_url, bounds, blocked_domains, devtools)?;
+        let pane = WryPane::new(parent, pane_id, initial_url, bounds, blocked_domains, devtools, popup_blocker)?;
         self.panes.insert(pane_id, pane);
         Ok(())
     }
@@ -962,6 +986,108 @@ pub const CONSOLE_CAPTURE_JS: &str = r#"
 
 pub const CONSOLE_LOG_JS: &str = r#"
 JSON.stringify(window._aileron_console || [])
+"#;
+
+/// JavaScript that monitors for navigation errors and stores them
+/// for detection after page load completes.
+pub const ERROR_MONITOR_JS: &str = r#"
+(function() {
+    if (window._aileron_error_monitor) return;
+    window._aileron_error_monitor = true;
+
+    // Send a navigation error report to Aileron via IPC.
+    // Uses window.location.href for the URL since it's the failed destination.
+    function reportNavError(message) {
+        try {
+            window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke('__aileron_ipc', {
+                message: '__aileron_nav_error__|' + (window.location.href || '') + '|' + message
+            });
+        } catch(e) {
+            // Fallback: wry IPC via postMessage to aileron:// scheme
+            try { window.postMessage('__aileron_nav_error__|' + (window.location.href || '') + '|' + message, '*'); } catch(e2) {}
+        }
+    }
+
+    // Check on load complete whether the page looks like a WebKitGTK error page.
+    // WebKitGTK error pages have titles like "Problem loading page" or contain
+    // short error messages in the body with no real content.
+    function checkForErrorPage() {
+        var title = (document.title || '').toLowerCase();
+        var isLikelyError = false;
+        var errorMsg = '';
+
+        // WebKitGTK error page indicators
+        if (title.indexOf('problem loading') !== -1
+            || title.indexOf('unable to connect') !== -1
+            || title.indexOf('could not connect') !== -1
+            || title.indexOf('network error') !== -1
+            || title.indexOf('connection refused') !== -1
+            || title.indexOf('ssl') !== -1 && title.indexOf('error') !== -1
+            || title.indexOf('certificate') !== -1
+            || title.indexOf('not found') !== -1
+            || title.indexOf('server not found') !== -1
+            || title.indexOf('host not found') !== -1
+            || title.indexOf('timed out') !== -1
+            || title.indexOf('unauthorized') !== -1
+            || title.indexOf('forbidden') !== -1) {
+            isLikelyError = true;
+            errorMsg = document.title || title;
+        }
+
+        // Also check for very short pages with error-like content
+        if (!isLikelyError) {
+            var body = document.body ? document.body.innerText : '';
+            if (body.length < 300 && body.length > 0) {
+                var bodyLower = body.toLowerCase();
+                if (bodyLower.indexOf('error') !== -1
+                    || bodyLower.indexOf('could not') !== -1
+                    || bodyLower.indexOf('failed to') !== -1
+                    || bodyLower.indexOf('unable to') !== -1) {
+                    isLikelyError = true;
+                    errorMsg = body.substring(0, 200).trim();
+                }
+            }
+        }
+
+        // Also detect blank/empty pages that aren't our own pages
+        if (!isLikelyError && document.body) {
+            var html = document.body.innerHTML.trim();
+            if (html.length === 0 && window.location.protocol !== 'aileron:') {
+                isLikelyError = true;
+                errorMsg = 'Empty page — possible DNS or connection failure';
+            }
+        }
+
+        if (isLikelyError) {
+            reportNavError(errorMsg);
+        }
+    }
+
+    // Run check after DOM is ready and also after full load
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        setTimeout(checkForErrorPage, 100);
+    }
+    window.addEventListener('load', function() {
+        setTimeout(checkForErrorPage, 100);
+    });
+
+    // Also monitor for runtime errors during page lifecycle
+    window.addEventListener('error', function(e) {
+        // Only report if it looks like a network/resource error, not a JS bug
+        var target = e.target || {};
+        if (target.tagName === 'IMG' || target.tagName === 'LINK' || target.tagName === 'SCRIPT') {
+            // Resource loading failure — don't report individual resource errors
+            return;
+        }
+        var msg = (e.message || 'Unknown error').toString();
+        if (msg.indexOf('net::') !== -1
+            || msg.indexOf('ERR_') !== -1
+            || msg.indexOf('NetworkError') !== -1
+            || msg.indexOf('Failed to fetch') !== -1) {
+            reportNavError(msg);
+        }
+    }, true);
+})();
 "#;
 
 pub const CONSOLE_CLEAR_JS: &str = r#"
