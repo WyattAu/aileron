@@ -261,11 +261,24 @@ pub struct AppState {
     /// Whether the help panel overlay is open.
     pub help_panel_open: bool,
 
+    /// Whether the per-site settings panel is open.
+    pub site_settings_panel_open: bool,
+
+    /// Current per-site settings values (loaded from DB when panel opens).
+    pub site_settings_zoom: Option<f64>,
+    pub site_settings_js: Option<bool>,
+    pub site_settings_cookies: Option<bool>,
+    pub site_settings_adblock: Option<bool>,
+    pub site_settings_url_pattern: String,
+
     /// Whether a webview crash was detected this frame (for recovery UI).
     pub webview_crash_detected: bool,
 
     /// URL of the pane that crashed (for reload recovery).
     pub crashed_pane_url: Option<String>,
+
+    /// Pending bookmark import: "firefox" or "chrome".
+    pub pending_import: Option<String>,
 
     /// ID of the pane that crashed.
     pub crashed_pane_id: Option<uuid::Uuid>,
@@ -468,8 +481,15 @@ impl AppState {
             bookmarks_entries: Vec::new(),
             bookmarks_selected: 0,
             help_panel_open: false,
+            site_settings_panel_open: false,
+            site_settings_zoom: None,
+            site_settings_js: None,
+            site_settings_cookies: None,
+            site_settings_adblock: None,
+            site_settings_url_pattern: String::new(),
             webview_crash_detected: false,
             crashed_pane_url: None,
+            pending_import: None,
             crashed_pane_id: None,
         })
     }

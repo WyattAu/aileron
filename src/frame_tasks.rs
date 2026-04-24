@@ -734,6 +734,27 @@ pub fn handle_pending_tab_close(app_state: &mut AppState, close_id: Uuid) {
     app_state.status_message = "Pane closed".into();
 }
 
+/// Handle pending bookmark import (Firefox or Chrome).
+pub fn handle_pending_import(app_state: &mut AppState) {
+    let source = match app_state.pending_import.take() {
+        Some(s) => s,
+        None => return,
+    };
+    if let Some(db) = app_state.db.as_ref() {
+        let msg = match source.as_str() {
+            "firefox" => aileron::app::cmd::import::import_firefox(db),
+            "chrome" => aileron::app::cmd::import::import_chrome(db),
+            _ => {
+                app_state.status_message = format!("Unknown import source: {}", source);
+                return;
+            }
+        };
+        app_state.status_message = msg;
+    } else {
+        app_state.status_message = "No database available for import.".into();
+    }
+}
+
 /// Poll native terminals for new output and feed VT parser.
 pub fn poll_terminal_output(terminal_manager: &mut NativeTerminalManager) {
     terminal_manager.tick_all();

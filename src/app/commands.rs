@@ -230,6 +230,20 @@ impl AppState {
             return;
         }
 
+        if query == "site-settings" {
+            // Load current site settings from DB and open panel
+            self.site_settings_panel_open = !self.site_settings_panel_open;
+            if self.site_settings_panel_open {
+                self.site_settings_zoom = None;
+                self.site_settings_js = None;
+                self.site_settings_cookies = None;
+                self.site_settings_adblock = None;
+                self.site_settings_url_pattern = String::new();
+                self.status_message = "Site settings panel opened".into();
+            }
+            return;
+        }
+
         if query == "pin" {
             self.execute_action(&crate::input::Action::PinPane);
             return;

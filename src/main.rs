@@ -1707,6 +1707,11 @@ impl ApplicationHandler for AileronApp {
 
         frame_tasks::poll_terminal_output(&mut self.terminal_manager);
 
+        // Handle pending bookmark import.
+        if let Some(app_state) = &mut self.app_state {
+            frame_tasks::handle_pending_import(app_state);
+        }
+
         // Handle pending mark jumps (scroll to stored position).
         if let Some(app_state) = &mut self.app_state
             && let Some(frac) = app_state.pending_mark_jump.take()

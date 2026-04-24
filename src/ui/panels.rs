@@ -798,6 +798,15 @@ pub fn build_ui(
                             .strong(),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("Import Chrome").clicked() {
+                            app_state.pending_import = Some("chrome".into());
+                            app_state.status_message = "Importing Chrome bookmarks...".into();
+                        }
+                        if ui.small_button("Import Firefox").clicked() {
+                            app_state.pending_import = Some("firefox".into());
+                            app_state.status_message = "Importing Firefox bookmarks...".into();
+                        }
+                        ui.add_space(8.0);
                         if ui.button("✕").clicked() {
                             app_state.bookmarks_panel_open = false;
                             app_state.bookmarks_entries.clear();
@@ -883,6 +892,103 @@ pub fn build_ui(
                             }
                         }
                     });
+            });
+    }
+
+    // Per-site settings panel
+    if app_state.site_settings_panel_open {
+        egui::Window::new("site-settings")
+            .title_bar(true)
+            .resizable(true)
+            .default_width(320.0)
+            .default_height(350.0)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("URL Pattern:");
+                    let mut pat = app_state.site_settings_url_pattern.clone();
+                    ui.text_edit_singleline(&mut pat);
+                    app_state.site_settings_url_pattern = pat;
+                });
+                ui.add_space(4.0);
+
+                // Zoom level
+                ui.horizontal(|ui| {
+                    ui.label("Zoom:");
+                    let mut zoom = app_state.site_settings_zoom.unwrap_or(100.0);
+                    if ui.add(egui::Slider::new(&mut zoom, 25.0..=300.0).suffix("%")).changed() {
+                        app_state.site_settings_zoom = Some(zoom);
+                    }
+                    if ui.small_button("reset").clicked() {
+                        app_state.site_settings_zoom = None;
+                    }
+                });
+
+                // Toggles
+                ui.add_space(4.0);
+                egui::Grid::new("site_settings_grid")
+                    .num_columns(2)
+                    .spacing([8.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.label("JavaScript:");
+                        let mut js = app_state.site_settings_js.unwrap_or(true);
+                        if ui.checkbox(&mut js, "").changed() {
+                            app_state.site_settings_js = Some(js);
+                        }
+                        ui.end_row();
+
+                        ui.label("Cookies:");
+                        let mut cookies = app_state.site_settings_cookies.unwrap_or(true);
+                        if ui.checkbox(&mut cookies, "").changed() {
+                            app_state.site_settings_cookies = Some(cookies);
+                        }
+                        ui.end_row();
+
+                        ui.label("AdBlock:");
+                        let mut adblock = app_state.site_settings_adblock.unwrap_or(true);
+                        if ui.checkbox(&mut adblock, "").changed() {
+                            app_state.site_settings_adblock = Some(adblock);
+                        }
+                        ui.end_row();
+                    });
+
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        let pattern = if app_state.site_settings_url_pattern.is_empty() {
+                            // Use current active pane URL as wildcard pattern
+                            let active_id = app_state.wm.active_pane_id();
+                            wry_panes.url_for(&active_id)
+                                .map(|u| {
+                                    if let Some(host) = u.host_str() {
+                                        format!("*://{}*", host)
+                                    } else {
+                                        u.to_string()
+                                    }
+                                })
+                                .unwrap_or_else(|| "*".into())
+                        } else {
+                            app_state.site_settings_url_pattern.clone()
+                        };
+                        if let Some(db) = app_state.db.as_ref() {
+                            macro_rules! save_field {
+                                ($field:expr, $val:expr) => {
+                                    let _ = crate::db::site_settings::set_site_field(
+                                        db, &pattern, "wildcard", $field, $val,
+                                    );
+                                };
+                            }
+                            save_field!("zoom", app_state.site_settings_zoom.map(|z| z.to_string()).as_deref());
+                            save_field!("adblock", app_state.site_settings_adblock.map(|v| if v { "1" } else { "0" }));
+                            save_field!("javascript", app_state.site_settings_js.map(|v| if v { "1" } else { "0" }));
+                            save_field!("cookies", app_state.site_settings_cookies.map(|v| if v { "1" } else { "0" }));
+                            app_state.status_message = format!("Saved site settings for: {}", pattern);
+                        }
+                    }
+                    if ui.button("Close").clicked() {
+                        app_state.site_settings_panel_open = false;
+                    }
+                });
             });
     }
 
