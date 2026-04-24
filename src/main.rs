@@ -1398,8 +1398,12 @@ impl ApplicationHandler for AileronApp {
                         })();
 
                         if let Some((event_type, local_x, local_y, btn)) = forward_info {
-                            if *button == winit::event::MouseButton::Middle
+                            // Ctrl+Click or Middle-click opens links in new tab
+                            if (*button == winit::event::MouseButton::Left
                                 && *state == winit::event::ElementState::Pressed
+                                && self.modifiers.ctrl)
+                                || (*button == winit::event::MouseButton::Middle
+                                    && *state == winit::event::ElementState::Pressed)
                             {
                                 let js = format!(
                                     r#"(function() {{

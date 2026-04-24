@@ -1,12 +1,14 @@
 [Desktop Entry]
 Type=Application
 Name=Aileron
-Comment=Keyboard-Driven Web Environment
-Exec=aileron
+GenericName=Web Browser
+Comment=Keyboard-driven tiling web environment for developers
+Exec=aileron %U
 Icon=aileron
 Terminal=false
 Categories=Network;WebBrowser;Development;
 Keywords=browser;web;tiling;keyboard;developer;
 StartupWMClass=aileron
 StartupNotify=true
-MimeType=x-scheme-handler/http;x-scheme-handler/https;
+MimeType=x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/aileron;text/html;
+Version=1.0

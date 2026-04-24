@@ -162,7 +162,20 @@ pub fn build_ui(
 
                 ui.separator();
 
-                // Show download progress if any active downloads
+                // Show zoom level if non-default
+                if let Some(zoom) = app_state.site_settings_zoom
+                    && (zoom - 1.0).abs() > 0.01
+                 {
+                         let pct = (zoom * 100.0).round() as u32;
+                         let zoom_text = format!("{}%", pct);
+                         ui.colored_label(
+                             egui::Color32::from_rgb(180, 180, 100),
+                             zoom_text,
+                         );
+                         ui.separator();
+                 }
+
+                 // Show download progress if any active downloads
                 if app_state.download_manager.has_active() {
                     let progress = app_state.download_manager.progress_all();
                     let active: Vec<_> = progress

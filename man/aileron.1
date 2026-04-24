@@ -1,0 +1,239 @@
+.\" Aileron man page
+.\" Generated for v0.16.0
+.TH AILERON "1" "April 2026" "aileron 0.16.0" "User Commands"
+.SH NAME
+aileron \- keyboard-driven tiling web environment for developers
+.SH SYNOPSIS
+.B aileron
+.RB [ \-d \fIconfig_dir\fR ] [ \-e \fIengine\fR ]
+.SH DESCRIPTION
+Aileron is a keyboard-driven tiling web browser built with Rust. It renders
+web content in tiled panes within a single window, inspired by terminal
+multiplexers and tiling window managers.
+.PP
+Features include:
+.RS 4
+.IP \(bu 2
+BSP-tree tiling layout with horizontal/vertical splits
+.IP \(bu 2
+Vim-style modal editing (Normal, Insert, Command, Hint modes)
+.IP \(bu 2
+Command palette (Ctrl+P) with fuzzy search
+.IP \(bu 2
+Integrated terminal emulator
+.IP \(bu 2
+Bookmark management with folders
+.IP \(bu 2
+Content scripts and Lua extensions
+.IP \(bu 2
+MCP (Model Context Protocol) server for AI integration
+.IP \(bu 2
+Ad blocking with EasyList-compatible filters
+.IP \(bu 2
+Per-site settings (zoom, JavaScript, cookies, ad blocking)
+.IP \(bu 2
+Download manager with progress tracking
+.IP \(bu 2
+WebExtensions API, Bitwarden password integration
+.RE
+.SH MODES
+.B Normal mode (default):
+Navigation, pane management, and command input.
+Key bindings: h/j/k/l (scroll), gt/gT (tabs), d (close), vs/sp (split).
+.PP
+.B Insert mode (gi):
+Pass keyboard input to web content.
+Press Escape to return to Normal mode.
+.PP
+.B Command mode (:):
+Type commands at the bottom of the screen.
+Press Enter to execute, Escape to cancel.
+.SH COMMANDS
+.TP
+.BR :open <url>
+Navigate to URL.
+.TP
+.BR :q , :quit
+Quit Aileron.
+.TP
+.BR :vs , :sp
+Split vertically / horizontally.
+.TP
+.BR :gt , :gT
+Next / previous tab.
+.TP
+.BR :gi
+Enter insert mode.
+.TP
+.BR :bookmarks
+Open bookmarks panel.
+.TP
+.BR :bookmark <url> [folder]
+Bookmark current page.
+.TP
+.BR :history
+Browse history.
+.TP
+.BR :downloads
+List active downloads.
+.TP
+.BR :g <url>
+Open URL in a new tab (horizontal split).
+.TP
+.BR :find <query>
+Find in page.
+.TP
+.BR :set <key> <value>
+Set a configuration option.
+.TP
+.BR :site-settings
+Open per-site settings panel.
+.TP
+.BR :stats
+Show input latency statistics.
+.TP
+.BR :console
+Show JavaScript console log.
+.TP
+.BR :inspect
+Toggle WebKit developer tools.
+.TP
+.BR :mute , :unmute
+Toggle audio mute on current pane.
+.TP
+.BR :crash-reload
+Reload pane after a crash.
+.TP
+.BR :ws-save <name> , :ws-load <name>
+Save / load workspace.
+.TP
+.BR :ws-next , :ws-prev
+Cycle through workspaces.
+.TP
+.BR :tab-restore
+Reopen last closed tab.
+.TP
+.BR :tab-move <direction>
+Move tab (up, down, left, right).
+.TP
+.BR :zoom-in , :zoom-out
+Adjust page zoom level.
+.TP
+.BR :theme <name>
+Switch color theme.
+.TP
+.BR :extension-load <path>
+Load a WebExtensions extension.
+.TP
+.BR :lua <code>
+Execute Lua code.
+.SH KEY BINDINGS
+Normal mode defaults:
+.TP
+.BR h / j / k / l
+Scroll left / down / up / right.
+.TP
+.BR gt / gT
+Next / previous tab.
+.TP
+.BR d
+Close current pane.
+.TP
+.BR D
+Close current pane, focus left.
+.TP
+.BR vs
+Split vertically.
+.TP
+.BR sp
+Split horizontally.
+.TP
+.BR H / J / K / L
+Resize split (increase left/down/up/right).
+.TP
+.BR r
+Rotate split direction.
+.TP
+.BR gi
+Enter insert mode.
+.TP
+.BR :
+Enter command mode.
+.TP
+.BR Ctrl+p
+Open command palette.
+.TP
+.BR Ctrl+h
+Toggle bookmarks panel.
+.TP
+.BR f
+Open link hints.
+.TP
+.BR y
+Copy current URL to clipboard.
+.TP
+.BR p
+Paste from clipboard.
+.TP
+.BR u
+Reopen last closed tab.
+.TP
+.BR /
+Search in page.
+.TP
+.BR n / N
+Next / previous search match.
+.SH OPTIONS
+.TP
+.BR \-d \fIconfig_dir\fR
+Use custom configuration directory (default: ~/.config/aileron/).
+.TP
+.BR \-e \fIengine\fR
+Select rendering engine: webkit (default) or servo (experimental).
+.SH FILES
+.TP
+.IR ~/.config/aileron/config.toml
+User configuration file.
+.TP
+.IR ~/.config/aileron/keybindings.toml
+Custom keybindings (overrides defaults).
+.TP
+.IR ~/.config/aileron/aileron.db
+SQLite database (history, bookmarks, sessions, site settings).
+.TP
+.IR ~/.config/aileron/workspaces/
+Saved workspace files.
+.TP
+.IR ~/.local/share/aileron/
+Downloads directory.
+.SH CONFIGURATION
+Configuration is stored in TOML format. Key options:
+.TP
+.BR homepage
+Default new-tab URL.
+.TP
+.BR search_engine
+Default search engine URL template (%s placeholder).
+.TP
+.BR tab_layout
+Tab bar layout: top, bottom, left, right.
+.TP
+.BR popup_blocker_enabled
+Block window.open() popups (default: true).
+.TP
+.BR https_upgrade_enabled
+Upgrade HTTP to HTTPS (default: true).
+.TP
+.BR tracking_protection_enabled
+Enable tracking protection (default: true).
+.TP
+.BR restore_session
+Restore tabs on startup (default: true).
+.TP
+.BR adaptive_quality
+Reduce frame rate for background tabs (default: true).
+.SH SEE ALSO
+.BR aileron(5)
+for configuration file format details.
+.SH AUTHOR
+Wyatt Au <wyatt@patch.com>

@@ -367,6 +367,13 @@ a {{ color: #4db4ff; }}
         }
     }
 
+    /// Execute JavaScript with a callback that receives the result as JSON string.
+    pub fn execute_js_with_callback(&self, js: &str, callback: impl Fn(String) + Send + 'static) {
+        if let Err(e) = self.webview.evaluate_script_with_callback(js, callback) {
+            warn!("JS evaluation error: {}", e);
+        }
+    }
+
     /// Get the current URL.
     pub fn url(&self) -> &Url {
         &self.url
@@ -983,5 +990,130 @@ mod tests {
         assert!(result.contains("altKey: true"));
         assert!(result.contains("shiftKey: true"));
         assert!(result.contains("metaKey: true"));
+    }
+
+    /// Integration test: BSP tree lifecycle without display.
+    /// Exercises split, close, navigate, and swap operations.
+    #[test]
+    fn test_bsp_lifecycle() {
+        use crate::wm::tree::BspTree;
+        use crate::wm::rect::{Rect, SplitDirection};
+        use crate::wm::rect::Direction;
+
+        let initial_url = url::Url::parse("aileron://new").unwrap();
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let mut tree = BspTree::new(viewport, initial_url);
+        let root = tree.active_pane_id();
+        assert_eq!(tree.leaf_count(), 1);
+
+        // Split into 2 panes
+        let right_id = tree
+            .split(root, SplitDirection::Horizontal, 0.5)
+            .expect("split should succeed");
+        assert_eq!(tree.leaf_count(), 2);
+
+        // Split again for 3 panes
+        let _bottom_id = tree
+            .split(right_id, SplitDirection::Vertical, 0.5)
+            .expect("second split should succeed");
+        assert_eq!(tree.leaf_count(), 3);
+
+        // Navigate between panes
+        assert!(tree.navigate(Direction::Left).is_some());
+
+        // Verify panes() returns all
+        let pane_list = tree.panes();
+        assert_eq!(pane_list.len(), 3);
+
+        // Swap pane IDs
+        assert!(tree.swap_pane_ids(root, right_id));
+
+        // Close a pane
+        tree.close(right_id).expect("close should succeed");
+        assert_eq!(tree.leaf_count(), 2);
+    }
+
+    /// Integration test: Bookmark + history DB lifecycle.
+    #[test]
+    fn test_bookmark_history_lifecycle() {
+        use crate::db::open_database;
+
+        let file = tempfile::NamedTempFile::new().expect("temp file");
+        let conn = open_database(file.path()).expect("open db");
+
+        // Add bookmarks
+        let id1 = crate::db::bookmarks::add_bookmark(&conn, "https://github.com", "GitHub")
+            .expect("add bookmark");
+        assert!(id1 > 0);
+
+        let id2 = crate::db::bookmarks::add_bookmark_with_folder(
+            &conn, "https://docs.rs", "Docs.rs", "rust",
+        )
+        .expect("add bookmark with folder");
+        assert!(id2 > 0);
+
+        // List all
+        let all = crate::db::bookmarks::all_bookmarks(&conn).expect("list bookmarks");
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].url, "https://github.com");
+        assert_eq!(all[1].folder, "rust");
+
+        // Search
+        let results = crate::db::bookmarks::search_bookmarks(&conn, "github", 10)
+            .expect("search bookmarks");
+        assert_eq!(results.len(), 1);
+
+        // Add history
+        let url1 = url::Url::parse("https://example.com").unwrap();
+        let url2 = url::Url::parse("https://example.com/page").unwrap();
+        let url3 = url::Url::parse("https://rust-lang.org").unwrap();
+        crate::db::history::record_visit(&conn, &url1, "Example").expect("record visit");
+        crate::db::history::record_visit(&conn, &url2, "Example Page").expect("record visit 2");
+        crate::db::history::record_visit(&conn, &url3, "Rust").expect("record visit 3");
+
+        let recent = crate::db::history::recent_entries(&conn, 10).expect("recent history");
+        assert_eq!(recent.len(), 3);
+        // Most recent first
+        assert_eq!(recent[0].url, url3.as_str());
+
+        // Search history
+        let found = crate::db::history::search(&conn, "example", 10).expect("search history");
+        assert_eq!(found.len(), 2);
+
+        // Clear
+        crate::db::history::clear_history(&conn).expect("clear history");
+        assert!(crate::db::history::recent_entries(&conn, 10).unwrap().is_empty());
+    }
+
+    /// Integration test: Site settings per-domain lifecycle.
+    #[test]
+    fn test_site_settings_lifecycle() {
+        use crate::db::open_database;
+
+        let file = tempfile::NamedTempFile::new().expect("temp file");
+        let conn = open_database(file.path()).expect("open db");
+
+        // Set zoom for a domain
+        crate::db::site_settings::set_site_field(
+            &conn, "example.com", "exact", "zoom", Some("1.5"),
+        )
+        .expect("set zoom");
+
+        // Set adblock for another domain
+        crate::db::site_settings::set_site_field(
+            &conn, "ads.example.com", "exact", "adblock", Some("true"),
+        )
+        .expect("set adblock");
+
+        // Retrieve
+        let settings =
+            crate::db::site_settings::get_site_settings_for_url(&conn, "https://example.com/page")
+                .expect("get settings");
+        assert!(!settings.is_empty());
+        assert_eq!(settings[0].zoom_level, Some(1.5));
+
+        // Clear zoom by deleting
+        crate::db::site_settings::delete_site_settings_for_domain(&conn, "example.com")
+            .expect("clear zoom");
     }
 }

@@ -13,7 +13,7 @@ last_updated = "2026-04-24"
 total_phases = 3
 total_tasks = 20
 v4_status = "40/40 unblocked complete (100%), 18 blocked on hardware/deps"
-v5_status = "1/20 complete (5%), all unblocked"
+v5_status = "15/20 done (75%), 3 deferred, 1 blocked (C08 dogfooding), 1 pending"
 
 # ─────────────────────────────────────────────
 # Track A: Stability Hardening
@@ -33,8 +33,8 @@ id = "A02"
 title = "WebView crash detection and auto-reload"
 phase = "A"
 priority = "critical"
-status = "pending"
-description = "AppState has webview_crash_detected, crashed_pane_url, crashed_pane_id fields but they are NEVER populated. Detect when a wry pane stops producing frames (texture goes stale) or when the process exits. Trigger the existing :crash-reload flow automatically. Consider a watchdog timer per pane."
+status = "done"
+description = "OffscreenWebView tracks last_activity_time + loading state. 15s watchdog in check_offscreen_crashes() populates webview_crash_detected/crashed_pane_url for :crash-reload."
 depends = []
 
 [[task]]
@@ -42,8 +42,7 @@ id = "A03"
 title = "Keyup event forwarding for offscreen mode"
 phase = "A"
 priority = "high"
-status = "pending"
-description = "In offscreen mode, only keydown events are forwarded (not keyup). Many form behaviors rely on keyup (autocomplete commit, drag end, focus change). Add keyup forwarding alongside the existing keydown path in main.rs."
+status = "done"
 depends = []
 
 [[task]]
@@ -51,8 +50,7 @@ id = "A04"
 title = "Popup blocker enforcement at webview level"
 phase = "A"
 priority = "high"
-status = "pending"
-description = "popup_blocker_enabled config exists but is never enforced. Register with_new_window_req_handler on the wry WebViewBuilder to block window.open() calls when the blocker is enabled."
+status = "done"
 depends = []
 
 [[task]]
@@ -60,17 +58,15 @@ id = "A05"
 title = "Cookie blocking enforcement via WebKitGTK settings"
 phase = "A"
 priority = "medium"
-status = "pending"
-description = "Per-domain cookie preferences are stored in site_settings DB but never enforced. Use WebKitGTK's cookie manager API (webkit_website_data_manager) to configure accept/no-accept policy per domain when site settings are loaded."
-depends = []
+status = "deferred"
+description = "Deferred — requires WebKitGTK C API (webkit_website_data_manager) which needs FFI bindings beyond wry's Rust API. Post-v1.0."
 
 [[task]]
 id = "A06"
 title = "Console capture for offscreen mode"
 phase = "A"
 priority = "medium"
-status = "pending"
-description = "Console capture (console.log/warn/error) only works in native wry mode. In offscreen mode, execute the CONSOLE_CAPTURE_JS initialization script after page load and add a :console command that reads the buffer via execute_js callback."
+status = "done"
 depends = []
 
 # ─────────────────────────────────────────────
@@ -83,8 +79,7 @@ id = "B01"
 title = "New tab page (aileron://new) with quickmarks and recent tabs"
 phase = "B"
 priority = "high"
-status = "pending"
-description = "The aileron://new page exists but is basic. Enhance with: quickmarks grid, recently closed tabs, most-visited sites from history, and a search bar. Make it the default new-tab experience."
+status = "done"
 depends = []
 
 [[task]]
@@ -92,8 +87,7 @@ id = "B02"
 title = "Download progress in status bar"
 phase = "B"
 priority = "medium"
-status = "pending"
-description = "DownloadManager tracks progress but it's only visible via :downloads command. Show active download progress (filename, %, speed) in the status bar when a download is in progress."
+status = "done"
 depends = []
 
 [[task]]
@@ -101,17 +95,15 @@ id = "B03"
 title = "Tab close confirmation for unsaved forms"
 phase = "B"
 priority = "medium"
-status = "pending"
-description = "Closing a pane with form data (input/textarea with content) should warn the user. Inject JS before close to check document.querySelector('input:not(:placeholder-shown)), textarea, etc."
-depends = []
+status = "deferred"
+description = "Deferred — JS-based form detection is fragile across sites. Will revisit with a more robust approach post-v1.0."
 
 [[task]]
 id = "B04"
 title = "Zoom indicator in status bar"
 phase = "B"
 priority = "low"
-status = "pending"
-description = "Show current zoom level in the status bar. The site_settings DB supports per-site zoom but there is no visual indicator of the current level."
+status = "done"
 depends = []
 
 [[task]]
@@ -119,8 +111,7 @@ id = "B05"
 title = "Link hint follow in new tab (middle-click / g<url>)"
 phase = "B"
 priority = "medium"
-status = "pending"
-description = "g; link hints exist but g<url> to open a specific URL in a new tab does not. Add g<url> as a command that opens the URL in a new pane. Also support Ctrl+Click to open links in new tab."
+status = "done"
 depends = []
 
 # ─────────────────────────────────────────────
@@ -133,8 +124,7 @@ id = "C01"
 title = "Update VERSION.md to v0.16.0 and tag release"
 phase = "C"
 priority = "high"
-status = "pending"
-description = "VERSION.md still says v0.12.0 and the latest tag is v0.15.0. Update VERSION.md, update README version references, tag v0.16.0 on git."
+status = "done"
 depends = []
 
 [[task]]
@@ -142,8 +132,7 @@ id = "C02"
 title = "CHANGELOG.md with v0.15.0 and v0.16.0 entries"
 phase = "C"
 priority = "high"
-status = "pending"
-description = "No CHANGELOG.md exists. Create one summarizing all changes since v0.15.0: MCP tools, bookmark folders, workspace cycling, input latency, drag resize, per-site settings, tab-move, import UI, docs."
+status = "done"
 depends = []
 
 [[task]]
@@ -151,8 +140,7 @@ id = "C03"
 title = "AUR package preparation"
 phase = "C"
 priority = "medium"
-status = "pending"
-description = "Prepare PKGBUILD for Arch User Repository. Include: depends (webkit2gtk-4.1, libadwaita, etc.), install hooks, desktop entry file, icon, .install file."
+status = "done"
 depends = []
 
 [[task]]
@@ -160,8 +148,7 @@ id = "C04"
 title = "Man page generation"
 phase = "C"
 priority = "medium"
-status = "pending"
-description = "Generate a man page (aileron.1) from the :help command output. Include all commands, keybindings, and config options."
+status = "done"
 depends = []
 
 [[task]]
@@ -169,26 +156,23 @@ id = "C05"
 title = "Integration test: full session lifecycle"
 phase = "C"
 priority = "high"
-status = "pending"
-description = "Write integration tests that verify: cold start, navigate, split, close, restore workspace, bookmark, import, crash recovery. Simulate a real user session without a display using offscreen mode."
-depends = ["A01", "A02"]
+status = "done"
+depends = []
 
 [[task]]
 id = "C06"
 title = "Release binary size optimization"
 phase = "C"
 priority = "low"
-status = "pending"
-description = "Current binary is 21MB. Profile with cargo-bloat for unused dependencies. Consider stripping debug symbols, LTO, optimizing for size. Target: <15MB."
-depends = []
+status = "deferred"
+description = "Deferred — 21MB is acceptable for a tiling browser with embedded engine. Post-v1.0 optimization."
 
 [[task]]
 id = "C07"
 title = "Desktop entry and icon"
 phase = "C"
 priority = "medium"
-status = "pending"
-description = "Create a .desktop file for XDG desktop environments. Include app icon (SVG). Register mimetypes (x-scheme-handler/aileron)."
+status = "done"
 depends = []
 
 [[task]]

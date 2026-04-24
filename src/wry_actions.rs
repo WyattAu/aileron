@@ -4,6 +4,105 @@
 
 use tracing::{info, warn};
 
+/// Format console log entries into a status bar string.
+fn format_console_log(json: &str) -> Option<String> {
+    let entries: Vec<serde_json::Value> = serde_json::from_str(json).ok()?;
+    let count = entries.len();
+    let lines: Vec<String> = entries
+        .iter()
+        .take(20)
+        .map(|e| {
+            let level = e.get("level").and_then(|v| v.as_str()).unwrap_or("?");
+            let msg = e.get("msg").and_then(|v| v.as_str()).unwrap_or("?");
+            let short_msg = if msg.len() > 50 {
+                format!("{}...", &msg[..47])
+            } else {
+                msg.to_string()
+            };
+            format!("[{}] {}", level, short_msg)
+        })
+        .collect();
+    Some(format!(
+        "Console ({}): {}",
+        count,
+        if lines.is_empty() {
+            "empty".into()
+        } else {
+            lines.join(" \u{2502} ")
+        }
+    ))
+}
+
+/// Format network log entries into a status bar string.
+fn format_network_log(json: &str) -> Option<String> {
+    let entries: Vec<serde_json::Value> = serde_json::from_str(json).ok()?;
+    let count = entries.len();
+    let lines: Vec<String> = entries
+        .iter()
+        .take(20)
+        .map(|e| {
+            let method = e.get("method").and_then(|v| v.as_str()).unwrap_or("?");
+            let url = e.get("url").and_then(|v| v.as_str()).unwrap_or("?");
+            let status = e
+                .get("status")
+                .map(|v| {
+                    if v.is_null() {
+                        "...".to_string()
+                    } else {
+                        v.as_i64()
+                            .map(|n| n.to_string())
+                            .or_else(|| v.as_str().map(String::from))
+                            .unwrap_or_else(|| "?".into())
+                    }
+                })
+                .unwrap_or_else(|| "?".to_string());
+            let short_url = if url.len() > 60 {
+                format!("{}...", &url[..57])
+            } else {
+                url.to_string()
+            };
+            format!("{} {} [{}]", method, short_url, status)
+        })
+        .collect();
+    Some(format!(
+        "Network ({}): {}",
+        count,
+        if lines.is_empty() {
+            "empty".into()
+        } else {
+            lines.join(" \u{2502} ")
+        }
+    ))
+}
+
+/// Try to retrieve JS evaluation result from a native pane.
+fn eval_native(
+    wry_panes: &crate::servo::WryPaneManager,
+    pane_id: uuid::Uuid,
+    js: &str,
+) -> Option<String> {
+    let pane = wry_panes.get(&pane_id)?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    pane.execute_js_with_callback(js, move |json| {
+        let _ = tx.send(json);
+    });
+    rx.try_recv().ok()
+}
+
+/// Try to retrieve JS evaluation result from an offscreen pane.
+fn eval_offscreen(
+    offscreen_panes: &crate::offscreen_webview::OffscreenWebViewManager,
+    pane_id: uuid::Uuid,
+    js: &str,
+) -> Option<String> {
+    let pane = offscreen_panes.get(&pane_id)?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    pane.execute_js_with_callback(js, move |json| {
+        let _ = tx.send(json);
+    });
+    rx.try_recv().ok()
+}
+
 /// Process a single WryAction against the wry pane manager.
 ///
 /// Returns Ok(()) on success, Err(message) on failure.
@@ -427,63 +526,20 @@ pub fn process_wry_action(
             }
         }
         crate::app::WryAction::GetNetworkLog => {
-            if let Some(pane) = wry_panes.get_mut(&active_id) {
-                let (tx, rx) = std::sync::mpsc::channel();
-                pane.execute_js_with_callback(crate::servo::NETWORK_LOG_JS, move |json| {
-                    let _ = tx.send(json);
-                });
-                if let Ok(json) = rx.try_recv() {
-                    if let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
-                        let count = entries.len();
-                        let lines: Vec<String> = entries
-                            .iter()
-                            .take(20)
-                            .map(|e| {
-                                let method =
-                                    e.get("method").and_then(|v| v.as_str()).unwrap_or("?");
-                                let url = e.get("url").and_then(|v| v.as_str()).unwrap_or("?");
-                                let status = e
-                                    .get("status")
-                                    .map(|v| {
-                                        if v.is_null() {
-                                            "...".to_string()
-                                        } else {
-                                            v.as_i64()
-                                                .map(|n| n.to_string())
-                                                .or_else(|| v.as_str().map(String::from))
-                                                .unwrap_or_else(|| "?".into())
-                                        }
-                                    })
-                                    .unwrap_or_else(|| "?".to_string());
-                                let short_url = if url.len() > 60 {
-                                    format!("{}...", &url[..57])
-                                } else {
-                                    url.to_string()
-                                };
-                                format!("{} {} [{}]", method, short_url, status)
-                            })
-                            .collect();
-                        if let Some(app_state) = app_state {
-                            app_state.status_message = format!(
-                                "Network ({}): {}",
-                                count,
-                                if lines.is_empty() {
-                                    "empty".into()
-                                } else {
-                                    lines.join(" \u{2502} ")
-                                }
-                            );
-                        }
-                    }
-                } else if let Some(app_state) = app_state {
-                    app_state.status_message = "Network log: collecting...".into();
+            let json = eval_native(wry_panes, active_id, crate::servo::NETWORK_LOG_JS)
+                .or_else(|| eval_offscreen(offscreen_panes, active_id, crate::servo::NETWORK_LOG_JS));
+            if let Some(msg) = json.as_ref().and_then(|j| format_network_log(j)) {
+                if let Some(app_state) = app_state {
+                    app_state.status_message = msg;
                 }
             } else if let Some(app_state) = app_state {
-                app_state.status_message = "Network log: not available in offscreen mode".into();
+                app_state.status_message = "Network log: empty or no active pane".into();
             }
         }
         crate::app::WryAction::ClearNetworkLog => {
             if let Some(pane) = wry_panes.get_mut(&active_id) {
+                pane.execute_js(crate::servo::NETWORK_CLEAR_JS);
+            } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
                 pane.execute_js(crate::servo::NETWORK_CLEAR_JS);
             }
             if let Some(app_state) = app_state {
@@ -491,49 +547,20 @@ pub fn process_wry_action(
             }
         }
         crate::app::WryAction::GetConsoleLog => {
-            if let Some(pane) = wry_panes.get_mut(&active_id) {
-                let (tx, rx) = std::sync::mpsc::channel();
-                pane.execute_js_with_callback(crate::servo::CONSOLE_LOG_JS, move |json| {
-                    let _ = tx.send(json);
-                });
-                if let Ok(json) = rx.try_recv() {
-                    if let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
-                        let count = entries.len();
-                        let lines: Vec<String> = entries
-                            .iter()
-                            .take(20)
-                            .map(|e| {
-                                let level = e.get("level").and_then(|v| v.as_str()).unwrap_or("?");
-                                let msg = e.get("msg").and_then(|v| v.as_str()).unwrap_or("?");
-                                let short_msg = if msg.len() > 50 {
-                                    format!("{}...", &msg[..47])
-                                } else {
-                                    msg.to_string()
-                                };
-                                format!("[{}] {}", level, short_msg)
-                            })
-                            .collect();
-                        if let Some(app_state) = app_state {
-                            app_state.status_message = format!(
-                                "Console ({}): {}",
-                                count,
-                                if lines.is_empty() {
-                                    "empty".into()
-                                } else {
-                                    lines.join(" \u{2502} ")
-                                }
-                            );
-                        }
-                    }
-                } else if let Some(app_state) = app_state {
-                    app_state.status_message = "Console log: collecting...".into();
+            let json = eval_native(wry_panes, active_id, crate::servo::CONSOLE_LOG_JS)
+                .or_else(|| eval_offscreen(offscreen_panes, active_id, crate::servo::CONSOLE_LOG_JS));
+            if let Some(msg) = json.as_ref().and_then(|j| format_console_log(j)) {
+                if let Some(app_state) = app_state {
+                    app_state.status_message = msg;
                 }
             } else if let Some(app_state) = app_state {
-                app_state.status_message = "Console log: not available in offscreen mode".into();
+                app_state.status_message = "Console log: empty or no active pane".into();
             }
         }
         crate::app::WryAction::ClearConsoleLog => {
             if let Some(pane) = wry_panes.get_mut(&active_id) {
+                pane.execute_js(crate::servo::CONSOLE_CLEAR_JS);
+            } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
                 pane.execute_js(crate::servo::CONSOLE_CLEAR_JS);
             }
             if let Some(app_state) = app_state {
