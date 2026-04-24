@@ -1224,53 +1224,122 @@ pub(crate) fn aileron_new_tab_page() -> String {
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #141414; color: #e0e0e0; font-family: 'SF Mono', 'Fira Code', monospace;
-         display: flex; flex-direction: column; align-items: center; padding-top: 15vh; }
-  h1 { color: #4db4ff; font-size: 2em; margin-bottom: 1em; letter-spacing: 0.05em; }
-  .search-box { display: flex; margin-bottom: 2em; }
+         display: flex; flex-direction: column; align-items: center; padding-top: 8vh; }
+  h1 { color: #4db4ff; font-size: 1.8em; margin-bottom: 0.8em; letter-spacing: 0.05em; }
+  .search-box { display: flex; margin-bottom: 1.5em; }
   .search-box input {
     background: #1a1a1a; border: 1px solid #333; color: #e0e0e0; padding: 10px 16px;
     font-size: 14px; font-family: inherit; width: 400px; border-radius: 4px; outline: none;
   }
   .search-box input:focus { border-color: #4db4ff; }
-  .shortcuts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; max-width: 500px; }
-  .shortcut {
-    background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 6px; padding: 12px;
+  .section { max-width: 540px; width: 100%; margin-bottom: 1.5em; }
+  .section-title { color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;
+                    margin-bottom: 8px; padding-left: 2px; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; }
+  .link {
+    background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 6px; padding: 10px 14px;
     text-align: center; cursor: pointer; text-decoration: none; color: #e0e0e0;
-    transition: border-color 0.15s;
+    transition: border-color 0.15s; max-width: 120px; min-width: 80px;
   }
-  .shortcut:hover { border-color: #4db4ff; }
-  .shortcut:focus { outline: 2px solid #4db4ff; outline-offset: 2px; }
-  .shortcut .name { font-size: 12px; margin-top: 4px; color: #888; }
-  .hint { color: #555; font-size: 12px; margin-top: 2em; }
+  .link:hover { border-color: #4db4ff; }
+  .link:focus { outline: 2px solid #4db4ff; outline-offset: 2px; }
+  .link .name { font-size: 11px; margin-top: 4px; color: #888; overflow: hidden;
+                text-overflow: ellipsis; white-space: nowrap; }
+  .link .icon { font-size: 16px; }
+  .history-item {
+    display: block; padding: 6px 10px; color: #aaa; text-decoration: none;
+    border-radius: 4px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .history-item:hover { background: #1a1a1a; color: #e0e0e0; }
+  .history-item .htitle { color: #ccc; }
+  .history-item .hurl { color: #555; font-size: 10px; margin-left: 8px; }
+  .hint { color: #444; font-size: 11px; margin-top: 1em; }
+  .hint kbd { background: #1a1a1a; border: 1px solid #333; border-radius: 3px; padding: 1px 5px;
+              font-family: inherit; font-size: 10px; color: #888; }
 </style>
 </head>
 <body role="main">
 <h1>Aileron</h1>
 <div class="search-box">
-  <label for="search" class="sr-only">Search with DuckDuckGo</label>
-  <input type="text" id="search" placeholder="Search with DuckDuckGo..." autofocus aria-label="Search or enter URL">
+  <label for="search" class="sr-only">Search</label>
+  <input type="text" id="search" placeholder="Search or enter URL..." autofocus aria-label="Search or enter URL">
 </div>
-<nav class="shortcuts" aria-label="Quick links">
-  <a class="shortcut" href="https://github.com" tabindex="0" aria-label="Open GitHub">
-    <div style="font-size:20px">GH</div>
-    <div class="name">GitHub</div>
-  </a>
-  <a class="shortcut" href="https://docs.rs" tabindex="0" aria-label="Open Docs.rs">
-    <div style="font-size:20px">DR</div>
-    <div class="name">Docs.rs</div>
-  </a>
-  <a class="shortcut" href="aileron://files" tabindex="0" aria-label="Open file browser">
-    <div style="font-size:20px">&#128193;</div>
-    <div class="name">Files</div>
-  </a>
-  <a class="shortcut" href="aileron://terminal" tabindex="0" aria-label="Open terminal">
-    <div style="font-size:20px">&#9000;</div>
-    <div class="name">Terminal</div>
-  </a>
-</nav>
-<p class="hint">Type a URL or search query above, or use Ctrl+P for commands</p>
-<div aria-live="polite" id="status-region"></div>
+<div class="section" id="bookmarks-section" style="display:none">
+  <div class="section-title">Bookmarks</div>
+  <nav class="links" id="bookmarks-list" aria-label="Bookmarks"></nav>
+</div>
+<div class="section" id="shortcuts-section">
+  <nav class="links" aria-label="Quick links">
+    <a class="link" href="aileron://files" tabindex="0" aria-label="Files">
+      <div class="icon">&#128193;</div>
+      <div class="name">Files</div>
+    </a>
+    <a class="link" href="aileron://terminal" tabindex="0" aria-label="Terminal">
+      <div class="icon">&#9000;</div>
+      <div class="name">Terminal</div>
+    </a>
+    <a class="link" href="aileron://bookmarks" tabindex="0" aria-label="Bookmarks">
+      <div class="icon">&#9733;</div>
+      <div class="name">Bookmarks</div>
+    </a>
+    <a class="link" href="aileron://history" tabindex="0" aria-label="History">
+      <div class="icon">&#128336;</div>
+      <div class="name">History</div>
+    </a>
+  </nav>
+</div>
+<div class="section" id="history-section" style="display:none">
+  <div class="section-title">Recent</div>
+  <div id="history-list" aria-label="Recent history"></div>
+</div>
+<p class="hint"><kbd>Ctrl+P</kbd> commands &middot; <kbd>gt</kbd> switch tabs &middot; <kbd>gi</kbd> insert mode</p>
 <script>
+// Request bookmark/history data from Aileron via IPC
+try {
+    if (window.ipc) {
+        window.ipc.postMessage(JSON.stringify({ t: 'get-newtab-data' }));
+    }
+} catch(e) {}
+
+// Callback to populate data when Aileron responds
+window._onNewTabData = function(data) {
+    // Bookmarks
+    if (data.bookmarks && data.bookmarks.length > 0) {
+        var el = document.getElementById('bookmarks-section');
+        el.style.display = 'block';
+        var list = document.getElementById('bookmarks-list');
+        data.bookmarks.forEach(function(b) {
+            var a = document.createElement('a');
+            a.className = 'link';
+            a.href = b.url;
+            a.title = b.title || b.url;
+            a.tabIndex = 0;
+            var initial = (b.title || b.url || '?')[0].toUpperCase();
+            a.innerHTML = '<div class="icon">' + initial + '</div><div class="name">' +
+                (b.title || b.url).substring(0, 16) + '</div>';
+            list.appendChild(a);
+        });
+    }
+    // History
+    if (data.history && data.history.length > 0) {
+        var el = document.getElementById('history-section');
+        el.style.display = 'block';
+        var list = document.getElementById('history-list');
+        data.history.forEach(function(h) {
+            var a = document.createElement('a');
+            a.className = 'history-item';
+            a.href = h.url;
+            a.title = h.title + ' — ' + h.url;
+            var host = '';
+            try { host = new URL(h.url).hostname; } catch(e) {}
+            a.innerHTML = '<span class="htitle">' + (h.title || h.url) + '</span>' +
+                '<span class="hurl">' + host + '</span>';
+            list.appendChild(a);
+        });
+    }
+};
+
+// Search / URL navigation
 document.getElementById('search').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') {
     var q = this.value.trim();

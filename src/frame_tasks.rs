@@ -1013,6 +1013,42 @@ fn handle_ipc_message(
             app_state.hint_buffer.clear();
             app_state.status_message.clear();
         }
+        Some("get-newtab-data") => {
+            let bookmarks: Vec<serde_json::Value> = if let Some(db) = app_state.db.as_ref() {
+                aileron::db::bookmarks::all_bookmarks(db)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .take(8)
+                    .map(|b| serde_json::json!({
+                        "url": b.url,
+                        "title": b.title,
+                        "folder": b.folder,
+                    }))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let history: Vec<serde_json::Value> = if let Some(db) = app_state.db.as_ref() {
+                aileron::db::history::recent_entries(db, 8)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|h| serde_json::json!({
+                        "url": h.url,
+                        "title": h.title,
+                    }))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let data = serde_json::json!({ "bookmarks": bookmarks, "history": history });
+            let js = format!(
+                "window._aileron_newtab_data = {}; if (window._onNewTabData) window._onNewTabData(window._aileron_newtab_data);",
+                data
+            );
+            if let Some(pane) = wry_panes.get_mut(&pane_id) {
+                pane.execute_js(&js);
+            }
+        }
         _ => {}
     }
 }
@@ -1203,6 +1239,43 @@ fn handle_ipc_message_offscreen(
             app_state.hint_mode = false;
             app_state.hint_buffer.clear();
             app_state.status_message.clear();
+        }
+        Some("get-newtab-data") => {
+            let bookmarks: Vec<serde_json::Value> = if let Some(db) = app_state.db.as_ref() {
+                aileron::db::bookmarks::all_bookmarks(db)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .take(8)
+                    .map(|b| serde_json::json!({
+                        "url": b.url,
+                        "title": b.title,
+                        "folder": b.folder,
+                    }))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let history: Vec<serde_json::Value> = if let Some(db) = app_state.db.as_ref() {
+                aileron::db::history::recent_entries(db, 8)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|h| serde_json::json!({
+                        "url": h.url,
+                        "title": h.title,
+                    }))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let data = serde_json::json!({ "bookmarks": bookmarks, "history": history });
+            let js = format!(
+                "window._aileron_newtab_data = {}; if (window._onNewTabData) window._onNewTabData(window._aileron_newtab_data);",
+                data
+            );
+            if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                pane.execute_js(&js);
+                pane.mark_dirty();
+            }
         }
         _ => {}
     }

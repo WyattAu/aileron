@@ -162,6 +162,27 @@ pub fn build_ui(
 
                 ui.separator();
 
+                // Show download progress if any active downloads
+                if app_state.download_manager.has_active() {
+                    let progress = app_state.download_manager.progress_all();
+                    let active: Vec<_> = progress
+                        .iter()
+                        .filter(|p| matches!(p.state, crate::downloads::DownloadState::Downloading) && p.fraction < 1.0)
+                        .take(2)
+                        .collect();
+                    if let Some(dl) = active.first() {
+                        let dl_text = format!(
+                            "DL {:.0}% ({}/s)",
+                            dl.fraction * 100.0,
+                            crate::downloads::DownloadProgress::format_bytes(dl.speed_bytes_per_sec as u64),
+                        );
+                        let dl_color = egui::Color32::from_rgb(100, 200, 100);
+                        ui.colored_label(dl_color, &dl_text)
+                            .widget_info(|| a11y_info(WidgetType::Label, format!("Download: {}", dl_text)));
+                    }
+                    ui.separator();
+                }
+
                 if app_state.hint_mode {
                     let hint_text = format!("hint: {}", app_state.hint_buffer);
                     ui.colored_label(accent, hint_text.clone())
