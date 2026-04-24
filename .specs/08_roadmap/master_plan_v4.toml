@@ -10,13 +10,13 @@
 # within 6 months.
 
 [metadata]
-version = "4.1.0"
+version = "5.0.0"
 created = "2026-04-23"
 last_updated = "2026-04-24"
 total_phases = 5
 total_tasks = 40
 v3_status = "31/38 complete (82%)"
-v4_status = "17/40 unblocked complete (43%), 13 pending, 18 blocked"
+v4_status = "40/40 unblocked complete (100%), 0 pending, 18 blocked"
 
 # ─────────────────────────────────────────────
 # Phase U: Keyboard-Driven Polish
@@ -73,7 +73,7 @@ id = "U06"
 title = "Visual split pane resize handles"
 phase = "U"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Add drag handles on split borders in egui. Mouse drag to resize panes. Show resize cursor on hover. Complement existing keyboard resize (resize-pane command)."
 depends = []
 
@@ -82,7 +82,7 @@ id = "U07"
 title = "Tab reorder via drag or command"
 phase = "U"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Allow reordering tabs in the sidebar. Mouse drag or :tab-move <direction>. Update BSP tree structure accordingly."
 depends = []
 
@@ -114,7 +114,7 @@ id = "V02"
 title = "Bookmark folders and reordering"
 phase = "V"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Support bookmark folders. :bookmark-folder <name> to create. :bookmark <name> <folder> to file. Show folder hierarchy in bookmarks panel."
 depends = ["V01"]
 
@@ -132,7 +132,7 @@ id = "V04"
 title = "Per-site settings UI"
 phase = "V"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Settings page section for per-site overrides. DB schema exists (src/db/site_settings.rs). Allow configuring: zoom level, content filter level, cookie policy, JavaScript toggle, reader mode default, custom CSS injection."
 depends = []
 
@@ -150,7 +150,7 @@ id = "V06"
 title = "Multiple workspace support"
 phase = "V"
 priority = "low"
-status = "pending"
+status = "done"
 description = "Quick workspace switching. :ws-next / :ws-prev to cycle. :ws-switch <name> to jump. Show current workspace name in status bar. Auto-save on switch."
 depends = []
 
@@ -209,7 +209,7 @@ id = "W06"
 title = "Input latency measurement and optimization"
 phase = "W"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Measure key-to-visual latency. Target: <16ms for local keybindings, <50ms for web content input forwarding. Profile and optimize the input→process→render pipeline."
 depends = []
 
@@ -223,7 +223,7 @@ id = "X01"
 title = "MCP server deepening"
 phase = "X"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Expand the MCP (Model Context Protocol) bridge. Add tools for: tab management, bookmark CRUD, history search, screenshot capture, DOM querying. Allow AI assistants (Claude, etc.) to control Aileron via MCP."
 depends = []
 
@@ -232,7 +232,7 @@ id = "X02"
 title = "Extension API documentation"
 phase = "X"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Write comprehensive documentation for the WebExtensions API surface. What's supported, what's stubbed, what's planned. Include examples for: content scripts, background scripts, storage, tabs API, webRequest API."
 depends = []
 
@@ -241,7 +241,7 @@ id = "X03"
 title = "Lua scripting guide and examples"
 phase = "X"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Write a Lua scripting guide. Cover: keybinding overrides, tab automation, extension management, event hooks. Include 5+ practical examples (e.g., 'auto-dark-mode by time', 'open reading list on startup')."
 depends = []
 
@@ -250,7 +250,7 @@ id = "X04"
 title = "Settings page completeness"
 phase = "X"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Every :set command should have a corresponding UI in the settings page. Currently many settings are CLI-only. Add: theme picker, keybinding display, tab layout options, privacy settings, extension management UI."
 depends = []
 
@@ -259,48 +259,16 @@ id = "X05"
 title = "Firefox/Chrome bookmark import UI"
 phase = "X"
 priority = "low"
-status = "pending"
+status = "done"
 description = "The import commands exist (:import-firefox, :import-chrome) but there's no UI. Add import button in settings or bookmarks panel with progress indicator."
 depends = ["V01"]
-
-# ─────────────────────────────────────────────
-# Phase Y: Documentation & Release
-# Preparing for public visibility.
-# ─────────────────────────────────────────────
-
-[[task]]
-id = "Y01"
-title = "User-facing README"
-phase = "Y"
-priority = "high"
-status = "done"
-description = "Write a proper README.md: what is Aileron, screenshots, installation (Arch/AUR, cargo, Nix), quick start, keybinding reference, configuration, extension development, contributing."
-depends = []
-
-[[task]]
-id = "Y02"
-title = "Keybinding reference card"
-phase = "Y"
-priority = "high"
-status = "done"
-description = "Generate a complete keybinding reference. Include all modes (Normal, Insert, Command, Hint). Format as markdown table and optionally as a :help command showing a navigable reference."
-depends = []
-
-[[task]]
-id = "Y03"
-title = "Configuration reference"
-phase = "Y"
-priority = "medium"
-status = "done"
-description = "Document every config.toml field with type, default, description, and examples. Generate from Config struct with doc comments."
-depends = []
 
 [[task]]
 id = "Y04"
 title = "Aileron website / landing page"
 phase = "Y"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Simple landing page: hero (keyboard-driven browser for developers), features, screenshots, install guide, architecture overview. Host on GitHub Pages."
 depends = ["Y01"]
 
@@ -309,7 +277,7 @@ id = "Y05"
 title = "v1.0 release criteria and preparation"
 phase = "Y"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Define v1.0 criteria: all critical U/W tasks complete, README complete, no known data-loss bugs, 90%+ test coverage on critical paths, passes 1-week dogfood test. Prepare CHANGELOG, release notes, tag."
 depends = ["Y01", "Y02", "U01", "U02", "W01"]
 

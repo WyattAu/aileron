@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Aileron — the keyboard-driven browser for developers. Vim-style interface, tiling panes, WebExtensions, MCP integration, and Lua scripting.">
+<title>Aileron — The keyboard-driven browser for developers</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#1a1a2e;--bg2:#16213e;--text:#e0e0e0;--text2:#a0a8b8;--accent:#4db4ff;--accent2:#3a8fd4;--code-bg:#0f1629;--border:#2a2a4a;--max-w:960px}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:"Inter",system-ui,-apple-system,sans-serif;line-height:1.7;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover,a:focus-visible{text-decoration:underline;text-underline-offset:3px}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+.container{max-width:var(--max-w);margin:0 auto;padding:0 1.5rem}
+nav{padding:1rem 0;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(26,26,46,.92);backdrop-filter:blur(12px);z-index:10}
+nav .container{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem}
+nav .logo{font-weight:700;font-size:1.1rem;letter-spacing:-.02em}
+nav .logo span{color:var(--accent)}
+nav ul{list-style:none;display:flex;gap:1.25rem;font-size:.875rem}
+nav ul a{color:var(--text2)}
+nav ul a:hover,nav ul a:focus{color:var(--text)}
+h1,h2,h3{letter-spacing:-.03em;line-height:1.2}
+h1{font-size:clamp(2.5rem,6vw,3.75rem);font-weight:800;color:#fff}
+h2{font-size:1.75rem;font-weight:700;color:#fff;margin-bottom:1rem}
+.hero{padding:5rem 0 4rem;text-align:center}
+.hero .tagline{font-size:clamp(1rem,2.5vw,1.25rem);color:var(--accent);font-weight:600;margin-top:.5rem}
+.hero p{color:var(--text2);max-width:600px;margin:1rem auto 2rem}
+.hero .tagline span{display:block;font-size:clamp(.875rem,1.8vw,1rem);color:var(--text2);font-weight:400;margin-top:.25rem}
+.buttons{display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.55rem 1.1rem;border-radius:6px;font-size:.85rem;font-weight:600;transition:background .15s,border-color .15s}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn-primary{background:var(--accent);color:#0a0a1a}
+.btn-primary:hover{background:var(--accent2)}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn-outline:hover{border-color:var(--accent);color:var(--accent)}
+section{padding:3.5rem 0}
+section:nth-of-type(even){background:var(--bg2)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.25rem}
+.card{background:var(--code-bg);border:1px solid var(--border);border-radius:8px;padding:1.5rem;transition:border-color .2s}
+.card:hover{border-color:var(--accent)}
+.card h3{font-size:1.05rem;margin-bottom:.5rem;color:var(--accent)}
+.card p{color:var(--text2);font-size:.875rem}
+.arch{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1.5rem;text-align:center}
+.arch-item{padding:1.25rem}
+.arch-item strong{display:block;font-size:1rem;color:#fff;margin-bottom:.25rem}
+.arch-item p{font-size:.8rem;color:var(--text2)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px;padding:1.25rem;overflow-x:auto;font-size:.85rem;line-height:1.6;color:var(--text2)}
+pre code{font-family:"JetBrains Mono","Fira Code",monospace}
+pre .prompt{color:var(--accent);user-select:none}
+pre .comment{color:#546178}
+.quickstart{max-width:560px;margin:0 auto}
+.quickstart p{color:var(--text2);font-size:.9rem;margin-bottom:1rem}
+.links{display:flex;gap:1.5rem;flex-wrap:wrap;justify-content:center;padding-bottom:4rem}
+.links a{color:var(--text2);font-size:.9rem}
+.links a:hover{color:var(--accent)}
+footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;border-top:1px solid var(--border)}
+@media(max-width:600px){.hero{padding:3rem 0 2.5rem}section{padding:2.5rem 0}.grid{grid-template-columns:1fr}nav ul{gap:.75rem}}
+</style>
+</head>
+<body>
+
+<nav aria-label="Main navigation">
+  <div class="container">
+    <a href="#" class="logo" aria-label="Aileron home"><span>&gt;</span> aileron</a>
+    <ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#quickstart">Quick Start</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero" role="banner">
+  <div class="container">
+    <h1>Aileron</h1>
+    <p class="tagline">The keyboard-driven browser for developers<span>Take control of the web without reaching for the mouse.</span></p>
+    <div class="buttons" role="group" aria-label="Install options">
+      <a href="https://aur.archlinux.org/packages/aileron" class="btn btn-primary">Arch AUR</a>
+      <a href="https://crates.io/crates/aileron" class="btn btn-outline">Cargo</a>
+      <a href="#" class="btn btn-outline">Nix</a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="features" aria-labelledby="features-heading">
+    <div class="container">
+      <h2 id="features-heading">Features</h2>
+      <div class="grid">
+        <article class="card">
+          <h3 id="feat-kb">Keyboard-first</h3>
+          <p>Vim-style modal interface with Normal, Insert, and Command modes. Every action&mdash;navigation, tabs, history, search&mdash;mapped to keystrokes.</p>
+        </article>
+        <article class="card">
+          <h3 id="feat-tiling">Tiling Panes</h3>
+          <p>BSP tree layout for split-screen browsing. Open panes horizontally or vertically, resize with keyboard shortcuts or drag, and navigate between them instantly.</p>
+        </article>
+        <article class="card">
+          <h3 id="feat-ext">WebExtensions</h3>
+          <p>Chrome extension API support including tabs, storage, webRequest, and scripting. Use your existing extensions or build new ones with familiar APIs.</p>
+        </article>
+        <article class="card">
+          <h3 id="feat-mcp">MCP Integration</h3>
+          <p>Built-in Model Context Protocol bridge lets AI assistants control the browser&mdash;navigate, read pages, fill forms&mdash;through a stdio transport.</p>
+        </article>
+        <article class="card">
+          <h3 id="feat-lua">Lua Scripting</h3>
+          <p>Automate workflows with <code>init.lua</code>. Define custom commands, URL redirect rules, keybinding overrides, and startup hooks in a scripting layer you already know.</p>
+        </article>
+        <article class="card">
+          <h3 id="feat-tools">Built-in Tools</h3>
+          <p>Ad blocking (EasyList), automatic HTTPS upgrades, reader mode, bookmark management, download tracking, cookie controls, and per-site settings&mdash;no extensions required.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture" aria-labelledby="arch-heading">
+    <div class="container">
+      <h2 id="arch-heading">Architecture</h2>
+      <div class="arch">
+        <div class="arch-item">
+          <strong>Dual-engine</strong>
+          <p>WebKitGTK for stability, Servo for next-gen rendering. Switch per-site with <code>:engine</code>.</p>
+        </div>
+        <div class="arch-item">
+          <strong>Offscreen rendering</strong>
+          <p>Web content renders to textures, composited by egui. No native widget chrome&mdash;full control over every pixel.</p>
+        </div>
+        <div class="arch-item">
+          <strong>Rust + egui</strong>
+          <p>The entire UI is Rust. egui provides immediate-mode rendering with native performance and zero DOM dependencies.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="quickstart" aria-labelledby="quickstart-heading">
+    <div class="container quickstart">
+      <h2 id="quickstart-heading">Quick Start</h2>
+      <p>Install and launch in under a minute.</p>
+      <pre role="region" aria-label="Installation commands"><code><span class="comment"># Arch Linux (AUR)</span>
+<span class="prompt">$ </span>paru -S aileron
+
+<span class="comment"># Cargo (any platform)</span>
+<span class="prompt">$ </span>cargo install aileron
+
+<span class="comment"># Launch</span>
+<span class="prompt">$ </span>aileron</code></pre>
+    </div>
+  </section>
+
+  <section aria-label="Documentation links">
+    <div class="container">
+      <div class="links" role="list">
+        <a href="https://github.com/WyattAu/aileron" role="listitem">GitHub</a>
+        <a href="extension-api.md" role="listitem">Extension API</a>
+        <a href="lua-scripting.md" role="listitem">Lua Scripting</a>
+        <a href="https://github.com/WyattAu/aileron#configuration" role="listitem">Configuration Reference</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer role="contentinfo">
+  <p>Aileron &mdash; written in Rust, built for developers.</p>
+</footer>
+
+</body>
+</html>
