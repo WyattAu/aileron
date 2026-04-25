@@ -127,22 +127,11 @@ pub fn clear_history(conn: &Connection) -> Result<usize> {
 /// Used for importing from other browsers (skip duplicates).
 /// Returns true if inserted, false if duplicate.
 pub fn import_visit(conn: &Connection, url: &str, title: &str, visited_at: &str) -> Result<bool> {
-    let exists: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM history WHERE url = ?1",
-            params![url],
-            |row| row.get::<_, i64>(0),
-        )
-        .unwrap_or(0)
-        > 0;
-    if exists {
-        return Ok(false);
-    }
-    conn.execute(
-        "INSERT INTO history (url, title, visited_at) VALUES (?1, ?2, ?3)",
+    let affected = conn.execute(
+        "INSERT OR IGNORE INTO history (url, title, visited_at) VALUES (?1, ?2, ?3)",
         params![url, title, visited_at],
     )?;
-    Ok(true)
+    Ok(affected > 0)
 }
 
 #[cfg(test)]

@@ -15,6 +15,16 @@ pub fn open_database(db_path: &Path) -> Result<Connection> {
     let conn = Connection::open(db_path)?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
     init_schema(&conn)?;
+    // Set restrictive permissions on the database file (owner read/write only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = std::fs::metadata(db_path) {
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o600);
+            let _ = std::fs::set_permissions(db_path, perms);
+        }
+    }
     Ok(conn)
 }
 
@@ -38,6 +48,7 @@ fn init_schema(conn: &Connection) -> Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_history_url ON history(url);
         CREATE INDEX IF NOT EXISTS idx_history_visited ON history(visited_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_history_title ON history(title);
 
         CREATE TABLE IF NOT EXISTS workspaces (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

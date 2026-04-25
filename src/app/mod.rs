@@ -253,7 +253,7 @@ pub struct AppState {
 
     /// Stack of recently closed tabs for :tab-restore.
     /// Each entry is (url, title).
-    pub closed_tab_stack: Vec<(String, String)>,
+    pub closed_tab_stack: std::collections::VecDeque<(String, String)>,
 
     /// Whether the bookmarks panel overlay is open.
     pub bookmarks_panel_open: bool,
@@ -496,7 +496,7 @@ impl AppState {
             tab_search_open: false,
             tab_search_query: String::new(),
             tab_search_selected: 0,
-            closed_tab_stack: Vec::new(),
+            closed_tab_stack: std::collections::VecDeque::new(),
             bookmarks_panel_open: false,
             bookmarks_entries: Vec::new(),
             bookmarks_selected: 0,
@@ -559,6 +559,14 @@ impl AppState {
             }
         }
         best.map(|(id, _)| id)
+    }
+
+    /// Clean up per-pane state when a pane is closed. Prevents memory leaks.
+    pub fn cleanup_pane_state(&mut self, pane_id: &uuid::Uuid) {
+        self.pane_last_focus.remove(pane_id);
+        self.marks.remove(pane_id);
+        self.tab_names.remove(&pane_id.to_string());
+        self.private_pane_ids.remove(pane_id);
     }
 
     /// Look up a quickmark URL by its key character.

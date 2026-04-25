@@ -353,7 +353,7 @@ impl AppState {
             if let Ok(n) = rest.trim().parse::<usize>() {
                 if n == 0 {
                     // :tab-restore 0 = most recent
-                    if let Some((url, _title)) = self.closed_tab_stack.pop() {
+                    if let Some((url, _title)) = self.closed_tab_stack.pop_back() {
                         if let Ok(parsed) = url::Url::parse(&url) {
                             self.pending_wry_actions.push_back(WryAction::Navigate(parsed));
                             self.status_message = format!("Restored: {}", url);
@@ -382,7 +382,7 @@ impl AppState {
 
         if query == "tab-restore" {
             // :tab-restore (no arg) = restore most recent
-            if let Some((url, _title)) = self.closed_tab_stack.pop() {
+            if let Some((url, _title)) = self.closed_tab_stack.pop_back() {
                 if let Ok(parsed) = url::Url::parse(&url) {
                     self.pending_wry_actions.push_back(WryAction::Navigate(parsed));
                     self.status_message = format!("Restored: {}", url);
@@ -532,15 +532,28 @@ impl AppState {
                 let new_text = parts[1];
                 let case_sensitive = parts.len() >= 3 && parts[2] == "case";
                 let flags = if case_sensitive { "g" } else { "gi" };
+                // Escape user input to prevent JS injection: backslash, quotes, parens, brackets
+                let safe_old = old_text
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\'', "\\'")
+                    .replace(')', "\\)")
+                    .replace('}', "\\}")
+                    .replace(']', "\\]");
+                let safe_new = new_text
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\'', "\\'")
+                    .replace('$', "\\$");
                 let js = format!(
                     r#"(function() {{
                         let count = 0;
                         function walk(node) {{
                             if (node.nodeType === 3) {{
-                                let re = new RegExp("{old_text}", "{flags}");
+                                let re = new RegExp("{safe_old}", "{flags}");
                                 let m = node.textContent.match(re);
                                 if (m) count += m.length;
-                                node.textContent = node.textContent.replace(re, "{new_text}");
+                                node.textContent = node.textContent.replace(re, "{safe_new}");
                             }} else {{
                                 for (let c of node.childNodes) walk(c);
                             }}

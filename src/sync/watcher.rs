@@ -8,7 +8,7 @@ use tracing::{info, warn};
 
 pub struct SyncWatcher {
     rx: Option<Receiver<Vec<PathBuf>>>,
-    stop: std::sync::Arc<AtomicBool>,
+    running: std::sync::Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -16,7 +16,7 @@ impl SyncWatcher {
     pub fn new() -> Self {
         Self {
             rx: None,
-            stop: std::sync::Arc::new(AtomicBool::new(false)),
+            running: std::sync::Arc::new(AtomicBool::new(false)),
             thread: None,
         }
     }
@@ -28,8 +28,8 @@ impl SyncWatcher {
 
         let (tx, rx) = crossbeam_channel::bounded::<Vec<PathBuf>>(100);
         let dir = dir.to_path_buf();
-        let stop = self.stop.clone();
-        stop.store(true, Ordering::Relaxed);
+        let running = self.running.clone();
+        running.store(true, Ordering::Release);
 
         let thread = std::thread::spawn(move || {
             let (deb_tx, deb_rx) =
@@ -63,7 +63,7 @@ impl SyncWatcher {
                     Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
                 }
 
-                if !stop.load(Ordering::Relaxed) {
+                if !running.load(Ordering::Acquire) {
                     break;
                 }
             }
@@ -75,7 +75,7 @@ impl SyncWatcher {
     }
 
     pub fn stop(&mut self) {
-        self.stop.store(false, Ordering::Relaxed);
+        self.running.store(false, Ordering::Release);
         self.rx = None;
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -84,7 +84,7 @@ impl SyncWatcher {
     }
 
     pub fn is_running(&self) -> bool {
-        self.stop.load(Ordering::Relaxed)
+        self.running.load(Ordering::Acquire)
     }
 
     pub fn poll_changes(&self) -> Vec<PathBuf> {

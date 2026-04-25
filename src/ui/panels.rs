@@ -17,6 +17,16 @@ fn a11y_info(typ: WidgetType, label: impl Into<String>) -> WidgetInfo {
     }
 }
 
+/// Truncate a string to at most `max_chars` characters without splitting multi-byte UTF-8.
+fn truncate_str(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max_chars).collect();
+        format!("{truncated}...")
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn build_ui(
     ctx: &egui::Context,
@@ -162,11 +172,7 @@ pub fn build_ui(
                 let active_id = app_state.wm.active_pane_id();
                 if let Some(wry_pane) = wry_panes.get(&active_id) {
                     let url_str = wry_pane.url().as_str();
-                    let display_url = if url_str.len() > 60 {
-                        format!("{}...", &url_str[..57])
-                    } else {
-                        url_str.to_string()
-                    };
+                    let display_url = truncate_str(url_str, 57);
                     let full_url = url_str.to_string();
                     let url_resp = ui.label(display_url.clone());
                     url_resp.widget_info(|| {
@@ -178,11 +184,7 @@ pub fn build_ui(
                     }
                 } else if let Some(pane) = offscreen_panes.get(&active_id) {
                     let url_str = pane.url().as_str();
-                    let display_url = if url_str.len() > 60 {
-                        format!("{}...", &url_str[..57])
-                    } else {
-                        url_str.to_string()
-                    };
+                    let display_url = truncate_str(url_str, 57);
                     let full_url = url_str.to_string();
                     let url_resp = ui.label(display_url.clone());
                     url_resp.widget_info(|| {
@@ -1325,20 +1327,8 @@ pub fn build_tab_list(
                         .get(&pane_id.to_string())
                         .cloned();
                     match custom {
-                        Some(name) => {
-                            if name.len() > 24 {
-                                format!("{}...", &name[..21])
-                            } else {
-                                name
-                            }
-                        }
-                        None => {
-                            if title.len() > 24 {
-                                format!("{}...", &title[..21])
-                            } else {
-                                title.clone()
-                            }
-                        }
+                        Some(name) => truncate_str(&name, 21),
+                        None => truncate_str(&title, 21),
                     }
                 };
 
@@ -1442,20 +1432,8 @@ pub fn build_tab_list(
                         .get(&pane_id.to_string())
                         .cloned();
                     match custom {
-                        Some(name) => {
-                            if name.len() > 20 {
-                                format!("{}...", &name[..17])
-                            } else {
-                                name
-                            }
-                        }
-                        None => {
-                            if title.len() > 20 {
-                                format!("{}...", &title[..17])
-                            } else {
-                                title.clone()
-                            }
-                        }
+                        Some(name) => truncate_str(&name, 17),
+                        None => truncate_str(&title, 17),
                     }
                 };
 
@@ -1525,11 +1503,7 @@ pub fn build_tab_list(
                     });
 
                     if !is_terminal {
-                        let display_url = if url.len() > 22 {
-                            format!("{}...", &url[..19])
-                        } else {
-                            url
-                        };
+                        let display_url = truncate_str(&url, 19);
                         ui.label(egui::RichText::new(display_url).small().color(border_color));
                     } else {
                         ui.label(egui::RichText::new("Terminal").small().color(border_color));

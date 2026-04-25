@@ -185,9 +185,16 @@ impl DownloadManager {
     pub fn start(&self, url: &str, filename: Option<&str>) -> u64 {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
-        let filename = filename
+        let raw_filename = filename
             .map(|s| s.to_string())
             .unwrap_or_else(|| Self::extract_filename(url));
+
+        // Sanitize filename to prevent path traversal: strip path components
+        let filename = std::path::Path::new(&raw_filename)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("download")
+            .to_string();
 
         let dest_path = self.downloads_dir.join(&filename);
 

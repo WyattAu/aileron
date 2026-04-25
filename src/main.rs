@@ -465,6 +465,10 @@ impl AileronApp {
         self.offscreen_last_capture.remove(pane_id);
         self.pending_pane_creates
             .retain(|(id, _)| id != pane_id);
+        // Clean up per-pane state to prevent memory leaks
+        if let Some(app_state) = &mut self.app_state {
+            app_state.cleanup_pane_state(pane_id);
+        }
     }
 
     /// Create a wry webview for a standalone popup window.
@@ -1188,10 +1192,10 @@ impl ApplicationHandler for AileronApp {
                         if !url.is_empty()
                             && let Some(app_state) = &mut self.app_state
                         {
-                            app_state.closed_tab_stack.push((url, title));
+                            app_state.closed_tab_stack.push_back((url, title));
                             // Limit stack to 50 entries
-                            if app_state.closed_tab_stack.len() > 50 {
-                                app_state.closed_tab_stack.remove(0);
+                            while app_state.closed_tab_stack.len() > 50 {
+                                app_state.closed_tab_stack.pop_front();
                             }
                         }
                         self.remove_wry_pane_for(pid);
