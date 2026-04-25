@@ -399,6 +399,9 @@ a {{ color: #4db4ff; }}
             .with_download_started_handler({
                 let dl_tx = event_tx.clone();
                 move |url: String, suggested_path: &mut std::path::PathBuf| {
+                    if is_pdf_url(&url) {
+                        return false;
+                    }
                     if let Some(downloads_dir) = directories::UserDirs::new()
                         .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
                     {
@@ -767,6 +770,14 @@ impl Default for WryPaneManager {
 
 /// Convert a BSP Rect (f64) to a wry Rect for positioning a child window.
 ///
+/// Check if a URL points to a PDF resource (by file extension in path).
+/// Used to prevent downloading PDFs so WebKitGTK renders them inline.
+pub fn is_pdf_url(url: &str) -> bool {
+    url::Url::parse(url)
+        .map(|u| u.path().to_lowercase().ends_with(".pdf"))
+        .unwrap_or(false)
+}
+
 /// The top offset uses `status_bar_height` (the status bar sits at the very top
 /// of the window). The URL bar is rendered below the status bar by egui, so
 /// it is accounted for by reducing the available height — not by shifting the
@@ -2240,5 +2251,16 @@ mod tests {
         assert_eq!(format_size(1024), "1.0 KB");
         assert_eq!(format_size(1_048_576), "1.0 MB");
         assert_eq!(format_size(1_073_741_824), "1.0 GB");
+    }
+
+    #[test]
+    fn test_is_pdf_url() {
+        assert!(is_pdf_url("https://example.com/doc.pdf"));
+        assert!(is_pdf_url("https://example.com/path/to/FILE.PDF"));
+        assert!(is_pdf_url("http://example.com/document.pdf?query=1"));
+        assert!(!is_pdf_url("https://example.com/page.html"));
+        assert!(!is_pdf_url("https://example.com/"));
+        assert!(!is_pdf_url("not a url"));
+        assert!(!is_pdf_url("https://example.com/pdfhandler"));
     }
 }

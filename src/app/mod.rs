@@ -291,6 +291,23 @@ pub struct AppState {
 
     /// Pending URL to open in a new tab (set by :g <url> command).
     pub pending_new_tab_url: Option<url::Url>,
+
+    /// Whether auto-fill is available for the current page.
+    /// Set to true when a login form is detected and Bitwarden has credentials.
+    pub autofill_available: bool,
+
+    /// Username field ID detected on the current page (for getElementById fill).
+    pub autofill_username_id: String,
+
+    /// Password field ID detected on the current page (for getElementById fill).
+    pub autofill_password_id: String,
+
+    /// Pre-computed JS to inject when user triggers auto-fill.
+    /// Generated when autofill_available is set to avoid blocking the UI.
+    pub autofill_js: Option<String>,
+
+    /// Status message to display after auto-fill is triggered.
+    pub autofill_status_msg: String,
 }
 
 impl AppState {
@@ -512,6 +529,11 @@ impl AppState {
             pending_import: None,
             crashed_pane_id: None,
             pending_new_tab_url: None,
+            autofill_available: false,
+            autofill_username_id: String::new(),
+            autofill_password_id: String::new(),
+            autofill_js: None,
+            autofill_status_msg: String::new(),
         })
     }
 

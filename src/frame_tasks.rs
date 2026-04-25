@@ -45,6 +45,9 @@ pub fn auto_save_workspace(app_state: &mut AppState, wry_panes: &WryPaneManager)
         match app_state.save_workspace_with_urls("_autosave", &pane_urls) {
             Ok(()) => {
                 tracing::info!("Auto-saved workspace ({} panes)", pane_urls.len());
+                if let Some(ref conn) = app_state.db {
+                    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").ok();
+                }
             }
             Err(e) => {
                 tracing::warn!("Auto-save failed: {}", e);
@@ -255,6 +258,19 @@ pub fn process_wry_events(
                                 } \
                             }, 100);"
                         );
+                        wry_pane.execute_js(&format!(
+                            "setTimeout(function() {{ {} }}, 500);",
+                            aileron::passwords::bitwarden::BitwardenClient::form_detect_report_js()
+                        ));
+                        wry_pane.execute_js(
+                            "(function(){ \
+                                var el = document.documentElement; \
+                                var cs = getComputedStyle(el); \
+                                if (cs && cs.scrollBehavior !== 'smooth') { \
+                                    el.style.scrollBehavior = 'smooth'; \
+                                } \
+                            })();"
+                        );
                     }
 
                     if let Some(ref css) = app_state.config.custom_css
@@ -298,6 +314,11 @@ pub fn process_wry_events(
                 }
             }
             WryEvent::LoadStarted { url, pane_id, .. } => {
+                app_state.autofill_available = false;
+                app_state.autofill_username_id.clear();
+                app_state.autofill_password_id.clear();
+                app_state.autofill_js = None;
+                app_state.autofill_status_msg.clear();
                 app_state.status_message = format!("Loading: {}...", &url[..url.len().min(40)]);
                 if !url.starts_with("aileron://") {
                     let start_scripts = content_scripts.scripts_for_url(&url, RunAt::DocumentStart);
@@ -452,6 +473,20 @@ pub fn process_offscreen_events(
                                 } \
                             }, 100);"
                         );
+                        pane.execute_js(&format!(
+                            "setTimeout(function() {{ {} }}, 500);",
+                            aileron::passwords::bitwarden::BitwardenClient::form_detect_report_js()
+                        ));
+                        pane.execute_js(
+                            "(function(){ \
+                                var el = document.documentElement; \
+                                var cs = getComputedStyle(el); \
+                                if (cs && cs.scrollBehavior !== 'smooth') { \
+                                    el.style.scrollBehavior = 'smooth'; \
+                                } \
+                            })();"
+                        );
+                        pane.mark_dirty();
                     }
 
                     if let Some(ref css) = app_state.config.custom_css
@@ -496,6 +531,11 @@ pub fn process_offscreen_events(
                 }
             }
             WryEvent::LoadStarted { url, pane_id, .. } => {
+                app_state.autofill_available = false;
+                app_state.autofill_username_id.clear();
+                app_state.autofill_password_id.clear();
+                app_state.autofill_js = None;
+                app_state.autofill_status_msg.clear();
                 app_state.status_message = format!("Loading: {}...", &url[..url.len().min(40)]);
                 if !url.starts_with("aileron://") {
                     let start_scripts = content_scripts.scripts_for_url(&url, RunAt::DocumentStart);
@@ -1014,6 +1054,49 @@ fn handle_ipc_message(
             app_state.hint_buffer.clear();
             app_state.status_message.clear();
         }
+        Some("login-form-detected") => {
+            if msg.get("has_login").and_then(|v| v.as_bool()).unwrap_or(false)
+                && pane_id == app_state.wm.active_pane_id()
+                && app_state.bitwarden.is_unlocked()
+                && let Some(pane) = wry_panes.get(&pane_id)
+            {
+                let url = pane.url().to_string();
+                if let Ok(items) = app_state.bitwarden.search_for_url(&url)
+                    && !items.is_empty()
+                {
+                    app_state.autofill_available = true;
+                    if let Some(uid) =
+                        msg.get("username_id").and_then(|v| v.as_str())
+                    {
+                        app_state.autofill_username_id = uid.to_string();
+                    }
+                    if let Some(pid) =
+                        msg.get("password_id").and_then(|v| v.as_str())
+                    {
+                        app_state.autofill_password_id = pid.to_string();
+                    }
+                    if let Ok(cred) = app_state.bitwarden.get_credential(&items[0].id) {
+                        let domain = url::Url::parse(&url)
+                            .ok()
+                            .and_then(|u| u.domain().map(String::from))
+                            .unwrap_or_else(|| "unknown".into());
+                        let js = app_state.bitwarden.autofill_by_id_js(
+                            &app_state.autofill_username_id,
+                            &app_state.autofill_password_id,
+                            &cred,
+                        );
+                        app_state.autofill_js = Some(js);
+                        app_state.autofill_status_msg = format!(
+                            "Auto-filled credentials for {}",
+                            domain
+                        );
+                    }
+                }
+            } else {
+                app_state.autofill_available = false;
+                app_state.autofill_js = None;
+            }
+        }
         Some("get-newtab-data") => {
             let bookmarks: Vec<serde_json::Value> = if let Some(db) = app_state.db.as_ref() {
                 aileron::db::bookmarks::all_bookmarks(db)
@@ -1276,6 +1359,49 @@ fn handle_ipc_message_offscreen(
             if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                 pane.execute_js(&js);
                 pane.mark_dirty();
+            }
+        }
+        Some("login-form-detected") => {
+            if msg.get("has_login").and_then(|v| v.as_bool()).unwrap_or(false)
+                && pane_id == app_state.wm.active_pane_id()
+                && app_state.bitwarden.is_unlocked()
+                && let Some(pane) = offscreen_panes.get(&pane_id)
+            {
+                let url = pane.url().to_string();
+                if let Ok(items) = app_state.bitwarden.search_for_url(&url)
+                    && !items.is_empty()
+                {
+                    app_state.autofill_available = true;
+                    if let Some(uid) =
+                        msg.get("username_id").and_then(|v| v.as_str())
+                    {
+                        app_state.autofill_username_id = uid.to_string();
+                    }
+                    if let Some(pid) =
+                        msg.get("password_id").and_then(|v| v.as_str())
+                    {
+                        app_state.autofill_password_id = pid.to_string();
+                    }
+                    if let Ok(cred) = app_state.bitwarden.get_credential(&items[0].id) {
+                        let domain = url::Url::parse(&url)
+                            .ok()
+                            .and_then(|u| u.domain().map(String::from))
+                            .unwrap_or_else(|| "unknown".into());
+                        let js = app_state.bitwarden.autofill_by_id_js(
+                            &app_state.autofill_username_id,
+                            &app_state.autofill_password_id,
+                            &cred,
+                        );
+                        app_state.autofill_js = Some(js);
+                        app_state.autofill_status_msg = format!(
+                            "Auto-filled credentials for {}",
+                            domain
+                        );
+                    }
+                }
+            } else {
+                app_state.autofill_available = false;
+                app_state.autofill_js = None;
             }
         }
         _ => {}

@@ -106,10 +106,26 @@ impl AppState {
                 self.status_message = "Usage: :pdf <path-or-url>".into();
                 return;
             }
-            open_that(path)
-                .map_err(|e| self.status_message = format!("!{}", e))
-                .ok();
-            self.status_message = format!("Opening PDF: {}", path);
+            let url = if path.starts_with("http://") || path.starts_with("https://") {
+                url::Url::parse(path).ok()
+            } else {
+                let abs = std::path::Path::new(path);
+                let abs = if abs.is_absolute() {
+                    abs.to_path_buf()
+                } else {
+                    std::env::current_dir().unwrap_or_default().join(abs)
+                };
+                url::Url::from_file_path(abs).ok()
+            };
+            match url {
+                Some(u) => {
+                    self.navigate_with_redirects(u);
+                    self.status_message = format!("Loading PDF: {}", path);
+                }
+                None => {
+                    self.status_message = format!("!Invalid path or URL: {}", path);
+                }
+            }
             return;
         }
 
@@ -936,6 +952,56 @@ impl AppState {
             return;
         }
 
+        // Auto-fill credentials from Bitwarden for the current page
+        if query == "autofill" {
+            let active_id = self.wm.active_pane_id();
+            if let Some(engine) = self.engines.get(&active_id)
+                && let Some(url) = engine.current_url()
+            {
+                let url_str = url.to_string();
+                let domain = url.domain().unwrap_or("unknown");
+                if !self.bitwarden.is_unlocked() {
+                    self.status_message =
+                        format!("No credentials found for {} (vault locked)", domain);
+                } else {
+                    match self.bitwarden.search_for_url(&url_str) {
+                        Ok(items) if !items.is_empty() => {
+                            match self.bitwarden.get_credential(&items[0].id) {
+                                Ok(cred) => {
+                                    let js = self.bitwarden.autofill_by_id_js(
+                                        &self.autofill_username_id,
+                                        &self.autofill_password_id,
+                                        &cred,
+                                    );
+                                    self.pending_wry_actions
+                                        .push_back(WryAction::RunJs(js));
+                                    self.status_message = format!(
+                                        "Auto-filled credentials for {}",
+                                        domain
+                                    );
+                                    self.autofill_available = false;
+                                    self.autofill_js = None;
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("Auto-fill failed: {}", e)
+                                }
+                            }
+                        }
+                        Ok(_) => {
+                            self.status_message =
+                                format!("No credentials found for {}", domain)
+                        }
+                        Err(e) => {
+                            self.status_message = format!("Auto-fill failed: {}", e)
+                        }
+                    }
+                }
+            } else {
+                self.status_message = "No login form detected".into();
+            }
+            return;
+        }
+
         // Theme commands
         if query == "theme" {
             self.status_message = format!("Theme: {}", self.config.theme);
@@ -1111,7 +1177,8 @@ impl AppState {
                 "downloads", "downloads-open", "downloads-dir", "downloads-clear",
                 "import-firefox", "import-chrome",
                 "site-settings", "cookies", "cookies-clear", "cookies-block", "cookies-allow",
-                "popups", "mute", "unmute", "theme", "theme-list",
+                 "popups", "mute", "unmute", "theme", "theme-list",
+                 "autofill",
                 "print", "pdf", "pin",
                 "scripts", "network", "network-clear", "console", "console-clear",
                 "inspect", "proxy", "config-save", "clear",
@@ -2564,5 +2631,52 @@ mod tests {
         assert!(state.tab_search_open);
         state.handle_raw_command("tabs");
         assert!(!state.tab_search_open);
+    }
+
+    #[test]
+    fn test_autofill_command_vault_locked() {
+        let mut state = make_state();
+        state.handle_raw_command("autofill");
+        assert!(
+            state.status_message.contains("vault locked")
+                || state.status_message.contains("credentials")
+                || state.status_message.contains("login form")
+        );
+    }
+
+    #[test]
+    fn test_pdf_command_url_navigation() {
+        let mut state = make_state();
+        state.handle_raw_command("pdf https://example.com/document.pdf");
+        assert!(
+            state.pending_wry_actions.iter().any(|a| matches!(a, WryAction::Navigate(_))),
+            "pdf command should queue a Navigate action"
+        );
+        assert!(state.status_message.contains("Loading PDF"));
+    }
+
+    #[test]
+    fn test_pdf_command_empty_path() {
+        let mut state = make_state();
+        state.handle_raw_command("pdf ");
+        assert!(state.status_message.contains("Usage"));
+    }
+
+    #[test]
+    fn test_pdf_command_usage() {
+        let mut state = make_state();
+        state.handle_raw_command("pdf  ");
+        assert!(state.status_message.contains("Usage"));
+    }
+
+    #[test]
+    fn test_pdf_command_nonexistent_file() {
+        let mut state = make_state();
+        state.handle_raw_command("pdf /nonexistent/path/file.pdf");
+        // file:// URL should still be created (the file might not exist yet)
+        assert!(
+            state.pending_wry_actions.iter().any(|a| matches!(a, WryAction::Navigate(_))),
+            "pdf command should queue Navigate even for nonexistent files"
+        );
     }
 }

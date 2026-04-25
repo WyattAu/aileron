@@ -265,6 +265,9 @@ a {{ color: #4db4ff; }}
             .with_download_started_handler({
                 let dl_tx = event_tx.clone();
                 move |url: String, suggested_path: &mut std::path::PathBuf| {
+                    if is_pdf_url(&url) {
+                        return false;
+                    }
                     if let Some(downloads_dir) = directories::UserDirs::new()
                         .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
                     {
@@ -677,9 +680,12 @@ a {{ color: #4db4ff; }}
         self.mark_dirty();
     }
 
-    /// Scroll the webview by the given delta.
+    /// Scroll the webview by the given delta with smooth animation.
     pub fn scroll_by(&mut self, dx: f64, dy: f64) {
-        let js = format!("window.scrollBy({}, {})", dx, dy);
+        let js = format!(
+            "window.scrollBy({{top: {}, left: {}, behavior: 'smooth'}})",
+            dy, dx
+        );
         self.execute_js(&js);
         self.mark_dirty();
     }
@@ -712,6 +718,14 @@ pub fn modifiers_js(ctrl: bool, alt: bool, shift: bool, meta: bool) -> String {
     } else {
         format!(", {}", parts.join(", "))
     }
+}
+
+/// Check if a URL points to a PDF resource (by file extension in path).
+/// Used to prevent downloading PDFs so WebKitGTK renders them inline.
+pub fn is_pdf_url(url: &str) -> bool {
+    url::Url::parse(url)
+        .map(|u| u.path().to_lowercase().ends_with(".pdf"))
+        .unwrap_or(false)
 }
 
 /// Convert BGRA pixel data to RGBA.
@@ -1115,5 +1129,28 @@ mod tests {
         // Clear zoom by deleting
         crate::db::site_settings::delete_site_settings_for_domain(&conn, "example.com")
             .expect("clear zoom");
+    }
+
+    #[test]
+    fn test_is_pdf_url() {
+        assert!(super::is_pdf_url("https://example.com/doc.pdf"));
+        assert!(super::is_pdf_url("https://example.com/path/to/FILE.PDF"));
+        assert!(super::is_pdf_url("http://example.com/document.pdf?query=1"));
+        assert!(!super::is_pdf_url("https://example.com/page.html"));
+        assert!(!super::is_pdf_url("https://example.com/"));
+        assert!(!super::is_pdf_url("not a url"));
+        assert!(!super::is_pdf_url("https://example.com/pdfhandler"));
+    }
+
+    #[test]
+    fn test_modifiers_js() {
+        assert_eq!(super::modifiers_js(false, false, false, false), "");
+        let m = super::modifiers_js(true, false, false, false);
+        assert!(m.contains("ctrlKey: true"));
+        let m = super::modifiers_js(true, true, true, true);
+        assert!(m.contains("ctrlKey: true"));
+        assert!(m.contains("altKey: true"));
+        assert!(m.contains("shiftKey: true"));
+        assert!(m.contains("metaKey: true"));
     }
 }

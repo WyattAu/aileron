@@ -2,6 +2,52 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.17.0 (2026-04-25) — Daily-Driver Features & Quality Audit
+
+### Security & Reliability
+- **JS injection hardening**: `:replace` command escapes `\ " ' ) } ] $` in user input
+- **Path traversal fix**: Download filenames sanitized via `Path::file_name()`
+- **DB permissions**: Database file set to 0600 (owner-only) on Unix
+- **rustls-webpki**: Updated 0.103.12→0.103.13 (fixes RUSTSEC-2026-0104)
+- **History title index**: Added `idx_history_title` for search performance
+- **Atomic import_visit**: `INSERT OR IGNORE` replaces SELECT+INSERT race
+
+### Performance
+- **Background git status**: `GitPoller` thread — no more 1Hz main thread block
+- **Background filter downloads**: Adblock filter list HTTP downloads offloaded to thread
+- **Cached theme colors**: `CachedThemeColors` — 10 hex parses/frame → 0 (cached)
+- **pane_ids()**: O(n) Vec allocation avoided when only UUIDs needed
+- **VecDeque closed tab stack**: `pop_front()` O(1) vs `Vec::remove(0)` O(n)
+- **UTF-8 safe truncation**: `truncate_str()` helper — no more mid-character splits
+
+### Memory Leaks Fixed
+- `pane_last_focus`, `marks`, `tab_names`, `private_pane_ids` cleaned on pane close
+
+### v6 Features (Vim-style UX)
+- **`/` find**: Vim-style `/` bound to `OpenFindBar`
+- **`F` hint mode**: Opens links in new background tabs (orange badges, `window.open`)
+- **`:tab-rename***: Custom tab names with DB persistence
+- **`:private***: Per-pane private browsing with [PRIVATE] indicator
+- **`:yt***: Yank page title to clipboard
+- **URL click-to-edit**: Click URL in status bar to edit
+- **Private propagation**: New tabs inherit private mode from parent pane
+
+### v0.18 Daily-Driver Features
+- **Form autofill**: `:autofill` command detects login forms and fills from Bitwarden
+- **Auto-fill indicator**: Status bar shows `[autofill available]` on login pages
+- **PDF inline viewing**: PDFs render inline via WebKitGTK (no external viewer)
+- **`:pdf` command**: Now navigates inline instead of opening external viewer
+- **Smooth scroll**: `scroll-behavior: smooth` CSS injection + smooth `scrollBy()`
+- **WAL checkpoint**: `PRAGMA wal_checkpoint(TRUNCATE)` after periodic auto-save
+- **`:set` command**: Runtime config changes (`:set theme light`, `:set adblock false`)
+- **SyncWatcher fix**: Corrected inverted stop/running semantics
+
+### Testing
+- **845 tests pass** (24 new: omnibox, autofill, PDF, scroll, :set)
+- **50 modules with test coverage**, zero critical gaps
+- **Clippy**: Zero warnings with `-D warnings`
+- **Cargo audit**: Zero vulnerabilities
+
 ## v0.16.0 (2026-04-24) — Dogfood Hardening & Polish
 
 ### Stability (Track A)

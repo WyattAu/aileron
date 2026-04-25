@@ -414,6 +414,78 @@ impl BitwardenClient {
             username, password
         )
     }
+
+    /// JavaScript to detect login forms and report field IDs back via IPC.
+    /// Sends `{t: "login-form-detected", has_login, username_id, password_id}`.
+    /// Should be injected after page load with a short delay.
+    pub fn form_detect_report_js() -> &'static str {
+        r#"
+    (function() {
+        try {
+            var pw = document.querySelector('input[type="password"]');
+            if (!pw) {
+                window.ipc.postMessage(JSON.stringify({t: 'login-form-detected', has_login: false}));
+                return;
+            }
+            var uf = null;
+            var form = pw.closest('form');
+            if (form) {
+                uf = form.querySelector(
+                    'input[type="text"], input[type="email"], ' +
+                    'input[autocomplete="username"], input[autocomplete="email"], ' +
+                    'input[name*="user"], input[name*="email"], input[name*="login"]'
+                );
+            }
+            if (!uf) {
+                uf = document.querySelector(
+                    'input[type="text"], input[type="email"], ' +
+                    'input[autocomplete="username"], input[autocomplete="email"], ' +
+                    'input[name*="user"], input[name*="email"], input[name*="login"]'
+                );
+            }
+            window.ipc.postMessage(JSON.stringify({
+                t: 'login-form-detected',
+                has_login: true,
+                username_id: (uf && uf.id) ? uf.id : '',
+                password_id: pw.id || ''
+            }));
+        } catch(e) {}
+    })();
+    "#
+    }
+
+    /// Generate JavaScript to auto-fill credentials using specific element IDs.
+    /// Falls back to querySelectorAll if IDs are empty or elements not found.
+    /// All values are escaped using Rust debug format (`{:?}`) for safety.
+    pub fn autofill_by_id_js(&self, username_id: &str, password_id: &str, credential: &Credential) -> String {
+        let username = credential.username.as_str();
+        let password = credential.password.as_str();
+        format!(
+            r#"(function() {{
+                var uEl = document.getElementById({:?});
+                if (!uEl) {{
+                    var uInputs = document.querySelectorAll('input[type="text"], input[type="email"], input[autocomplete="username"], input[autocomplete="email"], input[name*="user"], input[name*="email"], input[name*="login"]');
+                    uEl = uInputs.length > 0 ? uInputs[0] : null;
+                }}
+                if (uEl) {{
+                    uEl.value = {:?};
+                    uEl.dispatchEvent(new Event('input', {{bubbles: true}}));
+                    uEl.dispatchEvent(new Event('change', {{bubbles: true}}));
+                }}
+                var pEl = document.getElementById({:?});
+                if (!pEl) {{
+                    var pInputs = document.querySelectorAll('input[type="password"]');
+                    pEl = pInputs.length > 0 ? pInputs[0] : null;
+                }}
+                if (pEl) {{
+                    pEl.value = {:?};
+                    pEl.dispatchEvent(new Event('input', {{bubbles: true}}));
+                    pEl.dispatchEvent(new Event('change', {{bubbles: true}}));
+                }}
+            }})();"#,
+            username_id, username, password_id, password
+        )
+    }
 }
 
 impl Default for BitwardenClient {
@@ -569,5 +641,55 @@ mod tests {
         let js = BitwardenClient::detect_login_forms_js();
         assert!(js.contains("openid"));
         assert!(js.contains("rel"));
+    }
+
+    #[test]
+    fn test_form_detect_report_js_sends_ipc() {
+        let js = BitwardenClient::form_detect_report_js();
+        assert!(js.contains("login-form-detected"));
+        assert!(js.contains("has_login"));
+        assert!(js.contains("username_id"));
+        assert!(js.contains("password_id"));
+        assert!(js.contains("ipc.postMessage"));
+    }
+
+    #[test]
+    fn test_form_detect_report_js_queries_password_field() {
+        let js = BitwardenClient::form_detect_report_js();
+        assert!(js.contains("input[type=\"password\"]"));
+        assert!(js.contains("input[type=\"text\"]"));
+        assert!(js.contains("input[type=\"email\"]"));
+        assert!(js.contains("autocomplete=\"username\""));
+    }
+
+    #[test]
+    fn test_autofill_by_id_js_uses_debug_format() {
+        let cred = Credential {
+            username: zeroize::Zeroizing::new("user\"with'quotes".into()),
+            password: zeroize::Zeroizing::new("pass<>val&ue".into()),
+            name: "Test".into(),
+            url: None,
+        };
+        let client = BitwardenClient::new();
+        let js = client.autofill_by_id_js("user-field", "pass-field", &cred);
+        assert!(js.contains("getElementById(\"user-field\")"));
+        assert!(js.contains("getElementById(\"pass-field\")"));
+        assert!(js.contains("user\\\"with'quotes"));
+        assert!(js.contains("pass<>val&ue"));
+        assert!(js.contains("dispatchEvent"));
+    }
+
+    #[test]
+    fn test_autofill_by_id_js_fallback_when_empty_ids() {
+        let cred = Credential {
+            username: zeroize::Zeroizing::new("alice".into()),
+            password: zeroize::Zeroizing::new("secret".into()),
+            name: "Test".into(),
+            url: None,
+        };
+        let client = BitwardenClient::new();
+        let js = client.autofill_by_id_js("", "", &cred);
+        assert!(js.contains("getElementById(\"\")"));
+        assert!(js.contains("querySelectorAll"));
     }
 }

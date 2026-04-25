@@ -1,6 +1,6 @@
 [package]
 name = "aileron"
-version = "0.12.0"
+version = "0.17.0"
 edition = "2024"
 description = "A blazingly fast, keyboard-driven web environment for developers"
 license = "MIT"

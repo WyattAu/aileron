@@ -4,9 +4,9 @@
 
 [metadata]
 version = "6.0.0"
-status = "in_progress"
+status = "done"
 total_tasks = 10
-completed_tasks = 7
+completed_tasks = 10
 blocked_tasks = 0
 deferred_tasks = 0
 
@@ -66,7 +66,7 @@ depends_on = []
 id = "A05"
 title = "Private mode new-tab propagation"
 description = "When creating a new tab from a private pane, new tab should also be private. New tabs opened via F hint mode from private panes should inherit private flag."
-status = "pending"
+status = "done"
 files = ["src/app/commands.rs", "src/app/events.rs", "src/main.rs"]
 depends_on = ["A04"]
 
@@ -92,7 +92,7 @@ depends_on = ["A04"]
 id = "B03"
 title = "Tab close cleanup for private panes"
 description = "When closing a private pane, remove from private_pane_ids. When closing a renamed tab, remove from tab_names DB."
-status = "pending"
+status = "done"
 files = ["src/app/commands.rs", "src/app/events.rs"]
 depends_on = ["A03", "A04"]
 

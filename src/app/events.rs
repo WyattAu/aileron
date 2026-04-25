@@ -272,9 +272,14 @@ impl AppState {
                         .pending_new_tab_url
                         .take()
                         .unwrap_or_else(|| url::Url::parse("aileron://new").unwrap());
+                    let is_private = self.private_pane_ids.contains(&active);
                     match self.wm.split(active, *direction, 0.5) {
                         Ok(new_id) => {
                             self.engines.create_pane(new_id, new_url);
+                            // Propagate private mode to new pane
+                            if is_private {
+                                self.private_pane_ids.insert(new_id);
+                            }
                             self.status_message = "Split vertical".into();
                         }
                         Err(e) => self.status_message = format!("Split failed: {}", e),
@@ -309,6 +314,11 @@ impl AppState {
                         self.last_active_pane_id = Some(current);
                         self.wm.set_active_pane(id);
                         self.update_status();
+                        self.autofill_available = false;
+                        self.autofill_js = None;
+                        self.autofill_username_id.clear();
+                        self.autofill_password_id.clear();
+                        self.autofill_status_msg.clear();
                     }
                 }
                 ActionEffect::RequestExternalBrowser => {

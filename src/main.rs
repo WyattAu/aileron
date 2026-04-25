@@ -1309,7 +1309,10 @@ impl ApplicationHandler for AileronApp {
                             }
                         } else if !self.config.is_offscreen() {
                             if let Some(wry_pane) = self.wry_panes.get(&active_id) {
-                                let js = format!("window.scrollBy({}, {})", dx, dy);
+                                let js = format!(
+                                    "window.scrollBy({{top: {}, left: {}, behavior: 'smooth'}})",
+                                    dy, dx
+                                );
                                 wry_pane.execute_js(&js);
                             }
                         } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {

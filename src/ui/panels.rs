@@ -231,6 +231,26 @@ pub fn build_ui(
                     ui.separator();
                 }
 
+                if app_state.autofill_available {
+                    ui.separator();
+                    let autofill_resp = ui.colored_label(
+                        egui::Color32::from_rgb(100, 200, 255),
+                        "[autofill available]",
+                    );
+                    autofill_resp.widget_info(|| {
+                        a11y_info(WidgetType::Label, "Auto-fill credentials available - click to fill")
+                    });
+                    if autofill_resp.clicked()
+                        && let Some(js) = app_state.autofill_js.take()
+                    {
+                        app_state
+                            .pending_wry_actions
+                            .push_back(WryAction::RunJs(js));
+                        app_state.status_message = app_state.autofill_status_msg.clone();
+                        app_state.autofill_available = false;
+                    }
+                }
+
                 if app_state.hint_mode {
                     let hint_text = format!("hint: {}", app_state.hint_buffer);
                     ui.colored_label(accent, hint_text.clone())

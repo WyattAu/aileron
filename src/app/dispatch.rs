@@ -335,6 +335,14 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
     }
 }
 
+/// Returns effects for detecting login forms on the current page.
+/// Can be used to trigger form detection from any context.
+pub fn form_detect_effects() -> Vec<ActionEffect> {
+    vec![ActionEffect::Wry(WryAction::RunJs(
+        crate::passwords::bitwarden::BitwardenClient::form_detect_report_js().into(),
+    ))]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
