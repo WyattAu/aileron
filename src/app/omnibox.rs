@@ -61,9 +61,9 @@ impl AppState {
 
         if let Some(db) = self.db.as_ref() {
             // 2. Open tabs (score 900) — deduplicate with history/bookmarks
-            let pane_list = self.wm.panes();
+            let pane_ids = self.wm.pane_ids();
             let mut open_tab_entries: Vec<(String, String)> = Vec::new();
-            for (pane_id, _) in &pane_list {
+            for pane_id in &pane_ids {
                 if let Some(state) = self.engines.get(pane_id) {
                     let url_str = state.current_url().map(|u| u.to_string()).unwrap_or_default();
                     let title = state.title().to_string();
@@ -169,7 +169,7 @@ impl AppState {
             {
                 // Switch to the already-open tab instead of navigating
                 let url_str = url.to_string();
-                let switched = self.wm.panes().iter().any(|(pane_id, _)| {
+                let switched = self.wm.pane_ids().iter().any(|pane_id| {
                     self.engines.get(pane_id)
                         .is_some_and(|state| {
                             state.current_url().map(|u| u.to_string()).as_deref() == Some(&url_str)
@@ -187,5 +187,117 @@ impl AppState {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper to create a minimal AppState for omnibox testing.
+    fn test_app_state() -> AppState {
+        let viewport = crate::wm::rect::Rect::new(0.0, 0.0, 1280.0, 720.0);
+        let mut config = crate::config::Config::default();
+        config.search_engine = "duckduckgo".to_string();
+        config.search_engines.insert(
+            "duckduckgo".to_string(),
+            "https://duckduckgo.com/?q={}".to_string(),
+        );
+        AppState::new(viewport, config).unwrap()
+    }
+
+    #[test]
+    fn test_empty_query_clears_results() {
+        let mut state = test_app_state();
+        state.omnibox_results.push(crate::ui::search::SearchItem {
+            id: "test:1".into(),
+            label: "Test".into(),
+            description: "Desc".into(),
+            category: crate::ui::search::SearchCategory::Command,
+        });
+        state.update_omnibox("");
+        assert!(state.omnibox_results.is_empty());
+        assert_eq!(state.omnibox_selected, 0);
+        assert!(state.last_omnibox_query.is_empty());
+    }
+
+    #[test]
+    fn test_url_detection() {
+        let mut state = test_app_state();
+        state.update_omnibox("https://example.com");
+        assert_eq!(state.omnibox_results.len(), 1);
+        assert!(state.omnibox_results[0].id.starts_with("nav:"));
+        assert_eq!(state.omnibox_results[0].label, "https://example.com");
+    }
+
+    #[test]
+    fn test_bare_domain_detected_as_url() {
+        let mut state = test_app_state();
+        state.update_omnibox("example.com");
+        assert_eq!(state.omnibox_results.len(), 1);
+        assert!(state.omnibox_results[0].id.starts_with("nav:"));
+        assert_eq!(state.omnibox_results[0].label, "https://example.com");
+    }
+
+    #[test]
+    fn test_non_url_triggers_search() {
+        let mut state = test_app_state();
+        state.update_omnibox("hello world");
+        assert_eq!(state.omnibox_results.len(), 1);
+        assert!(state.omnibox_results[0].id.starts_with("search:"));
+        assert!(state.omnibox_results[0].label.contains("hello world"));
+    }
+
+    #[test]
+    fn test_aileron_scheme_detected() {
+        let mut state = test_app_state();
+        state.update_omnibox("aileron://settings");
+        assert_eq!(state.omnibox_results.len(), 1);
+        assert!(state.omnibox_results[0].id.starts_with("nav:"));
+    }
+
+    #[test]
+    fn test_query_with_spaces_not_url() {
+        let mut state = test_app_state();
+        state.update_omnibox("git hub.com"); // contains space and dot
+        assert_eq!(state.omnibox_results.len(), 1);
+        // Space means it's not a URL — should trigger search
+        assert!(state.omnibox_results[0].id.starts_with("search:"));
+    }
+
+    #[test]
+    fn test_whitespace_trimmed() {
+        let mut state = test_app_state();
+        state.update_omnibox("  https://example.com  ");
+        assert_eq!(state.omnibox_results.len(), 1);
+        assert_eq!(state.omnibox_results[0].label, "https://example.com");
+    }
+
+    #[test]
+    fn test_selected_reset_on_new_query() {
+        let mut state = test_app_state();
+        state.update_omnibox("hello");
+        state.omnibox_selected = 5; // Simulate user selecting item 5
+        state.update_omnibox("hello"); // New query
+        assert_eq!(state.omnibox_selected, 0);
+    }
+
+    #[test]
+    fn test_results_capped_at_10() {
+        let mut state = test_app_state();
+        // Set up a DB with bookmarks to get >10 results
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        let conn = crate::db::open_database(temp.path()).unwrap();
+        state.db = Some(conn);
+        // Insert 15 bookmarks matching "test"
+        for i in 0..15 {
+            crate::db::bookmarks::add_bookmark(
+                state.db.as_ref().unwrap(),
+                &format!("https://test{}.com", i),
+                &format!("Test Bookmark {}", i),
+            ).ok();
+        }
+        state.update_omnibox("test");
+        assert!(state.omnibox_results.len() <= 11); // 1 nav + max 10 others
     }
 }

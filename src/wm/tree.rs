@@ -307,6 +307,31 @@ impl BspTree {
         }
     }
 
+    /// Collect all pane IDs (without rectangles). Cheaper than `panes()` when
+    /// only IDs are needed (e.g., checking membership, iterating for commands).
+    pub fn pane_ids(&self) -> Vec<Uuid> {
+        match &self.root {
+            None => vec![],
+            Some(root) => {
+                let mut result = Vec::new();
+                Self::collect_ids(root, &mut result);
+                result
+            }
+        }
+    }
+
+    fn collect_ids(node: &BspNode, result: &mut Vec<Uuid>) {
+        match node {
+            BspNode::Leaf { pane, .. } => {
+                result.push(pane.id);
+            }
+            BspNode::Split { left, right, .. } => {
+                Self::collect_ids(left, result);
+                Self::collect_ids(right, result);
+            }
+        }
+    }
+
     /// Count the number of leaf panes.
     pub fn leaf_count(&self) -> usize {
         self.root.as_ref().map_or(0, Self::leaf_count_node)

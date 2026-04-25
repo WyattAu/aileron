@@ -2,6 +2,9 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 /// Git status information for the current directory.
 #[derive(Debug, Clone, Default)]
@@ -17,7 +20,7 @@ pub struct GitStatus {
 }
 
 impl GitStatus {
-    /// Query git status for the given directory.
+    /// Query git status for the given directory (blocking).
     /// Returns default (no branch, clean) if not a git repo or git fails.
     pub fn for_dir(dir: &Path) -> Self {
         let output = Command::new("git")
@@ -67,6 +70,52 @@ impl GitStatus {
             }
             None => String::new(),
         }
+    }
+}
+
+/// Background git status poller — runs `git status` on a thread to avoid
+/// blocking the main thread's frame loop.
+pub struct GitPoller {
+    receiver: mpsc::Receiver<GitStatus>,
+    _thread: Option<thread::JoinHandle<()>>,
+}
+
+impl GitPoller {
+    /// Start a background poller that checks git status every `interval`.
+    pub fn new(dir: PathBuf, interval: Duration) -> Self {
+        let (tx, rx) = mpsc::channel::<GitStatus>();
+
+        let thread = thread::spawn(move || {
+            // Initial poll
+            let status = GitStatus::for_dir(&dir);
+            let _ = tx.send(status);
+
+            loop {
+                thread::sleep(interval);
+                let status = GitStatus::for_dir(&dir);
+                if tx.send(status).is_err() {
+                    // Receiver dropped, shut down
+                    break;
+                }
+            }
+        });
+
+        Self {
+            receiver: rx,
+            _thread: Some(thread),
+        }
+    }
+
+    /// Poll for new git status. Non-blocking — returns the latest status
+    /// if available, or None if no update yet.
+    pub fn try_poll(&self) -> Option<GitStatus> {
+        self.receiver.try_recv().ok()
+    }
+}
+
+impl Drop for GitPoller {
+    fn drop(&mut self) {
+        // Dropping the receiver causes send() to fail, terminating the thread
     }
 }
 

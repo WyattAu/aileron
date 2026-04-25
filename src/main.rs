@@ -91,8 +91,8 @@ struct AileronApp {
     /// Current git status for the working directory.
     git_status: aileron::git::GitStatus,
 
-    /// Last time git status was polled (throttled to 1 Hz).
-    last_git_poll: std::time::Instant,
+    /// Background thread for polling git status (avoids blocking main thread).
+    git_poller: Option<aileron::git::GitPoller>,
 
     /// Standalone popup browser windows (no egui overlay, no tiling).
     popup: PopupManager,
@@ -130,6 +130,9 @@ struct AileronApp {
     /// `about_to_wait()` to prevent startup freeze with many tabs.
     pending_pane_creates: std::collections::VecDeque<(uuid::Uuid, url::Url)>,
 
+    /// Atomic flag set by background thread when filter lists are updated.
+    adblock_reload_pending: std::sync::Arc<std::sync::atomic::AtomicBool>,
+
     /// Adaptive quality renderer (TASK-K24).
     /// Reduces texture capture rate when frames are slow.
     adaptive_quality: AdaptiveQuality,
@@ -164,7 +167,10 @@ impl AileronApp {
             terminal_manager: NativeTerminalManager::new(),
             content_scripts: aileron::scripts::ContentScriptManager::new(),
             git_status: aileron::git::GitStatus::default(),
-            last_git_poll: std::time::Instant::now(),
+            git_poller: Some(aileron::git::GitPoller::new(
+                std::path::PathBuf::from("."),
+                std::time::Duration::from_secs(1),
+            )),
             popup: PopupManager::new(),
             first_frame: true,
             frame_count: 0,
@@ -175,6 +181,7 @@ impl AileronApp {
             webview_texture_handles: std::collections::HashMap::new(),
             offscreen_last_capture: std::collections::HashMap::new(),
             pending_pane_creates: std::collections::VecDeque::new(),
+            adblock_reload_pending: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             adaptive_quality,
             last_filter_update: std::time::Instant::now(),
         }
@@ -1608,7 +1615,7 @@ impl ApplicationHandler for AileronApp {
             self.popup.pending_new_window = true;
         }
 
-        frame_tasks::poll_git_status(&mut self.git_status, &mut self.last_git_poll);
+        frame_tasks::poll_git_status(&mut self.git_status, &self.git_poller);
         if let Some(app_state) = &mut self.app_state {
             app_state.adblock_blocked_count = self.adblocker.blocked_count();
             frame_tasks::auto_save_workspace(app_state, &self.wry_panes);
@@ -1620,13 +1627,24 @@ impl ApplicationHandler for AileronApp {
             let interval = std::time::Duration::from_secs(self.config.adblock_update_interval_hours * 3600);
             if self.last_filter_update.elapsed() >= interval {
                 self.last_filter_update = std::time::Instant::now();
-                let updated = aileron::net::filter_list::update_all_filter_lists();
-                if updated > 0 {
-                    frame_tasks::load_default_adblock_rules(&mut self.adblocker);
-                    if let Some(app_state) = &mut self.app_state {
-                        app_state.status_message = format!("Updated {} filter list(s)", updated);
+                // Run filter list HTTP downloads on a background thread to avoid blocking the UI.
+                let reload_flag = self.adblock_reload_pending.clone();
+                std::thread::spawn(move || {
+                    let updated = aileron::net::filter_list::update_all_filter_lists();
+                    if updated > 0 {
+                        reload_flag.store(true, std::sync::atomic::Ordering::Release);
+                        info!("Periodic filter list update: {} list(s) refreshed", updated);
                     }
-                    info!("Periodic filter list update: {} list(s) refreshed", updated);
+                });
+            }
+            // Check if background thread finished updating filter lists
+            if self
+                .adblock_reload_pending
+                .swap(false, std::sync::atomic::Ordering::Acquire)
+            {
+                frame_tasks::load_default_adblock_rules(&mut self.adblocker);
+                if let Some(app_state) = &mut self.app_state {
+                    app_state.status_message = "Filter lists updated".into();
                 }
             }
         }

@@ -103,6 +103,12 @@ pub struct Config {
     /// UI theme: "dark", "light", or a custom theme name.
     pub theme: String,
 
+    /// Cached resolved theme colors (recomputed when theme changes).
+    /// Uses RefCell for interior mutability — cached colors are immutable
+    /// once resolved and only recomputed when theme name changes.
+    #[serde(skip)]
+    pub cached_theme: std::cell::RefCell<Option<CachedThemeColors>>,
+
     /// Preferred UI language (ISO 639-1 code like "en", "zh", "ja").
     /// None means auto-detect from the LANG environment variable.
     pub language: Option<String>,
@@ -181,6 +187,47 @@ impl ThemeColors {
             .as_deref()
             .and_then(parse_hex_color)
             .unwrap_or_else(|| parse_hex_color(default).unwrap_or(egui::Color32::WHITE))
+    }
+}
+
+/// Pre-resolved theme colors (egui::Color32) — cached to avoid per-frame String parsing.
+#[derive(Debug, Clone)]
+pub struct CachedThemeColors {
+    /// The theme name these colors were resolved from.
+    pub theme_name: String,
+    pub tab_bar_bg: egui::Color32,
+    pub tab_bar_fg: egui::Color32,
+    pub status_bar_bg: egui::Color32,
+    pub status_bar_fg: egui::Color32,
+    pub url_bar_bg: egui::Color32,
+    pub url_bar_fg: egui::Color32,
+    pub accent: egui::Color32,
+    pub bg: egui::Color32,
+    pub fg: egui::Color32,
+    pub border: egui::Color32,
+}
+
+impl CachedThemeColors {
+    /// Resolve and cache all theme colors from a ThemeColors definition.
+    pub fn from_theme(name: &str, theme: &ThemeColors) -> Self {
+        Self {
+            theme_name: name.to_string(),
+            tab_bar_bg: ThemeColors::resolve(&theme.tab_bar_bg, "#19191e"),
+            tab_bar_fg: ThemeColors::resolve(&theme.tab_bar_fg, "#cccccc"),
+            status_bar_bg: ThemeColors::resolve(&theme.status_bar_bg, "#1a1a20"),
+            status_bar_fg: ThemeColors::resolve(&theme.status_bar_fg, "#cccccc"),
+            url_bar_bg: ThemeColors::resolve(&theme.url_bar_bg, "#1a1a20"),
+            url_bar_fg: ThemeColors::resolve(&theme.url_bar_fg, "#e0e0e0"),
+            accent: ThemeColors::resolve(&theme.accent, "#4db4ff"),
+            bg: ThemeColors::resolve(&theme.bg, "#191920"),
+            fg: ThemeColors::resolve(&theme.fg, "#e0e0e0"),
+            border: ThemeColors::resolve(&theme.border, "#3c3c3c"),
+        }
+    }
+
+    /// Returns true if the cached colors are for the given theme name.
+    pub fn matches_theme(&self, name: &str) -> bool {
+        self.theme_name == name
     }
 }
 
@@ -371,6 +418,7 @@ impl Default for Config {
             config_version: 2,
             popup_blocker_enabled: true,
             theme: "dark".into(),
+            cached_theme: std::cell::RefCell::new(None),
             themes: built_in_themes(),
             language: None,
             engine_selection: "webkit".into(),
@@ -603,6 +651,22 @@ wiki = "https://en.wikipedia.org/w/index.php?search={query}"
         } else {
             built_in_themes().get("dark").cloned().unwrap_or_default()
         }
+    }
+
+    /// Get cached, pre-resolved egui color values for the current theme.
+    /// Recomputes only when the theme name changes.
+    pub fn cached_theme_colors(&self) -> std::cell::Ref<'_, CachedThemeColors> {
+        let needs_update = self
+            .cached_theme
+            .borrow()
+            .as_ref()
+            .is_none_or(|c| !c.matches_theme(&self.theme));
+        if needs_update {
+            let theme_colors = self.active_theme();
+            *self.cached_theme.borrow_mut() =
+                Some(CachedThemeColors::from_theme(&self.theme, &theme_colors));
+        }
+        std::cell::Ref::map(self.cached_theme.borrow(), |o| o.as_ref().unwrap())
     }
 
     /// List available theme names (built-in + custom).

@@ -1,5 +1,4 @@
 use crate::app::{AppState, WryAction};
-use crate::config::ThemeColors;
 use crate::git::GitStatus;
 use crate::input::Mode;
 use crate::servo::WryPaneManager;
@@ -39,16 +38,16 @@ pub fn build_ui(
     offscreen_panes: &crate::offscreen_webview::OffscreenWebViewManager,
 ) {
     let tab_layout = app_state.config.tab_layout.as_str();
-    let theme = app_state.config.active_theme();
-    let tab_bg = ThemeColors::resolve(&theme.tab_bar_bg, "#19191e");
-    let tab_fg = ThemeColors::resolve(&theme.tab_bar_fg, "#cccccc");
-    let _status_bg = ThemeColors::resolve(&theme.status_bar_bg, "#1a1a20");
-    let _status_fg = ThemeColors::resolve(&theme.status_bar_fg, "#cccccc");
-    let _url_bg = ThemeColors::resolve(&theme.url_bar_bg, "#1a1a20");
-    let _url_fg = ThemeColors::resolve(&theme.url_bar_fg, "#e0e0e0");
-    let accent = ThemeColors::resolve(&theme.accent, "#4db4ff");
-    let bg = ThemeColors::resolve(&theme.bg, "#191920");
-    let border_color_default = ThemeColors::resolve(&theme.border, "#3c3c3c");
+    let tc = app_state.config.cached_theme_colors().clone();
+    let tab_bg = tc.tab_bar_bg;
+    let tab_fg = tc.tab_bar_fg;
+    let _status_bg = tc.status_bar_bg;
+    let _status_fg = tc.status_bar_fg;
+    let _url_bg = tc.url_bar_bg;
+    let _url_fg = tc.url_bar_fg;
+    let accent = tc.accent;
+    let bg = tc.bg;
+    let border_color_default = tc.border;
 
     if tab_layout == "sidebar" {
         let panel = if app_state.config.tab_sidebar_right {
@@ -61,11 +60,11 @@ pub fn build_ui(
             .resizable(true)
             .frame(egui::Frame::new().fill(tab_bg))
             .show(ctx, |ui| {
-                build_tab_list(ui, app_state, wry_panes, false, &theme);
+                build_tab_list(ui, app_state, wry_panes, false, &tc.clone());
             });
     } else if tab_layout == "topbar" {
         egui::TopBottomPanel::top("tab-bar").show(ctx, |ui| {
-            build_tab_list(ui, app_state, wry_panes, true, &theme);
+            build_tab_list(ui, app_state, wry_panes, true, &tc.clone());
         });
     }
 
@@ -764,7 +763,7 @@ pub fn build_ui(
 
                 // Tab list with fuzzy filter
                 let query = app_state.tab_search_query.to_lowercase();
-                let panes = app_state.wm.panes();
+                let pane_ids = app_state.wm.pane_ids();
                 let active_id = app_state.wm.active_pane_id();
 
                 let mut switch_to: Option<uuid::Uuid> = None;
@@ -774,7 +773,7 @@ pub fn build_ui(
                     .max_height(300.0)
                     .show(ui, |ui| {
                         let mut visible_index = 0usize;
-                        for (id, _rect) in &panes {
+                        for id in &pane_ids {
                             let url = wry_panes.url_for(id)
                                 .map(|u| u.to_string())
                                 .unwrap_or_default();
@@ -826,7 +825,7 @@ pub fn build_ui(
                             app_state.tab_search_selected = visible_index - 1;
                         }
 
-                        if panes.is_empty() {
+                        if pane_ids.is_empty() {
                             ui.label(egui::RichText::new("No open tabs").color(dim));
                         }
                     });
@@ -1288,14 +1287,12 @@ pub fn build_tab_list(
     app_state: &mut AppState,
     wry_panes: &WryPaneManager,
     horizontal: bool,
-    theme: &ThemeColors,
+    cached: &crate::config::CachedThemeColors,
 ) {
     let panes = app_state.wm.panes();
     let active_id = app_state.wm.active_pane_id();
-    let _accent = ThemeColors::resolve(&theme.accent, "#4db4ff");
-    let _tab_fg = ThemeColors::resolve(&theme.tab_bar_fg, "#cccccc");
-    let tab_bar_bg = ThemeColors::resolve(&theme.tab_bar_bg, "#19191e");
-    let border_color = ThemeColors::resolve(&theme.border, "#3c3c3c");
+    let tab_bar_bg = cached.tab_bar_bg;
+    let border_color = cached.border;
 
     if horizontal {
         ui.horizontal(|ui| {

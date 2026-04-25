@@ -593,10 +593,15 @@ impl AppState {
             let proxy_url = proxy_url.trim();
             if proxy_url.is_empty() || proxy_url == "none" {
                 self.config.proxy = None;
+                // SAFETY: set_var/remove_var are UB if other threads read env vars concurrently.
+                // This is acceptable for proxy changes (user-initiated, rare) but a proper
+                // fix requires wry to expose a proxy configuration API instead of env vars.
+                #[allow(unused_unsafe)]
                 unsafe { std::env::remove_var("all_proxy") };
                 self.status_message = "Proxy disabled".into();
             } else {
                 self.config.proxy = Some(proxy_url.to_string());
+                #[allow(unused_unsafe)]
                 unsafe { std::env::set_var("all_proxy", proxy_url) };
                 self.status_message = format!("Proxy: {}", proxy_url);
             }

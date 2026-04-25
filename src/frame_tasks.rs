@@ -11,10 +11,11 @@ use aileron::offscreen_webview::OffscreenWebViewManager;
 use aileron::servo::{pump_gtk, WryEvent, WryPaneManager};
 use aileron::terminal::NativeTerminalManager;
 
-pub fn poll_git_status(git_status: &mut GitStatus, last_git_poll: &mut std::time::Instant) {
-    if last_git_poll.elapsed().as_secs() >= 1 {
-        *git_status = GitStatus::for_dir(std::path::Path::new("."));
-        *last_git_poll = std::time::Instant::now();
+pub fn poll_git_status(git_status: &mut GitStatus, git_poller: &Option<aileron::git::GitPoller>) {
+    if let Some(poller) = git_poller
+        && let Some(new_status) = poller.try_poll()
+    {
+        *git_status = new_status;
     }
 }
 
