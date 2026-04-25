@@ -109,6 +109,8 @@ pub struct AppState {
     pub last_omnibox_query: String,
     /// Whether link hint mode is active (digits are captured to follow links).
     pub hint_mode: bool,
+    /// Whether hints should open links in new tabs (F key) vs navigate (f key).
+    pub hint_new_tab: bool,
     /// Buffer for accumulating hint digits while in link hint mode.
     pub hint_buffer: String,
     pub db: Option<rusqlite::Connection>,
@@ -205,6 +207,10 @@ pub struct AppState {
 
     /// Set of pane IDs that are pinned (cannot be closed).
     pub pinned_pane_ids: std::collections::HashSet<uuid::Uuid>,
+    /// Set of pane IDs in private/incognito mode (no history saved).
+    pub private_pane_ids: std::collections::HashSet<uuid::Uuid>,
+    /// Custom tab names keyed by pane ID string.
+    pub tab_names: std::collections::HashMap<String, String>,
 
     /// Adblock blocked request count (updated by main.rs each frame).
     pub adblock_blocked_count: u64,
@@ -310,6 +316,7 @@ impl AppState {
         let url_bar_focused = false;
         let url_bar_input = String::new();
         let hint_mode = false;
+        let hint_new_tab = false;
         let hint_buffer = String::new();
 
         let db_path = Self::db_path()?;
@@ -412,6 +419,13 @@ impl AppState {
             std::collections::HashMap::new()
         };
 
+        // Load tab names from database
+        let tab_names = if let Some(ref conn) = db {
+            crate::db::tab_names::load_tab_names(conn).unwrap_or_default()
+        } else {
+            std::collections::HashMap::new()
+        };
+
         // Create extension manager and inject into Lua engine
         let extension_manager =
             Arc::new(Mutex::new(ExtensionManager::new(Self::extensions_dir())));
@@ -433,6 +447,7 @@ impl AppState {
             omnibox_selected: 0,
             last_omnibox_query: String::new(),
             hint_mode,
+            hint_new_tab,
             hint_buffer,
             db,
             status_message: String::new(),
@@ -463,6 +478,8 @@ impl AppState {
             input_latency: crate::profiling::InputLatencyTracker::new(),
             muted_pane_ids: std::collections::HashSet::new(),
             pinned_pane_ids: std::collections::HashSet::new(),
+            private_pane_ids: std::collections::HashSet::new(),
+            tab_names,
             adblock_blocked_count: 0,
             extension_manager: extension_manager.clone(),
             sync_watcher: crate::sync::watcher::SyncWatcher::new(),

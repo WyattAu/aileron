@@ -43,6 +43,8 @@ pub enum Action {
     FindClose,
     /// Toggle link hints overlay (vimium-style).
     ToggleLinkHints,
+    /// Open hinted link in a new background tab (vimium-style, F key).
+    FollowLinkNewTab,
     /// Save current pane layout as a named workspace.
     SaveWorkspace,
     /// Open an embedded terminal pane.
@@ -214,13 +216,18 @@ impl KeybindingRegistry {
             Action::ToggleMinimalMode,
         );
 
-        // Find-in-page
+        // Find-in-page (vim-style / and Ctrl+F)
+        self.register(KeyCombo::normal(Key::Character('/')), Action::Find);
         self.register(KeyCombo::with_ctrl(Key::Character('f')), Action::Find);
 
-        // Link hints (vimium-style)
+        // Link hints (vimium-style: f=foreground, F=background tab)
         self.register(
             KeyCombo::normal(Key::Character('f')),
             Action::ToggleLinkHints,
+        );
+        self.register(
+            KeyCombo::normal(Key::Character('F')),
+            Action::FollowLinkNewTab,
         );
 
         // Embedded terminal (backtick, like vim's :terminal)
@@ -438,6 +445,7 @@ impl KeybindingRegistry {
             "FindPrev" => Some(Action::FindPrev),
             "FindClose" => Some(Action::FindClose),
             "ToggleLinkHints" | "Hints" => Some(Action::ToggleLinkHints),
+            "FollowLinkNewTab" | "FollowNewTab" => Some(Action::FollowLinkNewTab),
             "SaveWorkspace" => Some(Action::SaveWorkspace),
             "OpenTerminal" => Some(Action::OpenTerminal),
             "NewWindow" => Some(Action::NewWindow),

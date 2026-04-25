@@ -4,6 +4,7 @@ pub mod history;
 pub mod quickmarks;
 pub mod scroll_marks;
 pub mod site_settings;
+pub mod tab_names;
 pub mod workspaces;
 
 use anyhow::Result;
@@ -83,6 +84,12 @@ fn init_schema(conn: &Connection) -> Result<()> {
             letter TEXT NOT NULL,
             fraction REAL NOT NULL,
             PRIMARY KEY (url, letter)
+        );
+
+        CREATE TABLE IF NOT EXISTS tab_names (
+            pane_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );",
     )?;
     migrate_downloads_table(conn)?;

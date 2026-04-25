@@ -17,6 +17,7 @@ fn a11y_info(typ: WidgetType, label: impl Into<String>) -> WidgetInfo {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_ui(
     ctx: &egui::Context,
     app_state: &mut AppState,
@@ -25,6 +26,7 @@ pub fn build_ui(
     status_bar_height: f64,
     webview_textures: &std::collections::HashMap<uuid::Uuid, egui::TextureId>,
     terminal_manager: &NativeTerminalManager,
+    offscreen_panes: &crate::offscreen_webview::OffscreenWebViewManager,
 ) {
     let tab_layout = app_state.config.tab_layout.as_str();
     let theme = app_state.config.active_theme();
@@ -72,6 +74,8 @@ pub fn build_ui(
                 // Show sub-mode indicators
                 if app_state.hint_mode {
                     mode_str = format!("{} HINT[{}]", mode_str, &app_state.hint_buffer);
+                } else if app_state.hint_new_tab {
+                    mode_str = format!("{} HINT-TAB[{}]", mode_str, &app_state.hint_buffer);
                 } else if app_state.find_bar_open {
                     mode_str = format!("{} FIND", mode_str);
                 } else if app_state.url_bar_focused {
@@ -95,6 +99,15 @@ pub fn build_ui(
                 let pane_count = app_state.wm.leaf_count();
                 ui.label(format!("panes: {}", pane_count))
                     .widget_info(|| a11y_info(WidgetType::Label, format!("Panes: {}", pane_count)));
+
+                // Private mode indicator
+                if app_state.private_pane_ids.contains(&app_state.wm.active_pane_id()) {
+                    ui.separator();
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 100, 100),
+                        "[PRIVATE]",
+                    );
+                }
 
                 if app_state.current_workspace_name != "default" {
                     ui.separator();
@@ -155,9 +168,30 @@ pub fn build_ui(
                         url_str.to_string()
                     };
                     let full_url = url_str.to_string();
-                    ui.label(display_url.clone()).widget_info(|| {
+                    let url_resp = ui.label(display_url.clone());
+                    url_resp.widget_info(|| {
                         a11y_info(WidgetType::Label, format!("Current URL: {}", full_url))
                     });
+                    if url_resp.clicked() {
+                        app_state.url_bar_focused = true;
+                        app_state.url_bar_input = full_url;
+                    }
+                } else if let Some(pane) = offscreen_panes.get(&active_id) {
+                    let url_str = pane.url().as_str();
+                    let display_url = if url_str.len() > 60 {
+                        format!("{}...", &url_str[..57])
+                    } else {
+                        url_str.to_string()
+                    };
+                    let full_url = url_str.to_string();
+                    let url_resp = ui.label(display_url.clone());
+                    url_resp.widget_info(|| {
+                        a11y_info(WidgetType::Label, format!("Current URL: {}", full_url))
+                    });
+                    if url_resp.clicked() {
+                        app_state.url_bar_focused = true;
+                        app_state.url_bar_input = full_url;
+                    }
                 }
 
                 ui.separator();
@@ -1284,10 +1318,28 @@ pub fn build_tab_list(
                     })
                     .unwrap_or_else(|| ("New Tab".into(), "aileron://new".into()));
 
-                let display_title = if title.len() > 24 {
-                    format!("{}...", &title[..21])
-                } else {
-                    title.clone()
+                // Use custom tab name if set
+                let display_title = {
+                    let custom = app_state
+                        .tab_names
+                        .get(&pane_id.to_string())
+                        .cloned();
+                    match custom {
+                        Some(name) => {
+                            if name.len() > 24 {
+                                format!("{}...", &name[..21])
+                            } else {
+                                name
+                            }
+                        }
+                        None => {
+                            if title.len() > 24 {
+                                format!("{}...", &title[..21])
+                            } else {
+                                title.clone()
+                            }
+                        }
+                    }
                 };
 
                 let frame_color = if is_active {
@@ -1313,15 +1365,21 @@ pub fn build_tab_list(
                         } else {
                             ""
                         };
+                        let private_prefix = if app_state.private_pane_ids.contains(pane_id) {
+                            "\u{1f512} "
+                        } else {
+                            ""
+                        };
 
                         let is_pinned = app_state.pinned_pane_ids.contains(pane_id);
                         let is_muted = app_state.muted_pane_ids.contains(pane_id);
+                        let is_private = app_state.private_pane_ids.contains(pane_id);
                         let a11y_title = title.clone();
                         let a11y_url = tab_url.clone();
 
                         let response = ui.selectable_label(
                             is_active,
-                            format!("{}{}{}", pinned_prefix, muted_prefix, display_title),
+                            format!("{}{}{}{}", pinned_prefix, muted_prefix, private_prefix, display_title),
                         );
                         response.widget_info(|| {
                             let mut label = format!("Tab: {} - {}", a11y_title, a11y_url);
@@ -1331,6 +1389,9 @@ pub fn build_tab_list(
                             if is_muted {
                                 label.push_str(" (Muted)");
                             }
+                            if is_private {
+                                label.push_str(" (Private)");
+                            }
                             a11y_info(WidgetType::SelectableLabel, label)
                         });
                         if response.clicked() && !is_active {
@@ -1338,7 +1399,7 @@ pub fn build_tab_list(
                             app_state.update_status();
                         }
 
-                        let close_title = title.clone();
+                        let close_title = display_title.clone();
                         let close_btn = ui.small_button("\u{00d7}");
                         close_btn.widget_info(|| {
                             a11y_info(WidgetType::Button, format!("Close tab: {}", close_title))
@@ -1374,10 +1435,28 @@ pub fn build_tab_list(
                     })
                     .unwrap_or_else(|| ("New Tab".into(), "aileron://new".into()));
 
-                let display_title = if title.len() > 20 {
-                    format!("{}...", &title[..17])
-                } else {
-                    title.clone()
+                // Use custom tab name if set
+                let display_title = {
+                    let custom = app_state
+                        .tab_names
+                        .get(&pane_id.to_string())
+                        .cloned();
+                    match custom {
+                        Some(name) => {
+                            if name.len() > 20 {
+                                format!("{}...", &name[..17])
+                            } else {
+                                name
+                            }
+                        }
+                        None => {
+                            if title.len() > 20 {
+                                format!("{}...", &title[..17])
+                            } else {
+                                title.clone()
+                            }
+                        }
+                    }
                 };
 
                 let frame_color = if is_active {
@@ -1401,15 +1480,21 @@ pub fn build_tab_list(
                         } else {
                             ""
                         };
+                        let private_prefix = if app_state.private_pane_ids.contains(pane_id) {
+                            "\u{1f512} "
+                        } else {
+                            ""
+                        };
 
                         let is_pinned = app_state.pinned_pane_ids.contains(pane_id);
                         let is_muted = app_state.muted_pane_ids.contains(pane_id);
+                        let is_private = app_state.private_pane_ids.contains(pane_id);
                         let a11y_title = title.clone();
                         let a11y_url = url.clone();
 
                         let response = ui.selectable_label(
                             is_active,
-                            format!("{}{}{}", pinned_prefix, muted_prefix, display_title),
+                            format!("{}{}{}{}", pinned_prefix, muted_prefix, private_prefix, display_title),
                         );
                         response.widget_info(|| {
                             let mut label = format!("Tab: {} - {}", a11y_title, a11y_url);
@@ -1419,6 +1504,9 @@ pub fn build_tab_list(
                             if is_muted {
                                 label.push_str(" (Muted)");
                             }
+                            if is_private {
+                                label.push_str(" (Private)");
+                            }
                             a11y_info(WidgetType::SelectableLabel, label)
                         });
                         if response.clicked() && !is_active {
@@ -1426,7 +1514,7 @@ pub fn build_tab_list(
                             app_state.update_status();
                         }
 
-                        let close_title = title.clone();
+                        let close_title = display_title.clone();
                         let close_btn = ui.small_button("\u{00d7}");
                         close_btn.widget_info(|| {
                             a11y_info(WidgetType::Button, format!("Close tab: {}", close_title))

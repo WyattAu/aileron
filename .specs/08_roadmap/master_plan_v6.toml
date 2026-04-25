@@ -1,0 +1,115 @@
+# Aileron Master Plan v6 — Daily-Driver Polish
+# Focus: Vim-style find, hint modes, private browsing, tab management, URL bar UX
+# Created: 2025-04-25
+
+[metadata]
+version = "6.0.0"
+status = "in_progress"
+total_tasks = 10
+completed_tasks = 7
+blocked_tasks = 0
+deferred_tasks = 0
+
+# ── A: Navigation & Find ──────────────────────────────────────────────────────
+
+[[task]]
+id = "A01"
+title = "Vim-style / search bound to OpenFindBar"
+description = "Bind / key in Normal mode to OpenFindBar, matching Vim muscle memory"
+status = "done"
+files = ["src/input/keybindings.rs"]
+depends_on = []
+
+[[task]]
+id = "A02"
+title = "FollowLinkNewTab hint mode (F key)"
+description = "F key triggers hint mode that opens links in new background tabs. Orange badges (#ffb347) distinguish from f key blue badges (#4db4ff). Uses window.open(href, '_blank') via JS injection."
+status = "done"
+files = [
+    "src/input/keybindings.rs",
+    "src/app/dispatch.rs",
+    "src/app/events.rs",
+    "src/app/mod.rs",
+    "src/main.rs",
+    "src/ui/panels.rs",
+]
+depends_on = []
+
+[[task]]
+id = "A03"
+title = "Tab rename (:tab-rename command)"
+description = ":tab-rename <name> sets custom tab name. Persisted to DB table tab_names. Displayed in both horizontal tab bar and vertical sidebar with custom name taking precedence over page title."
+status = "done"
+files = [
+    "src/db/tab_names.rs",
+    "src/db/mod.rs",
+    "src/app/mod.rs",
+    "src/app/commands.rs",
+    "src/ui/panels.rs",
+]
+depends_on = []
+
+[[task]]
+id = "A04"
+title = "Private/incognito mode (:private command)"
+description = ":private [url] marks current pane as private. Private panes skip history recording. [PRIVATE] red indicator in status bar. Lock icon in tab list. Per-pane privacy (not global mode)."
+status = "done"
+files = [
+    "src/app/mod.rs",
+    "src/app/commands.rs",
+    "src/app/events.rs",
+    "src/ui/panels.rs",
+]
+depends_on = []
+
+[[task]]
+id = "A05"
+title = "Private mode new-tab propagation"
+description = "When creating a new tab from a private pane, new tab should also be private. New tabs opened via F hint mode from private panes should inherit private flag."
+status = "pending"
+files = ["src/app/commands.rs", "src/app/events.rs", "src/main.rs"]
+depends_on = ["A04"]
+
+# ── B: UI Polish ──────────────────────────────────────────────────────────────
+
+[[task]]
+id = "B01"
+title = "URL bar click-to-edit in status bar"
+description = "Clicking the URL label in the status bar populates url_bar_input and sets url_bar_focused=true, allowing quick URL editing. Works for both wry and offscreen panes."
+status = "done"
+files = ["src/ui/panels.rs"]
+depends_on = []
+
+[[task]]
+id = "B02"
+title = "Private tab visual indicator in tab list"
+description = "Show lock icon prefix on private tabs in both horizontal and vertical tab layouts. Accessibility label includes (Private) marker."
+status = "done"
+files = ["src/ui/panels.rs"]
+depends_on = ["A04"]
+
+[[task]]
+id = "B03"
+title = "Tab close cleanup for private panes"
+description = "When closing a private pane, remove from private_pane_ids. When closing a renamed tab, remove from tab_names DB."
+status = "pending"
+files = ["src/app/commands.rs", "src/app/events.rs"]
+depends_on = ["A03", "A04"]
+
+# ── C: Commands & Clipboard ───────────────────────────────────────────────────
+
+[[task]]
+id = "C01"
+title = "Yank title command (:yt)"
+description = ":yt copies the page title (hostname) to clipboard. Shows status message confirming copy or error."
+status = "done"
+files = ["src/app/commands.rs"]
+depends_on = []
+
+[[task]]
+id = "C02"
+title = "Command palette completion for new commands"
+description = "Added tab-rename, private, yt to command palette known commands list for autocomplete."
+status = "done"
+files = ["src/app/commands.rs"]
+depends_on = ["A03", "A04", "C01"]

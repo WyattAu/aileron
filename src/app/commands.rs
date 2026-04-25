@@ -410,6 +410,29 @@ impl AppState {
             return;
         }
 
+        // Tab rename: :tab-rename <name> or :tab-rename (clear)
+        if query == "tab-rename" || query.starts_with("tab-rename ") {
+            let active_id = self.wm.active_pane_id().to_string();
+            let name = query.strip_prefix("tab-rename ").unwrap_or("").trim();
+            if name.is_empty() {
+                // Clear the tab name
+                self.tab_names.remove(&active_id);
+                if let Some(ref conn) = self.db {
+                    let _ = crate::db::tab_names::remove_tab_name(conn, &active_id);
+                }
+                self.status_message = "Tab name cleared".into();
+            } else {
+                self.tab_names.insert(active_id.clone(), name.to_string());
+                if let Some(ref conn) = self.db
+                    && let Err(e) = crate::db::tab_names::set_tab_name(conn, &active_id, name)
+                {
+                    tracing::warn!("Failed to persist tab name: {}", e);
+                }
+                self.status_message = format!("Tab renamed: {}", name);
+            }
+            return;
+        }
+
         // Tab move: cycle focus through panes
         if let Some(dir) = query.strip_prefix("tab-move ") {
             let panes = self.wm.panes();
@@ -764,6 +787,51 @@ impl AppState {
             return;
         }
 
+        // Private mode: :private [url] — open URL in private pane (no history)
+        if query == "private" || query.starts_with("private ") {
+            let active_id = self.wm.active_pane_id();
+            self.private_pane_ids.insert(active_id);
+            let target = query.strip_prefix("private ").unwrap_or("").trim();
+            if !target.is_empty() {
+                let url_str = if target.contains("://") {
+                    target.to_string()
+                } else {
+                    format!("https://{}", target)
+                };
+                if let Ok(url) = url::Url::parse(&url_str) {
+                    self.navigate_with_redirects(url);
+                    self.status_message = format!("Private: {}", target);
+                } else {
+                    self.status_message = "Invalid URL".into();
+                }
+            } else {
+                self.status_message = "Private mode on (no history saved)".into();
+            }
+            return;
+        }
+
+        // Yank title: :yt — copy page title to clipboard
+        if query == "yt" {
+            let active_id = self.wm.active_pane_id();
+            if let Some(engine) = self.engines.get(&active_id)
+                && let Some(url) = engine.current_url()
+            {
+                let title = url
+                    .host_str()
+                    .unwrap_or("untitled")
+                    .to_string();
+                let copied = crate::platform::platform().clipboard_copy(&title);
+                if copied {
+                    self.status_message = format!("Copied title: {}", title);
+                } else {
+                    self.status_message = "Clipboard: no clipboard tool available".into();
+                }
+                return;
+            }
+            self.status_message = "No page to yank title from".into();
+            return;
+        }
+
         // Shell command: !<cmd>
         if let Some(cmd) = query.strip_prefix("!") {
             let cmd = cmd.trim();
@@ -1039,10 +1107,12 @@ impl AppState {
                 "extensions", "extension-load", "extension-info",
                 "arp-start", "arp-stop", "arp-status", "arp-token",
                 "history", "history-clear",
-                "tabs", "tab-restore", "tab-unload", "tab-move",
+                "tabs", "tab-restore", "tab-unload", "tab-move", "tab-rename",
                 "bookmarks", "bookmark",
                 "reader",
                 "crash-reload",
+                "private",
+                "yt",
                 "sync", "sync --pull", "sync --both", "sync --status",
                 "sync-watch", "sync-stop", "sync-target",
             ];
@@ -1101,6 +1171,7 @@ impl AppState {
 
     pub fn record_visit(&self, url: &url::Url, title: &str) {
         if let Some(ref conn) = self.db
+            && !self.private_pane_ids.contains(&self.wm.active_pane_id())
             && let Err(e) = crate::db::history::record_visit(conn, url, title) {
                 warn!("Failed to record visit: {}", e);
             }

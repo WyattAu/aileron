@@ -627,6 +627,7 @@ impl AileronApp {
                 STATUS_BAR_HEIGHT,
                 &self.webview_textures,
                 &self.terminal_manager,
+                &self.offscreen_panes,
             );
         });
 
@@ -1032,20 +1033,39 @@ impl ApplicationHandler for AileronApp {
                             aileron::input::Key::Character(c) if c.is_ascii_lowercase() => {
                                 app_state.hint_buffer.push(*c);
                                 let hint_buf = app_state.hint_buffer.clone();
+                                let new_tab = app_state.hint_new_tab;
                                 // Use IPC to get click feedback for auto-exit
-                                let js = format!(
-                                    "(function() {{ \
-                                        var el = document.querySelector('[data-aileron-hint=\"{}\"]'); \
-                                        if (el) {{ el.click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
-                                        var all = document.querySelectorAll('[data-aileron-hint]'); \
-                                        var matches = []; \
-                                        all.forEach(function(e) {{ \
-                                            if (e.getAttribute('data-aileron-hint').startsWith('{}')) matches.push(e); \
-                                        }}); \
-                                        if (matches.length === 1) {{ matches[0].click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
-                                    }})()",
-                                    hint_buf, hint_buf
-                                );
+                                let js = if new_tab {
+                                    format!(
+                                        "(function() {{ \
+                                            var el = document.querySelector('[data-aileron-hint=\"{}\"]'); \
+                                            if (el && el.href) {{ window.open(el.href, '_blank'); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
+                                            if (el) {{ el.click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
+                                            var all = document.querySelectorAll('[data-aileron-hint]'); \
+                                            var matches = []; \
+                                            all.forEach(function(e) {{ \
+                                                if (e.getAttribute('data-aileron-hint').startsWith('{}')) matches.push(e); \
+                                            }}); \
+                                            if (matches.length === 1 && matches[0].href) {{ window.open(matches[0].href, '_blank'); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
+                                            if (matches.length === 1) {{ matches[0].click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
+                                        }})()",
+                                        hint_buf, hint_buf
+                                    )
+                                } else {
+                                    format!(
+                                        "(function() {{ \
+                                            var el = document.querySelector('[data-aileron-hint=\"{}\"]'); \
+                                            if (el) {{ el.click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
+                                            var all = document.querySelectorAll('[data-aileron-hint]'); \
+                                            var matches = []; \
+                                            all.forEach(function(e) {{ \
+                                                if (e.getAttribute('data-aileron-hint').startsWith('{}')) matches.push(e); \
+                                            }}); \
+                                            if (matches.length === 1) {{ matches[0].click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
+                                        }})()",
+                                        hint_buf, hint_buf
+                                    )
+                                };
                                 let active_id = app_state.wm.active_pane_id();
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                     wry_pane.execute_js(&js);
@@ -1059,6 +1079,7 @@ impl ApplicationHandler for AileronApp {
                                 // Any non-letter key exits hint mode
                                 let active_id = app_state.wm.active_pane_id();
                                 app_state.hint_mode = false;
+                                app_state.hint_new_tab = false;
                                 app_state.hint_buffer.clear();
                                 app_state.status_message.clear();
                                 let clear_js = r#"

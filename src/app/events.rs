@@ -350,12 +350,22 @@ impl AppState {
                 }
                 ActionEffect::ToggleLinkHints => {
                     self.hint_mode = !self.hint_mode;
+                    self.hint_new_tab = false;
                     if self.hint_mode {
                         self.status_message = "Link hints: type letters, Escape to cancel".into();
                     } else {
                         self.status_message.clear();
                     }
                     // Wry(RunJs) effect is also dispatched to inject/remove the CSS
+                }
+                ActionEffect::FollowLinkNewTab => {
+                    self.hint_mode = !self.hint_mode;
+                    self.hint_new_tab = self.hint_mode;
+                    if self.hint_mode {
+                        self.status_message = "Link hints (new tab): type letters, Escape to cancel".into();
+                    } else {
+                        self.status_message.clear();
+                    }
                 }
                 ActionEffect::SaveWorkspace => {
                     // Queue a save action for main.rs to handle.

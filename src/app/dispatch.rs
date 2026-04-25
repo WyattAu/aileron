@@ -58,6 +58,8 @@ pub enum ActionEffect {
 
     /// Toggle link hints overlay.
     ToggleLinkHints,
+    /// Open hinted link in a new background tab.
+    FollowLinkNewTab,
 
     /// Save current pane layout as a named workspace.
     SaveWorkspace,
@@ -218,6 +220,7 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
                         }
                         return result;
                     }
+                    window._aileronHintNewTab = false;
                     var style = document.createElement('style');
                     style.id = '__aileron_hints';
                     style.textContent = '[data-aileron-hint]::after { content: attr(data-aileron-hint); position: absolute; background: #4db4ff; color: #000; font-size: 11px; font-weight: bold; padding: 1px 4px; border-radius: 3px; z-index: 999999; pointer-events: none; font-family: monospace; text-transform: uppercase; }';
@@ -231,6 +234,43 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
                 "#.into(),
             )),
             ActionEffect::Status("Link hints: type letters, Escape to cancel".into()),
+        ],
+        Action::FollowLinkNewTab => vec![
+            ActionEffect::Wry(WryAction::RunJs(
+                r#"
+                (function() {
+                    if (document.getElementById('__aileron_hints')) {
+                        document.getElementById('__aileron_hints').remove();
+                        document.querySelectorAll('[data-aileron-hint]').forEach(el => {
+                            el.removeAttribute('data-aileron-hint');
+                        });
+                        return 'hints_removed';
+                    }
+                    function toHint(n) {
+                        var chars = 'asdfghjklqwertyuiopzxcvbnm';
+                        var result = '';
+                        n++;
+                        while (n > 0) {
+                            n--;
+                            result = chars[n % 26] + result;
+                            n = Math.floor(n / 26);
+                        }
+                        return result;
+                    }
+                    window._aileronHintNewTab = true;
+                    var style = document.createElement('style');
+                    style.id = '__aileron_hints';
+                    style.textContent = '[data-aileron-hint]::after { content: attr(data-aileron-hint); position: absolute; background: #ffb347; color: #000; font-size: 11px; font-weight: bold; padding: 1px 4px; border-radius: 3px; z-index: 999999; pointer-events: none; font-family: monospace; text-transform: uppercase; }';
+                    document.head.appendChild(style);
+                    var links = document.querySelectorAll('a[href], button, input[type="submit"], [role="link"], input[type="button"]');
+                    links.forEach(function(el, i) {
+                        el.setAttribute('data-aileron-hint', toHint(i));
+                    });
+                    return 'hints_shown_' + links.length;
+                })();
+                "#.into(),
+            )),
+            ActionEffect::Status("Link hints (new tab): type letters, Escape to cancel".into()),
         ],
 
         // ─── Workspace ───────────────────────────────────────────
