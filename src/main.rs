@@ -242,10 +242,21 @@ impl AileronApp {
         let loaded_count = app_state
             .extension_manager
             .lock()
-            .map(|mut m| m.load_all().len())
+            .map(|mut m| {
+                let count = m.load_all().len();
+                // Register built-in adblock extension
+                m.register_builtin_adblock();
+                count
+            })
             .unwrap_or(0);
         if loaded_count > 0 {
-            info!("Loaded {} extension(s)", loaded_count);
+            info!("Loaded {} user extension(s)", loaded_count);
+        }
+        if let Ok(mgr) = app_state.extension_manager.lock() {
+            info!(
+                "Built-in adblock: {}",
+                if mgr.is_builtin_adblock_enabled() { "enabled" } else { "disabled" }
+            );
         }
 
         if let Ok(mgr) = app_state.extension_manager.lock() {

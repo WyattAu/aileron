@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::extensions::builtin_adblock::{builtin_adblock_id, builtin_adblock_manifest};
 use crate::extensions::impls::AileronExtensionApi;
 use crate::extensions::manifest::ExtensionManifest;
 use crate::extensions::message_bus::MessageBus;
@@ -289,6 +290,60 @@ impl ExtensionManager {
     /// Count of currently loaded extensions.
     pub fn count(&self) -> usize {
         self.extensions.len()
+    }
+
+    /// Register the built-in adblock extension (in-memory, no files on disk).
+    /// Safe to call multiple times — will skip if already registered.
+    pub fn register_builtin_adblock(&mut self) {
+        let id = builtin_adblock_id();
+        if self.extensions.contains_key(&id) {
+            return;
+        }
+
+        let manifest = builtin_adblock_manifest();
+
+        let api = AileronExtensionApi::with_registry_and_storage(
+            id.clone(),
+            manifest,
+            self.content_script_registry.clone(),
+            Some(self.storage_dir.clone()),
+            None,
+            Some(self.message_bus.clone()),
+        );
+
+        self.extensions.insert(id.clone(), api);
+
+        let loaded_api = self.extensions.get(&id).unwrap();
+        loaded_api.fire_installed(InstalledDetails {
+            reason: InstallReason::Install,
+            previous_version: None,
+            id: id.clone(),
+        });
+
+        tracing::info!(
+            target: "extensions",
+            "Registered built-in extension: {}",
+            id.0
+        );
+    }
+
+    /// Check if the built-in adblock extension is loaded.
+    pub fn is_builtin_adblock_enabled(&self) -> bool {
+        self.extensions.contains_key(&builtin_adblock_id())
+    }
+
+    /// Enable or disable the built-in adblock extension.
+    pub fn set_builtin_adblock_enabled(&mut self, enabled: bool) {
+        let id = builtin_adblock_id();
+        if enabled && !self.extensions.contains_key(&id) {
+            self.register_builtin_adblock();
+        } else if !enabled && self.extensions.contains_key(&id) {
+            self.unload(&id);
+            tracing::info!(
+                target: "extensions",
+                "Disabled built-in adblock extension"
+            );
+        }
     }
 }
 
@@ -755,5 +810,63 @@ mod tests {
             2,
             "Both extensions' on_startup should have been called"
         );
+    }
+
+    #[test]
+    fn test_register_builtin_adblock() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ExtensionManager::new(dir.path().to_path_buf());
+        assert_eq!(manager.count(), 0);
+        assert!(!manager.is_builtin_adblock_enabled());
+
+        manager.register_builtin_adblock();
+        assert_eq!(manager.count(), 1);
+        assert!(manager.is_builtin_adblock_enabled());
+
+        let api = manager.get(&builtin_adblock_id()).unwrap();
+        assert_eq!(api.manifest().name, "Aileron AdBlock");
+    }
+
+    #[test]
+    fn test_register_builtin_adblock_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ExtensionManager::new(dir.path().to_path_buf());
+
+        manager.register_builtin_adblock();
+        manager.register_builtin_adblock();
+        assert_eq!(manager.count(), 1, "Should not duplicate builtin");
+    }
+
+    #[test]
+    fn test_set_builtin_adblock_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ExtensionManager::new(dir.path().to_path_buf());
+
+        // Enable
+        manager.set_builtin_adblock_enabled(true);
+        assert!(manager.is_builtin_adblock_enabled());
+        assert_eq!(manager.count(), 1);
+
+        // Disable
+        manager.set_builtin_adblock_enabled(false);
+        assert!(!manager.is_builtin_adblock_enabled());
+        assert_eq!(manager.count(), 0);
+
+        // Re-enable
+        manager.set_builtin_adblock_enabled(true);
+        assert!(manager.is_builtin_adblock_enabled());
+        assert_eq!(manager.count(), 1);
+    }
+
+    #[test]
+    fn test_builtin_adblock_survives_load_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ExtensionManager::new(dir.path().to_path_buf());
+
+        // Register builtin first, then load_all should preserve it
+        manager.register_builtin_adblock();
+        manager.load_all();
+        assert_eq!(manager.count(), 1, "Builtin should survive load_all");
+        assert!(manager.is_builtin_adblock_enabled());
     }
 }
