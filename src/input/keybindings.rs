@@ -472,6 +472,16 @@ impl KeybindingRegistry {
     pub fn is_empty(&self) -> bool {
         self.bindings.is_empty()
     }
+
+    /// Parse a mode string ("normal", "insert", "command") into a Mode.
+    pub fn parse_mode(s: &str) -> Option<Mode> {
+        match s.trim().to_lowercase().as_str() {
+            "normal" | "n" => Some(Mode::Normal),
+            "insert" | "i" => Some(Mode::Insert),
+            "command" | "c" => Some(Mode::Command),
+            _ => None,
+        }
+    }
 }
 
 impl Default for KeybindingRegistry {

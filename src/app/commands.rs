@@ -1,6 +1,7 @@
 use tracing::{info, warn};
 use open::that as open_that;
 use crate::app::WryAction;
+use crate::config::Config;
 use crate::downloads::DownloadProgress;
 use crate::extensions::ExtensionId;
 use crate::passwords::BitwardenClient;
@@ -1198,6 +1199,8 @@ impl AppState {
                 "crash-reload",
                 "private",
                 "yt",
+                "stats",
+                "bind", "unbind",
                 "sync", "sync --pull", "sync --both", "sync --status",
                 "sync-watch", "sync-stop", "sync-target",
             ];
@@ -1541,6 +1544,124 @@ impl AppState {
             }
             return Some(());
         }
+
+        // :bind <mode> <key> <action> — remap a keybinding
+        if let Some(args) = query.strip_prefix("bind ") {
+            let args = args.trim();
+            if args.is_empty() {
+                // Show all custom bindings
+                if self.config.keybindings.is_empty() {
+                    self.status_message = "No custom keybindings. Usage: :bind normal j ScrollDown".into();
+                } else {
+                    let mut lines: Vec<String> = Vec::new();
+                    for (key, action) in &self.config.keybindings {
+                        lines.push(format!("  {} → {}", key, action));
+                    }
+                    self.status_message = format!("Custom bindings:\n{}", lines.join("\n"));
+                }
+            } else {
+                let parts: Vec<&str> = args.splitn(3, ' ').collect();
+                if parts.len() < 2 {
+                    self.status_message = "Usage: :bind <mode> <key> [action]".into();
+                } else {
+                    let mode_str = parts[0];
+                    let key_str = parts[1];
+                    if crate::input::keybindings::KeybindingRegistry::parse_mode(mode_str).is_none() {
+                        self.status_message = format!(
+                            "Unknown mode: {}. Use: normal, insert, command",
+                            mode_str
+                        );
+                    } else {
+                        let binding_key = format!("{} {}", mode_str, key_str);
+                        if parts.len() >= 3 {
+                            let action_str = parts[2];
+                            self.config.keybindings.insert(binding_key.clone(), action_str.to_string());
+                            self.status_message =
+                                format!("Bound: {} → {}", binding_key, action_str);
+                        } else {
+                            // Show current binding for this key
+                            let current = self.config.keybindings.get(&binding_key)
+                                .map(|s| s.as_str())
+                                .unwrap_or("(default)");
+                            self.status_message =
+                                format!("{} → {}", binding_key, current);
+                        }
+                        if let Err(e) = Config::save(&self.config) {
+                            tracing::warn!("Failed to save config: {}", e);
+                        }
+                    }
+                }
+            }
+            return Some(());
+        }
+
+        // :unbind <mode> <key> — remove a custom binding
+        if let Some(args) = query.strip_prefix("unbind ") {
+            let parts: Vec<&str> = args.trim().splitn(2, ' ').collect();
+            if parts.len() < 2 {
+                self.status_message = "Usage: :unbind <mode> <key>".into();
+            } else {
+                let binding_key = format!("{} {}", parts[0], parts[1]);
+                if self.config.keybindings.remove(&binding_key).is_some() {
+                    self.status_message = format!("Unbound: {}", binding_key);
+                } else {
+                    self.status_message = format!("No custom binding: {}", binding_key);
+                }
+                if let Err(e) = Config::save(&self.config) {
+                    tracing::warn!("Failed to save config: {}", e);
+                }
+            }
+            return Some(());
+        }
+
+        // :stats — show system resource usage
+        if query == "stats" {
+            let tab_count = self.wm.pane_ids().len();
+            let term_count = self.terminal_pane_ids.len();
+            let ext_count = self.extension_manager.lock().ok()
+                .map(|mgr| mgr.count())
+                .unwrap_or(0);
+
+            let mut stats = format!(
+                "Tabs: {} ({} terminal)",
+                tab_count, term_count
+            );
+            stats.push_str(&format!(" | Extensions: {}", ext_count));
+
+            // Memory from /proc/self/status (Linux only)
+            #[cfg(target_os = "linux")]
+            {
+                if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+                    for line in status.lines() {
+                        if let Some(vms) = line.strip_prefix("VmRSS:") {
+                            let kb: u64 = vms
+                                .trim()
+                                .parse()
+                                .unwrap_or(0);
+                            stats.push_str(&format!(" | Memory: {} MB", kb / 1024));
+                            break;
+                        }
+                    }
+                }
+            }
+
+            let db_info = self
+                .db
+                .as_ref()
+                .map(|conn| {
+                    let bm: usize =
+                        crate::db::bookmarks::all_bookmarks(conn).unwrap_or_default().len();
+                    let hist: usize =
+                        crate::db::history::recent_entries(conn, 0).unwrap_or_default().len();
+                    format!(" | Bookmarks: {} | History: {}", bm, hist)
+                })
+                .unwrap_or_default();
+            stats.push_str(&db_info);
+
+            self.status_message = stats;
+            return Some(());
+        }
+
         None
     }
 

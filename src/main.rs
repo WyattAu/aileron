@@ -1469,10 +1469,10 @@ impl ApplicationHandler for AileronApp {
                 }
             }
 
-            WindowEvent::CursorMoved { position, .. } => {
+            WindowEvent::CursorMoved { position, .. }
                 if !egui_response.consumed
                     && self.config.is_offscreen()
-                {
+            => {
                     let scale = window.scale_factor() as f32;
                     let logical_pos = egui::pos2(position.x as f32 / scale, position.y as f32 / scale);
 
@@ -1557,7 +1557,6 @@ impl ApplicationHandler for AileronApp {
                             }
                         }
                     }
-                }
             }
 
             WindowEvent::Ime(ime) => {

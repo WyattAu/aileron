@@ -5,6 +5,7 @@
 //! See `.specs/02_architecture/webextensions_api_design.md` for full design.
 
 pub mod api;
+pub mod builtin_adblock;
 pub mod impls;
 pub mod loader;
 pub mod manifest;
@@ -18,6 +19,7 @@ pub mod types;
 pub mod web_request;
 
 pub use api::*;
+pub use builtin_adblock::builtin_adblock_id;
 pub use impls::AileronExtensionApi;
 pub use loader::ExtensionManager;
 pub use manifest::*;

@@ -913,10 +913,8 @@ unsafe extern "C" fn glib_log_handler(
             // Do NOT call the default handler — that's what causes SIGTRAP.
             // By returning, we suppress the fatal signal.
         }
-        "WARNING" => {
-            if domain.contains("WebKit") || domain.contains("Gtk") {
-                warn!("[GLib {}::{}] {}", domain, level, msg);
-            }
+        "WARNING" if domain.contains("WebKit") || domain.contains("Gtk") => {
+            warn!("[GLib {}::{}] {}", domain, level, msg);
         }
         _ => {}
     }
@@ -1499,8 +1497,8 @@ pub(crate) fn file_browser_page(uri: &wry::http::Uri) -> String {
         }
     }
 
-    dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
-    files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    dirs.sort_by_key(|a| a.0.to_lowercase());
+    files.sort_by_key(|a| a.0.to_lowercase());
 
     let mut breadcrumb_parts = Vec::new();
     if dir_path == "/" {
