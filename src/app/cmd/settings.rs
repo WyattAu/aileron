@@ -24,6 +24,7 @@ const SETTABLE_KEYS: &[&str] = &[
     "adaptive_quality",
     "sync_encrypted",
     "sync_auto",
+    "spellcheck",
 ];
 
 /// Parse a boolean-like value from a string.
@@ -54,6 +55,7 @@ fn get_current_value(config: &Config, key: &str) -> Option<String> {
         "adaptive_quality" => Some(config.adaptive_quality.to_string()),
         "sync_encrypted" => Some(config.sync_encrypted.to_string()),
         "sync_auto" => Some(config.sync_auto.to_string()),
+        "spellcheck" => Some(config.spellcheck_enabled.to_string()),
         _ => None,
     }
 }
@@ -187,6 +189,10 @@ fn apply_set_value(config: &mut Config, key: &str, value: &str) -> String {
         "sync_auto" => {
             config.sync_auto = parse_bool_value(value);
             format!("sync_auto = {}", config.sync_auto)
+        }
+        "spellcheck" => {
+            config.spellcheck_enabled = parse_bool_value(value);
+            format!("spellcheck = {}", config.spellcheck_enabled)
         }
         _ => {
             let keys = SETTABLE_KEYS.join(", ");

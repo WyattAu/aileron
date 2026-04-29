@@ -136,7 +136,7 @@ pub fn push_tabs_to_arp(app_state: &AppState, wry_panes: &WryPaneManager) {
         .iter()
         .map(|(key, url)| {
             serde_json::json!({
-                "key": key.to_string(),
+                "key": key,
                 "url": url,
             })
         })

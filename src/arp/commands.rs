@@ -31,6 +31,6 @@ pub enum ArpCommand {
     ClipboardGet { request_id: u64 },
 
     // ─── Quickmark operations ───
-    /// Open a quickmark by its key character.
-    QuickmarkOpen { key: char },
+    /// Open a quickmark by its key.
+    QuickmarkOpen { key: String },
 }

@@ -176,8 +176,8 @@ pub struct AppState {
     /// URL to navigate a popup window to after creation (from pane detach).
     pub pending_detach_url: Option<url::Url>,
 
-    /// Quickmarks — single-letter bookmarks mapping to URLs.
-    quickmarks: std::collections::HashMap<char, String>,
+    /// Quickmarks — bookmarks mapping to URLs (single-char or short string keys).
+    quickmarks: std::collections::HashMap<String, String>,
 
     /// Per-pane scroll marks. Maps pane_id → letter → scroll fraction (0.0-1.0).
     marks: std::collections::HashMap<uuid::Uuid, std::collections::HashMap<char, f64>>,
@@ -276,6 +276,15 @@ pub struct AppState {
 
     /// Whether the help panel overlay is open.
     pub help_panel_open: bool,
+
+    /// Whether the workspace panel overlay is open.
+    pub workspace_panel_open: bool,
+
+    /// Cached workspace entries for the workspace panel.
+    pub workspace_entries: Vec<crate::db::workspaces::Workspace>,
+
+    /// Selected index in the workspace panel (for j/k navigation).
+    pub workspace_selected: usize,
 
     /// Whether the per-site settings panel is open.
     pub site_settings_panel_open: bool,
@@ -470,11 +479,30 @@ impl AppState {
         };
 
         // Load quickmarks from database
-        let quickmarks = if let Some(ref conn) = db {
+        let mut quickmarks = if let Some(ref conn) = db {
             crate::db::quickmarks::load_quickmarks(conn).unwrap_or_default()
         } else {
             std::collections::HashMap::new()
         };
+
+        // Seed default quickmarks if none exist
+        if quickmarks.is_empty() {
+            let defaults: &[(&str, &str)] = &[
+                ("gh", "https://github.com"),
+                ("gl", "https://gitlab.com"),
+                ("rd", "https://reddit.com"),
+            ];
+            if let Some(ref conn) = db {
+                for &(key, url) in defaults {
+                    let _ = crate::db::quickmarks::set_quickmark(conn, key, url);
+                    quickmarks.insert(key.to_string(), url.to_string());
+                }
+            } else {
+                for &(key, url) in defaults {
+                    quickmarks.insert(key.to_string(), url.to_string());
+                }
+            }
+        }
 
         // Load tab names from database
         let tab_names = if let Some(ref conn) = db {
@@ -557,6 +585,9 @@ impl AppState {
             bookmarks_entries: Vec::new(),
             bookmarks_selected: 0,
             help_panel_open: false,
+            workspace_panel_open: false,
+            workspace_entries: Vec::new(),
+            workspace_selected: 0,
             site_settings_panel_open: false,
             site_settings_zoom: None,
             site_settings_js: None,
@@ -671,18 +702,18 @@ impl AppState {
         self.private_pane_ids.remove(pane_id);
     }
 
-    /// Look up a quickmark URL by its key character.
-    pub fn quickmarks_get(&self, key: &char) -> Option<url::Url> {
+    /// Look up a quickmark URL by its key string.
+    pub fn quickmarks_get(&self, key: &str) -> Option<url::Url> {
         self.quickmarks
             .get(key)
             .and_then(|s| url::Url::parse(s).ok())
     }
 
     /// Get all quickmarks as (key, url) pairs.
-    pub fn quickmarks_list(&self) -> Vec<(char, String)> {
+    pub fn quickmarks_list(&self) -> Vec<(String, String)> {
         self.quickmarks
             .iter()
-            .map(|(k, v)| (*k, v.clone()))
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     }
 

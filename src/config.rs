@@ -153,6 +153,9 @@ pub struct Config {
     /// Example: `"<C-p>" = "OpenCommandPalette"`, `"j" = "ScrollDown"`.
     #[serde(default)]
     pub keybindings: std::collections::HashMap<String, String>,
+
+    /// Enable spell checking in WebKitGTK (Linux only).
+    pub spellcheck_enabled: bool,
 }
 
 /// Color overrides for a custom theme.
@@ -431,6 +434,7 @@ impl Default for Config {
             arp_port: None,
             arp_token: None,
             keybindings: std::collections::HashMap::new(),
+            spellcheck_enabled: true,
         }
     }
 }

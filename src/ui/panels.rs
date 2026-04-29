@@ -115,6 +115,8 @@ pub fn build_ui(
                     mode_str = format!("{} BM", mode_str);
                 } else if app_state.help_panel_open {
                     mode_str = format!("{} HELP", mode_str);
+                } else if app_state.workspace_panel_open {
+                    mode_str = format!("{} WS", mode_str);
                 }
 
                 ui.colored_label(mode_color, &mode_str).widget_info(|| {
@@ -464,6 +466,9 @@ pub fn build_ui(
                                 (":ws-save <name>", "Save workspace"),
                                 (":ws-load <name>", "Load workspace"),
                                 (":ws-list", "List workspaces"),
+                                (":ws-delete <name>", "Delete workspace"),
+                                (":ws-panel", "Workspace panel"),
+                                (":ws-next / :ws-prev", "Cycle workspaces"),
                                 (":layout-save <n>", "Save layout"),
                                 (":layout-load <n>", "Load layout"),
                             ],
@@ -521,16 +526,33 @@ pub fn build_ui(
                     } else {
                         let input = app_state.url_bar_input.trim().to_string();
                         if !input.is_empty() {
-                            let url = if input.starts_with("aileron://") || input.contains("://") {
-                                url::Url::parse(&input).ok()
+                            // Check for go/<name> quickmark navigation
+                            if let Some(name) = input.strip_prefix("go/") {
+                                let name = name.trim();
+                                if !name.is_empty() {
+                                    if let Some(url) = app_state.quickmarks_get(name) {
+                                        app_state
+                                            .pending_wry_actions
+                                            .push_back(WryAction::Navigate(url));
+                                        app_state.status_message = format!("Quickmark: {}", name);
+                                    } else {
+                                        app_state.status_message =
+                                            format!("Quickmark '{}' not found", name);
+                                    }
+                                }
                             } else {
-                                app_state.config.search_url(&input)
-                            };
-                            if let Some(url) = url {
-                                app_state
-                                    .pending_wry_actions
-                                    .push_back(WryAction::Navigate(url));
-                                app_state.status_message = format!("Navigating to {}", input);
+                                let url =
+                                    if input.starts_with("aileron://") || input.contains("://") {
+                                        url::Url::parse(&input).ok()
+                                    } else {
+                                        app_state.config.search_url(&input)
+                                    };
+                                if let Some(url) = url {
+                                    app_state
+                                        .pending_wry_actions
+                                        .push_back(WryAction::Navigate(url));
+                                    app_state.status_message = format!("Navigating to {}", input);
+                                }
                             }
                         }
                     }
@@ -1068,6 +1090,148 @@ pub fn build_ui(
                                 app_state.bookmarks_selected =
                                     app_state.bookmarks_entries.len().saturating_sub(1);
                             }
+                        }
+                    });
+            });
+    }
+
+    // ─── Workspace Panel ───
+    if app_state.workspace_panel_open {
+        let bg = egui::Color32::from_rgb(0x19, 0x19, 0x20);
+        let accent = egui::Color32::from_rgb(0x4d, 0xb4, 0xff);
+        let text = egui::Color32::from_rgb(0xd4, 0xd4, 0xd4);
+        let dim = egui::Color32::from_rgb(0x88, 0x88, 0x88);
+
+        egui::Window::new("workspaces")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(500.0)
+            .default_height(400.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .frame(
+                egui::Frame::new()
+                    .fill(bg)
+                    .inner_margin(12.0)
+                    .corner_radius(6.0)
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgb(0x40, 0x40, 0x50),
+                    )),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Workspaces")
+                            .size(16.0)
+                            .color(accent)
+                            .strong(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Save Current").clicked() {
+                            let name = if app_state.current_workspace_name != "default" {
+                                app_state.current_workspace_name.clone()
+                            } else {
+                                format!("ws-{}", chrono::Local::now().format("%m%d-%H%M"))
+                            };
+                            app_state
+                                .pending_wry_actions
+                                .push_back(WryAction::SaveWorkspace {
+                                    name: name.clone(),
+                                    pane_urls: std::collections::HashMap::new(),
+                                });
+                            app_state.current_workspace_name = name.clone();
+                            app_state.status_message = format!("Saving workspace: {}...", name);
+                        }
+                        if ui.button("New Tab").clicked() {
+                            let active = app_state.wm.active_pane_id();
+                            let _ = app_state.wm.split(
+                                active,
+                                crate::wm::SplitDirection::Vertical,
+                                0.5,
+                            );
+                            app_state.session_dirty = true;
+                        }
+                        ui.add_space(8.0);
+                        if ui.button("X").clicked() {
+                            app_state.workspace_panel_open = false;
+                            app_state.workspace_entries.clear();
+                        }
+                    });
+                });
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        if app_state.workspace_entries.is_empty() {
+                            ui.label(
+                                egui::RichText::new("No saved workspaces")
+                                    .color(egui::Color32::GRAY),
+                            );
+                        }
+                        let mut switch_to: Option<String> = None;
+                        let mut delete_name: Option<String> = None;
+
+                        for (i, ws) in app_state.workspace_entries.iter().enumerate() {
+                            if ws.name == "_autosave" {
+                                continue;
+                            }
+                            let is_current = ws.name == app_state.current_workspace_name;
+                            let is_selected = i == app_state.workspace_selected;
+
+                            ui.horizontal(|ui| {
+                                let marker = if is_current { " * " } else { "   " };
+                                let response = ui.selectable_label(
+                                    is_selected || is_current,
+                                    egui::RichText::new(format!("{}{}", marker, ws.name))
+                                        .size(13.0)
+                                        .color(if is_selected || is_current {
+                                            accent
+                                        } else {
+                                            text
+                                        }),
+                                );
+                                if response.clicked() {
+                                    switch_to = Some(ws.name.clone());
+                                    app_state.workspace_selected = i;
+                                }
+                                if is_selected {
+                                    response.scroll_to_me(Some(egui::Align::Center));
+                                }
+
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        ui.label(
+                                            egui::RichText::new(&ws.updated_at).small().color(dim),
+                                        );
+                                        if ui.small_button("X").clicked() {
+                                            delete_name = Some(ws.name.clone());
+                                        }
+                                    },
+                                );
+                            });
+                        }
+
+                        if let Some(name) = switch_to {
+                            app_state.pending_workspace_restore = Some(name.clone());
+                            app_state.current_workspace_name = name.clone();
+                            app_state.status_message = format!("Restoring workspace: {}...", name);
+                            app_state.workspace_panel_open = false;
+                            app_state.workspace_entries.clear();
+                        }
+                        if let Some(name) = delete_name
+                            && let Some(db) = app_state.db.as_ref()
+                            && let Ok(true) = crate::db::workspaces::delete_workspace(db, &name)
+                        {
+                            app_state.workspace_entries.retain(|w| w.name != name);
+                            if name == app_state.current_workspace_name {
+                                app_state.current_workspace_name = "default".into();
+                            }
+                            app_state.status_message = format!("Workspace deleted: {}", name);
                         }
                     });
             });

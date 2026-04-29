@@ -194,6 +194,47 @@ impl AppState {
             return;
         }
 
+        if let Some(name) = query.strip_prefix("ws-delete ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.status_message = "Usage: ws-delete <name>".into();
+                return;
+            }
+            if let Some(db) = self.db.as_ref() {
+                match crate::db::workspaces::delete_workspace(db, name) {
+                    Ok(true) => {
+                        self.status_message = format!("Workspace deleted: {}", name);
+                        if name == self.current_workspace_name {
+                            self.current_workspace_name = "default".into();
+                        }
+                    }
+                    Ok(false) => {
+                        self.status_message = format!("Workspace not found: {}", name);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("Delete failed: {}", e);
+                    }
+                }
+            } else {
+                self.status_message = "No database connection".into();
+            }
+            return;
+        }
+
+        // Workspace panel: :ws-panel or :workspaces
+        if query == "ws-panel" || query == "workspaces" {
+            if self.workspace_panel_open {
+                self.workspace_panel_open = false;
+                self.workspace_entries.clear();
+            } else {
+                let workspaces = self.list_workspaces();
+                self.workspace_entries = workspaces;
+                self.workspace_selected = 0;
+                self.workspace_panel_open = true;
+            }
+            return;
+        }
+
         // Quick workspace cycling: :ws-next and :ws-prev
         if query == "ws-next" || query == "ws-prev" {
             let workspaces: Vec<String> = self
@@ -529,6 +570,67 @@ impl AppState {
                 }
             } else {
                 self.status_message = "Already at target position.".into();
+            }
+            return;
+        }
+
+        // Quickmark commands: quickmark-add, quickmark-del, quickmark-list
+        if let Some(name) = query.strip_prefix("quickmark-add ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.status_message = "Usage: :quickmark-add <name>".into();
+                return;
+            }
+            let active_id = self.wm.active_pane_id();
+            let url_str = self
+                .engines
+                .get(&active_id)
+                .and_then(|e| e.current_url().map(|u| u.to_string()))
+                .unwrap_or_default();
+            if url_str.is_empty() || url_str == "aileron://welcome" {
+                self.status_message = "No URL to quickmark".into();
+                return;
+            }
+            self.quickmarks.insert(name.to_string(), url_str.clone());
+            if let Some(ref conn) = self.db
+                && let Err(e) = crate::db::quickmarks::set_quickmark(conn, name, &url_str)
+            {
+                tracing::warn!("Failed to persist quickmark {}: {}", name, e);
+            }
+            self.status_message = format!("Quickmark '{}' → {}", name, url_str);
+            return;
+        }
+
+        if let Some(name) = query.strip_prefix("quickmark-del ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.status_message = "Usage: :quickmark-del <name>".into();
+                return;
+            }
+            if self.quickmarks.remove(name).is_some() {
+                if let Some(ref conn) = self.db {
+                    let _ = crate::db::quickmarks::remove_quickmark(conn, name);
+                }
+                self.status_message = format!("Quickmark '{}' deleted", name);
+            } else {
+                self.status_message = format!("Quickmark '{}' not found", name);
+            }
+            return;
+        }
+
+        if query == "quickmark-list" {
+            let list = self.quickmarks_list();
+            if list.is_empty() {
+                self.status_message = "No quickmarks".into();
+            } else {
+                let items: Vec<String> = list.iter().map(|(k, v)| format!("{}:{}", k, v)).collect();
+                let msg = items.join(" | ");
+                let display = if msg.len() > 120 {
+                    format!("{}...", &msg[..117])
+                } else {
+                    msg
+                };
+                self.status_message = format!("Quickmarks: {}", display);
             }
             return;
         }
@@ -1124,17 +1226,18 @@ impl AppState {
                     "Quickmark {}: {}",
                     letter,
                     self.quickmarks
-                        .get(&letter)
+                        .get(&letter.to_string())
                         .map(|s| s.as_str())
                         .unwrap_or("(not set)")
                 );
                 return;
             }
-            self.quickmarks.insert(letter, rest.to_string());
+            let key = letter.to_string();
+            self.quickmarks.insert(key.clone(), rest.to_string());
             if let Some(ref conn) = self.db
-                && let Err(e) = crate::db::quickmarks::set_quickmark(conn, letter, rest)
+                && let Err(e) = crate::db::quickmarks::set_quickmark(conn, &key, rest)
             {
-                tracing::warn!("Failed to persist quickmark {}: {}", letter, e);
+                tracing::warn!("Failed to persist quickmark {}: {}", key, e);
             }
             self.status_message = format!("Quickmark {} set", letter);
             return;
@@ -1143,7 +1246,8 @@ impl AppState {
         // Quickmark go: g<letter>
         if query.starts_with('g') && query.len() == 2 && query.as_bytes()[1].is_ascii_alphabetic() {
             let letter = query.as_bytes()[1] as char;
-            match self.quickmarks.get(&letter) {
+            let key = letter.to_string();
+            match self.quickmarks.get(&key) {
                 Some(url_str) => {
                     if let Ok(url) = url::Url::parse(url_str) {
                         self.navigate_with_redirects(url);
@@ -1316,6 +1420,9 @@ impl AppState {
                 "ws-save",
                 "ws-load",
                 "ws-list",
+                "ws-delete",
+                "ws-panel",
+                "workspaces",
                 "ws-next",
                 "ws-prev",
                 "reader",
@@ -1352,6 +1459,9 @@ impl AppState {
                 "tab-rename",
                 "bookmarks",
                 "bookmark",
+                "quickmark-add",
+                "quickmark-del",
+                "quickmark-list",
                 "reader",
                 "crash-reload",
                 "private",

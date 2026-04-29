@@ -35,7 +35,7 @@ impl Locale {
     pub fn from_code(code: &str) -> Option<Locale> {
         match code {
             "en" => Some(Locale::English),
-            "zh" => Some(Locale::Chinese),
+            "zh" | "zh-CN" | "zh-cn" | "zh_Hans" | "zh-Hans" => Some(Locale::Chinese),
             "ja" => Some(Locale::Japanese),
             "ko" => Some(Locale::Korean),
             "de" => Some(Locale::German),

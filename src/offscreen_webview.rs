@@ -25,6 +25,8 @@ use crate::servo::wry_engine::{
 #[cfg(target_os = "linux")]
 use gtk::glib::Cast;
 #[cfg(target_os = "linux")]
+use gtk::glib::translate::ToGlibPtr;
+#[cfg(target_os = "linux")]
 use gtk::prelude::{BinExt, GtkWindowExt, OffscreenWindowExt, WidgetExt};
 #[cfg(target_os = "linux")]
 use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
@@ -336,6 +338,33 @@ a {{ color: #4db4ff; }}
             });
 
         let webview = builder.build_gtk(&offscreen)?;
+
+        #[cfg(target_os = "linux")]
+        {
+            let enabled = std::env::var("AILERON_SPELLCHECK")
+                .map(|v| v != "0" && v != "false")
+                .unwrap_or(true);
+            if enabled {
+                let context = webkit2gtk::WebContext::default();
+                unsafe {
+                    webkit2gtk::ffi::webkit_web_context_set_spell_checking_enabled(
+                        context.to_glib_none().0,
+                        1,
+                    );
+                    let langs: Vec<std::ffi::CString> = vec![
+                        std::ffi::CString::new("en_US").unwrap(),
+                        std::ffi::CString::new("en_GB").unwrap(),
+                    ];
+                    let lang_ptrs: Vec<*const i8> = langs.iter().map(|s| s.as_ptr()).collect();
+                    let lang_ptr: *const *const i8 = lang_ptrs.as_ptr();
+                    webkit2gtk::ffi::webkit_web_context_set_spell_checking_languages(
+                        context.to_glib_none().0,
+                        lang_ptr,
+                    );
+                }
+            }
+        }
+
         offscreen.show_all();
 
         info!(

@@ -579,17 +579,17 @@ async fn dispatch_request(
                 .as_ref()
                 .and_then(|p| p.get("key"))
                 .and_then(|v| v.as_str())
-                .and_then(|s| s.chars().next());
-            match key {
-                Some(k) => send_cmd(ArpCommand::QuickmarkOpen { key: k }),
-                None => {
-                    return JsonRpcResponse::error(
-                        request.id.clone(),
-                        ERR_INVALID_PARAMS,
-                        "Missing or invalid 'key' parameter",
-                    );
-                }
+                .unwrap_or("");
+            if key.is_empty() {
+                return JsonRpcResponse::error(
+                    request.id.clone(),
+                    ERR_INVALID_PARAMS,
+                    "Missing or invalid 'key' parameter",
+                );
             }
+            send_cmd(ArpCommand::QuickmarkOpen {
+                key: key.to_string(),
+            })
         }
 
         _ => {

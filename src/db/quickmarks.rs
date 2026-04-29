@@ -2,40 +2,35 @@ use anyhow::Result;
 use rusqlite::Connection;
 use std::collections::HashMap;
 
-/// Save or update a quickmark (letter → URL).
-pub fn set_quickmark(conn: &Connection, letter: char, url: &str) -> Result<()> {
+pub fn set_quickmark(conn: &Connection, key: &str, url: &str) -> Result<()> {
     conn.execute(
         "INSERT INTO quickmarks (letter, url, created_at) VALUES (?1, ?2, datetime('now'))
          ON CONFLICT(letter) DO UPDATE SET url = excluded.url",
-        rusqlite::params![letter.to_string(), url],
+        rusqlite::params![key, url],
     )?;
     Ok(())
 }
 
-/// Remove a quickmark by letter.
-pub fn remove_quickmark(conn: &Connection, letter: char) -> Result<bool> {
+pub fn remove_quickmark(conn: &Connection, key: &str) -> Result<bool> {
     let rows = conn.execute(
         "DELETE FROM quickmarks WHERE letter = ?1",
-        rusqlite::params![letter.to_string()],
+        rusqlite::params![key],
     )?;
     Ok(rows > 0)
 }
 
-/// Load all quickmarks from the database.
-pub fn load_quickmarks(conn: &Connection) -> Result<HashMap<char, String>> {
+pub fn load_quickmarks(conn: &Connection) -> Result<HashMap<String, String>> {
     let mut stmt = conn.prepare("SELECT letter, url FROM quickmarks")?;
     let rows = stmt.query_map([], |row| {
-        let letter_str: String = row.get(0)?;
+        let key: String = row.get(0)?;
         let url: String = row.get(1)?;
-        Ok((letter_str, url))
+        Ok((key, url))
     })?;
 
     let mut map = HashMap::new();
     for row in rows {
-        let (letter_str, url) = row?;
-        if let Some(ch) = letter_str.chars().next() {
-            map.insert(ch, url);
-        }
+        let (key, url) = row?;
+        map.insert(key, url);
     }
     Ok(map)
 }
@@ -63,32 +58,32 @@ mod tests {
     #[test]
     fn test_set_and_load_quickmarks() {
         let db = test_db();
-        set_quickmark(&db, 'a', "https://example.com").unwrap();
-        set_quickmark(&db, 'b', "https://google.com").unwrap();
+        set_quickmark(&db, "a", "https://example.com").unwrap();
+        set_quickmark(&db, "b", "https://google.com").unwrap();
 
         let marks = load_quickmarks(&db).unwrap();
         assert_eq!(marks.len(), 2);
-        assert_eq!(marks.get(&'a').unwrap(), "https://example.com");
-        assert_eq!(marks.get(&'b').unwrap(), "https://google.com");
+        assert_eq!(marks.get("a").unwrap(), "https://example.com");
+        assert_eq!(marks.get("b").unwrap(), "https://google.com");
     }
 
     #[test]
     fn test_set_quickmark_upsert() {
         let db = test_db();
-        set_quickmark(&db, 'a', "https://example.com").unwrap();
-        set_quickmark(&db, 'a', "https://updated.com").unwrap();
+        set_quickmark(&db, "a", "https://example.com").unwrap();
+        set_quickmark(&db, "a", "https://updated.com").unwrap();
 
         let marks = load_quickmarks(&db).unwrap();
         assert_eq!(marks.len(), 1);
-        assert_eq!(marks.get(&'a').unwrap(), "https://updated.com");
+        assert_eq!(marks.get("a").unwrap(), "https://updated.com");
     }
 
     #[test]
     fn test_remove_quickmark() {
         let db = test_db();
-        set_quickmark(&db, 'a', "https://example.com").unwrap();
-        assert!(remove_quickmark(&db, 'a').unwrap());
-        assert!(!remove_quickmark(&db, 'z').unwrap()); // nonexistent
+        set_quickmark(&db, "a", "https://example.com").unwrap();
+        assert!(remove_quickmark(&db, "a").unwrap());
+        assert!(!remove_quickmark(&db, "z").unwrap());
 
         let marks = load_quickmarks(&db).unwrap();
         assert!(marks.is_empty());
@@ -99,5 +94,19 @@ mod tests {
         let db = test_db();
         let marks = load_quickmarks(&db).unwrap();
         assert!(marks.is_empty());
+    }
+
+    #[test]
+    fn test_multi_char_key_quickmarks() {
+        let db = test_db();
+        set_quickmark(&db, "gh", "https://github.com").unwrap();
+        set_quickmark(&db, "gl", "https://gitlab.com").unwrap();
+        set_quickmark(&db, "rd", "https://reddit.com").unwrap();
+
+        let marks = load_quickmarks(&db).unwrap();
+        assert_eq!(marks.len(), 3);
+        assert_eq!(marks.get("gh").unwrap(), "https://github.com");
+        assert_eq!(marks.get("gl").unwrap(), "https://gitlab.com");
+        assert_eq!(marks.get("rd").unwrap(), "https://reddit.com");
     }
 }
