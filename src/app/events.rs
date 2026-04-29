@@ -527,6 +527,15 @@ impl AppState {
     }
 
     pub fn update_status(&mut self) {
-        self.status_message = format!("-- {} --", self.mode);
+        let mode_str = self.mode.as_str().to_string();
+        self.status_message = format!("-- {} --", mode_str);
+        self.accessibility_text = format!("Mode: {}", mode_str);
+    }
+
+    /// Update the accessibility live-region text with a status summary.
+    /// Call this when important state changes occur (navigation, error, etc.).
+    pub fn update_a11y(&mut self, msg: &str) {
+        self.status_message = msg.to_string();
+        self.accessibility_text = msg.to_string();
     }
 }

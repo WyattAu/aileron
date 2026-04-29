@@ -259,7 +259,7 @@ pub fn process_wry_events(
                 if let Ok(parsed) = url::Url::parse(&url) {
                     app_state.record_visit(&parsed, &url);
                 }
-                app_state.status_message = format!("Loaded: {}", &url[..url.len().min(60)]);
+                app_state.update_a11y(&format!("Loaded: {}", &url[..url.len().min(60)]));
 
                 // Fire extension onCompleted lifecycle event
                 if interceptor_registry.has_interceptors()
@@ -437,7 +437,7 @@ pub fn process_wry_events(
                 app_state.autofill_js = None;
                 app_state.autofill_status_msg.clear();
                 app_state.clear_injected_scripts(pane_id);
-                app_state.status_message = format!("Loading: {}...", &url[..url.len().min(40)]);
+                app_state.update_a11y(&format!("Loading: {}...", &url[..url.len().min(40)]));
                 if !url.starts_with("aileron://") {
                     let start_scripts = content_scripts.scripts_for_url(&url, RunAt::DocumentStart);
                     for script in start_scripts {
@@ -476,7 +476,7 @@ pub fn process_wry_events(
                 }
             }
             WryEvent::TitleChanged { title, .. } => {
-                app_state.status_message = title[..title.len().min(60)].to_string();
+                app_state.update_a11y(&title[..title.len().min(60)]);
                 app_state.tab_display_dirty = true;
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
@@ -541,7 +541,7 @@ pub fn process_offscreen_events(
                 if let Ok(parsed) = url::Url::parse(&url) {
                     app_state.record_visit(&parsed, &url);
                 }
-                app_state.status_message = format!("Loaded: {}", &url[..url.len().min(60)]);
+                app_state.update_a11y(&format!("Loaded: {}", &url[..url.len().min(60)]));
 
                 // Fire extension onCompleted lifecycle event
                 if interceptor_registry.has_interceptors()
@@ -730,7 +730,7 @@ pub fn process_offscreen_events(
                 app_state.autofill_js = None;
                 app_state.autofill_status_msg.clear();
                 app_state.clear_injected_scripts(pane_id);
-                app_state.status_message = format!("Loading: {}...", &url[..url.len().min(40)]);
+                app_state.update_a11y(&format!("Loading: {}...", &url[..url.len().min(40)]));
                 if !url.starts_with("aileron://") {
                     let start_scripts = content_scripts.scripts_for_url(&url, RunAt::DocumentStart);
                     for script in start_scripts {
@@ -771,7 +771,7 @@ pub fn process_offscreen_events(
                 }
             }
             WryEvent::TitleChanged { title, .. } => {
-                app_state.status_message = title[..title.len().min(60)].to_string();
+                app_state.update_a11y(&title[..title.len().min(60)]);
                 app_state.tab_display_dirty = true;
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
@@ -1115,7 +1115,7 @@ pub fn handle_pending_tab_close(app_state: &mut AppState, close_id: Uuid) {
     let _ = app_state.wm.close(close_id);
     app_state.engines.remove_pane(&close_id);
     app_state.terminal_pane_ids.remove(&close_id);
-    app_state.status_message = "Pane closed".into();
+    app_state.update_a11y("Pane closed");
 }
 
 /// Handle pending bookmark import (Firefox or Chrome).
@@ -1208,10 +1208,10 @@ fn handle_ipc_message(
             failed_url,
             error_detail
         );
-        app_state.status_message = format!(
+        app_state.update_a11y(&format!(
             "Load failed: {}",
             &error_detail[..error_detail.len().min(60)]
-        );
+        ));
         // Navigate to our error page
         if let Some(pane) = wry_panes.get_mut(&pane_id) {
             let display_msg = format!("Failed to load: {}\n\n{}", failed_url, error_detail);
@@ -1550,10 +1550,10 @@ fn handle_ipc_message_offscreen(
             failed_url,
             error_detail
         );
-        app_state.status_message = format!(
+        app_state.update_a11y(&format!(
             "Load failed: {}",
             &error_detail[..error_detail.len().min(60)]
-        );
+        ));
         if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
             let display_msg = format!("Failed to load: {}\n\n{}", failed_url, error_detail);
             let encoded = urlencoding::encode(&display_msg);

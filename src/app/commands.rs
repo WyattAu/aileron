@@ -2040,7 +2040,7 @@ impl AppState {
                 && let Some(host) = url.host_str()
             {
                 let host_lower = host.to_lowercase();
-                let safe_list = crate::net::privacy::load_https_safe_list();
+                let safe_list = self.get_cached_https_safe_list();
                 if crate::net::privacy::is_https_safe(&host_lower, &safe_list) {
                     self.status_message =
                         format!("HTTPS upgrade: {} is already in the safe list", host_lower);

@@ -36,6 +36,7 @@ impl PopupManager {
         window: Arc<Window>,
         url: url::Url,
         blocked_domains: Vec<String>,
+        https_safe_list: std::collections::HashSet<String>,
         devtools: bool,
     ) {
         let size = window.inner_size();
@@ -53,6 +54,7 @@ impl PopupManager {
             url,
             bounds,
             blocked_domains,
+            https_safe_list,
             devtools,
             false, // Don't block popups from the popup manager itself
             None,  // No interceptor registry for popup windows

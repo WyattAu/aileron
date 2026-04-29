@@ -339,6 +339,15 @@ pub struct AppState {
     pub cached_pane_count: usize,
     /// Whether the cached pane count needs recomputation.
     pub pane_count_dirty: bool,
+
+    /// Cached HTTPS safe list (avoids re-reading from disk on every pane creation).
+    pub https_safe_list_cache: Option<std::collections::HashSet<String>>,
+    /// Tracks whether AILERON_DEBUG was set when the cache was populated.
+    https_safe_list_debug_flag: bool,
+
+    /// Accessibility live-region text summarizing current state for screen readers.
+    /// Updated on important state changes (mode, URL, pane close, navigation, error).
+    pub accessibility_text: String,
 }
 
 impl AppState {
@@ -571,7 +580,22 @@ impl AppState {
             config_json_dirty: true,
             cached_pane_count: 0,
             pane_count_dirty: true,
+            https_safe_list_cache: None,
+            https_safe_list_debug_flag: false,
+            accessibility_text: String::new(),
         })
+    }
+
+    pub fn get_cached_https_safe_list(&mut self) -> std::collections::HashSet<String> {
+        let current_debug = std::env::var("AILERON_DEBUG").is_ok();
+        if self.https_safe_list_cache.is_some() && self.https_safe_list_debug_flag == current_debug
+        {
+            return self.https_safe_list_cache.clone().unwrap();
+        }
+        let list = crate::net::privacy::load_https_safe_list();
+        self.https_safe_list_debug_flag = current_debug;
+        self.https_safe_list_cache = Some(list.clone());
+        list
     }
 
     /// Store a scroll mark fraction for a pane. Called from the IPC handler

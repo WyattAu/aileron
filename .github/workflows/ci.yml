@@ -69,6 +69,56 @@ jobs:
       - name: Build release
         run: cargo build --release
 
+  build-macos:
+    name: macOS build check
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: build-macos-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            build-macos-
+
+      - name: Check compilation
+        run: cargo check
+
+  build-windows:
+    name: Windows build check
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: build-windows-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            build-windows-
+
+      - name: Check compilation
+        run: cargo check
+
   cross-compile:
     name: Cross-compile (${{ matrix.target }})
     runs-on: ${{ matrix.os }}

@@ -18,8 +18,8 @@ use wry::WebViewBuilderExtUnix;
 use wry::{PageLoadEvent, WebViewBuilder};
 
 use crate::servo::wry_engine::{
-    WryEvent, aileron_new_tab_page, aileron_settings_page, aileron_welcome_page, file_browser_page,
-    html_escape, percent_decode,
+    WryEvent, aileron_new_tab_page, aileron_reader_page, aileron_settings_page,
+    aileron_welcome_page, file_browser_page, html_escape, percent_decode,
 };
 
 #[cfg(target_os = "linux")]
@@ -98,6 +98,7 @@ impl OffscreenWebView {
             width,
             height,
             blocked_domains,
+            std::collections::HashSet::new(),
             true,
             true,
             devtools,
@@ -115,6 +116,7 @@ impl OffscreenWebView {
         width: i32,
         height: i32,
         blocked_domains: Vec<String>,
+        https_safe_list: std::collections::HashSet<String>,
         https_upgrade_enabled: bool,
         tracking_protection_enabled: bool,
         devtools: bool,
@@ -132,11 +134,6 @@ impl OffscreenWebView {
 
         let devtools = cfg!(debug_assertions) || devtools;
 
-        let https_safe_list = if https_upgrade_enabled {
-            crate::net::privacy::load_https_safe_list()
-        } else {
-            std::collections::HashSet::new()
-        };
         let https_upgrade = https_upgrade_enabled;
 
         let upgrade_tx = event_tx.clone();
@@ -192,6 +189,7 @@ a {{ color: #4db4ff; }}
                             )
                         }
                         "settings" => aileron_settings_page(),
+                        "reader" => aileron_reader_page(),
                         _ => aileron_welcome_page(),
                     };
                     wry::http::Response::builder()
@@ -904,6 +902,7 @@ impl OffscreenWebViewManager {
         width: i32,
         height: i32,
         blocked_domains: Vec<String>,
+        https_safe_list: std::collections::HashSet<String>,
         https_upgrade_enabled: bool,
         tracking_protection_enabled: bool,
         devtools: bool,
@@ -918,6 +917,7 @@ impl OffscreenWebViewManager {
             width,
             height,
             blocked_domains,
+            https_safe_list,
             https_upgrade_enabled,
             tracking_protection_enabled,
             devtools,

@@ -19,6 +19,8 @@ pub struct AdBlocker {
     site_exceptions: HashSet<String>,
     ac_patterns: Option<AhoCorasick>,
     dirty: bool,
+    cosmetic_css_cache: HashMap<String, String>,
+    blocked_domains_cache: Option<Vec<String>>,
 }
 
 impl AdBlocker {
@@ -37,6 +39,8 @@ impl AdBlocker {
             site_exceptions: HashSet::new(),
             ac_patterns: None,
             dirty: false,
+            cosmetic_css_cache: HashMap::new(),
+            blocked_domains_cache: None,
         }
     }
 
@@ -103,6 +107,7 @@ impl AdBlocker {
 
     pub fn add_cosmetic_rule(&mut self, rule: &str) {
         self.cosmetic_rules.push(rule.to_string());
+        self.invalidate_caches();
     }
 
     fn rebuild_automaton(&mut self) {
@@ -144,6 +149,11 @@ impl AdBlocker {
         if self.dirty {
             self.rebuild_automaton();
         }
+    }
+
+    fn invalidate_caches(&mut self) {
+        self.cosmetic_css_cache.clear();
+        self.blocked_domains_cache = None;
     }
 
     pub fn load_filter_list(&mut self, content: &str) -> anyhow::Result<usize> {
@@ -213,6 +223,7 @@ impl AdBlocker {
 
         info!(target: "adblock", "Loaded {} rules (legacy format)", rules_loaded);
         self.dirty = true;
+        self.invalidate_caches();
         Ok(rules_loaded)
     }
 
@@ -255,6 +266,7 @@ impl AdBlocker {
 
         info!(target: "adblock", "Loaded {} rules from {} filter lists", total, lists.len());
         self.dirty = true;
+        self.invalidate_caches();
         total
     }
 
@@ -418,9 +430,13 @@ impl AdBlocker {
         self.cosmetic_rules.join("\n")
     }
 
-    pub fn cosmetic_css_for_domain(&self, domain: &str) -> String {
+    pub fn cosmetic_css_for_domain(&mut self, domain: &str) -> String {
         if !self.cosmetic_filtering {
             return String::new();
+        }
+
+        if let Some(cached) = self.cosmetic_css_cache.get(domain) {
+            return cached.clone();
         }
 
         let mut rules: Vec<String> = Vec::new();
@@ -451,10 +467,13 @@ impl AdBlocker {
             }
         }
 
-        rules.join("\n")
+        let css = rules.join("\n");
+        self.cosmetic_css_cache
+            .insert(domain.to_string(), css.clone());
+        css
     }
 
-    pub fn cosmetic_js_injection(&self, domain: &str) -> Option<String> {
+    pub fn cosmetic_js_injection(&mut self, domain: &str) -> Option<String> {
         let css = self.cosmetic_css_for_domain(domain);
         if css.is_empty() {
             return None;
@@ -530,7 +549,11 @@ impl AdBlocker {
         self.cosmetic_rules.len() + self.cosmetic_filters.len()
     }
 
-    pub fn blocked_domains_iter(&self) -> Vec<String> {
+    pub fn blocked_domains_iter(&mut self) -> Vec<String> {
+        if let Some(ref cached) = self.blocked_domains_cache {
+            return cached.clone();
+        }
+
         let mut domains: HashSet<String> = self.blocked_domains.iter().cloned().collect();
 
         for filter in &self.network_filters {
@@ -541,7 +564,9 @@ impl AdBlocker {
             }
         }
 
-        domains.into_iter().collect()
+        let result: Vec<String> = domains.into_iter().collect();
+        self.blocked_domains_cache = Some(result.clone());
+        result
     }
 
     pub fn filter_list_count(&self) -> usize {
@@ -782,7 +807,7 @@ mod tests {
 
     #[test]
     fn test_cosmetic_js_injection_empty() {
-        let blocker = AdBlocker::new();
+        let mut blocker = AdBlocker::new();
         let js = blocker.cosmetic_js_injection("example.com");
         assert!(js.is_none());
     }

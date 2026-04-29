@@ -71,8 +71,26 @@ pub fn build_ui(
     egui::TopBottomPanel::top("status-bar").show(ctx, |ui| {
         egui::menu::bar(ui, |ui| {
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                // TODO(a11y): egui status bar equivalent of aria-live="polite"
-                // for screen reader announcements on mode/status changes
+                // Accessibility live region: hidden label that screen readers announce
+                // on important state changes (mode, navigation, error, pane close).
+                if !app_state.accessibility_text.is_empty() {
+                    let a11y_text = app_state.accessibility_text.clone();
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(0.0, 0.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            let resp = ui.label(
+                                egui::RichText::new(&a11y_text).color(egui::Color32::TRANSPARENT),
+                            );
+                            resp.widget_info(|| WidgetInfo {
+                                typ: WidgetType::Label,
+                                label: Some(a11y_text.clone()),
+                                ..WidgetInfo::new(WidgetType::Label)
+                            });
+                            resp.request_focus();
+                        },
+                    );
+                }
                 let mode_color = match app_state.mode {
                     Mode::Normal => egui::Color32::from_rgb(100, 200, 100),
                     Mode::Insert => accent,

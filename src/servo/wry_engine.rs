@@ -107,6 +107,7 @@ impl WryPane {
         initial_url: Url,
         bounds: Rect,
         blocked_domains: Vec<String>,
+        https_safe_list: std::collections::HashSet<String>,
         devtools: bool,
         popup_blocker: bool,
         interceptor_registry: Option<
@@ -129,6 +130,7 @@ impl WryPane {
             pid,
             event_tx.clone(),
             blocked_domains.clone(),
+            https_safe_list.clone(),
             true,
             true,
             devtools,
@@ -175,6 +177,7 @@ impl WryPane {
                 bounds,
                 event_tx,
                 event_rx,
+                https_safe_list,
                 devtools,
                 popup_blocker,
                 interceptor_registry,
@@ -199,6 +202,7 @@ impl WryPane {
         bounds: Rect,
         event_tx: mpsc::Sender<WryEvent>,
         event_rx: mpsc::Receiver<WryEvent>,
+        https_safe_list: std::collections::HashSet<String>,
         devtools: bool,
         popup_blocker: bool,
         interceptor_registry: Option<
@@ -233,6 +237,7 @@ impl WryPane {
             pane_id,
             event_tx,
             Vec::new(),
+            https_safe_list,
             true,
             true,
             devtools,
@@ -278,6 +283,7 @@ impl WryPane {
             pid,
             event_tx,
             blocked_domains,
+            std::collections::HashSet::new(),
             true,
             true,
             devtools,
@@ -294,6 +300,7 @@ impl WryPane {
         pid: Uuid,
         event_tx: mpsc::Sender<WryEvent>,
         blocked_domains: Vec<String>,
+        https_safe_list: std::collections::HashSet<String>,
         https_upgrade_enabled: bool,
         tracking_protection_enabled: bool,
         devtools: bool,
@@ -302,11 +309,6 @@ impl WryPane {
             Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
         >,
     ) -> WebViewBuilder<'static> {
-        let https_safe_list = if https_upgrade_enabled {
-            crate::net::privacy::load_https_safe_list()
-        } else {
-            std::collections::HashSet::new()
-        };
         let https_upgrade = https_upgrade_enabled;
 
         let upgrade_tx = event_tx.clone();
@@ -366,6 +368,7 @@ a {{ color: #4db4ff; }}
                             )
                         }
                         "settings" => aileron_settings_page(),
+                        "reader" => aileron_reader_page(),
                         _ => aileron_404_page(&req.uri().to_string()), // "welcome" and anything else
                     };
                     wry::http::Response::builder()
@@ -759,6 +762,7 @@ impl WryPaneManager {
         initial_url: Url,
         bounds: Rect,
         blocked_domains: Vec<String>,
+        https_safe_list: std::collections::HashSet<String>,
         devtools: bool,
         popup_blocker: bool,
         interceptor_registry: Option<
@@ -774,6 +778,7 @@ impl WryPaneManager {
             initial_url,
             bounds,
             blocked_domains,
+            https_safe_list,
             devtools,
             popup_blocker,
             interceptor_registry,
@@ -1235,6 +1240,192 @@ pub const SCROLL_RESTORE_JS: &str = r#"
 "#;
 
 // ─── Internal page HTML generators ───────────────────────────────────
+
+/// Reader mode page shown at `aileron://reader`.
+/// Extracts article content from the current page and renders a clean reading view.
+pub(crate) fn aileron_reader_page() -> String {
+    r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reader Mode</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a1a; color: #d4d4d4; font-family: Georgia, 'Times New Roman', serif;
+         max-width: 680px; margin: 0 auto; padding: 40px 20px; line-height: 1.8; }
+  h1 { color: #e0e0e0; font-size: 1.8em; margin-bottom: 0.3em; }
+  .meta { color: #666; font-size: 0.9em; margin-bottom: 2em; }
+  .meta a { color: #4db4ff; text-decoration: none; }
+  h2, h3, h4 { color: #ccc; margin-top: 1.5em; margin-bottom: 0.5em; }
+  p { margin-bottom: 1em; }
+  a { color: #4db4ff; }
+  pre { background: #2a2a2a; padding: 12px; border-radius: 4px; overflow-x: auto;
+       font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.9em; margin: 1em 0; }
+  blockquote { border-left: 3px solid #4db4ff; padding-left: 16px; color: #999; margin: 1em 0; }
+  img { max-width: 100%; height: auto; margin: 1em 0; border-radius: 4px; }
+  .loading { text-align: center; padding: 4em; color: #666; }
+  .error { text-align: center; padding: 2em; color: #ff6b6b; }
+  .controls { position: fixed; top: 12px; right: 12px; }
+  .controls a { color: #666; text-decoration: none; font-size: 0.85em; margin-left: 12px; font-family: sans-serif; }
+  .controls a:hover { color: #4db4ff; }
+  .font-size-controls { position: fixed; bottom: 12px; right: 12px; }
+  .font-size-controls button {
+    background: #2a2a2a; color: #888; border: 1px solid #333; padding: 4px 10px;
+    border-radius: 4px; cursor: pointer; font-family: sans-serif;
+  }
+  .font-size-controls button:hover { color: #4db4ff; border-color: #4db4ff; }
+</style>
+</head>
+<body>
+<div id="reader-content">
+  <div class="loading">Extracting article content...</div>
+</div>
+<div class="controls">
+  <a href="#" id="original-link" title="View original page">Original</a>
+</div>
+<div class="font-size-controls">
+  <button id="font-decrease" title="Decrease font size">A-</button>
+  <button id="font-increase" title="Increase font size">A+</button>
+</div>
+<script>
+(function() {
+  var originalUrl = '';
+
+  function extractArticle() {
+    var title = document.title || '';
+    var author = '';
+    var published = '';
+
+    var authorMeta = document.querySelector('meta[name="author"]')
+      || document.querySelector('meta[property="article:author"]');
+    if (authorMeta) author = authorMeta.getAttribute('content') || '';
+
+    var dateMeta = document.querySelector('meta[name="date"]')
+      || document.querySelector('meta[property="article:published_time"]')
+      || document.querySelector('meta[name="DC.date.issued"]');
+    if (dateMeta) published = dateMeta.getAttribute('content') || '';
+
+    var descMeta = document.querySelector('meta[name="description"]');
+    var description = descMeta ? descMeta.getAttribute('content') : '';
+
+    var candidates = [
+      'article', '[role="main"]', 'main',
+      '.post-content', '.article-content', '.content', '#content',
+      '.entry-content', '.post-body', '.story-body',
+      '.article-body', '.story-content', '.main-content',
+      '[data-article-body]', '.rich-text'
+    ];
+
+    var article = null;
+    for (var i = 0; i < candidates.length; i++) {
+      article = document.querySelector(candidates[i]);
+      if (article) break;
+    }
+
+    if (!article) {
+      var divs = document.querySelectorAll('div');
+      var best = null;
+      var bestScore = 0;
+      for (var j = 0; j < divs.length; j++) {
+        var d = divs[j];
+        var text = d.textContent || '';
+        var pCount = d.querySelectorAll('p').length;
+        if (pCount >= 3 && text.length > bestScore) {
+          bestScore = text.length;
+          best = d;
+        }
+      }
+      article = best || document.body;
+    }
+
+    var clone = article.cloneNode(true);
+
+    var removeSelectors = [
+      'nav', 'header', 'footer', 'aside', '.sidebar', '#sidebar',
+      '.comments', '#comments', '.comment', '.ad', '.advertisement',
+      '.social-share', '.share-buttons', '.related', '.recommendations',
+      'script', 'style', 'noscript', 'iframe', '.newsletter',
+      '.popup', '.modal', '[role="navigation"]', '[role="banner"]',
+      '.breadcrumb', '.pagination', '.widget', '.promo'
+    ];
+
+    for (var k = 0; k < removeSelectors.length; k++) {
+      var els = clone.querySelectorAll(removeSelectors[k]);
+      for (var l = 0; l < els.length; l++) {
+        els[l].parentNode.removeChild(els[l]);
+      }
+    }
+
+    var text = '';
+    var blocks = clone.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, pre, blockquote, img, table');
+    if (blocks.length > 3) {
+      for (var m = 0; m < blocks.length; m++) {
+        var block = blocks[m];
+        var tag = block.tagName.toLowerCase();
+        if (tag === 'p') {
+          text += '<p>' + block.innerHTML.trim() + '</p>';
+        } else if (tag.match(/^h[1-6]$/)) {
+          text += '<' + tag + '>' + block.textContent.trim() + '</' + tag + '>';
+        } else if (tag === 'li') {
+          text += '<li>' + block.innerHTML.trim() + '</li>';
+        } else if (tag === 'pre') {
+          text += '<pre>' + block.textContent.trim() + '</pre>';
+        } else if (tag === 'blockquote') {
+          text += '<blockquote>' + block.innerHTML.trim() + '</blockquote>';
+        } else if (tag === 'img') {
+          var src = block.getAttribute('src') || '';
+          var alt = block.getAttribute('alt') || '';
+          if (src) text += '<img src="' + src + '" alt="' + alt + '">';
+        } else if (tag === 'table') {
+          text += block.outerHTML;
+        }
+      }
+    } else {
+      text = clone.innerHTML.trim();
+    }
+
+    var metaHtml = '';
+    if (author || published || description) {
+      metaHtml = '<div class="meta">';
+      if (author) metaHtml += author;
+      if (published) metaHtml += (author ? ' &middot; ' : '') + published;
+      if (description && !author && !published) metaHtml += description;
+      metaHtml += '</div>';
+    }
+
+    var html = '<h1>' + title + '</h1>' + metaHtml + text;
+
+    document.getElementById('reader-content').innerHTML = html;
+    document.title = title + ' (Reader)';
+  }
+
+  try {
+    extractArticle();
+  } catch(e) {
+    document.getElementById('reader-content').innerHTML =
+      '<div class="error">Could not extract article content.</div>';
+  }
+
+  if (window._aileron_original_url) {
+    originalUrl = window._aileron_original_url;
+    var link = document.getElementById('original-link');
+    if (link) link.href = originalUrl;
+  }
+
+  var baseSize = 18;
+  document.getElementById('font-decrease').addEventListener('click', function() {
+    baseSize = Math.max(12, baseSize - 2);
+    document.body.style.fontSize = baseSize + 'px';
+  });
+  document.getElementById('font-increase').addEventListener('click', function() {
+    baseSize = Math.min(28, baseSize + 2);
+    document.body.style.fontSize = baseSize + 'px';
+  });
+})();
+</script>
+</body>
+</html>"##.to_string()
+}
 
 /// Welcome page shown at `aileron://welcome` (default homepage).
 pub(crate) fn aileron_welcome_page() -> String {
