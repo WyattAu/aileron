@@ -420,7 +420,7 @@ id = "F03"
 title = "Tab groups / workspaces with named sessions"
 track = "F"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Allow grouping tabs into named workspaces. Switch between workspace layouts. Persist to DB. Already partially exists via workspace system."
 
 [[task]]
@@ -428,7 +428,7 @@ id = "F04"
 title = "Quickmarks: keyboard bookmark navigation"
 track = "F"
 priority = "low"
-status = "pending"
+status = "done"
 description = "Single-key bookmark shortcuts (like qutebookmarks). go/ shortcut in URL bar opens matching quickmark."
 
 [[task]]
@@ -436,7 +436,7 @@ id = "F05"
 title = "Spell check integration for form fields"
 track = "F"
 priority = "low"
-status = "pending"
+status = "done"
 description = "Enable system spell check in editable fields via WebKitGTK settings or JS-based Hunspell."
 
 [[task]]
@@ -452,5 +452,5 @@ id = "F07"
 title = "i18n: expand locale coverage (add JA, KO, ZH)"
 track = "F"
 priority = "low"
-status = "pending"
+status = "done"
 description = "Add Japanese, Korean, Chinese translations. Leverage existing i18n framework with TOML translation files."
