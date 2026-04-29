@@ -3,17 +3,15 @@
 //! Captures panics, GLib warnings, JS errors, and navigation failures
 //! to a structured JSON log file for post-mortem debugging.
 //!
-//! Enabled via the `AILERON_DEBUG=1` environment variable.
-//! Log file path can be overridden with `AILERON_DEBUG_FILE=/path/to/file.log`.
+//! Always active. Log file path can be overridden with
+//! `AILERON_DEBUG_FILE=/path/to/file.log`.
 
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::{Value, json};
 
-static ENABLED: AtomicBool = AtomicBool::new(false);
 static LOG_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 static FILE_HANDLE: Mutex<Option<std::fs::File>> = Mutex::new(None);
 static MAX_LOG_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
@@ -22,7 +20,7 @@ static MAX_ROTATED_FILES: u32 = 3;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn is_enabled() -> bool {
-    ENABLED.load(Ordering::Relaxed)
+    true
 }
 
 fn log_file_path() -> PathBuf {
@@ -35,16 +33,6 @@ fn log_file_path() -> PathBuf {
 }
 
 pub fn init() {
-    if std::env::var("AILERON_DEBUG")
-        .map(|v| v == "1" || v == "true")
-        .unwrap_or(false)
-    {
-        ENABLED.store(true, Ordering::Relaxed);
-    }
-    if !is_enabled() {
-        return;
-    }
-
     let path = log_file_path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -223,10 +211,6 @@ fn detect_display_server() -> String {
 }
 
 pub fn capture_panic(info: &std::panic::PanicHookInfo) {
-    if !is_enabled() {
-        return;
-    }
-
     let message = if let Some(s) = info.payload().downcast_ref::<&str>() {
         s.to_string()
     } else if let Some(s) = info.payload().downcast_ref::<String>() {
@@ -272,10 +256,6 @@ pub fn write_periodic_stats(
     active_tab_count: usize,
     webview_count: usize,
 ) {
-    if !is_enabled() {
-        return;
-    }
-
     let mut extra = json!({
         "active_tab_count": active_tab_count,
         "webview_count": webview_count,
@@ -296,10 +276,6 @@ pub fn write_periodic_stats(
 }
 
 pub fn capture_glib(level: &str, domain: &str, message: &str) {
-    if !is_enabled() {
-        return;
-    }
-
     write_event(
         "glib_warning",
         &format!("[GLib {}::{}] {}", domain, level, message),
@@ -313,10 +289,6 @@ pub fn capture_glib(level: &str, domain: &str, message: &str) {
 }
 
 pub fn capture_js_error(pane_id: &str, error_msg: &str) {
-    if !is_enabled() {
-        return;
-    }
-
     write_event(
         "js_error",
         error_msg,
@@ -327,10 +299,6 @@ pub fn capture_js_error(pane_id: &str, error_msg: &str) {
 }
 
 pub fn capture_navigation_error(pane_id: &str, url: &str, error: &str) {
-    if !is_enabled() {
-        return;
-    }
-
     write_event(
         "navigation_error",
         &format!("{}: {}", url, error),
@@ -344,10 +312,6 @@ pub fn capture_navigation_error(pane_id: &str, url: &str, error: &str) {
 }
 
 pub fn capture_info(message: &str) {
-    if !is_enabled() {
-        return;
-    }
-
     write_event(
         "info",
         message,
@@ -358,10 +322,6 @@ pub fn capture_info(message: &str) {
 }
 
 fn write_event(event_type: &str, message: &str, location: &str, thread: &str, extra: Value) {
-    if !is_enabled() {
-        return;
-    }
-
     let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
 
     let mut event = json!({
@@ -437,10 +397,6 @@ pub fn read_memory_rss_kb() -> Option<u64> {
 }
 
 pub fn shutdown() {
-    if !is_enabled() {
-        return;
-    }
-
     write_event(
         "shutdown",
         "Aileron shutting down",
@@ -461,8 +417,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_disabled_by_default() {
-        assert!(!is_enabled());
+    fn test_always_enabled() {
+        assert!(is_enabled());
     }
 
     #[test]
@@ -482,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn test_capture_functions_are_noop_when_disabled() {
+    fn test_capture_functions_no_crash() {
         capture_glib("ERROR", "WebKit", "test message");
         capture_js_error("pane-123", "test error");
         capture_navigation_error("pane-123", "https://example.com", "net::ERR");
@@ -525,8 +481,6 @@ mod tests {
             *guard = Some(log_path.clone());
         }
 
-        ENABLED.store(true, Ordering::Relaxed);
-
         let file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -548,25 +502,8 @@ mod tests {
 
         assert!(log_path.with_extension("log.1").exists());
 
-        ENABLED.store(false, Ordering::Relaxed);
         *LOG_PATH.lock().unwrap() = None;
         *FILE_HANDLE.lock().unwrap() = None;
-    }
-
-    #[test]
-    fn test_write_event_disabled_no_crash() {
-        ENABLED.store(false, Ordering::Relaxed);
-        write_event("test", "msg", "", "main", json!({"key": "val"}));
-    }
-
-    #[test]
-    fn test_write_periodic_stats_noop_when_disabled() {
-        write_periodic_stats(Some(1024), 16.0, 3, 3);
-    }
-
-    #[test]
-    fn test_shutdown_noop_when_disabled() {
-        shutdown();
     }
 
     #[test]
