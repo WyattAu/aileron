@@ -1,5 +1,6 @@
 //! Content script system — Lua-defined JavaScript injection.
 
+use regex::Regex;
 use std::path::PathBuf;
 use tracing::{info, warn};
 
@@ -23,7 +24,7 @@ pub struct ContentScript {
     pub js_code: String,
     pub enabled: bool,
     pub run_at: RunAt,
-    pub match_regex: Option<String>,
+    pub match_regex: Option<Regex>,
 }
 
 pub struct ContentScriptManager {
@@ -118,7 +119,10 @@ impl ContentScriptManager {
                         _ => RunAt::DocumentIdle,
                     };
                 } else if let Some(pattern) = line.strip_prefix("@match-regexp") {
-                    match_regex = Some(pattern.trim().to_string());
+                    match Regex::new(pattern.trim()) {
+                        Ok(re) => match_regex = Some(re),
+                        Err(e) => warn!("Invalid match-regexp {:?}: {}", pattern.trim(), e),
+                    }
                 }
             }
         }
@@ -182,11 +186,7 @@ impl ContentScriptManager {
                     && (Self::url_matches_patterns(url, &s.match_patterns)
                         || s.match_regex
                             .as_ref()
-                            .map(|r| {
-                                regex::Regex::new(r)
-                                    .map(|re| re.is_match(url))
-                                    .unwrap_or(false)
-                            })
+                            .map(|re| re.is_match(url))
                             .unwrap_or(false))
             })
             .collect()
@@ -401,7 +401,7 @@ mod tests {
                 js_code: "console.log('regex')".into(),
                 enabled: true,
                 run_at: RunAt::DocumentIdle,
-                match_regex: Some(r"https://.*\.example\.com/.*".into()),
+                match_regex: Some(Regex::new(r"https://.*\.example\.com/.*").unwrap()),
             }],
             scripts_dir: PathBuf::from("/tmp"),
             extension_registry: None,

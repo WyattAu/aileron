@@ -470,8 +470,10 @@ impl AppState {
             if name.is_empty() {
                 // Clear the tab name
                 self.tab_names.remove(&active_id);
-                if let Some(ref conn) = self.db {
-                    let _ = crate::db::tab_names::remove_tab_name(conn, &active_id);
+                if let Some(ref conn) = self.db
+                    && let Err(e) = crate::db::tab_names::remove_tab_name(conn, &active_id)
+                {
+                    tracing::warn!("Failed to remove tab name: {}", e);
                 }
                 self.status_message = "Tab name cleared".into();
             } else {
@@ -837,7 +839,9 @@ impl AppState {
                     let workspaces = self.list_workspaces();
                     if let Some(db) = self.db.as_ref() {
                         for ws in &workspaces {
-                            let _ = crate::db::workspaces::delete_workspace(db, &ws.name);
+                            if let Err(e) = crate::db::workspaces::delete_workspace(db, &ws.name) {
+                                tracing::warn!("Failed to delete workspace '{}': {}", ws.name, e);
+                            }
                         }
                     }
                     self.status_message = format!("Cleared {} workspaces", workspaces.len());
@@ -859,7 +863,9 @@ impl AppState {
                         }
                         let ws = self.list_workspaces();
                         for w in &ws {
-                            let _ = crate::db::workspaces::delete_workspace(db, &w.name);
+                            if let Err(e) = crate::db::workspaces::delete_workspace(db, &w.name) {
+                                tracing::warn!("Failed to delete workspace '{}': {}", w.name, e);
+                            }
                         }
                         parts.push(format!("{} workspaces", ws.len()));
                     }
@@ -1970,7 +1976,9 @@ impl AppState {
                     let workspaces = self.list_workspaces();
                     if let Some(db) = self.db.as_ref() {
                         for ws in &workspaces {
-                            let _ = crate::db::workspaces::delete_workspace(db, &ws.name);
+                            if let Err(e) = crate::db::workspaces::delete_workspace(db, &ws.name) {
+                                tracing::warn!("Failed to delete workspace '{}': {}", ws.name, e);
+                            }
                         }
                     }
                     self.status_message = format!("Cleared {} workspaces", workspaces.len());
@@ -1992,7 +2000,9 @@ impl AppState {
                         }
                         let ws = self.list_workspaces();
                         for w in &ws {
-                            let _ = crate::db::workspaces::delete_workspace(db, &w.name);
+                            if let Err(e) = crate::db::workspaces::delete_workspace(db, &w.name) {
+                                tracing::warn!("Failed to delete workspace '{}': {}", w.name, e);
+                            }
                         }
                         parts.push(format!("{} workspaces", ws.len()));
                     }

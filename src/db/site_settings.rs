@@ -5,8 +5,35 @@
 //! NULL values mean "use global default from Config".
 
 use anyhow::Result;
+use regex::Regex;
 use rusqlite::{Connection, params};
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
 use tracing::warn;
+
+static REGEX_CACHE: LazyLock<Mutex<HashMap<String, Regex>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn cached_regex(pattern: &str) -> Option<Regex> {
+    let mut cache = REGEX_CACHE.lock().ok()?;
+    if let Some(re) = cache.get(pattern) {
+        Some(re.clone())
+    } else {
+        match Regex::new(pattern) {
+            Ok(re) => {
+                cache.insert(pattern.to_string(), re.clone());
+                Some(re)
+            }
+            Err(_) => None,
+        }
+    }
+}
+
+fn invalidate_regex_cache() {
+    if let Ok(mut cache) = REGEX_CACHE.lock() {
+        cache.clear();
+    }
+}
 
 /// A per-site setting entry.
 #[derive(Debug, Clone)]
@@ -36,6 +63,7 @@ pub fn upsert_site_setting(
     cookies_enabled: Option<bool>,
     autoplay_enabled: Option<bool>,
 ) -> Result<()> {
+    invalidate_regex_cache();
     conn.execute(
         "INSERT INTO site_settings (pattern, pattern_type, zoom_level, adblock_enabled, javascript_enabled, cookies_enabled, autoplay_enabled)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
@@ -66,6 +94,7 @@ pub fn set_site_field(
     field: &str,
     value: Option<&str>,
 ) -> Result<()> {
+    invalidate_regex_cache();
     match (field, value) {
         ("zoom", Some(v)) => {
             let z: f64 = v.parse().unwrap_or(1.0);
@@ -188,7 +217,7 @@ pub fn get_site_settings_for_url(conn: &Connection, url: &str) -> Result<Vec<Sit
                 autoplay_enabled,
                 created_at,
             )) => {
-                if let Ok(re) = regex::Regex::new(&pattern)
+                if let Some(re) = cached_regex(&pattern)
                     && re.is_match(&host)
                 {
                     results.push(SiteSettings {
@@ -213,12 +242,14 @@ pub fn get_site_settings_for_url(conn: &Connection, url: &str) -> Result<Vec<Sit
 
 /// Delete a site setting by ID.
 pub fn delete_site_setting(conn: &Connection, id: i64) -> Result<bool> {
+    invalidate_regex_cache();
     let rows = conn.execute("DELETE FROM site_settings WHERE id = ?1", params![id])?;
     Ok(rows > 0)
 }
 
 /// Delete all site settings matching a pattern (by domain).
 pub fn delete_site_settings_for_domain(conn: &Connection, domain: &str) -> Result<usize> {
+    invalidate_regex_cache();
     let rows = conn.execute(
         "DELETE FROM site_settings WHERE pattern = ?1 OR pattern LIKE ?2",
         params![domain, format!("%{}%", domain)],
@@ -267,7 +298,7 @@ pub fn url_matches_pattern(url: &str, pattern: &str, pattern_type: &str) -> bool
             let sql_pattern = pattern.replace('*', "%");
             host == pattern || pattern_like_match(&host, &sql_pattern)
         }
-        "regex" => regex::Regex::new(pattern)
+        "regex" => cached_regex(pattern)
             .map(|re| re.is_match(&host))
             .unwrap_or(false),
         _ => false,

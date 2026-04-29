@@ -896,8 +896,9 @@ impl ApplicationHandler for AileronApp {
 
             if (!self.config.restore_session || !was_unclean)
                 && let Some(db) = app_state.db.as_ref()
+                && let Err(e) = aileron::db::workspaces::delete_workspace(db, "_autosave")
             {
-                let _ = aileron::db::workspaces::delete_workspace(db, "_autosave");
+                tracing::warn!("Failed to delete autosave workspace: {}", e);
             }
 
             if self.config.restore_session {

@@ -161,10 +161,8 @@ impl McpTool for RunJsTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'code' parameter"))?;
 
-        // Create a response channel
-        let (response_tx, response_rx) = std::sync::mpsc::channel();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
-        // Send JS execution command to main thread
         self.command_tx
             .send(McpCommand::ExecuteJs {
                 code: code.to_string(),
@@ -172,10 +170,9 @@ impl McpTool for RunJsTool {
             })
             .map_err(|e| anyhow::anyhow!("Failed to send command: {}", e))?;
 
-        // Wait for the result (with timeout)
         let result = response_rx
-            .recv_timeout(std::time::Duration::from_secs(10))
-            .map_err(|e| anyhow::anyhow!("JS execution timed out: {}", e))?;
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("JS execution cancelled"))?;
 
         Ok(result)
     }
@@ -268,14 +265,14 @@ impl McpTool for BrowserGetTextTool {
             max_length, max_length
         );
 
-        let (response_tx, response_rx) = std::sync::mpsc::channel();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(McpCommand::ExecuteJs { code, response_tx })
             .map_err(|e| anyhow::anyhow!("Failed to send command: {}", e))?;
 
         let result = response_rx
-            .recv_timeout(std::time::Duration::from_secs(10))
-            .map_err(|e| anyhow::anyhow!("Text extraction timed out: {}", e))?;
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Text extraction cancelled"))?;
 
         if result.is_empty() || result == "String(\"\")" {
             Ok("No visible text content found on the page.".into())
@@ -308,13 +305,13 @@ impl McpTool for ListTabsTool {
         serde_json::json!({ "type": "object", "properties": {} })
     }
     fn execute(&self, _args: &serde_json::Value) -> anyhow::Result<String> {
-        let (response_tx, response_rx) = std::sync::mpsc::channel();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(McpCommand::ListTabs { response_tx })
             .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
         response_rx
-            .recv_timeout(std::time::Duration::from_secs(5))
-            .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Response channel cancelled"))
     }
 }
 
@@ -353,13 +350,13 @@ impl McpTool for BookmarkCrudTool {
         let action = args["action"].as_str().unwrap_or("list");
         match action {
             "list" => {
-                let (response_tx, response_rx) = std::sync::mpsc::channel();
+                let (response_tx, response_rx) = tokio::sync::oneshot::channel();
                 self.command_tx
                     .send(McpCommand::ListBookmarks { response_tx })
                     .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
                 response_rx
-                    .recv_timeout(std::time::Duration::from_secs(5))
-                    .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
+                    .blocking_recv()
+                    .map_err(|_| anyhow::anyhow!("Response channel cancelled"))
             }
             "add" => {
                 let url = args["url"]
@@ -367,7 +364,7 @@ impl McpTool for BookmarkCrudTool {
                     .ok_or_else(|| anyhow::anyhow!("Missing 'url'"))?;
                 let title = args["title"].as_str().unwrap_or(url);
                 let folder = args["folder"].as_str().unwrap_or("");
-                let (response_tx, response_rx) = std::sync::mpsc::channel();
+                let (response_tx, response_rx) = tokio::sync::oneshot::channel();
                 self.command_tx
                     .send(McpCommand::AddBookmark {
                         url: url.into(),
@@ -377,14 +374,14 @@ impl McpTool for BookmarkCrudTool {
                     })
                     .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
                 response_rx
-                    .recv_timeout(std::time::Duration::from_secs(5))
-                    .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
+                    .blocking_recv()
+                    .map_err(|_| anyhow::anyhow!("Response channel cancelled"))
             }
             "remove" => {
                 let url = args["url"]
                     .as_str()
                     .ok_or_else(|| anyhow::anyhow!("Missing 'url'"))?;
-                let (response_tx, response_rx) = std::sync::mpsc::channel();
+                let (response_tx, response_rx) = tokio::sync::oneshot::channel();
                 self.command_tx
                     .send(McpCommand::RemoveBookmark {
                         url: url.into(),
@@ -392,8 +389,8 @@ impl McpTool for BookmarkCrudTool {
                     })
                     .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
                 response_rx
-                    .recv_timeout(std::time::Duration::from_secs(5))
-                    .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
+                    .blocking_recv()
+                    .map_err(|_| anyhow::anyhow!("Response channel cancelled"))
             }
             other => Err(anyhow::anyhow!("Unknown action: {}", other)),
         }
@@ -434,7 +431,7 @@ impl McpTool for HistorySearchTool {
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing 'query'"))?;
         let limit = args["limit"].as_u64().unwrap_or(10) as usize;
-        let (response_tx, response_rx) = std::sync::mpsc::channel();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(McpCommand::SearchHistory {
                 query: query.into(),
@@ -443,8 +440,8 @@ impl McpTool for HistorySearchTool {
             })
             .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
         response_rx
-            .recv_timeout(std::time::Duration::from_secs(5))
-            .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Response channel cancelled"))
     }
 }
 
@@ -538,14 +535,14 @@ impl McpTool for BrowserFillFormTool {
             )
         };
 
-        let (response_tx, response_rx) = std::sync::mpsc::channel();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(McpCommand::ExecuteJs { code, response_tx })
             .map_err(|e| anyhow::anyhow!("Failed to send command: {}", e))?;
 
         let result = response_rx
-            .recv_timeout(std::time::Duration::from_secs(10))
-            .map_err(|e| anyhow::anyhow!("Form fill timed out: {}", e))?;
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Form fill cancelled"))?;
 
         Ok(result)
     }

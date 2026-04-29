@@ -748,8 +748,13 @@ pub fn process_mcp_commands(
             McpCommand::ExecuteJs { code, response_tx } => {
                 if let Some(wry_pane) = wry_panes.get(&active_id) {
                     info!("MCP: executing JS ({} chars)", code.len());
+                    let tx = std::sync::Mutex::new(Some(response_tx));
                     wry_pane.execute_js_with_callback(&code, move |result| {
-                        let _ = response_tx.send(result);
+                        if let Ok(mut guard) = tx.lock()
+                            && let Some(sender) = guard.take()
+                        {
+                            let _ = sender.send(result);
+                        }
                     });
                 } else {
                     let _ = response_tx.send("Error: No active pane".to_string());
@@ -942,9 +947,15 @@ pub fn spawn_mcp_server(mcp_bridge: &McpBridge) {
     let transport = aileron::mcp::McpTransport::new(mcp_server);
     info!("MCP server starting on background thread (stdio transport)");
     std::thread::spawn(move || {
-        if let Err(e) = transport.run_stdio() {
-            warn!("MCP server error: {}", e);
-        }
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create MCP tokio runtime");
+        rt.block_on(async {
+            if let Err(e) = tokio::task::spawn_blocking(move || transport.run_stdio()).await {
+                warn!("MCP server error: {}", e);
+            }
+        });
     });
 }
 

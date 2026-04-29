@@ -6,44 +6,49 @@
 //! - Command channel for mutations (navigate, run JS) processed on main thread
 
 use std::sync::{Arc, RwLock, mpsc};
+use tokio::sync::oneshot;
 
 /// Commands that MCP tools can send to the main thread.
 /// These are processed each frame in `about_to_wait`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum McpCommand {
     /// Navigate the active wry pane to a URL.
     Navigate { url: String },
     /// Execute JavaScript in the active pane and return the result.
     ExecuteJs {
         code: String,
-        response_tx: mpsc::Sender<String>,
+        response_tx: oneshot::Sender<String>,
     },
     /// Get the current URL and title of the active pane.
     GetActivePane {
-        response_tx: mpsc::Sender<(String, String)>,
+        response_tx: oneshot::Sender<(String, String)>,
     },
     /// List all bookmarks from the database.
-    ListBookmarks { response_tx: mpsc::Sender<String> },
+    ListBookmarks {
+        response_tx: oneshot::Sender<String>,
+    },
     /// Add a bookmark to the database.
     AddBookmark {
         url: String,
         title: String,
         folder: String,
-        response_tx: mpsc::Sender<String>,
+        response_tx: oneshot::Sender<String>,
     },
     /// Remove a bookmark from the database.
     RemoveBookmark {
         url: String,
-        response_tx: mpsc::Sender<String>,
+        response_tx: oneshot::Sender<String>,
     },
     /// Search browsing history.
     SearchHistory {
         query: String,
         limit: usize,
-        response_tx: mpsc::Sender<String>,
+        response_tx: oneshot::Sender<String>,
     },
     /// List all open tabs with URLs and titles.
-    ListTabs { response_tx: mpsc::Sender<String> },
+    ListTabs {
+        response_tx: oneshot::Sender<String>,
+    },
 }
 
 /// Shared state readable by MCP tools (updated each frame from main thread).

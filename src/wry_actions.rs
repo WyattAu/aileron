@@ -177,10 +177,16 @@ pub fn process_wry_action(
                 && let Some(ref conn) = app_state.db
             {
                 if crate::db::bookmarks::is_bookmarked(conn, &url_str) {
-                    let _ = crate::db::bookmarks::remove_bookmark(conn, &url_str);
+                    if let Err(e) = crate::db::bookmarks::remove_bookmark(conn, &url_str) {
+                        tracing::warn!("Failed to remove bookmark: {}", e);
+                    }
                     app_state.status_message = format!("Bookmark removed: {}", display_title);
                 } else {
-                    let _ = crate::db::bookmarks::add_bookmark(conn, &url_str, display_title);
+                    if let Err(e) =
+                        crate::db::bookmarks::add_bookmark(conn, &url_str, display_title)
+                    {
+                        tracing::warn!("Failed to add bookmark: {}", e);
+                    }
                     app_state.status_message = format!("Bookmarked: {}", display_title);
                 }
             }

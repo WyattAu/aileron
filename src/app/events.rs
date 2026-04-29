@@ -90,8 +90,10 @@ impl AppState {
                 Key::Character('d') => {
                     // d to delete selected bookmark
                     if let Some(bm) = self.bookmarks_entries.get(self.bookmarks_selected) {
-                        if let Some(db) = self.db.as_ref() {
-                            let _ = crate::db::bookmarks::remove_bookmark_by_id(db, bm.id);
+                        if let Some(db) = self.db.as_ref()
+                            && let Err(e) = crate::db::bookmarks::remove_bookmark_by_id(db, bm.id)
+                        {
+                            tracing::warn!("Failed to remove bookmark by id: {}", e);
                         }
                         let removed_id = bm.id;
                         self.bookmarks_entries.retain(|b| b.id != removed_id);

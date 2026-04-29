@@ -1,6 +1,7 @@
 use crate::db::workspaces::{SplitDir, WorkspaceData, WorkspaceNode};
 use crate::wm::pane::Pane;
 use crate::wm::rect::{Direction, Rect, SplitDirection};
+use std::cell::Cell;
 use std::fmt;
 use uuid::Uuid;
 
@@ -40,6 +41,9 @@ pub enum TileError {
 pub struct BspTree {
     root: Option<BspNode>,
     active_pane_id: Uuid,
+    panes_cache: Vec<(Uuid, Rect)>,
+    pane_ids_cache: Vec<Uuid>,
+    cache_dirty: Cell<bool>,
 }
 
 impl BspTree {
@@ -53,6 +57,9 @@ impl BspTree {
                 rect: viewport,
             }),
             active_pane_id: id,
+            panes_cache: Vec::new(),
+            pane_ids_cache: Vec::new(),
+            cache_dirty: Cell::new(true),
         }
     }
 
@@ -73,6 +80,7 @@ impl BspTree {
         let (new_root, new_id) = Self::split_recursive(root, pane_id, direction, ratio)?;
         self.root = Some(new_root);
         self.active_pane_id = new_id;
+        self.invalidate_caches();
         Ok(new_id)
     }
 
@@ -163,6 +171,7 @@ impl BspTree {
         let (new_root, new_active) = Self::close_recursive(root, pane_id)?;
         self.root = Some(new_root);
         self.active_pane_id = new_active;
+        self.invalidate_caches();
         Ok(())
     }
 
@@ -263,6 +272,7 @@ impl BspTree {
         if let Some(ref mut root) = self.root {
             Self::resize_node(root, new_viewport);
         }
+        self.invalidate_caches();
     }
 
     fn resize_node(node: &mut BspNode, new_rect: Rect) {
@@ -285,8 +295,15 @@ impl BspTree {
         }
     }
 
+    fn invalidate_caches(&mut self) {
+        self.cache_dirty.set(true);
+    }
+
     /// Collect all panes with their rectangles.
     pub fn panes(&self) -> Vec<(Uuid, Rect)> {
+        if !self.cache_dirty.get() {
+            return self.panes_cache.clone();
+        }
         match &self.root {
             None => vec![],
             Some(root) => {
@@ -312,6 +329,9 @@ impl BspTree {
     /// Collect all pane IDs (without rectangles). Cheaper than `panes()` when
     /// only IDs are needed (e.g., checking membership, iterating for commands).
     pub fn pane_ids(&self) -> Vec<Uuid> {
+        if !self.cache_dirty.get() {
+            return self.pane_ids_cache.clone();
+        }
         match &self.root {
             None => vec![],
             Some(root) => {
@@ -423,6 +443,7 @@ impl BspTree {
                 return false;
             }
             Self::swap_ids_in_node(root, &id_a, &id_b);
+            self.invalidate_caches();
             true
         } else {
             false
@@ -468,6 +489,7 @@ impl BspTree {
         if let Some(ref mut root) = self.root {
             Self::resize_node(root, viewport);
         }
+        self.invalidate_caches();
         Ok(())
     }
 
@@ -575,6 +597,7 @@ impl BspTree {
             rect: viewport,
         });
         self.active_pane_id = pane_id;
+        self.invalidate_caches();
         Ok(())
     }
 
@@ -660,6 +683,9 @@ impl BspTree {
         let mut tree = Self {
             root: Some(root),
             active_pane_id: Uuid::nil(),
+            panes_cache: Vec::new(),
+            pane_ids_cache: Vec::new(),
+            cache_dirty: Cell::new(true),
         };
 
         // Resize all rects to fit the viewport

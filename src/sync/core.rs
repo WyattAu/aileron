@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
 
@@ -21,7 +21,7 @@ pub struct ChunkHash {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct SyncManifest {
     pub version: u32,
-    pub files: HashMap<String, FileManifest>,
+    pub files: BTreeMap<String, FileManifest>,
     pub last_sync: u64,
 }
 

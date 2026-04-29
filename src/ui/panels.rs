@@ -1034,7 +1034,9 @@ pub fn build_ui(
                         if let Some(id) = delete_id
                             && let Some(db) = app_state.db.as_ref()
                         {
-                            let _ = crate::db::bookmarks::remove_bookmark_by_id(db, id);
+                            if let Err(e) = crate::db::bookmarks::remove_bookmark_by_id(db, id) {
+                                tracing::warn!("Failed to remove bookmark by id: {}", e);
+                            }
                             app_state.bookmarks_entries.retain(|b| b.id != id);
                             if app_state.bookmarks_selected >= app_state.bookmarks_entries.len() {
                                 app_state.bookmarks_selected =
@@ -1127,9 +1129,15 @@ pub fn build_ui(
                         if let Some(db) = app_state.db.as_ref() {
                             macro_rules! save_field {
                                 ($field:expr, $val:expr) => {
-                                    let _ = crate::db::site_settings::set_site_field(
+                                    if let Err(e) = crate::db::site_settings::set_site_field(
                                         db, &pattern, "wildcard", $field, $val,
-                                    );
+                                    ) {
+                                        tracing::warn!(
+                                            "Failed to save site setting '{}': {}",
+                                            $field,
+                                            e
+                                        );
+                                    }
                                 };
                             }
                             save_field!(
