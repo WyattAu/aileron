@@ -2052,6 +2052,9 @@ fn main() -> anyhow::Result<()> {
     // Install panic hook BEFORE anything else — writes crash report to file
     bootstrap::install_panic_hook();
 
+    // Initialize debug capturer (no-op unless AILERON_DEBUG=1)
+    aileron::debug_capturer::init();
+
     // Initialize tracing to both stderr AND a log file
     let log_dir = directories::ProjectDirs::from("com", "aileron", "Aileron")
         .map(|d| d.data_dir().join("logs"))
@@ -2143,9 +2146,31 @@ fn main() -> anyhow::Result<()> {
     info!("Application created successfully");
 
     info!("── Phase 5: Entering event loop ──");
-    event_loop.run_app(&mut app)?;
+    let event_loop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        event_loop.run_app(&mut app)
+    }));
 
-    info!("Aileron shutting down.");
+    match event_loop_result {
+        Ok(Ok(())) => {
+            info!("Aileron shutting down.");
+        }
+        Ok(Err(e)) => {
+            tracing::error!("Event loop error: {}", e);
+        }
+        Err(panic_payload) => {
+            let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "unknown panic".to_string()
+            };
+            tracing::error!("Event loop panicked: {}", msg);
+            aileron::debug_capturer::capture_info(&format!("Event loop panic caught: {}", msg));
+        }
+    }
+
+    aileron::debug_capturer::shutdown();
     Ok(())
 }
 

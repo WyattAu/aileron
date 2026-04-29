@@ -2,6 +2,7 @@ pub mod app;
 pub mod arp;
 pub mod config;
 pub mod db;
+pub mod debug_capturer;
 pub mod downloads;
 pub mod extensions;
 pub mod gfx;

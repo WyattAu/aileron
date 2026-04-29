@@ -554,6 +554,7 @@ a {{ color: #4db4ff; }}
     pub fn execute_js(&self, js: &str) {
         if let Err(e) = self.webview.evaluate_script(js) {
             warn!("JS evaluation error: {}", e);
+            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{}", e));
         }
     }
 
@@ -561,6 +562,7 @@ a {{ color: #4db4ff; }}
     pub fn execute_js_with_callback(&self, js: &str, callback: impl Fn(String) + Send + 'static) {
         if let Err(e) = self.webview.evaluate_script_with_callback(js, callback) {
             warn!("JS evaluation error: {}", e);
+            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{}", e));
         }
     }
 
@@ -1018,11 +1020,11 @@ unsafe extern "C" fn glib_log_handler(
     match level {
         "ERROR" | "CRITICAL" => {
             error!("[GLib {}::{}] {}", domain, level, msg);
-            // Do NOT call the default handler — that's what causes SIGTRAP.
-            // By returning, we suppress the fatal signal.
+            crate::debug_capturer::capture_glib(level, &domain, &msg);
         }
         "WARNING" if domain.contains("WebKit") || domain.contains("Gtk") => {
             warn!("[GLib {}::{}] {}", domain, level, msg);
+            crate::debug_capturer::capture_glib(level, &domain, &msg);
         }
         _ => {}
     }
