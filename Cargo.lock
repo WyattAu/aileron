@@ -101,12 +101,13 @@ dependencies = [
 
 [[package]]
 name = "aileron"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "age",
  "alacritty_terminal",
  "anyhow",
  "attohttpc",
+ "base64 0.22.1",
  "blake3",
  "cairo-rs",
  "chrono",
@@ -120,6 +121,7 @@ dependencies = [
  "futures-util",
  "glib-sys 0.20.10",
  "gtk",
+ "image",
  "keyring",
  "mlua",
  "notify",

@@ -12,8 +12,8 @@ use tokio::sync::oneshot;
 /// These are processed each frame in `about_to_wait`.
 #[derive(Debug)]
 pub enum McpCommand {
-    /// Navigate the active wry pane to a URL.
-    Navigate { url: String },
+    /// Navigate the active wry pane to a URL, optionally in a new tab.
+    Navigate { url: String, new_tab: bool },
     /// Execute JavaScript in the active pane and return the result.
     ExecuteJs {
         code: String,
@@ -47,6 +47,15 @@ pub enum McpCommand {
     },
     /// List all open tabs with URLs and titles.
     ListTabs {
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Capture the active pane as a base64-encoded PNG.
+    Screenshot {
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Close a tab by index.
+    CloseTab {
+        index: usize,
         response_tx: oneshot::Sender<String>,
     },
 }
@@ -155,6 +164,7 @@ mod tests {
             .command_tx
             .send(McpCommand::Navigate {
                 url: "https://example.com".into(),
+                new_tab: false,
             })
             .unwrap();
 

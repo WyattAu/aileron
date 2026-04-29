@@ -2,6 +2,8 @@ use open::that as open_that;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use image::ImageEncoder;
+
 use aileron::app::{AppState, WryAction};
 use aileron::arp::ArpCommand;
 use aileron::git::GitStatus;
@@ -220,8 +222,63 @@ pub fn process_wry_events(
                     // Load persisted scroll marks for this URL
                     app_state.load_scroll_marks_for_pane(pane_id, &url);
 
+                    // Inject DocumentEnd scripts
+                    let end_matching = content_scripts.scripts_for_url(&url, RunAt::DocumentEnd);
+                    for script in end_matching {
+                        let key = format!("userscript:{}", script.name);
+                        if app_state.is_script_injected(pane_id, &key) {
+                            continue;
+                        }
+                        if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
+                            info!(
+                                "Injecting document-end content script '{}' into {}",
+                                script.name,
+                                &url[..url.len().min(40)]
+                            );
+                            wry_pane.execute_js(&script.js_code);
+                            app_state.mark_script_injected(pane_id, &key);
+                        }
+                    }
+                    let ext_end_scripts =
+                        content_scripts.extension_scripts_for_url(&url, RunAt::DocumentEnd);
+                    for ext_script in ext_end_scripts {
+                        let key = format!("{}:{}", ext_script.extension_id, ext_script.script_id);
+                        if app_state.is_script_injected(pane_id, &key) {
+                            continue;
+                        }
+                        if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
+                            if !ext_script.css_code.is_empty() {
+                                let escaped = ext_script
+                                    .css_code
+                                    .replace('\\', "\\\\")
+                                    .replace('`', "\\`")
+                                    .replace('$', "\\$");
+                                wry_pane.execute_js(&format!(
+                                    "var s = document.createElement('style'); \
+                                     s.textContent = `{}`; \
+                                     (document.head || document.documentElement).appendChild(s);",
+                                    escaped
+                                ));
+                            }
+                            if !ext_script.js_code.is_empty() {
+                                info!(
+                                    "Injecting extension document-end content script '{}' into {}",
+                                    ext_script.script_id,
+                                    &url[..url.len().min(40)]
+                                );
+                                wry_pane.execute_js(&ext_script.js_code);
+                            }
+                            app_state.mark_script_injected(pane_id, &key);
+                        }
+                    }
+
+                    // Inject DocumentIdle scripts
                     let matching = content_scripts.scripts_for_url(&url, RunAt::DocumentIdle);
                     for script in matching {
+                        let key = format!("userscript:{}", script.name);
+                        if app_state.is_script_injected(pane_id, &key) {
+                            continue;
+                        }
                         if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
                             info!(
                                 "Injecting content script '{}' into {}",
@@ -229,11 +286,16 @@ pub fn process_wry_events(
                                 &url[..url.len().min(40)]
                             );
                             wry_pane.execute_js(&script.js_code);
+                            app_state.mark_script_injected(pane_id, &key);
                         }
                     }
                     let ext_scripts =
                         content_scripts.extension_scripts_for_url(&url, RunAt::DocumentIdle);
                     for ext_script in ext_scripts {
+                        let key = format!("{}:{}", ext_script.extension_id, ext_script.script_id);
+                        if app_state.is_script_injected(pane_id, &key) {
+                            continue;
+                        }
                         if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
                             if !ext_script.css_code.is_empty() {
                                 let escaped = ext_script
@@ -258,6 +320,7 @@ pub fn process_wry_events(
                                 );
                                 wry_pane.execute_js(&ext_script.js_code);
                             }
+                            app_state.mark_script_injected(pane_id, &key);
                         }
                     }
                     if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
@@ -339,10 +402,15 @@ pub fn process_wry_events(
                 app_state.autofill_password_id.clear();
                 app_state.autofill_js = None;
                 app_state.autofill_status_msg.clear();
+                app_state.clear_injected_scripts(pane_id);
                 app_state.status_message = format!("Loading: {}...", &url[..url.len().min(40)]);
                 if !url.starts_with("aileron://") {
                     let start_scripts = content_scripts.scripts_for_url(&url, RunAt::DocumentStart);
                     for script in start_scripts {
+                        let key = format!("userscript:{}", script.name);
+                        if app_state.is_script_injected(pane_id, &key) {
+                            continue;
+                        }
                         if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
                             info!(
                                 "Injecting document-start script '{}' into {}",
@@ -350,11 +418,16 @@ pub fn process_wry_events(
                                 &url[..url.len().min(40)]
                             );
                             wry_pane.execute_js(&script.js_code);
+                            app_state.mark_script_injected(pane_id, &key);
                         }
                     }
                     let ext_scripts =
                         content_scripts.extension_scripts_for_url(&url, RunAt::DocumentStart);
                     for ext_script in ext_scripts {
+                        let key = format!("{}:{}", ext_script.extension_id, ext_script.script_id);
+                        if app_state.is_script_injected(pane_id, &key) {
+                            continue;
+                        }
                         if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
                             if !ext_script.css_code.is_empty() {
                                 let escaped = ext_script
@@ -377,6 +450,7 @@ pub fn process_wry_events(
                                 );
                                 wry_pane.execute_js(&ext_script.js_code);
                             }
+                            app_state.mark_script_injected(pane_id, &key);
                         }
                     }
                 }
@@ -453,8 +527,66 @@ pub fn process_offscreen_events(
                     // Load persisted scroll marks for this URL
                     app_state.load_scroll_marks_for_pane(pane_id, &url);
 
+                    // Inject DocumentEnd scripts
+                    let end_matching = content_scripts.scripts_for_url(&url, RunAt::DocumentEnd);
+                    for script in end_matching {
+                        let key = format!("userscript:{}", script.name);
+                        if app_state.is_script_injected(pane_id, &key) {
+                            continue;
+                        }
+                        if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                            info!(
+                                "Injecting document-end content script '{}' into {}",
+                                script.name,
+                                &url[..url.len().min(40)]
+                            );
+                            pane.execute_js(&script.js_code);
+                            pane.mark_dirty();
+                            app_state.mark_script_injected(pane_id, &key);
+                        }
+                    }
+                    let ext_end_scripts =
+                        content_scripts.extension_scripts_for_url(&url, RunAt::DocumentEnd);
+                    for ext_script in ext_end_scripts {
+                        let key = format!("{}:{}", ext_script.extension_id, ext_script.script_id);
+                        if app_state.is_script_injected(pane_id, &key) {
+                            continue;
+                        }
+                        if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                            if !ext_script.css_code.is_empty() {
+                                let escaped = ext_script
+                                    .css_code
+                                    .replace('\\', "\\\\")
+                                    .replace('`', "\\`")
+                                    .replace('$', "\\$");
+                                pane.execute_js(&format!(
+                                    "var s = document.createElement('style'); \
+                                     s.textContent = `{}`; \
+                                     (document.head || document.documentElement).appendChild(s);",
+                                    escaped
+                                ));
+                                pane.mark_dirty();
+                            }
+                            if !ext_script.js_code.is_empty() {
+                                info!(
+                                    "Injecting extension document-end content script '{}' into {}",
+                                    ext_script.script_id,
+                                    &url[..url.len().min(40)]
+                                );
+                                pane.execute_js(&ext_script.js_code);
+                                pane.mark_dirty();
+                            }
+                            app_state.mark_script_injected(pane_id, &key);
+                        }
+                    }
+
+                    // Inject DocumentIdle scripts
                     let matching = content_scripts.scripts_for_url(&url, RunAt::DocumentIdle);
                     for script in matching {
+                        let key = format!("userscript:{}", script.name);
+                        if app_state.is_script_injected(pane_id, &key) {
+                            continue;
+                        }
                         if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                             info!(
                                 "Injecting content script '{}' into {}",
@@ -462,11 +594,17 @@ pub fn process_offscreen_events(
                                 &url[..url.len().min(40)]
                             );
                             pane.execute_js(&script.js_code);
+                            pane.mark_dirty();
+                            app_state.mark_script_injected(pane_id, &key);
                         }
                     }
                     let ext_scripts =
                         content_scripts.extension_scripts_for_url(&url, RunAt::DocumentIdle);
                     for ext_script in ext_scripts {
+                        let key = format!("{}:{}", ext_script.extension_id, ext_script.script_id);
+                        if app_state.is_script_injected(pane_id, &key) {
+                            continue;
+                        }
                         if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                             if !ext_script.css_code.is_empty() {
                                 let escaped = ext_script
@@ -493,6 +631,7 @@ pub fn process_offscreen_events(
                                 pane.execute_js(&ext_script.js_code);
                                 pane.mark_dirty();
                             }
+                            app_state.mark_script_injected(pane_id, &key);
                         }
                     }
                     if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
@@ -577,10 +716,15 @@ pub fn process_offscreen_events(
                 app_state.autofill_password_id.clear();
                 app_state.autofill_js = None;
                 app_state.autofill_status_msg.clear();
+                app_state.clear_injected_scripts(pane_id);
                 app_state.status_message = format!("Loading: {}...", &url[..url.len().min(40)]);
                 if !url.starts_with("aileron://") {
                     let start_scripts = content_scripts.scripts_for_url(&url, RunAt::DocumentStart);
                     for script in start_scripts {
+                        let key = format!("userscript:{}", script.name);
+                        if app_state.is_script_injected(pane_id, &key) {
+                            continue;
+                        }
                         if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                             info!(
                                 "Injecting document-start script '{}' into {}",
@@ -589,11 +733,16 @@ pub fn process_offscreen_events(
                             );
                             pane.execute_js(&script.js_code);
                             pane.mark_dirty();
+                            app_state.mark_script_injected(pane_id, &key);
                         }
                     }
                     let ext_scripts =
                         content_scripts.extension_scripts_for_url(&url, RunAt::DocumentStart);
                     for ext_script in ext_scripts {
+                        let key = format!("{}:{}", ext_script.extension_id, ext_script.script_id);
+                        if app_state.is_script_injected(pane_id, &key) {
+                            continue;
+                        }
                         if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                             if !ext_script.css_code.is_empty() {
                                 let escaped = ext_script
@@ -617,6 +766,7 @@ pub fn process_offscreen_events(
                                 pane.execute_js(&ext_script.js_code);
                             }
                             pane.mark_dirty();
+                            app_state.mark_script_injected(pane_id, &key);
                         }
                     }
                 }
@@ -729,15 +879,33 @@ pub fn process_mcp_commands(
     mcp_bridge: &McpBridge,
     wry_panes: &mut WryPaneManager,
     active_id: Uuid,
-    app_state: &AppState,
+    app_state: &mut AppState,
+    offscreen_panes: &mut OffscreenWebViewManager,
 ) {
     let mcp_commands: Vec<McpCommand> = mcp_bridge.poll_commands().collect();
 
     for command in mcp_commands {
         match command {
-            McpCommand::Navigate { url } => {
+            McpCommand::Navigate { url, new_tab } => {
                 if let Ok(parsed) = url::Url::parse(&url) {
-                    if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                    if new_tab {
+                        let current_active = app_state.wm.active_pane_id();
+                        match app_state.wm.split(
+                            current_active,
+                            aileron::wm::SplitDirection::Vertical,
+                            0.5,
+                        ) {
+                            Ok(new_id) => {
+                                info!("MCP: opening in new tab {}", url);
+                                app_state.engines.create_pane(new_id, parsed);
+                                app_state.wm.set_active_pane(new_id);
+                                app_state.session_dirty = true;
+                            }
+                            Err(e) => {
+                                warn!("MCP: failed to create new tab: {}", e);
+                            }
+                        }
+                    } else if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
                         info!("MCP: navigating to {}", url);
                         wry_pane.navigate(&parsed);
                     }
@@ -871,6 +1039,70 @@ pub fn process_mcp_commands(
                     "No tabs open.".into()
                 } else {
                     lines.join("\n")
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::Screenshot { response_tx } => {
+                let result = if let Some(pane) = offscreen_panes.get_mut(&active_id) {
+                    let dims = pane.frame().map(|f| (f.width, f.height));
+                    pane.capture_frame();
+                    let rgba = pane.frame_rgba().map(|r| r.to_vec());
+                    let dims = dims.or_else(|| pane.frame().map(|f| (f.width, f.height)));
+                    match (dims, rgba) {
+                        (Some((w, h)), Some(rgba)) => {
+                            match image::RgbaImage::from_raw(w, h, rgba) {
+                                Some(img) => {
+                                    let mut png_bytes = Vec::new();
+                                    let encoder =
+                                        image::codecs::png::PngEncoder::new(&mut png_bytes);
+                                    if encoder
+                                        .write_image(
+                                            img.as_raw(),
+                                            w,
+                                            h,
+                                            image::ExtendedColorType::Rgba8,
+                                        )
+                                        .is_ok()
+                                    {
+                                        use base64::Engine;
+                                        let b64 = base64::engine::general_purpose::STANDARD
+                                            .encode(&png_bytes);
+                                        format!("data:image/png;base64,{}", b64)
+                                    } else {
+                                        "Error: failed to encode PNG".into()
+                                    }
+                                }
+                                None => "Error: invalid frame dimensions".into(),
+                            }
+                        }
+                        _ => "Error: no frame available".into(),
+                    }
+                } else {
+                    "Error: no active pane".into()
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::CloseTab { index, response_tx } => {
+                let pane_ids: Vec<Uuid> = app_state.wm.pane_ids().into_iter().collect();
+                let result = if let Some(&close_id) = pane_ids.get(index) {
+                    let active_before = app_state.wm.active_pane_id();
+                    app_state.wm.set_active_pane(close_id);
+                    let _ = app_state.wm.close(close_id);
+                    app_state.engines.remove_pane(&close_id);
+                    app_state.terminal_pane_ids.remove(&close_id);
+                    if active_before == close_id
+                        && let Some(&next) = pane_ids.iter().find(|&&id| id != close_id)
+                    {
+                        app_state.wm.set_active_pane(next);
+                    }
+                    app_state.session_dirty = true;
+                    format!("Closed tab at index {}.", index)
+                } else {
+                    format!(
+                        "Error: tab index {} out of range ({} tabs open)",
+                        index,
+                        pane_ids.len()
+                    )
                 };
                 let _ = response_tx.send(result);
             }

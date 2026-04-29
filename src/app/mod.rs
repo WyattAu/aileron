@@ -309,6 +309,12 @@ pub struct AppState {
 
     /// Status message to display after auto-fill is triggered.
     pub autofill_status_msg: String,
+
+    /// Per-pane tracking of already-injected content script IDs.
+    /// Keys are pane IDs, values are sets of "extension_id:script_id" strings.
+    /// Cleared on each LoadStarted to allow re-injection on new navigations.
+    pub injected_content_script_ids:
+        std::collections::HashMap<uuid::Uuid, std::collections::HashSet<String>>,
 }
 
 impl AppState {
@@ -534,6 +540,7 @@ impl AppState {
             autofill_password_id: String::new(),
             autofill_js: None,
             autofill_status_msg: String::new(),
+            injected_content_script_ids: std::collections::HashMap::new(),
         })
     }
 
@@ -550,6 +557,27 @@ impl AppState {
     pub fn record_pane_focus(&mut self, pane_id: uuid::Uuid) {
         self.pane_last_focus
             .insert(pane_id, std::time::Instant::now());
+    }
+
+    /// Clear injected script tracking for a pane (called on LoadStarted).
+    pub fn clear_injected_scripts(&mut self, pane_id: uuid::Uuid) {
+        self.injected_content_script_ids.remove(&pane_id);
+    }
+
+    /// Check if a content script has already been injected for a pane.
+    pub fn is_script_injected(&self, pane_id: uuid::Uuid, script_key: &str) -> bool {
+        self.injected_content_script_ids
+            .get(&pane_id)
+            .map(|s| s.contains(script_key))
+            .unwrap_or(false)
+    }
+
+    /// Record that a content script was injected for a pane.
+    pub fn mark_script_injected(&mut self, pane_id: uuid::Uuid, script_key: &str) {
+        self.injected_content_script_ids
+            .entry(pane_id)
+            .or_default()
+            .insert(script_key.to_string());
     }
 
     /// Call each frame to track pane focus changes.

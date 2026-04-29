@@ -113,10 +113,10 @@ impl McpTool for BrowserNavigateTool {
             return Err(anyhow::anyhow!("Invalid URL: {}", url));
         }
 
-        // Send navigate command to main thread
         self.command_tx
             .send(McpCommand::Navigate {
                 url: url.to_string(),
+                new_tab: false,
             })
             .map_err(|e| anyhow::anyhow!("Failed to send command: {}", e))?;
 
@@ -548,6 +548,489 @@ impl McpTool for BrowserFillFormTool {
     }
 }
 
+// ── Navigate Tool ──────────────────────────────────────────────
+
+struct NavigateTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl NavigateTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for NavigateTool {
+    fn name(&self) -> &str {
+        "navigate"
+    }
+    fn description(&self) -> &str {
+        "Navigate to a URL in the active or a new tab"
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "url": { "type": "string", "description": "URL to navigate to" },
+                "new_tab": { "type": "boolean", "default": false, "description": "Open in new tab instead of active" },
+            },
+            "required": ["url"],
+        })
+    }
+    fn execute(&self, args: &serde_json::Value) -> anyhow::Result<String> {
+        let url = args
+            .get("url")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'url' parameter"))?;
+
+        if url::Url::parse(url).is_err() {
+            return Err(anyhow::anyhow!("Invalid URL: {}", url));
+        }
+
+        let new_tab = args
+            .get("new_tab")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        self.command_tx
+            .send(McpCommand::Navigate {
+                url: url.to_string(),
+                new_tab,
+            })
+            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+
+        if new_tab {
+            Ok(format!("Opening in new tab: {}", url))
+        } else {
+            Ok(format!("Navigating to: {}", url))
+        }
+    }
+}
+
+// ── Execute JS Tool ────────────────────────────────────────────
+
+struct ExecuteJsTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl ExecuteJsTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for ExecuteJsTool {
+    fn name(&self) -> &str {
+        "execute_js"
+    }
+    fn description(&self) -> &str {
+        "Execute JavaScript in the active tab and return the result"
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "code": { "type": "string", "description": "JavaScript code to execute" },
+            },
+            "required": ["code"],
+        })
+    }
+    fn execute(&self, args: &serde_json::Value) -> anyhow::Result<String> {
+        let code = args
+            .get("code")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'code' parameter"))?;
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::ExecuteJs {
+                code: code.to_string(),
+                response_tx,
+            })
+            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("JS execution cancelled"))
+    }
+}
+
+// ── Screenshot Tool ────────────────────────────────────────────
+
+struct ScreenshotTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl ScreenshotTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for ScreenshotTool {
+    fn name(&self) -> &str {
+        "screenshot"
+    }
+    fn description(&self) -> &str {
+        "Capture the active pane as a base64-encoded PNG image"
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({ "type": "object", "properties": {} })
+    }
+    fn execute(&self, _args: &serde_json::Value) -> anyhow::Result<String> {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::Screenshot { response_tx })
+            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Screenshot cancelled"))
+    }
+}
+
+// ── Click Tool ────────────────────────────────────────────────
+
+struct ClickTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl ClickTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for ClickTool {
+    fn name(&self) -> &str {
+        "click"
+    }
+    fn description(&self) -> &str {
+        "Click an element on the page by CSS selector"
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "selector": { "type": "string", "description": "CSS selector of element to click" }
+            },
+            "required": ["selector"],
+        })
+    }
+    fn execute(&self, args: &serde_json::Value) -> anyhow::Result<String> {
+        let selector = args
+            .get("selector")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'selector' parameter"))?;
+
+        let escaped = selector.replace('\\', "\\\\").replace('\'', "\\'");
+        let code = format!(
+            "(function() {{ \
+                var el = document.querySelector('{}'); \
+                if (!el) return 'Error: element not found'; \
+                el.click(); \
+                return 'clicked'; \
+            }})()",
+            escaped
+        );
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::ExecuteJs { code, response_tx })
+            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Click cancelled"))
+    }
+}
+
+// ── Fill Form Tool ────────────────────────────────────────────
+
+struct FillFormTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl FillFormTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for FillFormTool {
+    fn name(&self) -> &str {
+        "fill_form"
+    }
+    fn description(&self) -> &str {
+        "Fill an input field by CSS selector with a value"
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "selector": { "type": "string", "description": "CSS selector of input element" },
+                "value": { "type": "string", "description": "Value to fill" }
+            },
+            "required": ["selector", "value"],
+        })
+    }
+    fn execute(&self, args: &serde_json::Value) -> anyhow::Result<String> {
+        let selector = args
+            .get("selector")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'selector' parameter"))?;
+
+        let value = args
+            .get("value")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'value' parameter"))?;
+
+        let escaped_selector = selector.replace('\\', "\\\\").replace('\'', "\\'");
+        let escaped_value = value.replace('\\', "\\\\").replace('\'', "\\'");
+
+        let code = format!(
+            "(function() {{ \
+                var el = document.querySelector('{}'); \
+                if (!el) return 'Error: element not found'; \
+                el.value = '{}'; \
+                el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
+                el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
+                return 'filled'; \
+            }})()",
+            escaped_selector, escaped_value
+        );
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::ExecuteJs { code, response_tx })
+            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Form fill cancelled"))
+    }
+}
+
+// ── Get Cookies Tool ──────────────────────────────────────────
+
+struct GetCookiesTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl GetCookiesTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for GetCookiesTool {
+    fn name(&self) -> &str {
+        "get_cookies"
+    }
+    fn description(&self) -> &str {
+        "Read cookies for the active page domain"
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "domain": { "type": "string", "description": "Optional domain filter (defaults to active page domain)" }
+            },
+        })
+    }
+    fn execute(&self, args: &serde_json::Value) -> anyhow::Result<String> {
+        let code = "(function() { return document.cookie; })()".to_string();
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::ExecuteJs { code, response_tx })
+            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+
+        let raw = response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Cookie read cancelled"))?;
+
+        let domain_filter = args.get("domain").and_then(|v| v.as_str());
+
+        let mut cookies: Vec<serde_json::Value> = Vec::new();
+        for pair in raw.split(';') {
+            let pair = pair.trim();
+            if pair.is_empty() {
+                continue;
+            }
+            if let Some(eq_pos) = pair.find('=') {
+                let name = pair[..eq_pos].trim().to_string();
+                let value = pair[eq_pos + 1..].trim().to_string();
+                if let Some(filter) = domain_filter
+                    && !name.contains(filter)
+                    && !value.contains(filter)
+                {
+                    continue;
+                }
+                cookies.push(serde_json::json!({ "name": name, "value": value }));
+            }
+        }
+
+        if cookies.is_empty() {
+            Ok("No cookies found.".to_string())
+        } else {
+            Ok(serde_json::to_string_pretty(&cookies)?)
+        }
+    }
+}
+
+// ── Wait For Tool ────────────────────────────────────────────
+
+struct WaitForTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl WaitForTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for WaitForTool {
+    fn name(&self) -> &str {
+        "wait_for"
+    }
+    fn description(&self) -> &str {
+        "Check if an element matching a CSS selector exists on the page"
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "selector": { "type": "string", "description": "CSS selector to wait for" },
+            },
+            "required": ["selector"],
+        })
+    }
+    fn execute(&self, args: &serde_json::Value) -> anyhow::Result<String> {
+        let selector = args
+            .get("selector")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'selector' parameter"))?;
+
+        let escaped = selector.replace('\\', "\\\\").replace('\'', "\\'");
+        let code = format!(
+            "(function() {{ \
+                var el = document.querySelector('{}'); \
+                return el ? 'found' : 'not_found'; \
+            }})()",
+            escaped
+        );
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::ExecuteJs { code, response_tx })
+            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+
+        let result = response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Wait cancelled"))?;
+
+        if result == "found" {
+            Ok(format!("Element '{}' is present on the page.", selector))
+        } else {
+            Ok(format!(
+                "Element '{}' not found. Retry after a delay or check the selector.",
+                selector
+            ))
+        }
+    }
+}
+
+// ── Create Tab Tool ──────────────────────────────────────────
+
+struct CreateTabTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl CreateTabTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for CreateTabTool {
+    fn name(&self) -> &str {
+        "create_tab"
+    }
+    fn description(&self) -> &str {
+        "Open a new tab with an optional URL"
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "url": { "type": "string", "default": "aileron://new", "description": "URL to open in the new tab" }
+            },
+        })
+    }
+    fn execute(&self, args: &serde_json::Value) -> anyhow::Result<String> {
+        let url = args
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("aileron://new");
+
+        self.command_tx
+            .send(McpCommand::Navigate {
+                url: url.to_string(),
+                new_tab: true,
+            })
+            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+
+        Ok(format!("Opened new tab: {}", url))
+    }
+}
+
+// ── Close Tab Tool ───────────────────────────────────────────
+
+struct CloseTabTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl CloseTabTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for CloseTabTool {
+    fn name(&self) -> &str {
+        "close_tab"
+    }
+    fn description(&self) -> &str {
+        "Close a tab by index (0-based)"
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "index": { "type": "integer", "description": "Tab index to close (0-based)" }
+            },
+            "required": ["index"],
+        })
+    }
+    fn execute(&self, args: &serde_json::Value) -> anyhow::Result<String> {
+        let index = args
+            .get("index")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'index' parameter"))?;
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::CloseTab {
+                index: index as usize,
+                response_tx,
+            })
+            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Close tab cancelled"))
+    }
+}
+
 /// Create all MCP tools wired to the given bridge.
 pub fn create_tools(
     state: McpState,
@@ -562,7 +1045,16 @@ pub fn create_tools(
         Box::new(SearchWebTool),
         Box::new(ListTabsTool::new(command_tx.clone())),
         Box::new(BookmarkCrudTool::new(command_tx.clone())),
-        Box::new(HistorySearchTool::new(command_tx)),
+        Box::new(HistorySearchTool::new(command_tx.clone())),
+        Box::new(NavigateTool::new(command_tx.clone())),
+        Box::new(ExecuteJsTool::new(command_tx.clone())),
+        Box::new(ScreenshotTool::new(command_tx.clone())),
+        Box::new(ClickTool::new(command_tx.clone())),
+        Box::new(FillFormTool::new(command_tx.clone())),
+        Box::new(GetCookiesTool::new(command_tx.clone())),
+        Box::new(WaitForTool::new(command_tx.clone())),
+        Box::new(CreateTabTool::new(command_tx.clone())),
+        Box::new(CloseTabTool::new(command_tx)),
     ]
 }
 
@@ -637,7 +1129,10 @@ mod tests {
             .recv_timeout(std::time::Duration::from_millis(100))
             .unwrap();
         match cmd {
-            McpCommand::Navigate { url } => assert_eq!(url, "https://example.com"),
+            McpCommand::Navigate { url, new_tab } => {
+                assert_eq!(url, "https://example.com");
+                assert!(!new_tab);
+            }
             _ => panic!("Unexpected command: {:?}", cmd),
         }
     }
@@ -685,7 +1180,7 @@ mod tests {
         let state = McpState::default();
         let (tx, _) = std::sync::mpsc::channel();
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 18);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_navigate"));
@@ -696,6 +1191,15 @@ mod tests {
         assert!(names.contains(&"list_tabs"));
         assert!(names.contains(&"bookmark_crud"));
         assert!(names.contains(&"history_search"));
+        assert!(names.contains(&"navigate"));
+        assert!(names.contains(&"execute_js"));
+        assert!(names.contains(&"screenshot"));
+        assert!(names.contains(&"click"));
+        assert!(names.contains(&"fill_form"));
+        assert!(names.contains(&"get_cookies"));
+        assert!(names.contains(&"wait_for"));
+        assert!(names.contains(&"create_tab"));
+        assert!(names.contains(&"close_tab"));
     }
 
     #[test]
@@ -834,5 +1338,356 @@ mod tests {
         let args = json!({"selector": "#nonexistent", "value": "test"});
         let result = tool.execute(&args).unwrap();
         assert!(result.contains("element not found"));
+    }
+
+    #[test]
+    fn test_navigate_tool_active_tab() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tool = NavigateTool::new(tx);
+        let args = json!({"url": "https://example.com"});
+        let result = tool.execute(&args).unwrap();
+        assert!(result.contains("Navigating to"));
+        let cmd = rx
+            .recv_timeout(std::time::Duration::from_millis(100))
+            .unwrap();
+        match cmd {
+            McpCommand::Navigate { url, new_tab } => {
+                assert_eq!(url, "https://example.com");
+                assert!(!new_tab);
+            }
+            _ => panic!("Unexpected command: {:?}", cmd),
+        }
+    }
+
+    #[test]
+    fn test_navigate_tool_new_tab() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tool = NavigateTool::new(tx);
+        let args = json!({"url": "https://example.com", "new_tab": true});
+        let result = tool.execute(&args).unwrap();
+        assert!(result.contains("new tab"));
+        let cmd = rx
+            .recv_timeout(std::time::Duration::from_millis(100))
+            .unwrap();
+        match cmd {
+            McpCommand::Navigate { url, new_tab } => {
+                assert_eq!(url, "https://example.com");
+                assert!(new_tab);
+            }
+            _ => panic!("Unexpected command: {:?}", cmd),
+        }
+    }
+
+    #[test]
+    fn test_navigate_tool_invalid_url() {
+        let (tx, _) = std::sync::mpsc::channel();
+        let tool = NavigateTool::new(tx);
+        let args = json!({"url": "not-a-url"});
+        let result = tool.execute(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_execute_js_tool() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+            {
+                let _ = response_tx.send("42".to_string());
+            }
+        });
+
+        let tool = ExecuteJsTool::new(tx);
+        let args = json!({"code": "1 + 1"});
+        let result = tool.execute(&args).unwrap();
+        assert_eq!(result, "42");
+    }
+
+    #[test]
+    fn test_execute_js_tool_missing_code() {
+        let (tx, _) = std::sync::mpsc::channel();
+        let tool = ExecuteJsTool::new(tx);
+        let args = json!({});
+        let result = tool.execute(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("code"));
+    }
+
+    #[test]
+    fn test_screenshot_tool() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            if let Ok(McpCommand::Screenshot { response_tx }) =
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+            {
+                let _ = response_tx.send("data:image/png;base64,test".to_string());
+            }
+        });
+
+        let tool = ScreenshotTool::new(tx);
+        let result = tool.execute(&json!({})).unwrap();
+        assert!(result.starts_with("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn test_screenshot_tool_no_pane() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            if let Ok(McpCommand::Screenshot { response_tx }) =
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+            {
+                let _ = response_tx.send("Error: no active pane".to_string());
+            }
+        });
+
+        let tool = ScreenshotTool::new(tx);
+        let result = tool.execute(&json!({})).unwrap();
+        assert!(result.contains("no active pane"));
+    }
+
+    #[test]
+    fn test_click_tool() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            if let Ok(McpCommand::ExecuteJs { response_tx, code }) =
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+            {
+                assert!(
+                    code.contains("querySelector"),
+                    "JS should contain querySelector"
+                );
+                assert!(code.contains(".click()"), "JS should contain click()");
+                let _ = response_tx.send("clicked".to_string());
+            }
+        });
+
+        let tool = ClickTool::new(tx);
+        let args = json!({"selector": "#submit-btn"});
+        let result = tool.execute(&args).unwrap();
+        assert_eq!(result, "clicked");
+    }
+
+    #[test]
+    fn test_click_tool_missing_selector() {
+        let (tx, _) = std::sync::mpsc::channel();
+        let tool = ClickTool::new(tx);
+        let args = json!({});
+        let result = tool.execute(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("selector"));
+    }
+
+    #[test]
+    fn test_fill_form_tool() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            if let Ok(McpCommand::ExecuteJs { response_tx, code }) =
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+            {
+                assert!(code.contains("#search"), "JS should contain selector");
+                assert!(code.contains("hello world"), "JS should contain value");
+                assert!(code.contains("input"), "JS should dispatch input event");
+                assert!(code.contains("change"), "JS should dispatch change event");
+                let _ = response_tx.send("filled".to_string());
+            }
+        });
+
+        let tool = FillFormTool::new(tx);
+        let args = json!({"selector": "#search", "value": "hello world"});
+        let result = tool.execute(&args).unwrap();
+        assert_eq!(result, "filled");
+    }
+
+    #[test]
+    fn test_fill_form_tool_missing_selector() {
+        let (tx, _) = std::sync::mpsc::channel();
+        let tool = FillFormTool::new(tx);
+        let args = json!({"value": "test"});
+        let result = tool.execute(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("selector"));
+    }
+
+    #[test]
+    fn test_fill_form_tool_missing_value() {
+        let (tx, _) = std::sync::mpsc::channel();
+        let tool = FillFormTool::new(tx);
+        let args = json!({"selector": "#input"});
+        let result = tool.execute(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("value"));
+    }
+
+    #[test]
+    fn test_get_cookies_no_cookies() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+            {
+                let _ = response_tx.send("".to_string());
+            }
+        });
+
+        let tool = GetCookiesTool::new(tx);
+        let result = tool.execute(&json!({})).unwrap();
+        assert!(result.contains("No cookies found"));
+    }
+
+    #[test]
+    fn test_get_cookies_with_cookies() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+            {
+                let _ = response_tx.send("session=abc123; user=john".to_string());
+            }
+        });
+
+        let tool = GetCookiesTool::new(tx);
+        let result = tool.execute(&json!({})).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed.as_array().unwrap().len(), 2);
+        assert_eq!(parsed[0]["name"], "session");
+        assert_eq!(parsed[0]["value"], "abc123");
+        assert_eq!(parsed[1]["name"], "user");
+        assert_eq!(parsed[1]["value"], "john");
+    }
+
+    #[test]
+    fn test_get_cookies_with_domain_filter() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+            {
+                let _ = response_tx.send("session=abc123; _ga=GA123".to_string());
+            }
+        });
+
+        let tool = GetCookiesTool::new(tx);
+        let result = tool.execute(&json!({"domain": "ga"})).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed.as_array().unwrap().len(), 1);
+        assert_eq!(parsed[0]["name"], "_ga");
+    }
+
+    #[test]
+    fn test_wait_for_found() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            if let Ok(McpCommand::ExecuteJs { response_tx, code }) =
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+            {
+                assert!(code.contains("#result"), "JS should contain selector");
+                let _ = response_tx.send("found".to_string());
+            }
+        });
+
+        let tool = WaitForTool::new(tx);
+        let result = tool.execute(&json!({"selector": "#result"})).unwrap();
+        assert!(result.contains("present"));
+    }
+
+    #[test]
+    fn test_wait_for_not_found() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+            {
+                let _ = response_tx.send("not_found".to_string());
+            }
+        });
+
+        let tool = WaitForTool::new(tx);
+        let result = tool.execute(&json!({"selector": "#nonexistent"})).unwrap();
+        assert!(result.contains("not found"));
+    }
+
+    #[test]
+    fn test_wait_for_missing_selector() {
+        let (tx, _) = std::sync::mpsc::channel();
+        let tool = WaitForTool::new(tx);
+        let result = tool.execute(&json!({}));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("selector"));
+    }
+
+    #[test]
+    fn test_create_tab_default_url() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tool = CreateTabTool::new(tx);
+        let result = tool.execute(&json!({})).unwrap();
+        assert!(result.contains("aileron://new"));
+        let cmd = rx
+            .recv_timeout(std::time::Duration::from_millis(100))
+            .unwrap();
+        match cmd {
+            McpCommand::Navigate { url, new_tab } => {
+                assert_eq!(url, "aileron://new");
+                assert!(new_tab);
+            }
+            _ => panic!("Unexpected command: {:?}", cmd),
+        }
+    }
+
+    #[test]
+    fn test_create_tab_custom_url() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tool = CreateTabTool::new(tx);
+        let result = tool
+            .execute(&json!({"url": "https://example.com"}))
+            .unwrap();
+        assert!(result.contains("example.com"));
+        let cmd = rx
+            .recv_timeout(std::time::Duration::from_millis(100))
+            .unwrap();
+        match cmd {
+            McpCommand::Navigate { url, new_tab } => {
+                assert_eq!(url, "https://example.com");
+                assert!(new_tab);
+            }
+            _ => panic!("Unexpected command: {:?}", cmd),
+        }
+    }
+
+    #[test]
+    fn test_close_tab() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            if let Ok(McpCommand::CloseTab { index, response_tx }) =
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+            {
+                assert_eq!(index, 2);
+                let _ = response_tx.send("Closed tab 2.".to_string());
+            }
+        });
+
+        let tool = CloseTabTool::new(tx);
+        let result = tool.execute(&json!({"index": 2})).unwrap();
+        assert!(result.contains("Closed tab 2"));
+    }
+
+    #[test]
+    fn test_close_tab_missing_index() {
+        let (tx, _) = std::sync::mpsc::channel();
+        let tool = CloseTabTool::new(tx);
+        let result = tool.execute(&json!({}));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("index"));
     }
 }

@@ -102,6 +102,12 @@ futures-util = "0.3"
 # Regex (for site settings pattern matching)
 regex = "1"
 
+# Image encoding (for MCP screenshot tool)
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Base64 encoding (for MCP screenshot tool)
+base64 = "0.22"
+
 # System keyring for credential storage
 keyring = "3"
 

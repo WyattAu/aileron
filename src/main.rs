@@ -1821,7 +1821,8 @@ impl ApplicationHandler for AileronApp {
             &self.mcp_bridge,
             &mut self.wry_panes,
             active_id,
-            self.app_state.as_ref().unwrap(),
+            self.app_state.as_mut().unwrap(),
+            &mut self.offscreen_panes,
         );
 
         if let Some(close_id) = self
