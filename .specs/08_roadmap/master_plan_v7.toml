@@ -25,7 +25,7 @@ id = "Z01"
 title = "Ship v0.18.0 release"
 track = "Z"
 priority = "critical"
-status = "pending"
+status = "done"
 description = "Bump Cargo.toml to 0.18.0, update VERSION.md (phase, version, test count 851, unsafe count 21, code lines 41K), add CHANGELOG entry for v0.18 features (builtin adblock, :bind/:unbind/:stats, extension loader, quality hardening), update PKGBUILD, update man page."
 depends = []
 
@@ -57,7 +57,7 @@ id = "A01"
 title = "Wire content script injection into page lifecycle"
 track = "A"
 priority = "critical"
-status = "pending"
+status = "done"
 description = "On LoadStarted/LoadComplete events in offscreen_webview.rs, query content_script_registry for matching scripts and inject via evaluate_script. Handle document_start (before DOM), document_end (after DOM), document_idle (after load). Track injected scripts per pane to avoid double-injection."
 depends = []
 
@@ -66,7 +66,7 @@ id = "A02"
 title = "Wire web request interceptor (on_before_request)"
 track = "A"
 priority = "critical"
-status = "pending"
+status = "done"
 description = "Hook into wry's navigation handler to call fire_on_before_request() before each network request. Extension can return BlockingResponse { cancel: true } to block, or { redirect: url } to redirect. Requires threading ExtensionManager through to the wry navigation callback."
 depends = []
 
@@ -75,7 +75,7 @@ id = "A03"
 title = "Wire web request events (headers, redirect, complete, error)"
 track = "A"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Fire on_headers_received, on_before_redirect, on_completed, on_error_occurred at appropriate points in the request lifecycle. These are notification-only (no blocking response)."
 depends = ["A02"]
 
@@ -84,7 +84,7 @@ id = "A04"
 title = "Wire extension messaging (runtime.sendMessage / onMessage)"
 track = "A"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Bridge extension messaging to wry IPC. Content scripts call runtime.sendMessage() via injected JS → IPC → ExtensionManager message bus → registered handlers. Route responses back through IPC."
 depends = ["A01"]
 
@@ -93,7 +93,7 @@ id = "A05"
 title = "Wire extension storage API to persistent backend"
 track = "A"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Extension storage.local.get/set/remove/clear should persist to disk in extensions_dir/storage/<extension_id>/. The AileronStorageArea already has file persistence — verify it works end-to-end with content script access."
 depends = ["A01"]
 
@@ -102,7 +102,7 @@ id = "A06"
 title = "Extension permission enforcement"
 track = "A"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Before executing any extension API call, check has_permission() and has_host_permission(). Deny access to APIs not listed in manifest permissions. Log permission violations."
 depends = ["A01"]
 
@@ -111,7 +111,7 @@ id = "A07"
 title = "Extension options page support"
 track = "A"
 priority = "low"
-status = "pending"
+status = "done"
 description = "Allow extensions to declare an options_page in manifest. Opening the options page navigates to extension://<id>/options.html served from the extension directory."
 depends = ["A01"]
 
@@ -120,7 +120,7 @@ id = "A08"
 title = "Builtin adblock: implement actual filter matching"
 track = "A"
 priority = "high"
-status = "pending"
+status = "done"
 description = "The builtin_adblock extension has a manifest but no blocking logic. Wire it into the web request interceptor (A02) using the existing AdBlocker engine. Load EasyList on startup. Toggle via :set adblock."
 depends = ["A02"]
 
@@ -129,7 +129,7 @@ id = "A09"
 title = "Extension lifecycle: install/unload/reload commands"
 track = "A"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Add :extension-install <path>, :extension-unload <id>, :extension-reload <id> commands. Allow users to manage extensions at runtime."
 depends = ["A01"]
 
@@ -138,7 +138,7 @@ id = "A10"
 title = "Extension tests: end-to-end content script + storage"
 track = "A"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Integration tests that: (1) load an extension with a content script, (2) navigate to a matching URL, (3) verify script injection, (4) test storage get/set persistence, (5) test message passing."
 depends = ["A01", "A04", "A05"]
 
@@ -152,7 +152,7 @@ id = "B01"
 title = "MCP tool: screenshot (capture visible pane as PNG)"
 track = "B"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Add screenshot tool that captures the active pane's RGBA buffer, converts to PNG base64, returns to MCP client. Reuses existing frame_rgba() infrastructure."
 depends = []
 
@@ -161,7 +161,7 @@ id = "B02"
 title = "MCP tool: navigate (go to URL in active/new tab)"
 track = "B"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Add navigate tool: { url: String, new_tab?: bool, active?: bool }. Uses existing dispatch logic."
 depends = []
 
@@ -170,7 +170,7 @@ id = "B03"
 title = "MCP tool: fill_form (fill input fields by CSS selector)"
 track = "B"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Add fill_form tool: { selector: String, value: String }. Injects JS to find element and set value + dispatch input event. More flexible than Bitwarden autofill."
 depends = []
 
@@ -179,7 +179,7 @@ id = "B04"
 title = "MCP tool: get_cookies (read cookies for active domain)"
 track = "B"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Add get_cookies tool: { domain?: String }. Uses JS document.cookie to read cookies. Returns name=value pairs."
 depends = []
 
@@ -188,7 +188,7 @@ id = "B05"
 title = "MCP tool: click (click element by CSS selector)"
 track = "B"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Add click tool: { selector: String }. Injects JS to find element and dispatch click event. Essential for form submission, button clicks."
 depends = []
 
@@ -197,7 +197,7 @@ id = "B06"
 title = "MCP tool: wait_for (wait for element/navigation/timeout)"
 track = "B"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Add wait_for tool: { selector?: String, navigation?: bool, timeout_ms?: u32 }. Uses MutationObserver for element, PageLoadEvent for navigation."
 depends = []
 
@@ -206,7 +206,7 @@ id = "B07"
 title = "MCP tool: execute_js (raw JavaScript execution)"
 track = "B"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Add execute_js tool: { code: String }. Returns eval result as string. Already partially exists — verify and expose properly."
 depends = []
 
@@ -215,7 +215,7 @@ id = "B08"
 title = "MCP: tab management tools (create, close, list, switch)"
 track = "B"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Add create_tab, close_tab, switch_tab, list_tabs tools. List tabs already exists. Add missing operations."
 depends = []
 
@@ -224,7 +224,7 @@ id = "B09"
 title = "MCP: resource documentation and schema"
 track = "B"
 priority = "low"
-status = "pending"
+status = "done"
 description = "Write MCP resource documentation listing all tools with schemas, examples, and usage patterns. Publish as markdown in docs/."
 depends = ["B01", "B02", "B03"]
 
@@ -238,7 +238,7 @@ id = "C01"
 title = "Adblock: Aho-Corasick indexing for network filters"
 track = "C"
 priority = "high"
-status = "pending"
+status = "done"
 description = "Replace triple linear scan (150K comparisons/page load) with Aho-Corasick automaton for string-matching patterns. Index domain-based patterns in HashMap. Target: <1ms for EasyList matching."
 depends = []
 
@@ -247,7 +247,7 @@ id = "C02"
 title = "TerminalColors caching (avoid 256-color array alloc/frame)"
 track = "C"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Store TerminalColors in NativeTerminalManager, recompute only on theme change. CellMetrics.from_egui() cached similarly."
 depends = []
 
@@ -256,7 +256,7 @@ id = "C03"
 title = "Tab list event-driven updates (avoid per-frame string alloc)"
 track = "C"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Cache tab display strings (title, URL, truncated) and only recompute on TitleChanged/URLChanged events, not every frame."
 depends = []
 
@@ -265,7 +265,7 @@ id = "C04"
 title = "Status bar event-driven text (avoid per-frame format! chain)"
 track = "C"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Cache status bar text components. Only recompute when mode changes, pane count changes, or workspace switches."
 depends = []
 
@@ -274,7 +274,7 @@ id = "C05"
 title = "Config JSON cache for get-config IPC"
 track = "C"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Cache serialized config JSON. Only recompute when config changes (dirty flag). Avoids per-page-load serialization."
 depends = []
 
@@ -283,7 +283,7 @@ id = "C06"
 title = "Cosmetic CSS cache per domain"
 track = "C"
 priority = "low"
-status = "pending"
+status = "done"
 description = "Cache cosmetic_css_for_domain() result. Invalidate on filter list update. Avoids rebuilding CSS string per page load."
 depends = []
 
@@ -292,7 +292,7 @@ id = "C07"
 title = "blocked_domains_iter() cache"
 track = "C"
 priority = "low"
-status = "pending"
+status = "done"
 description = "Cache the blocked domains Vec in AdBlocker. Rebuild on filter list update. Avoids HashSet→Vec conversion per pane creation."
 depends = []
 
@@ -301,7 +301,7 @@ id = "C08"
 title = "HTTPS safe list cache at app level"
 track = "C"
 priority = "low"
-status = "pending"
+status = "done"
 description = "Load HTTPS safe list once at startup into AppState. Pass to pane creation instead of reading file per pane."
 depends = []
 
@@ -351,7 +351,7 @@ id = "D05"
 title = "CI: macOS build verification"
 track = "D"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Add macOS build+test step to GitHub Actions CI. Even without full testing, verify compilation."
 depends = []
 
@@ -360,7 +360,7 @@ id = "D06"
 title = "CI: Windows build verification"
 track = "D"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Add Windows build+test step to GitHub Actions CI."
 depends = []
 
@@ -382,7 +382,7 @@ id = "E02"
 title = "Servo: abstraction layer health check"
 track = "E"
 priority = "low"
-status = "pending"
+status = "done"
 description = "Verify WebEngine trait abstraction in src/servo/ is still compatible with wry API changes. Keep the Servo stub compiling."
 
 [[task]]
@@ -404,7 +404,7 @@ id = "F01"
 title = "Accessibility: aria-live for status bar updates"
 track = "F"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Implement egui equivalent of aria-live=polite for status bar changes. Screen readers should announce mode changes, errors, navigation."
 
 [[task]]
@@ -412,7 +412,7 @@ id = "F02"
 title = "Reader mode: distraction-free article view"
 track = "F"
 priority = "medium"
-status = "pending"
+status = "done"
 description = "Extract article content from pages (title, byline, body). Render in clean aileron://reader page with configurable font/size."
 
 [[task]]
