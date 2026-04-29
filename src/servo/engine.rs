@@ -131,7 +131,14 @@ impl PaneStateManager {
     }
 
     /// Create state tracking for a new pane.
-    pub fn create_pane(&mut self, pane_id: Uuid, initial_url: Url) {
+    pub fn create_pane(
+        &mut self,
+        pane_id: Uuid,
+        initial_url: Url,
+        _interceptor_registry: Option<
+            std::sync::Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+        >,
+    ) {
         let pane = PaneState::new(pane_id, initial_url);
         self.panes.insert(pane_id, pane);
     }
@@ -194,8 +201,8 @@ mod tests {
         let id2 = Uuid::new_v4();
         let url = Url::parse("https://example.com").unwrap();
 
-        manager.create_pane(id1, url.clone());
-        manager.create_pane(id2, url.clone());
+        manager.create_pane(id1, url.clone(), None);
+        manager.create_pane(id2, url.clone(), None);
 
         assert!(manager.get(&id1).is_some());
         assert!(manager.get(&id2).is_some());

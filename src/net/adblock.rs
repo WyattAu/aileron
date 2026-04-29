@@ -1,3 +1,4 @@
+use aho_corasick::AhoCorasick;
 use std::collections::{HashMap, HashSet};
 use tracing::info;
 use url::Url;
@@ -16,6 +17,8 @@ pub struct AdBlocker {
     blocked_count: u64,
     cosmetic_filtering: bool,
     site_exceptions: HashSet<String>,
+    ac_patterns: Option<AhoCorasick>,
+    dirty: bool,
 }
 
 impl AdBlocker {
@@ -32,6 +35,8 @@ impl AdBlocker {
             blocked_count: 0,
             cosmetic_filtering: true,
             site_exceptions: HashSet::new(),
+            ac_patterns: None,
+            dirty: false,
         }
     }
 
@@ -89,6 +94,7 @@ impl AdBlocker {
 
     pub fn block_pattern(&mut self, pattern: &str) {
         self.blocked_patterns.push(pattern.to_lowercase());
+        self.dirty = true;
     }
 
     pub fn whitelist_domain(&mut self, domain: &str) {
@@ -97,6 +103,47 @@ impl AdBlocker {
 
     pub fn add_cosmetic_rule(&mut self, rule: &str) {
         self.cosmetic_rules.push(rule.to_string());
+    }
+
+    fn rebuild_automaton(&mut self) {
+        let mut patterns: Vec<String> = Vec::new();
+        for pattern in &self.blocked_patterns {
+            if pattern.contains('*') {
+                continue;
+            }
+            if pattern.starts_with("||") || pattern.starts_with('|') || pattern.ends_with('|') {
+                continue;
+            }
+            if !pattern.is_empty() {
+                patterns.push(pattern.clone());
+            }
+        }
+
+        self.ac_patterns = if patterns.is_empty() {
+            None
+        } else {
+            Some(
+                AhoCorasick::builder()
+                    .ascii_case_insensitive(false)
+                    .build(&patterns)
+                    .expect("failed to build Aho-Corasick automaton"),
+            )
+        };
+
+        self.dirty = false;
+        info!(
+            target: "adblock",
+            "Rebuilt Aho-Corasick automaton with {} plain patterns ({} total blocked_patterns, {} with wildcards/anchors skipped)",
+            patterns.len(),
+            self.blocked_patterns.len(),
+            self.blocked_patterns.len() - patterns.len()
+        );
+    }
+
+    fn ensure_automaton(&mut self) {
+        if self.dirty {
+            self.rebuild_automaton();
+        }
     }
 
     pub fn load_filter_list(&mut self, content: &str) -> anyhow::Result<usize> {
@@ -165,6 +212,7 @@ impl AdBlocker {
         }
 
         info!(target: "adblock", "Loaded {} rules (legacy format)", rules_loaded);
+        self.dirty = true;
         Ok(rules_loaded)
     }
 
@@ -206,6 +254,7 @@ impl AdBlocker {
         }
 
         info!(target: "adblock", "Loaded {} rules from {} filter lists", total, lists.len());
+        self.dirty = true;
         total
     }
 
@@ -230,6 +279,8 @@ impl AdBlocker {
         };
 
         let url_str = url.as_str().to_lowercase();
+
+        self.ensure_automaton();
 
         for filter in &self.network_filters {
             if filter.is_exception || !filter.important || filter.badfilter {
@@ -272,8 +323,22 @@ impl AdBlocker {
             }
         }
 
+        if self
+            .ac_patterns
+            .as_ref()
+            .is_some_and(|ac| ac.find(&url_str).is_some())
+        {
+            self.blocked_count += 1;
+            return true;
+        }
+
         for pattern in &self.blocked_patterns {
-            if url_str.contains(pattern) {
+            if (pattern.contains('*')
+                || pattern.starts_with("||")
+                || pattern.starts_with('|')
+                || pattern.ends_with('|'))
+                && url_str.contains(&pattern.replace('*', ""))
+            {
                 self.blocked_count += 1;
                 return true;
             }
@@ -1003,5 +1068,202 @@ mod tests {
 
         let url = Url::parse("https://ads.example.com/ad.js").unwrap();
         assert!(blocker.should_block(&url));
+    }
+
+    #[test]
+    fn test_aho_corasick_correctness() {
+        let mut blocker = AdBlocker::new();
+        let filters = [
+            "/ads/tracker.js",
+            "/analytics.js",
+            "doubleclick.net",
+            "googlesyndication.com",
+            "/banner_",
+            "/popup.js",
+            "adservice.google",
+            "facebook.net/signals",
+            "amazon-adsystem.com",
+            "/pagead/js",
+        ];
+        for f in &filters {
+            blocker.block_pattern(f);
+        }
+
+        let urls = [
+            ("https://cdn.example.com/ads/tracker.js?id=123", true),
+            ("https://example.com/analytics.js", true),
+            ("https://example.com/page", false),
+            ("https://www.doubleclick.net/ad", true),
+            ("https://safe.example.com/page", false),
+            ("https://example.com/path/to/pagead/js/ads", true),
+            ("https://ads.googlesyndication.com/pagead/js", true),
+            ("https://connect.facebook.net/signals/config", true),
+            ("https://example.com/normal/script.js", false),
+            ("https://example.com/banner_top.js", true),
+            ("https://example.com/popup.js", true),
+            ("https://example.com/adservice.google.com/tag", true),
+            ("https://example.com/page", false),
+        ];
+
+        for (url_str, expected) in &urls {
+            let url = Url::parse(url_str).unwrap();
+            assert_eq!(blocker.should_block(&url), *expected, "URL: {}", url_str);
+        }
+    }
+
+    #[test]
+    fn test_aho_corasick_matches_linear_scan() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse(
+            "||ads.example.com^\n\
+             ||tracker.evil.net^\n\
+             /analytics.js\n\
+             /banner_\n\
+             doubleclick.net\n\
+             googlesyndication.com\n\
+             /popup.js\n\
+             /pagead/js\n\
+             adservice.google\n\
+             facebook.net/signals\n\
+             amazon-adsystem.com",
+        );
+        blocker.load_from_filter_lists(&[list]);
+
+        let urls = [
+            "https://ads.example.com/ad.js",
+            "https://tracker.evil.net/track",
+            "https://cdn.example.com/analytics.js",
+            "https://safe.example.com/page",
+            "https://www.doubleclick.net/ad",
+            "https://ads.googlesyndication.com/pagead/js",
+            "https://connect.facebook.net/signals/config",
+            "https://example.com/normal/script.js",
+            "https://example.com/banner_top.js",
+            "https://example.com/popup.js",
+            "https://example.com/adservice.google.com/tag",
+            "https://example.com/about",
+            "https://z.amazon-adsystem.com/widget",
+            "https://plain.org/index.html",
+        ];
+
+        for url_str in &urls {
+            let url = Url::parse(url_str).unwrap();
+            let _ = blocker.should_block(&url);
+        }
+
+        assert!(blocker.blocked_count() > 0);
+    }
+
+    #[test]
+    fn test_aho_corasick_left_right_anchor() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse(
+            "|https://evil.com/\n\
+             /footer.js|",
+        );
+        blocker.load_from_filter_lists(&[list]);
+
+        let url_match = Url::parse("https://evil.com/path").unwrap();
+        assert!(blocker.should_block(&url_match));
+
+        let url_suffix = Url::parse("https://example.com/scripts/footer.js").unwrap();
+        assert!(blocker.should_block(&url_suffix));
+
+        let url_no_match = Url::parse("https://good.com/evil.com/path").unwrap();
+        assert!(!blocker.should_block(&url_no_match));
+
+        let url_no_suffix = Url::parse("https://example.com/scripts/header.js").unwrap();
+        assert!(!blocker.should_block(&url_no_suffix));
+    }
+
+    #[test]
+    fn test_aho_corasick_wildcard_patterns() {
+        let mut blocker = AdBlocker::new();
+        blocker.block_pattern("/ads/");
+
+        let url = Url::parse("https://cdn.example.com/ads/v3/tracker.js").unwrap();
+        assert!(blocker.should_block(&url));
+    }
+
+    #[test]
+    fn test_aho_corasick_performance() {
+        let mut blocker = AdBlocker::new();
+        for i in 0..1000 {
+            blocker.block_pattern(&format!("/tracker_pattern_{}/ad.js", i));
+        }
+
+        let mut urls: Vec<Url> = Vec::new();
+        for i in 0..100 {
+            urls.push(Url::parse(&format!("https://cdn.example.com/page_{}.js", i)).unwrap());
+        }
+
+        let start = std::time::Instant::now();
+        for url in &urls {
+            let _ = blocker.should_block(url);
+        }
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed.as_millis() < 100,
+            "1000 filters × 100 URLs took {}ms, expected < 100ms",
+            elapsed.as_millis()
+        );
+    }
+
+    #[test]
+    fn test_aho_corasick_important_exception_priority() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse(
+            "||example.com^$important\n\
+             @@||example.com^",
+        );
+        blocker.load_from_filter_lists(&[list]);
+
+        let url = Url::parse("https://example.com/page").unwrap();
+        assert!(blocker.should_block(&url));
+    }
+
+    #[test]
+    fn test_aho_corasick_domain_specific_filters() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse("||ads.tracker.com^");
+        blocker.load_from_filter_lists(&[list]);
+
+        let url = Url::parse("https://ads.tracker.com/ad.js").unwrap();
+        assert!(blocker.should_block(&url));
+    }
+
+    #[test]
+    fn test_aho_corasick_rebuild_on_add_filter() {
+        let mut blocker = AdBlocker::new();
+
+        let url1 = Url::parse("https://example.com/ads/tracker.js").unwrap();
+        assert!(!blocker.should_block(&url1));
+
+        blocker.block_pattern("/ads/tracker.js");
+        assert!(blocker.should_block(&url1));
+    }
+
+    #[test]
+    fn test_aho_corasick_empty_filters() {
+        let mut blocker = AdBlocker::new();
+        let url = Url::parse("https://example.com/page").unwrap();
+        assert!(!blocker.should_block(&url));
+    }
+
+    #[test]
+    fn test_aho_corasick_exception_cancels_plain_pattern() {
+        let mut blocker = AdBlocker::new();
+        let list = FilterList::parse(
+            "/ads/\n\
+             @@/ads/safe/",
+        );
+        blocker.load_from_filter_lists(&[list]);
+
+        let url_blocked = Url::parse("https://example.com/ads/banner.js").unwrap();
+        assert!(blocker.should_block(&url_blocked));
+
+        let url_safe = Url::parse("https://example.com/ads/safe/content.js").unwrap();
+        assert!(!blocker.should_block(&url_safe));
     }
 }

@@ -81,7 +81,7 @@ pub fn restore_workspace(
             .cloned()
             .unwrap_or_else(|| "aileron://new".into());
         let url = Url::parse(&url_str).unwrap_or_else(|_| Url::parse("aileron://new").unwrap());
-        engines.create_pane(*pid, url.clone());
+        engines.create_pane(*pid, url.clone(), None);
 
         if url_str == "aileron://terminal" {
             terminal_pane_ids.insert(*pid);

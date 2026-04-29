@@ -9,7 +9,7 @@
 //! on Wayland and required XWayland workarounds.
 
 use std::collections::HashMap;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
 use tracing::{info, warn};
 use url::Url;
@@ -102,6 +102,7 @@ impl OffscreenWebView {
             true,
             devtools,
             popup_blocker,
+            None,
         )
     }
 
@@ -118,6 +119,9 @@ impl OffscreenWebView {
         tracking_protection_enabled: bool,
         devtools: bool,
         popup_blocker: bool,
+        interceptor_registry: Option<
+            Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+        >,
     ) -> Result<Self, wry::Error> {
         let offscreen = gtk::OffscreenWindow::new();
         offscreen.set_default_size(width, height);
@@ -207,6 +211,41 @@ a {{ color: #4db4ff; }}
                 }
             })
             .with_navigation_handler(move |url: String| {
+                // Fire extension onBeforeRequest hooks BEFORE adblock checks
+                if let Some(ref registry) = interceptor_registry
+                    && registry.has_interceptors()
+                {
+                    let details = crate::extensions::web_request::RequestDetails {
+                        request_id: crate::extensions::types::RequestId(0),
+                        url: url::Url::parse(&url).unwrap_or_else(|_| {
+                            url::Url::parse("about:blank").unwrap()
+                        }),
+                        method: "GET".into(),
+                        frame_id: crate::extensions::types::FrameId(0),
+                        parent_frame_id: crate::extensions::types::FrameId(u32::MAX),
+                        tab_id: None,
+                        type_: crate::extensions::web_request::ResourceType::MainFrame,
+                        origin_url: None,
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs_f64() * 1000.0)
+                            .unwrap_or(0.0),
+                        request_headers: None,
+                    };
+                    let response = registry.fire_on_before_request(&details);
+                    if response.cancel == Some(true) {
+                        return false;
+                    }
+                    if let Some(ref redirect) = response.redirect_url {
+                        let _ = upgrade_tx.send(WryEvent::HttpsUpgraded {
+                            pane_id: pid,
+                            from: url,
+                            to: redirect.as_str().to_string(),
+                        });
+                        return false;
+                    }
+                }
+
                 if let Ok(parsed) = url::Url::parse(&url)
                     && let Some(host) = parsed.host_str() {
                         let host_lower = host.to_lowercase();
@@ -867,6 +906,9 @@ impl OffscreenWebViewManager {
         tracking_protection_enabled: bool,
         devtools: bool,
         popup_blocker: bool,
+        interceptor_registry: Option<
+            Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+        >,
     ) -> Result<(), wry::Error> {
         let pane = OffscreenWebView::new_with_privacy(
             pane_id,
@@ -878,6 +920,7 @@ impl OffscreenWebViewManager {
             tracking_protection_enabled,
             devtools,
             popup_blocker,
+            interceptor_registry,
         )?;
         self.panes.insert(pane_id, pane);
         Ok(())

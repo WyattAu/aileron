@@ -113,6 +113,7 @@ fn bench_pane_state(c: &mut Criterion) {
             mgr.create_pane(
                 uuid::Uuid::new_v4(),
                 url::Url::parse("https://example.com").unwrap(),
+                None,
             );
         });
     });
@@ -120,7 +121,7 @@ fn bench_pane_state(c: &mut Criterion) {
     c.bench_function("pane_state_navigate", |b| {
         let mut mgr = aileron::servo::PaneStateManager::new();
         let id = uuid::Uuid::new_v4();
-        mgr.create_pane(id, url::Url::parse("https://example.com").unwrap());
+        mgr.create_pane(id, url::Url::parse("https://example.com").unwrap(), None);
         let url = url::Url::parse("https://rust-lang.org").unwrap();
         b.iter(|| mgr.get_mut(&id).map(|e| e.navigate(&url)));
     });

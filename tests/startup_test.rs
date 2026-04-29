@@ -40,7 +40,7 @@ fn test_pane_state_manager_operations() {
     let mut mgr = PaneStateManager::new();
     let id = uuid::Uuid::new_v4();
     let url = url::Url::parse("https://example.com").unwrap();
-    mgr.create_pane(id, url.clone());
+    mgr.create_pane(id, url.clone(), None);
     assert!(mgr.get(&id).is_some());
     assert!(mgr.get(&id).unwrap().current_url().is_some());
     mgr.remove_pane(&id);

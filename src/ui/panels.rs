@@ -3,7 +3,7 @@ use crate::git::GitStatus;
 use crate::input::Mode;
 use crate::servo::WryPaneManager;
 use crate::terminal::NativeTerminalManager;
-use crate::terminal::grid::{CellMetrics, TerminalColors};
+use crate::terminal::grid::CellMetrics;
 use crate::terminal::render::render_terminal;
 use crate::ui::search::SearchCategory;
 use egui::{WidgetInfo, WidgetType};
@@ -34,7 +34,7 @@ pub fn build_ui(
     git_status: &GitStatus,
     status_bar_height: f64,
     webview_textures: &std::collections::HashMap<uuid::Uuid, egui::TextureId>,
-    terminal_manager: &NativeTerminalManager,
+    terminal_manager: &mut NativeTerminalManager,
     offscreen_panes: &crate::offscreen_webview::OffscreenWebViewManager,
 ) {
     let tab_layout = app_state.config.tab_layout.as_str();
@@ -105,7 +105,15 @@ pub fn build_ui(
 
                 ui.separator();
 
-                let pane_count = app_state.wm.leaf_count();
+                let current_count = app_state.wm.leaf_count();
+                let pane_count =
+                    if app_state.pane_count_dirty || current_count != app_state.cached_pane_count {
+                        app_state.cached_pane_count = current_count;
+                        app_state.pane_count_dirty = false;
+                        current_count
+                    } else {
+                        app_state.cached_pane_count
+                    };
                 ui.label(format!("panes: {}", pane_count))
                     .widget_info(|| a11y_info(WidgetType::Label, format!("Panes: {}", pane_count)));
 
@@ -1207,8 +1215,8 @@ pub fn build_ui(
 
                     if is_terminal {
                         // Native terminal rendering: draw grid directly with egui
+                        let colors = terminal_manager.get_colors();
                         if let Some(pane) = terminal_manager.get(id) {
-                            let colors = TerminalColors::default();
                             let metrics = CellMetrics::from_egui(ctx, 14.0);
                             let selection = pane.selection();
                             let damage = pane.damage_info();
@@ -1372,9 +1380,9 @@ pub fn build_ui(
             let is_terminal = panes.iter().any(|(id, _)| terminal_manager.is_terminal(id));
 
             if is_terminal {
+                let colors = terminal_manager.get_colors();
                 for (id, _) in &panes {
                     if let Some(pane) = terminal_manager.get(id) {
-                        let colors = TerminalColors::default();
                         let metrics = CellMetrics::from_egui(ctx, 14.0);
                         let selection = pane.selection();
                         let damage = pane.damage_info();
@@ -1417,6 +1425,40 @@ pub fn build_tab_list(
     let tab_bar_bg = cached.tab_bar_bg;
     let border_color = cached.border;
 
+    // Populate tab display cache when dirty
+    if app_state.tab_display_dirty {
+        app_state.tab_display_dirty = false;
+        let mut fresh = std::collections::HashMap::new();
+        for (pane_id, _) in &panes {
+            let (title, url) = wry_panes
+                .get(pane_id)
+                .map(|p| {
+                    let t = p.title();
+                    let u = p.url().to_string();
+                    (
+                        if t.is_empty() || t == "about:blank" {
+                            u.rsplit('/').next().unwrap_or("New Tab").to_string()
+                        } else {
+                            t.to_string()
+                        },
+                        u,
+                    )
+                })
+                .unwrap_or_else(|| ("New Tab".into(), "aileron://new".into()));
+            fresh.insert(
+                *pane_id,
+                crate::app::TabDisplayInfo {
+                    truncated_title_horizontal: truncate_str(&title, 21),
+                    truncated_title_sidebar: truncate_str(&title, 17),
+                    truncated_url: truncate_str(&url, 19),
+                    title,
+                    url,
+                },
+            );
+        }
+        app_state.tab_display_cache = fresh;
+    }
+
     if horizontal {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
@@ -1424,28 +1466,24 @@ pub fn build_tab_list(
                 let is_active = *pane_id == active_id;
                 let is_terminal = app_state.terminal_pane_ids.contains(pane_id);
 
-                let (title, tab_url) = wry_panes
+                let info = app_state
+                    .tab_display_cache
                     .get(pane_id)
-                    .map(|p| {
-                        let t = p.title();
-                        let u = p.url().to_string();
-                        (
-                            if t.is_empty() || t == "about:blank" {
-                                u.rsplit('/').next().unwrap_or("New Tab").to_string()
-                            } else {
-                                t.to_string()
-                            },
-                            u,
-                        )
-                    })
-                    .unwrap_or_else(|| ("New Tab".into(), "aileron://new".into()));
+                    .cloned()
+                    .unwrap_or_else(|| crate::app::TabDisplayInfo {
+                        title: "New Tab".into(),
+                        url: "aileron://new".into(),
+                        truncated_title_horizontal: truncate_str("New Tab", 21),
+                        truncated_title_sidebar: truncate_str("New Tab", 17),
+                        truncated_url: truncate_str("aileron://new", 19),
+                    });
 
                 // Use custom tab name if set
                 let display_title = {
                     let custom = app_state.tab_names.get(&pane_id.to_string()).cloned();
                     match custom {
                         Some(name) => truncate_str(&name, 21),
-                        None => truncate_str(&title, 21),
+                        None => info.truncated_title_horizontal.clone(),
                     }
                 };
 
@@ -1481,8 +1519,6 @@ pub fn build_tab_list(
                         let is_pinned = app_state.pinned_pane_ids.contains(pane_id);
                         let is_muted = app_state.muted_pane_ids.contains(pane_id);
                         let is_private = app_state.private_pane_ids.contains(pane_id);
-                        let a11y_title = title.clone();
-                        let a11y_url = tab_url.clone();
 
                         let response = ui.selectable_label(
                             is_active,
@@ -1492,7 +1528,7 @@ pub fn build_tab_list(
                             ),
                         );
                         response.widget_info(|| {
-                            let mut label = format!("Tab: {} - {}", a11y_title, a11y_url);
+                            let mut label = format!("Tab: {} - {}", info.title, info.url);
                             if is_pinned {
                                 label.push_str(" (Pinned)");
                             }
@@ -1529,28 +1565,24 @@ pub fn build_tab_list(
                 let is_active = *pane_id == active_id;
                 let is_terminal = app_state.terminal_pane_ids.contains(pane_id);
 
-                let (title, url) = wry_panes
+                let info = app_state
+                    .tab_display_cache
                     .get(pane_id)
-                    .map(|p| {
-                        let t = p.title();
-                        let u = p.url().to_string();
-                        (
-                            if t.is_empty() || t == "about:blank" {
-                                u.rsplit('/').next().unwrap_or("New Tab").to_string()
-                            } else {
-                                t.to_string()
-                            },
-                            u,
-                        )
-                    })
-                    .unwrap_or_else(|| ("New Tab".into(), "aileron://new".into()));
+                    .cloned()
+                    .unwrap_or_else(|| crate::app::TabDisplayInfo {
+                        title: "New Tab".into(),
+                        url: "aileron://new".into(),
+                        truncated_title_horizontal: truncate_str("New Tab", 21),
+                        truncated_title_sidebar: truncate_str("New Tab", 17),
+                        truncated_url: truncate_str("aileron://new", 19),
+                    });
 
                 // Use custom tab name if set
                 let display_title = {
                     let custom = app_state.tab_names.get(&pane_id.to_string()).cloned();
                     match custom {
                         Some(name) => truncate_str(&name, 17),
-                        None => truncate_str(&title, 17),
+                        None => info.truncated_title_sidebar.clone(),
                     }
                 };
 
@@ -1584,8 +1616,6 @@ pub fn build_tab_list(
                         let is_pinned = app_state.pinned_pane_ids.contains(pane_id);
                         let is_muted = app_state.muted_pane_ids.contains(pane_id);
                         let is_private = app_state.private_pane_ids.contains(pane_id);
-                        let a11y_title = title.clone();
-                        let a11y_url = url.clone();
 
                         let response = ui.selectable_label(
                             is_active,
@@ -1595,7 +1625,7 @@ pub fn build_tab_list(
                             ),
                         );
                         response.widget_info(|| {
-                            let mut label = format!("Tab: {} - {}", a11y_title, a11y_url);
+                            let mut label = format!("Tab: {} - {}", info.title, info.url);
                             if is_pinned {
                                 label.push_str(" (Pinned)");
                             }
@@ -1623,8 +1653,11 @@ pub fn build_tab_list(
                     });
 
                     if !is_terminal {
-                        let display_url = truncate_str(&url, 19);
-                        ui.label(egui::RichText::new(display_url).small().color(border_color));
+                        ui.label(
+                            egui::RichText::new(&info.truncated_url)
+                                .small()
+                                .color(border_color),
+                        );
                     } else {
                         ui.label(egui::RichText::new("Terminal").small().color(border_color));
                     }

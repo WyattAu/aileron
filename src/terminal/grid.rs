@@ -5,6 +5,7 @@
 //! changed cells.
 
 /// ANSI color palette for terminal rendering.
+#[derive(Clone)]
 pub struct TerminalColors {
     pub background: egui::Color32,
     pub foreground: egui::Color32,

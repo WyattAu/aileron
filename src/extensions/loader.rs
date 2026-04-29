@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::extensions::builtin_adblock::{builtin_adblock_id, builtin_adblock_manifest};
 use crate::extensions::impls::AileronExtensionApi;
@@ -10,6 +11,7 @@ use crate::extensions::scripting::{
     ExtensionContentScriptEntry, ExtensionContentScriptRegistry, ExtensionRunAt,
 };
 use crate::extensions::types::{BackgroundScript, ExtensionError, ExtensionId};
+use crate::extensions::web_request::WebRequestInterceptorRegistry;
 
 pub struct ExtensionManager {
     extensions: HashMap<ExtensionId, AileronExtensionApi>,
@@ -17,6 +19,9 @@ pub struct ExtensionManager {
     storage_dir: PathBuf,
     content_script_registry: ExtensionContentScriptRegistry,
     message_bus: std::sync::Arc<MessageBus>,
+    /// Shared registry of web request interceptors from all loaded extensions.
+    /// Cloned into webview navigation handler closures for request interception.
+    pub interceptor_registry: Arc<WebRequestInterceptorRegistry>,
 }
 
 impl ExtensionManager {
@@ -28,6 +33,7 @@ impl ExtensionManager {
             storage_dir,
             content_script_registry: ExtensionContentScriptRegistry::new(),
             message_bus: std::sync::Arc::new(MessageBus::new()),
+            interceptor_registry: Arc::new(WebRequestInterceptorRegistry::new()),
         }
     }
 
@@ -226,6 +232,12 @@ impl ExtensionManager {
 
         self.extensions.insert(id.clone(), api);
 
+        // Register the web request interceptor in the shared registry
+        if let Some(loaded_api) = self.extensions.get(&id) {
+            self.interceptor_registry
+                .register(loaded_api.web_request_interceptor());
+        }
+
         // Fire on_installed lifecycle event
         // Note: in the current implementation, extensions don't register on_installed
         // handlers until their background script executes (future work). This fires
@@ -266,8 +278,20 @@ impl ExtensionManager {
     /// Unload (disable) a specific extension by ID.
     /// Returns the removed extension's info, or None if not found.
     pub fn unload(&mut self, id: &ExtensionId) -> Option<String> {
+        // Get the interceptor Arc before removing so we can unregister it
+        let interceptor: Option<Arc<dyn crate::extensions::web_request::WebRequestInterceptor>> =
+            self.extensions.get(id).map(|api| {
+                api.web_request_interceptor()
+                    as Arc<dyn crate::extensions::web_request::WebRequestInterceptor>
+            });
+
         self.extensions.remove(id).map(|api| {
             let name = api.manifest().name.clone();
+            // Remove the interceptor from the shared registry
+            if let Some(ic) = interceptor {
+                self.interceptor_registry
+                    .unregister_where(|registered| Arc::ptr_eq(registered, &ic));
+            }
             tracing::info!(
                 target: "extensions",
                 "Unloaded extension '{}' ({})",
@@ -314,6 +338,8 @@ impl ExtensionManager {
         self.extensions.insert(id.clone(), api);
 
         let loaded_api = self.extensions.get(&id).unwrap();
+        self.interceptor_registry
+            .register(loaded_api.web_request_interceptor());
         loaded_api.fire_installed(InstalledDetails {
             reason: InstallReason::Install,
             previous_version: None,
@@ -868,5 +894,54 @@ mod tests {
         manager.load_all();
         assert_eq!(manager.count(), 1, "Builtin should survive load_all");
         assert!(manager.is_builtin_adblock_enabled());
+    }
+
+    #[test]
+    fn test_builtin_adblock_interceptor_registered() {
+        use crate::extensions::types::{FrameId, RequestId};
+        use crate::extensions::web_request::{RequestDetails, ResourceType};
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ExtensionManager::new(dir.path().to_path_buf());
+        assert!(
+            !manager.interceptor_registry.has_interceptors(),
+            "No interceptors before registration"
+        );
+
+        manager.register_builtin_adblock();
+        assert!(
+            manager.interceptor_registry.has_interceptors(),
+            "Builtin adblock should register a web request interceptor"
+        );
+
+        let details = RequestDetails {
+            request_id: RequestId(1),
+            url: url::Url::parse("https://ads.example.com/ad.js").unwrap(),
+            method: "GET".into(),
+            frame_id: FrameId(0),
+            parent_frame_id: FrameId(u32::MAX),
+            tab_id: None,
+            type_: ResourceType::Script,
+            origin_url: None,
+            timestamp: 0.0,
+            request_headers: None,
+        };
+
+        let response = manager
+            .interceptor_registry
+            .fire_on_before_request(&details);
+        assert_eq!(
+            response.cancel, None,
+            "No handlers registered on builtin interceptor, should return default"
+        );
+
+        let count_before = manager.interceptor_registry.has_interceptors() as usize;
+        manager.unload(&builtin_adblock_id());
+        let count_after = manager.interceptor_registry.has_interceptors() as usize;
+        assert_eq!(
+            count_before - count_after,
+            1,
+            "Unloading builtin adblock should remove its interceptor"
+        );
     }
 }

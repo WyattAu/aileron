@@ -274,7 +274,7 @@ impl AppState {
                     let is_private = self.private_pane_ids.contains(&active);
                     match self.wm.split(active, *direction, 0.5) {
                         Ok(new_id) => {
-                            self.engines.create_pane(new_id, new_url);
+                            self.engines.create_pane(new_id, new_url, None);
                             // Propagate private mode to new pane
                             if is_private {
                                 self.private_pane_ids.insert(new_id);
@@ -292,7 +292,7 @@ impl AppState {
                         .split(active, crate::wm::SplitDirection::Vertical, 0.5)
                     {
                         Ok(new_id) => {
-                            self.engines.create_pane(new_id, term_url.clone());
+                            self.engines.create_pane(new_id, term_url.clone(), None);
                             self.terminal_pane_ids.insert(new_id);
                             self.status_message = "Terminal opened".into();
                         }

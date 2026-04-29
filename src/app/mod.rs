@@ -89,6 +89,15 @@ pub enum WryAction {
     SetClipboard(String),
 }
 
+#[derive(Clone)]
+pub struct TabDisplayInfo {
+    pub title: String,
+    pub url: String,
+    pub truncated_title_horizontal: String,
+    pub truncated_title_sidebar: String,
+    pub truncated_url: String,
+}
+
 pub struct AppState {
     pub wm: BspTree,
     pub mode: Mode,
@@ -315,6 +324,21 @@ pub struct AppState {
     /// Cleared on each LoadStarted to allow re-injection on new navigations.
     pub injected_content_script_ids:
         std::collections::HashMap<uuid::Uuid, std::collections::HashSet<String>>,
+
+    /// Cached tab display info to avoid per-frame title/url string allocations.
+    pub tab_display_cache: std::collections::HashMap<uuid::Uuid, TabDisplayInfo>,
+    /// Whether the tab display cache needs recomputation.
+    pub tab_display_dirty: bool,
+
+    /// Cached config JSON for get-config IPC (avoids per-message serialization).
+    pub config_json_cache: String,
+    /// Whether the config JSON cache needs recomputation.
+    pub config_json_dirty: bool,
+
+    /// Cached pane leaf count for status bar (avoids per-frame tree traversal).
+    pub cached_pane_count: usize,
+    /// Whether the cached pane count needs recomputation.
+    pub pane_count_dirty: bool,
 }
 
 impl AppState {
@@ -362,7 +386,7 @@ impl AppState {
         // (will be replaced with Servo when available per ADR-001)
         let mut engines = PaneStateManager::new();
         let root_pane_id = wm.active_pane_id();
-        engines.create_pane(root_pane_id, initial_url);
+        engines.create_pane(root_pane_id, initial_url, None);
 
         // Build command palette with history + bookmarks from DB
         let mut palette = CommandPalette::new();
@@ -541,6 +565,12 @@ impl AppState {
             autofill_js: None,
             autofill_status_msg: String::new(),
             injected_content_script_ids: std::collections::HashMap::new(),
+            tab_display_cache: std::collections::HashMap::new(),
+            tab_display_dirty: true,
+            config_json_cache: String::new(),
+            config_json_dirty: true,
+            cached_pane_count: 0,
+            pane_count_dirty: true,
         })
     }
 

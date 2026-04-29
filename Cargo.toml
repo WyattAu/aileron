@@ -102,6 +102,9 @@ futures-util = "0.3"
 # Regex (for site settings pattern matching)
 regex = "1"
 
+# Aho-Corasick automaton for fast multi-pattern string matching
+aho-corasick = "1"
+
 # Image encoding (for MCP screenshot tool)
 image = { version = "0.25", default-features = false, features = ["png"] }
 

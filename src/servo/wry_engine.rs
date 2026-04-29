@@ -20,7 +20,7 @@ use glib_sys;
 #[cfg(target_os = "linux")]
 use gtk::prelude::{ContainerExt, GtkWindowExt, WidgetExt};
 use std::collections::HashMap;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use tracing::{info, warn};
 use url::Url;
 use uuid::Uuid;
@@ -100,6 +100,7 @@ impl WryPane {
     /// * `initial_url` - The URL to load initially.
     /// * `bounds` - Position and size within the parent window.
     /// * `blocked_domains` - List of domains to block (cloned into closure).
+    #[allow(clippy::too_many_arguments)]
     pub fn new<W>(
         parent: &W,
         pane_id: Uuid,
@@ -108,6 +109,9 @@ impl WryPane {
         blocked_domains: Vec<String>,
         devtools: bool,
         popup_blocker: bool,
+        interceptor_registry: Option<
+            Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+        >,
     ) -> Result<Self, wry::Error>
     where
         W: HasWindowHandle,
@@ -116,15 +120,20 @@ impl WryPane {
         let url_str = initial_url.as_str().to_string();
         let (event_tx, event_rx) = mpsc::channel();
 
+        let interceptor = interceptor_registry.clone();
+
         // === Path 1: Try build_as_child (X11) ===
         // Builder is built inline so event_tx isn't lost if this path fails.
-        match Self::make_builder(
+        match Self::make_builder_with_privacy(
             &url_str,
             pid,
             event_tx.clone(),
             blocked_domains.clone(),
+            true,
+            true,
             devtools,
             popup_blocker,
+            interceptor,
         )
         .with_bounds(bounds)
         .build_as_child(parent)
@@ -168,6 +177,7 @@ impl WryPane {
                 event_rx,
                 devtools,
                 popup_blocker,
+                interceptor_registry,
             )
         }
 
@@ -182,6 +192,7 @@ impl WryPane {
 
     /// Create a standalone GTK window with embedded wry webview (Wayland-compatible).
     #[cfg(target_os = "linux")]
+    #[allow(clippy::too_many_arguments)]
     fn create_gtk_pane(
         pane_id: Uuid,
         initial_url: Url,
@@ -190,6 +201,9 @@ impl WryPane {
         event_rx: mpsc::Receiver<WryEvent>,
         devtools: bool,
         popup_blocker: bool,
+        interceptor_registry: Option<
+            Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+        >,
     ) -> Result<Self, wry::Error> {
         let url_str = initial_url.as_str().to_string();
 
@@ -214,13 +228,16 @@ impl WryPane {
         gtk_window.set_child(Some(&fixed));
 
         // Build the webview inside the GTK container using the SAME event_tx
-        let builder = Self::make_builder(
+        let builder = Self::make_builder_with_privacy(
             &url_str,
             pane_id,
             event_tx,
             Vec::new(),
+            true,
+            true,
             devtools,
             popup_blocker,
+            interceptor_registry,
         );
 
         let webview = builder.build_gtk(&fixed)?;
@@ -247,6 +264,7 @@ impl WryPane {
 
     /// Build a WebViewBuilder with common configuration.
     /// The event_tx is moved into the builder's closures.
+    #[allow(dead_code)]
     fn make_builder(
         url_str: &str,
         pid: Uuid,
@@ -264,6 +282,7 @@ impl WryPane {
             true,
             devtools,
             popup_blocker,
+            None,
         )
     }
 
@@ -279,6 +298,9 @@ impl WryPane {
         tracking_protection_enabled: bool,
         devtools: bool,
         popup_blocker: bool,
+        interceptor_registry: Option<
+            Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+        >,
     ) -> WebViewBuilder<'static> {
         let https_safe_list = if https_upgrade_enabled {
             crate::net::privacy::load_https_safe_list()
@@ -364,6 +386,41 @@ a {{ color: #4db4ff; }}
             })
             // Block navigation to ad/tracker URLs and upgrade HTTP to HTTPS
             .with_navigation_handler(move |url: String| {
+                // Fire extension onBeforeRequest hooks BEFORE adblock checks
+                if let Some(ref registry) = interceptor_registry
+                    && registry.has_interceptors()
+                {
+                    let details = crate::extensions::web_request::RequestDetails {
+                        request_id: crate::extensions::types::RequestId(0),
+                        url: url::Url::parse(&url).unwrap_or_else(|_| {
+                            url::Url::parse("about:blank").unwrap()
+                        }),
+                        method: "GET".into(),
+                        frame_id: crate::extensions::types::FrameId(0),
+                        parent_frame_id: crate::extensions::types::FrameId(u32::MAX),
+                        tab_id: None,
+                        type_: crate::extensions::web_request::ResourceType::MainFrame,
+                        origin_url: None,
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs_f64() * 1000.0)
+                            .unwrap_or(0.0),
+                        request_headers: None,
+                    };
+                    let response = registry.fire_on_before_request(&details);
+                    if response.cancel == Some(true) {
+                        return false;
+                    }
+                    if let Some(ref redirect) = response.redirect_url {
+                        let _ = upgrade_tx.send(WryEvent::HttpsUpgraded {
+                            pane_id: pid,
+                            from: url,
+                            to: redirect.as_str().to_string(),
+                        });
+                        return false;
+                    }
+                }
+
                 if let Ok(parsed) = url::Url::parse(&url)
                     && let Some(host) = parsed.host_str() {
                         let host_lower = host.to_lowercase();
@@ -702,6 +759,9 @@ impl WryPaneManager {
         blocked_domains: Vec<String>,
         devtools: bool,
         popup_blocker: bool,
+        interceptor_registry: Option<
+            Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+        >,
     ) -> Result<(), wry::Error>
     where
         W: HasWindowHandle,
@@ -714,6 +774,7 @@ impl WryPaneManager {
             blocked_domains,
             devtools,
             popup_blocker,
+            interceptor_registry,
         )?;
         self.panes.insert(pane_id, pane);
         Ok(())

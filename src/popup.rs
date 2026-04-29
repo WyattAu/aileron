@@ -55,6 +55,7 @@ impl PopupManager {
             blocked_domains,
             devtools,
             false, // Don't block popups from the popup manager itself
+            None,  // No interceptor registry for popup windows
         ) {
             Ok(wry_pane) => {
                 self.windows.insert(

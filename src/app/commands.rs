@@ -2,6 +2,7 @@ use crate::app::WryAction;
 use crate::config::Config;
 use crate::downloads::DownloadProgress;
 use crate::extensions::ExtensionId;
+use crate::extensions::builtin_adblock_id;
 use crate::passwords::BitwardenClient;
 use crate::ui::search::SearchCategory;
 use crate::ui::search::SearchItem;
@@ -982,6 +983,7 @@ impl AppState {
                 let value = parts.next().unwrap_or("");
                 self.status_message =
                     super::cmd::settings::apply_set_setting(&mut self.config, key, value);
+                self.config_json_dirty = true;
             }
             return;
         }
@@ -1335,6 +1337,8 @@ impl AppState {
                 "extensions",
                 "extension-load",
                 "extension-info",
+                "extension-list",
+                "extension-enable",
                 "arp-start",
                 "arp-stop",
                 "arp-status",
@@ -2518,6 +2522,32 @@ if (window._terminal && window._terminal.buffer) {{
             return Some(());
         }
 
+        if query == "extension-list" {
+            let mgr = self.extension_manager.lock().ok()?;
+            let ids = mgr.list();
+            if ids.is_empty() {
+                self.status_message = "No extensions loaded.".into();
+            } else {
+                let lines: Vec<String> = ids
+                    .iter()
+                    .map(|id| {
+                        mgr.get(id)
+                            .map(|api| {
+                                format!(
+                                    "{} v{} [{}] enabled",
+                                    api.manifest().name,
+                                    api.manifest().version,
+                                    id.0,
+                                )
+                            })
+                            .unwrap_or_else(|| format!("{} [unknown]", id.0))
+                    })
+                    .collect();
+                self.status_message = format!("Extensions ({}): {}", ids.len(), lines.join(" | "));
+            }
+            return Some(());
+        }
+
         if query == "extension-load" {
             let loaded = self
                 .extension_manager
@@ -2567,6 +2597,40 @@ if (window._terminal && window._terminal.buffer) {{
                 }
                 None => {
                     self.status_message = format!("Extension '{}' not found", id_str);
+                }
+            }
+            return Some(());
+        }
+
+        if let Some(id_str) = query.strip_prefix("extension-enable ") {
+            let id_str = id_str.trim();
+            if id_str.is_empty() {
+                self.status_message = "Usage: extension-enable <id>".into();
+                return Some(());
+            }
+            let ext_id = ExtensionId(id_str.to_string());
+            if let Ok(mgr) = self.extension_manager.lock()
+                && mgr.get(&ext_id).is_some()
+            {
+                self.status_message = format!("Extension '{}' is already enabled", id_str);
+                return Some(());
+            }
+            match self.extension_manager.lock().ok().map(|mut mgr| {
+                if ext_id == builtin_adblock_id() {
+                    mgr.register_builtin_adblock();
+                } else {
+                    mgr.load_all();
+                }
+                mgr.get(&ext_id).is_some()
+            }) {
+                Some(true) => {
+                    self.status_message = format!("Enabled extension '{}'", id_str);
+                }
+                Some(false) => {
+                    self.status_message = format!("Extension '{}' not found", id_str);
+                }
+                None => {
+                    self.status_message = "Failed to access extension manager".into();
                 }
             }
             return Some(());
@@ -3093,5 +3157,41 @@ mod tests {
                 .any(|a| matches!(a, WryAction::Navigate(_))),
             "pdf command should queue Navigate even for nonexistent files"
         );
+    }
+
+    #[test]
+    fn test_extension_list_command() {
+        let mut state = make_state();
+        state.handle_raw_command("extension-list");
+        assert!(
+            state.status_message.contains("No extensions")
+                || state.status_message.contains("Extensions (")
+        );
+    }
+
+    #[test]
+    fn test_extension_enable_already_enabled() {
+        let mut state = make_state();
+        state
+            .extension_manager
+            .lock()
+            .unwrap()
+            .register_builtin_adblock();
+        state.handle_raw_command("extension-enable aileron-adblock@builtin");
+        assert!(state.status_message.contains("already enabled"));
+    }
+
+    #[test]
+    fn test_extension_enable_not_found() {
+        let mut state = make_state();
+        state.handle_raw_command("extension-enable nonexistent@example.com");
+        assert!(state.status_message.contains("not found"));
+    }
+
+    #[test]
+    fn test_extension_enable_usage() {
+        let mut state = make_state();
+        state.handle_raw_command("extension-enable ");
+        assert!(state.status_message.contains("Usage"));
     }
 }

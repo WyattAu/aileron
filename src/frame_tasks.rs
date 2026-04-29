@@ -1,4 +1,5 @@
 use open::that as open_that;
+use std::sync::Arc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -6,12 +7,51 @@ use image::ImageEncoder;
 
 use aileron::app::{AppState, WryAction};
 use aileron::arp::ArpCommand;
+use aileron::extensions::web_request::WebRequestInterceptorRegistry;
+use aileron::extensions::{ExtensionId, MessageBus};
 use aileron::git::GitStatus;
 use aileron::mcp::{McpBridge, McpCommand};
 use aileron::offscreen_webview::OffscreenWebViewManager;
 use aileron::scripts::{ContentScriptManager, RunAt};
 use aileron::servo::{WryEvent, WryPaneManager, pump_gtk};
 use aileron::terminal::NativeTerminalManager;
+
+const EXTENSION_RUNTIME_SHIM_JS: &str = r#"
+(function() {
+    if (window.__aileron_ext_shim_loaded) return;
+    window.__aileron_ext_shim_loaded = true;
+    var _pending = {};
+    var _counter = 0;
+    function _sendMessage(targetId, message) {
+        var reqId = '__aer_req_' + (++_counter);
+        return new Promise(function(resolve) {
+            _pending[reqId] = resolve;
+            window.ipc.postMessage(JSON.stringify({
+                t: 'ext-send-message',
+                sourceId: window.__aileron_extension_id || null,
+                targetId: targetId || null,
+                message: message != null ? message : {},
+                reqId: reqId
+            }));
+        });
+    }
+    window.__aileron_ext_response = function(reqId, response) {
+        var resolve = _pending[reqId];
+        if (resolve) { delete _pending[reqId]; resolve(response); }
+    };
+    var rt = {
+        sendMessage: _sendMessage,
+        id: window.__aileron_extension_id || '',
+        getURL: function(path) {
+            return 'aileron://extensions/' + (window.__aileron_extension_id || '') + '/' + path;
+        }
+    };
+    if (!window.browser) window.browser = {};
+    window.browser.runtime = rt;
+    if (!window.chrome) window.chrome = {};
+    window.chrome.runtime = rt;
+})();
+"#;
 
 pub fn poll_git_status(git_status: &mut GitStatus, git_poller: &Option<aileron::git::GitPoller>) {
     if let Some(poller) = git_poller
@@ -129,7 +169,7 @@ pub fn process_arp_commands(app_state: &mut AppState) {
                         let target_url = url
                             .and_then(|u| url::Url::parse(&u).ok())
                             .unwrap_or_else(|| url::Url::parse("aileron://newtab").unwrap());
-                        app_state.engines.create_pane(new_id, target_url);
+                        app_state.engines.create_pane(new_id, target_url, None);
                         app_state.session_dirty = true;
                     }
                     Err(e) => {
@@ -207,16 +247,40 @@ pub fn process_wry_events(
     content_scripts: &ContentScriptManager,
     mcp_bridge: &mut McpBridge,
     adblocker: &aileron::net::adblock::AdBlocker,
+    interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
 ) {
     let wry_events = wry_panes.poll_all_events();
     for event in wry_events {
         match event {
             WryEvent::LoadComplete { pane_id, url, .. } => {
                 app_state.session_dirty = true;
+                app_state.tab_display_dirty = true;
+                app_state.pane_count_dirty = true;
                 if let Ok(parsed) = url::Url::parse(&url) {
                     app_state.record_visit(&parsed, &url);
                 }
                 app_state.status_message = format!("Loaded: {}", &url[..url.len().min(60)]);
+
+                // Fire extension onCompleted lifecycle event
+                if interceptor_registry.has_interceptors()
+                    && let Ok(parsed_url) = url::Url::parse(&url)
+                {
+                    let details = aileron::extensions::web_request::CompletedDetails {
+                        request_id: aileron::extensions::types::RequestId(0),
+                        url: parsed_url,
+                        frame_id: aileron::extensions::types::FrameId(0),
+                        tab_id: None,
+                        type_: aileron::extensions::web_request::ResourceType::MainFrame,
+                        from_cache: false,
+                        status_code: 200,
+                        ip: None,
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs_f64() * 1000.0)
+                            .unwrap_or(0.0),
+                    };
+                    interceptor_registry.fire_on_completed(&details);
+                }
 
                 if !url.starts_with("aileron://") {
                     // Load persisted scroll marks for this URL
@@ -247,27 +311,13 @@ pub fn process_wry_events(
                             continue;
                         }
                         if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
-                            if !ext_script.css_code.is_empty() {
-                                let escaped = ext_script
-                                    .css_code
-                                    .replace('\\', "\\\\")
-                                    .replace('`', "\\`")
-                                    .replace('$', "\\$");
-                                wry_pane.execute_js(&format!(
-                                    "var s = document.createElement('style'); \
-                                     s.textContent = `{}`; \
-                                     (document.head || document.documentElement).appendChild(s);",
-                                    escaped
-                                ));
-                            }
-                            if !ext_script.js_code.is_empty() {
-                                info!(
-                                    "Injecting extension document-end content script '{}' into {}",
-                                    ext_script.script_id,
-                                    &url[..url.len().min(40)]
-                                );
-                                wry_pane.execute_js(&ext_script.js_code);
-                            }
+                            inject_extension_shim_and_script(
+                                &ext_script,
+                                wry_pane,
+                                pane_id,
+                                app_state,
+                                false,
+                            );
                             app_state.mark_script_injected(pane_id, &key);
                         }
                     }
@@ -297,29 +347,13 @@ pub fn process_wry_events(
                             continue;
                         }
                         if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
-                            if !ext_script.css_code.is_empty() {
-                                let escaped = ext_script
-                                    .css_code
-                                    .replace('\\', "\\\\")
-                                    .replace('`', "\\`")
-                                    .replace('$', "\\$");
-                                wry_pane.execute_js(&format!(
-                                    "setTimeout(function() {{ \
-                                        var s = document.createElement('style'); \
-                                        s.textContent = `{}`; \
-                                        (document.head || document.documentElement).appendChild(s); \
-                                    }}, 0);",
-                                    escaped
-                                ));
-                            }
-                            if !ext_script.js_code.is_empty() {
-                                info!(
-                                    "Injecting extension content script '{}' into {}",
-                                    ext_script.script_id,
-                                    &url[..url.len().min(40)]
-                                );
-                                wry_pane.execute_js(&ext_script.js_code);
-                            }
+                            inject_extension_shim_and_script(
+                                &ext_script,
+                                wry_pane,
+                                pane_id,
+                                app_state,
+                                true,
+                            );
                             app_state.mark_script_injected(pane_id, &key);
                         }
                     }
@@ -429,27 +463,13 @@ pub fn process_wry_events(
                             continue;
                         }
                         if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
-                            if !ext_script.css_code.is_empty() {
-                                let escaped = ext_script
-                                    .css_code
-                                    .replace('\\', "\\\\")
-                                    .replace('`', "\\`")
-                                    .replace('$', "\\$");
-                                wry_pane.execute_js(&format!(
-                                    "var s = document.createElement('style'); \
-                                     s.textContent = `{}`; \
-                                     (document.documentElement || document.head).appendChild(s);",
-                                    escaped
-                                ));
-                            }
-                            if !ext_script.js_code.is_empty() {
-                                info!(
-                                    "Injecting extension document-start script '{}' into {}",
-                                    ext_script.script_id,
-                                    &url[..url.len().min(40)]
-                                );
-                                wry_pane.execute_js(&ext_script.js_code);
-                            }
+                            inject_extension_shim_and_script(
+                                &ext_script,
+                                wry_pane,
+                                pane_id,
+                                app_state,
+                                false,
+                            );
                             app_state.mark_script_injected(pane_id, &key);
                         }
                     }
@@ -457,6 +477,7 @@ pub fn process_wry_events(
             }
             WryEvent::TitleChanged { title, .. } => {
                 app_state.status_message = title[..title.len().min(60)].to_string();
+                app_state.tab_display_dirty = true;
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
                 // Use the download manager for actual downloading with progress
@@ -508,16 +529,40 @@ pub fn process_offscreen_events(
     content_scripts: &ContentScriptManager,
     _mcp_bridge: &mut McpBridge,
     adblocker: &aileron::net::adblock::AdBlocker,
+    interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
 ) {
     let events = offscreen_panes.drain_all_events();
     for (_pane_id, event) in events {
         match event {
             WryEvent::LoadComplete { pane_id, url, .. } => {
                 app_state.session_dirty = true;
+                app_state.tab_display_dirty = true;
+                app_state.pane_count_dirty = true;
                 if let Ok(parsed) = url::Url::parse(&url) {
                     app_state.record_visit(&parsed, &url);
                 }
                 app_state.status_message = format!("Loaded: {}", &url[..url.len().min(60)]);
+
+                // Fire extension onCompleted lifecycle event
+                if interceptor_registry.has_interceptors()
+                    && let Ok(parsed_url) = url::Url::parse(&url)
+                {
+                    let details = aileron::extensions::web_request::CompletedDetails {
+                        request_id: aileron::extensions::types::RequestId(0),
+                        url: parsed_url,
+                        frame_id: aileron::extensions::types::FrameId(0),
+                        tab_id: None,
+                        type_: aileron::extensions::web_request::ResourceType::MainFrame,
+                        from_cache: false,
+                        status_code: 200,
+                        ip: None,
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs_f64() * 1000.0)
+                            .unwrap_or(0.0),
+                    };
+                    interceptor_registry.fire_on_completed(&details);
+                }
 
                 if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                     pane.mark_dirty();
@@ -553,29 +598,14 @@ pub fn process_offscreen_events(
                             continue;
                         }
                         if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
-                            if !ext_script.css_code.is_empty() {
-                                let escaped = ext_script
-                                    .css_code
-                                    .replace('\\', "\\\\")
-                                    .replace('`', "\\`")
-                                    .replace('$', "\\$");
-                                pane.execute_js(&format!(
-                                    "var s = document.createElement('style'); \
-                                     s.textContent = `{}`; \
-                                     (document.head || document.documentElement).appendChild(s);",
-                                    escaped
-                                ));
-                                pane.mark_dirty();
-                            }
-                            if !ext_script.js_code.is_empty() {
-                                info!(
-                                    "Injecting extension document-end content script '{}' into {}",
-                                    ext_script.script_id,
-                                    &url[..url.len().min(40)]
-                                );
-                                pane.execute_js(&ext_script.js_code);
-                                pane.mark_dirty();
-                            }
+                            inject_extension_shim_and_script(
+                                &ext_script,
+                                pane,
+                                pane_id,
+                                app_state,
+                                false,
+                            );
+                            pane.mark_dirty();
                             app_state.mark_script_injected(pane_id, &key);
                         }
                     }
@@ -606,31 +636,14 @@ pub fn process_offscreen_events(
                             continue;
                         }
                         if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
-                            if !ext_script.css_code.is_empty() {
-                                let escaped = ext_script
-                                    .css_code
-                                    .replace('\\', "\\\\")
-                                    .replace('`', "\\`")
-                                    .replace('$', "\\$");
-                                pane.execute_js(&format!(
-                                    "setTimeout(function() {{ \
-                                        var s = document.createElement('style'); \
-                                        s.textContent = `{}`; \
-                                        (document.head || document.documentElement).appendChild(s); \
-                                    }}, 0);",
-                                    escaped
-                                ));
-                                pane.mark_dirty();
-                            }
-                            if !ext_script.js_code.is_empty() {
-                                info!(
-                                    "Injecting extension content script '{}' into {}",
-                                    ext_script.script_id,
-                                    &url[..url.len().min(40)]
-                                );
-                                pane.execute_js(&ext_script.js_code);
-                                pane.mark_dirty();
-                            }
+                            inject_extension_shim_and_script(
+                                &ext_script,
+                                pane,
+                                pane_id,
+                                app_state,
+                                true,
+                            );
+                            pane.mark_dirty();
                             app_state.mark_script_injected(pane_id, &key);
                         }
                     }
@@ -744,27 +757,13 @@ pub fn process_offscreen_events(
                             continue;
                         }
                         if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
-                            if !ext_script.css_code.is_empty() {
-                                let escaped = ext_script
-                                    .css_code
-                                    .replace('\\', "\\\\")
-                                    .replace('`', "\\`")
-                                    .replace('$', "\\$");
-                                pane.execute_js(&format!(
-                                    "var s = document.createElement('style'); \
-                                     s.textContent = `{}`; \
-                                     (document.documentElement || document.head).appendChild(s);",
-                                    escaped
-                                ));
-                            }
-                            if !ext_script.js_code.is_empty() {
-                                info!(
-                                    "Injecting extension document-start script '{}' into {}",
-                                    ext_script.script_id,
-                                    &url[..url.len().min(40)]
-                                );
-                                pane.execute_js(&ext_script.js_code);
-                            }
+                            inject_extension_shim_and_script(
+                                &ext_script,
+                                pane,
+                                pane_id,
+                                app_state,
+                                false,
+                            );
                             pane.mark_dirty();
                             app_state.mark_script_injected(pane_id, &key);
                         }
@@ -773,6 +772,7 @@ pub fn process_offscreen_events(
             }
             WryEvent::TitleChanged { title, .. } => {
                 app_state.status_message = title[..title.len().min(60)].to_string();
+                app_state.tab_display_dirty = true;
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
                 // Use the download manager for actual downloading with progress
@@ -897,7 +897,7 @@ pub fn process_mcp_commands(
                         ) {
                             Ok(new_id) => {
                                 info!("MCP: opening in new tab {}", url);
-                                app_state.engines.create_pane(new_id, parsed);
+                                app_state.engines.create_pane(new_id, parsed, None);
                                 app_state.wm.set_active_pane(new_id);
                                 app_state.session_dirty = true;
                             }
@@ -1229,7 +1229,14 @@ fn handle_ipc_message(
     };
     match msg.get("t").and_then(|v| v.as_str()) {
         Some("get-config") => {
-            let config_json = serde_json::to_string(&app_state.config).unwrap_or_default();
+            let config_json = if app_state.config_json_dirty {
+                app_state.config_json_cache =
+                    serde_json::to_string(&app_state.config).unwrap_or_default();
+                app_state.config_json_dirty = false;
+                app_state.config_json_cache.clone()
+            } else {
+                app_state.config_json_cache.clone()
+            };
             let js = format!(
                 "window._aileron_config = {}; window._onConfigLoaded && window._onConfigLoaded(window._aileron_config);",
                 config_json
@@ -1360,6 +1367,7 @@ fn handle_ipc_message(
                     pane.execute_js("window._onConfigSaved && window._onConfigSaved();");
                 }
                 app_state.status_message = "Settings saved".into();
+                app_state.config_json_dirty = true;
             }
         }
         Some("credential_save") => {
@@ -1487,6 +1495,40 @@ fn handle_ipc_message(
                 pane.execute_js(&js);
             }
         }
+        Some("ext-send-message") => {
+            let source_id = msg
+                .get("sourceId")
+                .and_then(|v| v.as_str())
+                .map(|s| ExtensionId(s.to_string()));
+            let target_id = msg
+                .get("targetId")
+                .and_then(|v| v.as_str())
+                .map(|s| ExtensionId(s.to_string()));
+            let message = msg
+                .get("message")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            let req_id = msg
+                .get("reqId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if let Ok(mgr) = app_state.extension_manager.lock() {
+                let bus: &Arc<MessageBus> = mgr.message_bus();
+                let response = bus.send_message(source_id.as_ref(), target_id.as_ref(), message);
+                let response_json =
+                    serde_json::to_string(&response).unwrap_or_else(|_| "null".into());
+                if let Some(pane) = wry_panes.get_mut(&pane_id) {
+                    pane.execute_js(&format!(
+                        "if (window.__aileron_ext_response) \
+                         window.__aileron_ext_response({}, {});",
+                        serde_json::to_string(&req_id).unwrap_or_else(|_| "\"\"".into()),
+                        response_json
+                    ));
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -1529,7 +1571,14 @@ fn handle_ipc_message_offscreen(
     };
     match msg.get("t").and_then(|v| v.as_str()) {
         Some("get-config") => {
-            let config_json = serde_json::to_string(&app_state.config).unwrap_or_default();
+            let config_json = if app_state.config_json_dirty {
+                app_state.config_json_cache =
+                    serde_json::to_string(&app_state.config).unwrap_or_default();
+                app_state.config_json_dirty = false;
+                app_state.config_json_cache.clone()
+            } else {
+                app_state.config_json_cache.clone()
+            };
             let js = format!(
                 "window._aileron_config = {}; window._onConfigLoaded && window._onConfigLoaded(window._aileron_config);",
                 config_json
@@ -1662,6 +1711,7 @@ fn handle_ipc_message_offscreen(
                     pane.mark_dirty();
                 }
                 app_state.status_message = "Settings saved".into();
+                app_state.config_json_dirty = true;
             }
         }
         Some("credential_save") => {
@@ -1790,8 +1840,128 @@ fn handle_ipc_message_offscreen(
                 app_state.autofill_js = None;
             }
         }
+        Some("ext-send-message") => {
+            let source_id = msg
+                .get("sourceId")
+                .and_then(|v| v.as_str())
+                .map(|s| ExtensionId(s.to_string()));
+            let target_id = msg
+                .get("targetId")
+                .and_then(|v| v.as_str())
+                .map(|s| ExtensionId(s.to_string()));
+            let message = msg
+                .get("message")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            let req_id = msg
+                .get("reqId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if let Ok(mgr) = app_state.extension_manager.lock() {
+                let bus: &Arc<MessageBus> = mgr.message_bus();
+                let response = bus.send_message(source_id.as_ref(), target_id.as_ref(), message);
+                let response_json =
+                    serde_json::to_string(&response).unwrap_or_else(|_| "null".into());
+                if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                    pane.execute_js(&format!(
+                        "if (window.__aileron_ext_response) \
+                         window.__aileron_ext_response({}, {});",
+                        serde_json::to_string(&req_id).unwrap_or_else(|_| "\"\"".into()),
+                        response_json
+                    ));
+                    pane.mark_dirty();
+                }
+            }
+        }
         _ => {}
     }
 }
 
+// End of file
+
+trait ExecuteJs {
+    fn execute_js_code(&self, js: &str);
+}
+
+impl ExecuteJs for aileron::servo::WryPane {
+    fn execute_js_code(&self, js: &str) {
+        self.execute_js(js);
+    }
+}
+
+impl ExecuteJs for aileron::offscreen_webview::OffscreenWebView {
+    fn execute_js_code(&self, js: &str) {
+        self.execute_js(js);
+    }
+}
+
+fn inject_extension_shim_and_script<T>(
+    ext_script: &aileron::extensions::scripting::ExtensionContentScriptEntry,
+    pane: &T,
+    pane_id: Uuid,
+    app_state: &mut AppState,
+    use_idle_delay: bool,
+) where
+    T: ExecuteJs,
+{
+    let ext_id = ExtensionId(ext_script.extension_id.clone());
+    let is_loaded = app_state
+        .extension_manager
+        .lock()
+        .ok()
+        .is_some_and(|mgr| mgr.get(&ext_id).is_some());
+    if !is_loaded {
+        warn!(
+            "Extension '{}' is not loaded, skipping content script '{}'",
+            ext_script.extension_id, ext_script.script_id
+        );
+        return;
+    }
+
+    if !app_state.is_script_injected(pane_id, &format!("shim:{}", ext_script.extension_id)) {
+        pane.execute_js_code(EXTENSION_RUNTIME_SHIM_JS);
+        pane.execute_js_code(&format!(
+            "window.__aileron_extension_id = {};",
+            serde_json::to_string(&ext_script.extension_id).unwrap_or_default()
+        ));
+        app_state.mark_script_injected(pane_id, &format!("shim:{}", ext_script.extension_id));
+    }
+
+    if !ext_script.css_code.is_empty() {
+        let escaped = ext_script
+            .css_code
+            .replace('\\', "\\\\")
+            .replace('`', "\\`")
+            .replace('$', "\\$");
+        let css_js = if use_idle_delay {
+            format!(
+                "setTimeout(function() {{ \
+                    var s = document.createElement('style'); \
+                    s.textContent = `{}`; \
+                    (document.head || document.documentElement).appendChild(s); \
+                }}, 0);",
+                escaped
+            )
+        } else {
+            format!(
+                "var s = document.createElement('style'); \
+                 s.textContent = `{}`; \
+                 (document.head || document.documentElement).appendChild(s);",
+                escaped
+            )
+        };
+        pane.execute_js_code(&css_js);
+    }
+    if !ext_script.js_code.is_empty() {
+        info!(
+            "Injecting extension content script '{}' ({}) into pane {}",
+            ext_script.script_id,
+            ext_script.extension_id,
+            &pane_id.to_string()[..8],
+        );
+        pane.execute_js_code(&ext_script.js_code);
+    }
+}
 // End of file

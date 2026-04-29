@@ -104,6 +104,7 @@ name = "aileron"
 version = "0.18.0"
 dependencies = [
  "age",
+ "aho-corasick",
  "alacritty_terminal",
  "anyhow",
  "attohttpc",

@@ -26,7 +26,7 @@ use crate::extensions::types::{
 use crate::extensions::web_request::{
     AuthRequiredDetails, BeforeSendHeadersDetails, BlockingResponse, CompletedDetails,
     ErrorOccurredDetails, ExtraInfoSpec, HeadersReceivedDetails, RedirectDetails, RequestDetails,
-    RequestFilter, WebRequestApi,
+    RequestFilter, WebRequestApi, WebRequestInterceptor,
 };
 
 type UpdatedCallback = Box<dyn Fn(TabUpdateEvent) + Send + Sync>;
@@ -224,6 +224,8 @@ struct AileronStorageArea {
     change_callbacks: Mutex<Vec<StorageChangeCallback>>,
     /// If set, data is persisted to this JSON file on every mutation.
     storage_file: Option<std::path::PathBuf>,
+    /// Permissions granted to the owning extension.
+    granted_permissions: std::collections::HashSet<Permission>,
 }
 
 impl AileronStorageArea {
@@ -232,6 +234,7 @@ impl AileronStorageArea {
             data: Mutex::new(HashMap::new()),
             change_callbacks: Mutex::new(Vec::new()),
             storage_file: None,
+            granted_permissions: std::collections::HashSet::new(),
         }
     }
 
@@ -245,7 +248,16 @@ impl AileronStorageArea {
             data: Mutex::new(initial_data),
             change_callbacks: Mutex::new(Vec::new()),
             storage_file: Some(storage_file),
+            granted_permissions: std::collections::HashSet::new(),
         }
+    }
+
+    fn set_permissions(&mut self, permissions: std::collections::HashSet<Permission>) {
+        self.granted_permissions = permissions;
+    }
+
+    fn has_storage_permission(&self) -> bool {
+        self.granted_permissions.contains(&Permission::Storage)
     }
 
     fn load_from_file(path: &std::path::Path) -> HashMap<String, serde_json::Value> {
@@ -355,6 +367,13 @@ impl StorageArea for AileronStorageArea {
     }
 
     fn set(&self, items: StorageChanges) -> Result<()> {
+        if !self.has_storage_permission() {
+            tracing::warn!(
+                target: "extensions",
+                "storage.local.set: denied — 'storage' permission not granted"
+            );
+            return Ok(());
+        }
         let mut data = self
             .data
             .lock()
@@ -371,6 +390,13 @@ impl StorageArea for AileronStorageArea {
     }
 
     fn remove(&self, keys: Vec<String>) -> Result<()> {
+        if !self.has_storage_permission() {
+            tracing::warn!(
+                target: "extensions",
+                "storage.local.remove: denied — 'storage' permission not granted"
+            );
+            return Ok(());
+        }
         let mut data = self
             .data
             .lock()
@@ -389,6 +415,13 @@ impl StorageArea for AileronStorageArea {
     }
 
     fn clear(&self) -> Result<()> {
+        if !self.has_storage_permission() {
+            tracing::warn!(
+                target: "extensions",
+                "storage.local.clear: denied — 'storage' permission not granted"
+            );
+            return Ok(());
+        }
         let mut data = self
             .data
             .lock()
@@ -453,6 +486,12 @@ impl AileronStorageApi {
             sync: AileronStorageArea::with_persistence(ext_dir.join("sync.json")),
             managed: AileronStorageArea::with_persistence(ext_dir.join("managed.json")),
         }
+    }
+
+    fn set_permissions(&mut self, permissions: std::collections::HashSet<Permission>) {
+        self.local.set_permissions(permissions.clone());
+        self.sync.set_permissions(permissions.clone());
+        self.managed.set_permissions(permissions);
     }
 }
 
@@ -676,7 +715,7 @@ impl RuntimeApi for AileronRuntimeApi {
     }
 }
 
-struct AileronWebRequestApi {
+pub(crate) struct AileronWebRequestApi {
     before_request_handlers: Mutex<Vec<(ListenerId, RequestFilter, BeforeRequestHandler)>>,
     before_send_headers_handlers: Mutex<Vec<(ListenerId, RequestFilter, BeforeSendHeadersHandler)>>,
     headers_received_handlers: Mutex<Vec<(ListenerId, RequestFilter, HeadersReceivedHandler)>>,
@@ -684,6 +723,7 @@ struct AileronWebRequestApi {
     before_redirect_handlers: Mutex<Vec<(ListenerId, RequestFilter, BeforeRedirectHandler)>>,
     completed_handlers: Mutex<Vec<(ListenerId, RequestFilter, CompletedHandler)>>,
     error_occurred_handlers: Mutex<Vec<(ListenerId, RequestFilter, ErrorOccurredHandler)>>,
+    granted_permissions: std::collections::HashSet<Permission>,
 }
 
 impl AileronWebRequestApi {
@@ -696,7 +736,16 @@ impl AileronWebRequestApi {
             before_redirect_handlers: Mutex::new(Vec::new()),
             completed_handlers: Mutex::new(Vec::new()),
             error_occurred_handlers: Mutex::new(Vec::new()),
+            granted_permissions: std::collections::HashSet::new(),
         }
+    }
+
+    fn set_permissions(&mut self, permissions: std::collections::HashSet<Permission>) {
+        self.granted_permissions = permissions;
+    }
+
+    fn has_web_request_permission(&self) -> bool {
+        self.granted_permissions.contains(&Permission::WebRequest)
     }
 
     /// Check if a URL matches any pattern in the filter.
@@ -897,6 +946,13 @@ impl WebRequestApi for AileronWebRequestApi {
         _extra_info_spec: Vec<ExtraInfoSpec>,
         handler: BeforeRequestHandler,
     ) -> ListenerId {
+        if !self.has_web_request_permission() {
+            tracing::warn!(
+                target: "extensions",
+                "webRequest.onBeforeRequest: denied — 'webRequest' permission not granted"
+            );
+            return next_listener_id();
+        }
         let id = next_listener_id();
         tracing::info!(
             target: "extensions",
@@ -917,6 +973,13 @@ impl WebRequestApi for AileronWebRequestApi {
         _extra_info_spec: Vec<ExtraInfoSpec>,
         handler: BeforeSendHeadersHandler,
     ) -> ListenerId {
+        if !self.has_web_request_permission() {
+            tracing::warn!(
+                target: "extensions",
+                "webRequest.onBeforeSendHeaders: denied — 'webRequest' permission not granted"
+            );
+            return next_listener_id();
+        }
         let id = next_listener_id();
         tracing::info!(
             target: "extensions",
@@ -936,6 +999,13 @@ impl WebRequestApi for AileronWebRequestApi {
         _extra_info_spec: Vec<ExtraInfoSpec>,
         handler: HeadersReceivedHandler,
     ) -> ListenerId {
+        if !self.has_web_request_permission() {
+            tracing::warn!(
+                target: "extensions",
+                "webRequest.onHeadersReceived: denied — 'webRequest' permission not granted"
+            );
+            return next_listener_id();
+        }
         let id = next_listener_id();
         tracing::info!(
             target: "extensions",
@@ -950,6 +1020,13 @@ impl WebRequestApi for AileronWebRequestApi {
     }
 
     fn on_auth_required(&self, filter: RequestFilter, handler: AuthRequiredHandler) -> ListenerId {
+        if !self.has_web_request_permission() {
+            tracing::warn!(
+                target: "extensions",
+                "webRequest.onAuthRequired: denied — 'webRequest' permission not granted"
+            );
+            return next_listener_id();
+        }
         let id = next_listener_id();
         tracing::info!(
             target: "extensions",
@@ -968,6 +1045,13 @@ impl WebRequestApi for AileronWebRequestApi {
         filter: RequestFilter,
         callback: BeforeRedirectHandler,
     ) -> ListenerId {
+        if !self.has_web_request_permission() {
+            tracing::warn!(
+                target: "extensions",
+                "webRequest.onBeforeRedirect: denied — 'webRequest' permission not granted"
+            );
+            return next_listener_id();
+        }
         let id = next_listener_id();
         self.before_redirect_handlers
             .lock()
@@ -977,6 +1061,13 @@ impl WebRequestApi for AileronWebRequestApi {
     }
 
     fn on_completed(&self, filter: RequestFilter, callback: CompletedHandler) -> ListenerId {
+        if !self.has_web_request_permission() {
+            tracing::warn!(
+                target: "extensions",
+                "webRequest.onCompleted: denied — 'webRequest' permission not granted"
+            );
+            return next_listener_id();
+        }
         let id = next_listener_id();
         self.completed_handlers
             .lock()
@@ -990,6 +1081,13 @@ impl WebRequestApi for AileronWebRequestApi {
         filter: RequestFilter,
         callback: ErrorOccurredHandler,
     ) -> ListenerId {
+        if !self.has_web_request_permission() {
+            tracing::warn!(
+                target: "extensions",
+                "webRequest.onErrorOccurred: denied — 'webRequest' permission not granted"
+            );
+            return next_listener_id();
+        }
         let id = next_listener_id();
         self.error_occurred_handlers
             .lock()
@@ -1046,6 +1144,32 @@ impl WebRequestApi for AileronWebRequestApi {
                 listener_id
             )))
         }
+    }
+}
+
+impl WebRequestInterceptor for AileronWebRequestApi {
+    fn fire_on_before_request(&self, details: &RequestDetails) -> BlockingResponse {
+        AileronWebRequestApi::fire_on_before_request(self, details)
+    }
+
+    fn fire_on_headers_received(&self, details: &HeadersReceivedDetails) -> BlockingResponse {
+        AileronWebRequestApi::fire_on_headers_received(self, details)
+    }
+
+    fn fire_on_before_send_headers(&self, details: &BeforeSendHeadersDetails) -> BlockingResponse {
+        AileronWebRequestApi::fire_on_before_send_headers(self, details)
+    }
+
+    fn fire_on_completed(&self, details: &CompletedDetails) {
+        AileronWebRequestApi::fire_on_completed(self, details);
+    }
+
+    fn fire_on_error_occurred(&self, details: &ErrorOccurredDetails) {
+        AileronWebRequestApi::fire_on_error_occurred(self, details);
+    }
+
+    fn fire_on_before_redirect(&self, details: &RedirectDetails) {
+        AileronWebRequestApi::fire_on_before_redirect(self, details);
     }
 }
 
@@ -1240,7 +1364,7 @@ pub struct AileronExtensionApi {
     tabs_api: AileronTabsApi,
     storage_api: AileronStorageApi,
     runtime_api: AileronRuntimeApi,
-    web_request_api: AileronWebRequestApi,
+    web_request_api: Arc<AileronWebRequestApi>,
     scripting_api: AileronScriptingApi,
     granted_permissions: std::collections::HashSet<Permission>,
     granted_host_permissions: Vec<String>,
@@ -1273,10 +1397,14 @@ impl AileronExtensionApi {
         tab_provider: Option<std::sync::Arc<dyn TabProvider>>,
         message_bus: Option<Arc<MessageBus>>,
     ) -> Self {
-        let storage_api = match storage_dir {
+        let granted_permissions = permissions::parse_permissions(&manifest.permissions);
+
+        let mut storage_api = match storage_dir {
             Some(dir) => AileronStorageApi::with_persistence(dir, &extension_id),
             None => AileronStorageApi::new(),
         };
+        storage_api.set_permissions(granted_permissions.clone());
+
         let tabs_api = match tab_provider {
             Some(provider) => AileronTabsApi::with_provider(provider),
             None => AileronTabsApi::new(),
@@ -1287,14 +1415,16 @@ impl AileronExtensionApi {
             }
             None => AileronRuntimeApi::new(extension_id.clone(), manifest.clone()),
         };
-        let granted_permissions = permissions::parse_permissions(&manifest.permissions);
+        let mut wr_api = AileronWebRequestApi::new();
+        wr_api.set_permissions(granted_permissions.clone());
+        let scripting_api = AileronScriptingApi::new(registry);
         let granted_host_permissions = manifest.host_permissions.clone();
         Self {
             tabs_api,
             storage_api,
             runtime_api,
-            web_request_api: AileronWebRequestApi::new(),
-            scripting_api: AileronScriptingApi::new(registry),
+            web_request_api: Arc::new(wr_api),
+            scripting_api,
             extension_id,
             manifest,
             granted_permissions,
@@ -1411,11 +1541,19 @@ impl ExtensionApi for AileronExtensionApi {
     }
 
     fn web_request(&self) -> &dyn WebRequestApi {
-        &self.web_request_api
+        &*self.web_request_api
     }
 
     fn scripting(&self) -> &dyn ScriptingApi {
         &self.scripting_api
+    }
+}
+
+impl AileronExtensionApi {
+    /// Get a shared reference to the web request interceptor.
+    /// Used by the request lifecycle to dispatch events to extension handlers.
+    pub(crate) fn web_request_interceptor(&self) -> Arc<AileronWebRequestApi> {
+        self.web_request_api.clone()
     }
 }
 
@@ -1427,7 +1565,8 @@ mod tests {
     const MINIMAL_MANIFEST: &str = r#"{
         "manifest_version": 3,
         "name": "Test Extension",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "permissions": ["storage", "tabs", "scripting", "webRequest"]
     }"#;
 
     fn make_api() -> AileronExtensionApi {
@@ -1943,5 +2082,366 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    // ── A04: Extension Messaging Tests ──
+
+    #[test]
+    fn test_content_script_send_message_to_background() {
+        use std::sync::Arc;
+
+        let bus = Arc::new(MessageBus::new());
+
+        let target_manifest = ExtensionManifest::from_json(MINIMAL_MANIFEST).unwrap();
+        let target_api = AileronExtensionApi::with_registry_and_storage(
+            ExtensionId("background-ext".into()),
+            target_manifest,
+            ExtensionContentScriptRegistry::new(),
+            None,
+            None,
+            Some(bus.clone()),
+        );
+
+        target_api
+            .runtime()
+            .on_message(Arc::new(move |msg, _sender| {
+                if msg.as_str() == Some("ping") {
+                    Some(serde_json::json!("pong"))
+                } else {
+                    None
+                }
+            }));
+
+        let source_manifest = ExtensionManifest::from_json(MINIMAL_MANIFEST).unwrap();
+        let source_api = AileronExtensionApi::with_registry_and_storage(
+            ExtensionId("content-ext".into()),
+            source_manifest,
+            ExtensionContentScriptRegistry::new(),
+            None,
+            None,
+            Some(bus.clone()),
+        );
+
+        let response = source_api
+            .runtime()
+            .send_message(
+                Some(ExtensionId("background-ext".into())),
+                serde_json::json!("ping"),
+            )
+            .unwrap();
+
+        assert_eq!(response, Some(serde_json::json!("pong")));
+    }
+
+    #[test]
+    fn test_content_script_send_message_no_handler() {
+        use std::sync::Arc;
+
+        let bus = Arc::new(MessageBus::new());
+
+        let manifest = ExtensionManifest::from_json(MINIMAL_MANIFEST).unwrap();
+        let source_api = AileronExtensionApi::with_registry_and_storage(
+            ExtensionId("source-ext".into()),
+            manifest,
+            ExtensionContentScriptRegistry::new(),
+            None,
+            None,
+            Some(bus.clone()),
+        );
+
+        let response = source_api
+            .runtime()
+            .send_message(
+                Some(ExtensionId("nobody-ext".into())),
+                serde_json::json!("hello"),
+            )
+            .unwrap();
+
+        assert!(response.is_none());
+    }
+
+    #[test]
+    fn test_messaging_response_flows_back_through_bus() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let bus = Arc::new(MessageBus::new());
+        let received = Arc::new(AtomicBool::new(false));
+
+        let target_manifest = ExtensionManifest::from_json(MINIMAL_MANIFEST).unwrap();
+        let target_api = AileronExtensionApi::with_registry_and_storage(
+            ExtensionId("handler-ext".into()),
+            target_manifest,
+            ExtensionContentScriptRegistry::new(),
+            None,
+            None,
+            Some(bus.clone()),
+        );
+
+        let rec = received.clone();
+        target_api
+            .runtime()
+            .on_message(Arc::new(move |msg, _sender| {
+                if msg
+                    .as_object()
+                    .and_then(|o| o.get("type"))
+                    .and_then(|v| v.as_str())
+                    == Some("greeting")
+                {
+                    rec.store(true, Ordering::Relaxed);
+                    Some(serde_json::json!({ "reply": "hello back" }))
+                } else {
+                    None
+                }
+            }));
+
+        let source_manifest = ExtensionManifest::from_json(MINIMAL_MANIFEST).unwrap();
+        let source_api = AileronExtensionApi::with_registry_and_storage(
+            ExtensionId("sender-ext".into()),
+            source_manifest,
+            ExtensionContentScriptRegistry::new(),
+            None,
+            None,
+            Some(bus.clone()),
+        );
+
+        let response = source_api
+            .runtime()
+            .send_message(
+                Some(ExtensionId("handler-ext".into())),
+                serde_json::json!({ "type": "greeting", "data": 42 }),
+            )
+            .unwrap();
+
+        assert!(received.load(Ordering::Relaxed));
+        assert_eq!(response, Some(serde_json::json!({ "reply": "hello back" })));
+    }
+
+    // ── A05: Storage Persistence Tests ──
+
+    #[test]
+    fn test_storage_area_persistence_direct() {
+        let dir = std::env::temp_dir().join("aileron_test_storage_area_direct");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(&dir);
+
+        let file_path = dir.join("test_area.json");
+
+        {
+            let mut area = AileronStorageArea::with_persistence(file_path.clone());
+            area.set_permissions(permissions::parse_permissions(&["storage".into()]));
+
+            let mut items = HashMap::new();
+            items.insert("color".into(), serde_json::json!("blue"));
+            items.insert("count".into(), serde_json::json!(7));
+            area.set(items).unwrap();
+        }
+
+        {
+            let area2 = AileronStorageArea::with_persistence(file_path.clone());
+            let result = area2.get(StorageGetKeys::All).unwrap();
+            assert_eq!(result.len(), 2);
+            assert_eq!(result.get("color").unwrap(), &serde_json::json!("blue"));
+            assert_eq!(result.get("count").unwrap(), &serde_json::json!(7));
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_storage_area_survives_restart() {
+        let dir = std::env::temp_dir().join("aileron_test_storage_restart");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(&dir);
+
+        let file_path = dir.join("restart.json");
+
+        {
+            let mut area = AileronStorageArea::with_persistence(file_path.clone());
+            area.set_permissions(permissions::parse_permissions(&["storage".into()]));
+            let mut items = HashMap::new();
+            items.insert("session".into(), serde_json::json!("active"));
+            items.insert("ts".into(), serde_json::json!(12345));
+            area.set(items).unwrap();
+        }
+
+        let mut area2 = AileronStorageArea::with_persistence(file_path.clone());
+        area2.set_permissions(permissions::parse_permissions(&["storage".into()]));
+
+        let session = area2.get(StorageGetKeys::Single("session".into())).unwrap();
+        assert_eq!(
+            session.get("session").unwrap(),
+            &serde_json::json!("active")
+        );
+
+        area2.remove(vec!["session".into()]).unwrap();
+        area2
+            .set(
+                [("session".into(), serde_json::json!("restarted"))]
+                    .into_iter()
+                    .collect(),
+            )
+            .unwrap();
+
+        let mut area3 = AileronStorageArea::with_persistence(file_path.clone());
+        area3.set_permissions(permissions::parse_permissions(&["storage".into()]));
+        let all = area3.get(StorageGetKeys::All).unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all.get("session").unwrap(), &serde_json::json!("restarted"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── A06: Permission Enforcement Tests ──
+
+    fn make_api_no_permissions() -> AileronExtensionApi {
+        let manifest = ExtensionManifest::from_json(
+            r#"{
+            "manifest_version": 3,
+            "name": "No Perms",
+            "version": "1.0.0"
+        }"#,
+        )
+        .unwrap();
+        AileronExtensionApi::new(ExtensionId("noperm".into()), manifest)
+    }
+
+    #[test]
+    fn test_storage_denied_without_permission() {
+        let api = make_api_no_permissions();
+
+        let mut items = HashMap::new();
+        items.insert("key".into(), serde_json::json!("value"));
+        let result = api.storage().local().set(items);
+        assert!(result.is_ok(), "Should not error, just skip");
+
+        let data = api
+            .storage()
+            .local()
+            .get(StorageGetKeys::Single("key".into()))
+            .unwrap();
+        assert!(data.is_empty(), "Data should not have been written");
+    }
+
+    #[test]
+    fn test_storage_allowed_with_permission() {
+        let api = make_api();
+
+        let mut items = HashMap::new();
+        items.insert("key".into(), serde_json::json!("value"));
+        api.storage().local().set(items).unwrap();
+
+        let data = api
+            .storage()
+            .local()
+            .get(StorageGetKeys::Single("key".into()))
+            .unwrap();
+        assert_eq!(data.len(), 1);
+    }
+
+    #[test]
+    fn test_storage_remove_denied_without_permission() {
+        let api = make_api_no_permissions();
+
+        let result = api.storage().local().remove(vec!["key".into()]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_storage_clear_denied_without_permission() {
+        let api = make_api_no_permissions();
+
+        let result = api.storage().local().clear();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_web_request_denied_without_permission() {
+        let api = make_api_no_permissions();
+        let filter = RequestFilter {
+            urls: vec![],
+            types: None,
+            tab_id: None,
+            window_id: None,
+        };
+
+        let listener_id = api.web_request().on_before_request(
+            filter,
+            vec![],
+            Box::new(|_| BlockingResponse {
+                cancel: Some(true),
+                ..Default::default()
+            }),
+        );
+
+        let remove_result = api.web_request().remove_listener(listener_id);
+        assert!(
+            remove_result.is_err(),
+            "Handler should not have been registered without webRequest permission"
+        );
+    }
+
+    #[test]
+    fn test_web_request_allowed_with_permission() {
+        let api = make_api();
+        let filter = RequestFilter {
+            urls: vec![],
+            types: None,
+            tab_id: None,
+            window_id: None,
+        };
+
+        let listener_id = api.web_request().on_before_request(
+            filter,
+            vec![],
+            Box::new(|_| BlockingResponse {
+                cancel: Some(true),
+                ..Default::default()
+            }),
+        );
+
+        let remove_result = api.web_request().remove_listener(listener_id);
+        assert!(
+            remove_result.is_ok(),
+            "Handler should be registered with webRequest permission"
+        );
+    }
+
+    #[test]
+    fn test_check_api_permission_storage() {
+        let api = make_api();
+        assert!(api.check_api_permission("storage", "set").is_ok());
+        assert!(api.check_api_permission("storage", "get").is_ok());
+    }
+
+    #[test]
+    fn test_check_api_permission_webrequest() {
+        let api = make_api();
+        assert!(
+            api.check_api_permission("webRequest", "onBeforeRequest")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_check_api_permission_denied() {
+        let api = make_api_no_permissions();
+        assert!(api.check_api_permission("storage", "set").is_err());
+        assert!(
+            api.check_api_permission("webRequest", "onBeforeRequest")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_has_permission() {
+        let api = make_api();
+        assert!(api.has_permission("storage"));
+        assert!(api.has_permission("webRequest"));
+        assert!(api.has_permission("tabs"));
+        assert!(!api.has_permission("bookmarks"));
+
+        let no_perms = make_api_no_permissions();
+        assert!(!no_perms.has_permission("storage"));
     }
 }

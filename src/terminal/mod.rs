@@ -475,12 +475,14 @@ impl Drop for NativeTerminalPane {
 /// Manages all native terminal panes, keyed by pane UUID.
 pub struct NativeTerminalManager {
     panes: HashMap<Uuid, NativeTerminalPane>,
+    cached_colors: Option<crate::terminal::grid::TerminalColors>,
 }
 
 impl NativeTerminalManager {
     pub fn new() -> Self {
         Self {
             panes: HashMap::new(),
+            cached_colors: None,
         }
     }
 
@@ -548,6 +550,16 @@ impl NativeTerminalManager {
         if let Some(pane) = self.panes.get_mut(pane_id) {
             pane.scroll(delta);
         }
+    }
+
+    pub fn get_colors(&mut self) -> crate::terminal::grid::TerminalColors {
+        self.cached_colors
+            .get_or_insert_with(crate::terminal::grid::TerminalColors::default)
+            .clone()
+    }
+
+    pub fn invalidate_colors(&mut self) {
+        self.cached_colors = None;
     }
 }
 

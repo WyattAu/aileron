@@ -1,4 +1,5 @@
 use std::net::IpAddr;
+use std::sync::{Arc, RwLock};
 use url::Url;
 
 use crate::extensions::types::{
@@ -161,6 +162,17 @@ pub struct AuthChallenger {
     pub port: u16,
 }
 
+/// Trait for dispatching web request lifecycle events to registered handlers.
+/// Implemented by the engine-side interceptor that holds registered callbacks.
+pub trait WebRequestInterceptor: Send + Sync {
+    fn fire_on_before_request(&self, details: &RequestDetails) -> BlockingResponse;
+    fn fire_on_headers_received(&self, details: &HeadersReceivedDetails) -> BlockingResponse;
+    fn fire_on_before_send_headers(&self, details: &BeforeSendHeadersDetails) -> BlockingResponse;
+    fn fire_on_completed(&self, details: &CompletedDetails);
+    fn fire_on_error_occurred(&self, details: &ErrorOccurredDetails);
+    fn fire_on_before_redirect(&self, details: &RedirectDetails);
+}
+
 /// Intercept and modify network requests in-flight.
 pub trait WebRequestApi: Send + Sync {
     fn on_before_request(
@@ -209,6 +221,120 @@ pub trait WebRequestApi: Send + Sync {
     ) -> ListenerId;
 
     fn remove_listener(&self, listener_id: ListenerId) -> Result<()>;
+}
+
+/// A thread-safe registry of web request interceptors from loaded extensions.
+///
+/// Shared via `Arc` into webview navigation handler closures so that extension
+/// hooks are consulted on every request without locking the `ExtensionManager`.
+/// Uses `RwLock` for read-heavy access (every network request reads; writes
+/// only happen when extensions are loaded/unloaded).
+pub struct WebRequestInterceptorRegistry {
+    interceptors: RwLock<Vec<Arc<dyn WebRequestInterceptor>>>,
+}
+
+impl WebRequestInterceptorRegistry {
+    pub fn new() -> Self {
+        Self {
+            interceptors: RwLock::new(Vec::new()),
+        }
+    }
+
+    /// Register a new interceptor (called when an extension is loaded).
+    pub fn register(&self, interceptor: Arc<dyn WebRequestInterceptor>) {
+        let mut guard = self.interceptors.write().unwrap_or_else(|e| e.into_inner());
+        guard.push(interceptor);
+    }
+
+    /// Remove all interceptors that match the given predicate (called when
+    /// an extension is unloaded). The predicate receives the `Arc` pointer.
+    pub fn unregister_where<F>(&self, mut predicate: F)
+    where
+        F: FnMut(&Arc<dyn WebRequestInterceptor>) -> bool,
+    {
+        let mut guard = self.interceptors.write().unwrap_or_else(|e| e.into_inner());
+        guard.retain(|i| !predicate(i));
+    }
+
+    /// Fire `onBeforeRequest` on all registered interceptors.
+    /// Returns the first non-default `BlockingResponse` (first handler wins).
+    /// If no handler intercepts, returns `BlockingResponse::default()`.
+    pub fn fire_on_before_request(&self, details: &RequestDetails) -> BlockingResponse {
+        let guard = self.interceptors.read().unwrap_or_else(|e| e.into_inner());
+        for interceptor in guard.iter() {
+            let response = interceptor.fire_on_before_request(details);
+            if response.cancel == Some(true) || response.redirect_url.is_some() {
+                return response;
+            }
+        }
+        BlockingResponse::default()
+    }
+
+    /// Fire `onBeforeSendHeaders` on all registered interceptors.
+    pub fn fire_on_before_send_headers(
+        &self,
+        details: &BeforeSendHeadersDetails,
+    ) -> BlockingResponse {
+        let guard = self.interceptors.read().unwrap_or_else(|e| e.into_inner());
+        for interceptor in guard.iter() {
+            let response = interceptor.fire_on_before_send_headers(details);
+            if response.cancel == Some(true)
+                || response.request_headers.is_some()
+                || response.redirect_url.is_some()
+            {
+                return response;
+            }
+        }
+        BlockingResponse::default()
+    }
+
+    /// Fire `onHeadersReceived` on all registered interceptors.
+    pub fn fire_on_headers_received(&self, details: &HeadersReceivedDetails) -> BlockingResponse {
+        let guard = self.interceptors.read().unwrap_or_else(|e| e.into_inner());
+        for interceptor in guard.iter() {
+            let response = interceptor.fire_on_headers_received(details);
+            if response.cancel == Some(true) || response.response_headers.is_some() {
+                return response;
+            }
+        }
+        BlockingResponse::default()
+    }
+
+    /// Fire `onCompleted` on all registered interceptors (notification only).
+    pub fn fire_on_completed(&self, details: &CompletedDetails) {
+        let guard = self.interceptors.read().unwrap_or_else(|e| e.into_inner());
+        for interceptor in guard.iter() {
+            interceptor.fire_on_completed(details);
+        }
+    }
+
+    /// Fire `onErrorOccurred` on all registered interceptors (notification only).
+    pub fn fire_on_error_occurred(&self, details: &ErrorOccurredDetails) {
+        let guard = self.interceptors.read().unwrap_or_else(|e| e.into_inner());
+        for interceptor in guard.iter() {
+            interceptor.fire_on_error_occurred(details);
+        }
+    }
+
+    /// Fire `onBeforeRedirect` on all registered interceptors (notification only).
+    pub fn fire_on_before_redirect(&self, details: &RedirectDetails) {
+        let guard = self.interceptors.read().unwrap_or_else(|e| e.into_inner());
+        for interceptor in guard.iter() {
+            interceptor.fire_on_before_redirect(details);
+        }
+    }
+
+    /// Whether any interceptors are registered.
+    pub fn has_interceptors(&self) -> bool {
+        let guard = self.interceptors.read().unwrap_or_else(|e| e.into_inner());
+        !guard.is_empty()
+    }
+}
+
+impl Default for WebRequestInterceptorRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -321,5 +447,81 @@ mod tests {
             port: 8080,
         };
         assert_eq!(challenger.port, 8080);
+    }
+
+    #[test]
+    fn test_interceptor_registry_empty() {
+        let registry = WebRequestInterceptorRegistry::new();
+        assert!(!registry.has_interceptors());
+        let details = RequestDetails {
+            request_id: RequestId(0),
+            url: Url::parse("https://example.com").unwrap(),
+            method: "GET".into(),
+            frame_id: FrameId(0),
+            parent_frame_id: FrameId(u32::MAX),
+            tab_id: None,
+            type_: ResourceType::MainFrame,
+            origin_url: None,
+            timestamp: 0.0,
+            request_headers: None,
+        };
+        let response = registry.fire_on_before_request(&details);
+        assert_eq!(response.cancel, None);
+    }
+
+    #[test]
+    fn test_interceptor_registry_register_unregister() {
+        let registry = WebRequestInterceptorRegistry::new();
+        assert!(!registry.has_interceptors());
+
+        struct TestInterceptor;
+        impl WebRequestInterceptor for TestInterceptor {
+            fn fire_on_before_request(&self, _details: &RequestDetails) -> BlockingResponse {
+                BlockingResponse {
+                    cancel: Some(true),
+                    ..Default::default()
+                }
+            }
+            fn fire_on_headers_received(
+                &self,
+                _details: &HeadersReceivedDetails,
+            ) -> BlockingResponse {
+                BlockingResponse::default()
+            }
+            fn fire_on_before_send_headers(
+                &self,
+                _details: &BeforeSendHeadersDetails,
+            ) -> BlockingResponse {
+                BlockingResponse::default()
+            }
+            fn fire_on_completed(&self, _details: &CompletedDetails) {}
+            fn fire_on_error_occurred(&self, _details: &ErrorOccurredDetails) {}
+            fn fire_on_before_redirect(&self, _details: &RedirectDetails) {}
+        }
+
+        let interceptor: Arc<dyn WebRequestInterceptor> = Arc::new(TestInterceptor);
+        registry.register(interceptor);
+        assert!(registry.has_interceptors());
+
+        let details = RequestDetails {
+            request_id: RequestId(0),
+            url: Url::parse("https://example.com").unwrap(),
+            method: "GET".into(),
+            frame_id: FrameId(0),
+            parent_frame_id: FrameId(u32::MAX),
+            tab_id: None,
+            type_: ResourceType::MainFrame,
+            origin_url: None,
+            timestamp: 0.0,
+            request_headers: None,
+        };
+        let response = registry.fire_on_before_request(&details);
+        assert_eq!(response.cancel, Some(true));
+    }
+
+    #[test]
+    fn test_interceptor_registry_default() {
+        let registry = WebRequestInterceptorRegistry::default();
+        assert!(!registry.has_interceptors());
     }
 }

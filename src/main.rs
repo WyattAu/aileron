@@ -338,6 +338,12 @@ impl AileronApp {
         // Collect blocked domains for the ad-block closure
         let blocked_domains: Vec<String> = self.adblocker.blocked_domains_iter();
 
+        let interceptor_registry = self
+            .app_state
+            .as_ref()
+            .and_then(|s| s.extension_manager.lock().ok())
+            .map(|m| m.interceptor_registry.clone());
+
         match self.wry_panes.create_pane(
             &*window,
             pane_id,
@@ -346,6 +352,7 @@ impl AileronApp {
             blocked_domains,
             self.config.devtools,
             self.config.popup_blocker_enabled,
+            interceptor_registry,
         ) {
             Ok(()) => {
                 if is_terminal {
@@ -438,15 +445,24 @@ impl AileronApp {
 
         let blocked_domains: Vec<String> = self.adblocker.blocked_domains_iter();
 
+        let interceptor_registry = self
+            .app_state
+            .as_ref()
+            .and_then(|s| s.extension_manager.lock().ok())
+            .map(|m| m.interceptor_registry.clone());
+
         #[cfg(target_os = "linux")]
-        match self.offscreen_panes.create_pane(
+        match self.offscreen_panes.create_pane_with_privacy(
             pane_id,
             url,
             width,
             height,
             blocked_domains,
+            true,
+            true,
             self.config.devtools,
             self.config.popup_blocker_enabled,
+            interceptor_registry,
         ) {
             Ok(()) => {
                 if is_terminal {
@@ -480,7 +496,14 @@ impl AileronApp {
 
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = (pane_id, url, width, height, blocked_domains);
+            let _ = (
+                pane_id,
+                url,
+                width,
+                height,
+                blocked_domains,
+                interceptor_registry,
+            );
             warn!("Offscreen webview not supported on this platform");
         }
     }
@@ -656,7 +679,7 @@ impl AileronApp {
                 &self.git_status,
                 STATUS_BAR_HEIGHT,
                 &self.webview_textures,
-                &self.terminal_manager,
+                &mut self.terminal_manager,
                 &self.offscreen_panes,
             );
         });
@@ -1699,12 +1722,19 @@ impl ApplicationHandler for AileronApp {
                 Some(s) => s,
                 None => return,
             };
+            let interceptor_registry = app_state
+                .extension_manager
+                .lock()
+                .ok()
+                .map(|m| m.interceptor_registry.clone())
+                .unwrap_or_default();
             frame_tasks::process_wry_events(
                 app_state,
                 &mut self.wry_panes,
                 &self.content_scripts,
                 &mut self.mcp_bridge,
                 &self.adblocker,
+                &interceptor_registry,
             );
         }
 
@@ -1718,12 +1748,19 @@ impl ApplicationHandler for AileronApp {
         if self.config.is_offscreen()
             && let Some(app_state) = &mut self.app_state
         {
+            let interceptor_registry = app_state
+                .extension_manager
+                .lock()
+                .ok()
+                .map(|m| m.interceptor_registry.clone())
+                .unwrap_or_default();
             frame_tasks::process_offscreen_events(
                 app_state,
                 &mut self.offscreen_panes,
                 &self.content_scripts,
                 &mut self.mcp_bridge,
                 &self.adblocker,
+                &interceptor_registry,
             );
             // Check for webview crashes (stalled loading panes)
             frame_tasks::check_offscreen_crashes(app_state, &mut self.offscreen_panes);
