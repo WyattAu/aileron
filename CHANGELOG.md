@@ -2,6 +2,44 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.18.0 (2026-04-29) — Extension Foundation & Agent Browser
+
+### Extension System
+- **Builtin adblock extension**: Scaffold with manifest, registered at startup
+- **Extension loader**: `register_builtin_adblock()`, `is_builtin_adblock_enabled()`, `set_builtin_adblock_enabled()`
+- **Extension API**: All callback types migrated from `Box` to `Arc` for clone-under-lock deadlock prevention
+- **`:bind` / `:unbind` commands**: Custom keybindings per mode (normal, insert, command)
+- **`:stats` command**: System resource usage display (tabs, extensions, memory, bookmarks, history)
+
+### Agent Browser (MCP)
+- **MCP response channels**: Migrated from `std::sync::mpsc` to `tokio::sync::oneshot` — no more tokio runtime blocking
+- **MCP server**: `spawn_blocking` wrapper prevents I/O starvation
+
+### Quality Hardening
+- **Terminal mutex safety**: 6x `.lock().unwrap()` → poison recovery (no crash on panic)
+- **Extension deadlock fix**: `fire_change_callbacks`, `fire_installed`, `fire_startup`, message handler all release lock before invoking callbacks
+- **Profiling NaN fix**: `partial_cmp` → `unwrap_or(Equal)` prevents sort panic
+- **Terminal rendering**: Reused String buffer across cells (~5000 fewer allocs/frame)
+- **RGBA buffer reuse**: `frame_rgba()` returns `&[u8]` slice, buffer reused across frames (~8MB/frame saved)
+- **Pane list caching**: `BspTree` dirty-flag cache via `RefCell<Vec>` (5-10 tree traversals/frame eliminated)
+- **Deterministic sync**: `SyncManifest.files` HashMap → BTreeMap for stable JSON serialization
+- **Regex pre-compilation**: Content script patterns compiled at load time; site settings patterns cached with `LazyLock`
+- **Error logging**: 11x silent `let _ = db::*` → `tracing::warn!` (bookmarks, workspaces, tabs, site settings)
+- **x11-dl**: Linux-only dependency (removed from non-Linux builds)
+- **cargo fmt**: Entire codebase reformatted to rustfmt standard
+
+### Clippy Fixes
+- All-targets `-D warnings` clean (lib + bin + tests)
+- 6x field assignment outside initializer → struct expression
+- 1x unwrap on Ok value, 1x returning let binding, 1x empty line after doc
+- 1x items after test module → reordered, 1x unused imports → removed
+
+### Testing
+- **851 tests pass** (4 new: builtin adblock register, idempotent, toggle, survives load_all)
+- **22 extension loader tests** (was 18)
+- **Clippy**: Zero warnings on all-targets
+- **Cargo audit**: Zero vulnerabilities
+
 ## v0.17.0 (2026-04-25) — Daily-Driver Features & Quality Audit
 
 ### Security & Reliability

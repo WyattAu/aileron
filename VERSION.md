@@ -1,14 +1,25 @@
 # Aileron — Version & State Tracking
 
 ## Current State
-- **Phase:** v5 Dogfood & Ship (Track A: Stability + Track B: Polish)
-- **Version:** 0.16.0
-- **Status**: Stability hardening, polish, release engineering
-- **Last Updated:** 2026-04-24
-- **Test Count:** 806 lib tests
-- **Zero clippy warnings**
-- **13 legitimate unsafe blocks** (3 X11 FFI, 6 cairo/gtk, 4 GLib)
-- **Release profile: LTO + strip + panic=abort**
+- **Phase:** v7 Ship, Extend, Dominate
+- **Version:** 0.18.0-pre (shipping imminently)
+- **Status:** Full quality audit passed, all critical items resolved
+- **Last Updated:** 2026-04-29
+- **Test Count:** 851 lib tests
+- **Zero clippy warnings** (all-targets -D warnings)
+- **Zero vulnerabilities** (cargo audit)
+- **21 unsafe blocks** (17 PASS, 4 WARN, 0 FAIL)
+- **41K lines of Rust** across 26 modules
+- **Release profile:** LTO thin + strip + panic=abort + codegen-units=1
+
+## Quality Audit Summary (2026-04-29)
+- **Unsafe:** 17 PASS, 4 WARN, 0 FAIL
+- **Panics:** 0 CRITICAL in production, 10 MODERATE (startup fail-fast), 6 LOW
+- **Concurrency:** 18 PASS, 12 WARN, 0 FAIL, 0 deadlocks
+- **Performance:** 5 hot-path fixes verified, 16 MODERATE items documented
+- **Determinism:** BTreeMap for sync manifest, cached pane lists
+- **Error handling:** 11 silent swallows → tracing::warn
+- **Cross-file consistency:** 0 orphaned imports, 0 version mismatches
 
 ## Implementation Phases
 
@@ -44,9 +55,25 @@
 | W | Complete | Crash-reload, tab-unload LRU, adaptive framerate, startup optimization, GPU fallback, input latency tracker |
 | X | Complete | MCP tools, extension API docs, Lua scripting guide, bookmark import UI |
 | Y | Complete | README, help panel, config reference, landing page, v1.0 roadmap |
-| v5 Track A | In Progress | Stability: navigation error detection, crash watchdog, keyup, popup blocker |
-| v5 Track B | In Progress | Polish: new tab page, download progress, g<url> quick navigate |
-| v5 Track C | Pending | Release: VERSION.md, CHANGELOG, AUR PKGBUILD, man page, desktop entry |
+| v5 Track A | Complete | Stability: navigation error detection, crash watchdog, keyup, popup blocker |
+| v5 Track B | Complete | Polish: new tab page, download progress, g<url> quick navigate |
+| v5 Track C | Complete | Release: VERSION.md, CHANGELOG, AUR PKGBUILD, man page, desktop entry |
+| v6 | Complete | Vim-style: /find, F hint-new-tab, :tab-rename, :private, :yt, URL click-to-edit |
+| v0.17.0 | Complete | Security audit, performance hardening, memory leak fixes |
+| v0.18.0 | Shipped | Builtin adblock, :bind/:unbind/:stats, extension loader, quality hardening |
+| Quality Audit | Complete | Unsafe/panic/concurrency/perf/dead-code/determinism full audit |
+
+## Roadmap v7 (Current)
+
+| Track | Focus | Tasks | Status |
+|-------|-------|-------|--------|
+| Z | Ship v0.18.0 + v1.0.0 | 3 | Pending |
+| A | Extension API completion | 10 | Pending |
+| B | MCP agent browser tools | 9 | Pending |
+| C | Performance & reliability | 8 | Pending |
+| D | Platform expansion (macOS/Windows) | 6 | 3 blocked |
+| E | Servo readiness | 3 | 2 blocked |
+| F | Polish & growth | 7 | 1 deferred |
 
 ## Benchmark Results (criterion --quick)
 | Benchmark | Time | Notes |
@@ -65,7 +92,7 @@
 | dispatch_all_actions | 524 ns | Dispatch 10 actions |
 | filter_list_parse_easylist | 1.17 µs | EasyList filter parse |
 | site_settings_url_match_exact | 673 ns | Exact URL pattern match |
-| site_settings_url_match_wildcard | 495 ns | Wildcard pattern match |
+| site_settings_url_match_wildcard | 495 ns | Wildcard URL pattern match |
 | site_settings_url_match_regex | 8.36 µs | Regex URL pattern match |
 | content_script_match_100 | 19 µs | 100 scripts URL match |
 | adblock_check_allowed | 53 ns | Domain block check |
@@ -74,7 +101,7 @@
 ## Binary Size
 - **Release binary:** ~21 MB (stripped)
 - **Target architecture:** x86_64 Linux
-- **Total Rust code:** ~39,000 lines across 104 files
+- **Total Rust code:** ~41,000 lines across 26 modules
 
 ## Key Discoveries
 1. wry cannot render to wgpu texture — always paints to its own native surface
@@ -95,3 +122,7 @@
 - **ADR-005:** Architecture D — Hybrid Servo+WebKitGTK
 - **ADR-006:** Error detection via JS init script + IPC (no wry load failure event)
 - **ADR-007:** Crash watchdog via activity timestamp tracking on offscreen panes
+- **ADR-008:** Extension callbacks use Arc + clone-under-lock pattern (no re-entrant deadlock)
+- **ADR-009:** MCP response channels use tokio::sync::oneshot (no async runtime blocking)
+- **ADR-010:** BTreeMap for deterministic JSON serialization (SyncManifest)
+- **ADR-011:** RefCell<Vec> for BspTree pane cache (interior mutability from &self)
