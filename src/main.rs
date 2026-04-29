@@ -804,11 +804,12 @@ impl AileronApp {
                     is_active,
                     interval_ms,
                 );
+                let (w, h) = pane.dimensions();
                 if pane.capture_frame().is_some()
                     && let Some(rgba) = pane.frame_rgba()
                 {
-                    let (w, h) = pane.dimensions();
-                    dirty_data.push((*id, rgba, w as u32, h as u32));
+                    let owned = rgba.to_vec();
+                    dirty_data.push((*id, owned, w as u32, h as u32));
                 }
                 self.offscreen_last_capture
                     .insert(*id, std::time::Instant::now());
@@ -2009,10 +2010,109 @@ fn key_to_escape_sequence(key: &aileron::input::Key, mods: aileron::input::Modif
     }
 }
 
+fn main() -> anyhow::Result<()> {
+    // Install panic hook BEFORE anything else — writes crash report to file
+    bootstrap::install_panic_hook();
+
+    // Initialize tracing to both stderr AND a log file
+    let log_dir = directories::ProjectDirs::from("com", "aileron", "Aileron")
+        .map(|d| d.data_dir().join("logs"))
+        .unwrap_or_else(|| std::path::PathBuf::from("./logs"));
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_file_path = log_dir.join(format!(
+        "aileron_{}.log",
+        chrono::Local::now().format("%Y%m%d_%H%M%S")
+    ));
+    let log_file = std::fs::File::create(&log_file_path).ok();
+    if log_file.is_some() {
+        eprintln!("[aileron] Logging to: {}", log_file_path.display());
+    }
+
+    // Build subscriber with optional file layer
+    let subscriber = tracing_subscriber::fmt::Subscriber::builder()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                "aileron=debug,wgpu=warn,wry=debug,webkit2gtk=debug,gdk=debug,gtk=debug,egui=info"
+                    .parse()
+                    .unwrap()
+            }),
+        )
+        .with_writer(std::io::stderr)
+        .finish();
+
+    // We can't easily add a file layer with type-compatible subscriber,
+    // so just use stderr + direct file writes via the crash hook
+    tracing::subscriber::set_global_default(subscriber)?;
+
+    info!("Aileron v0.12.0");
+    info!("Keyboard-Driven Web Environment");
+    info!("OS: {} {}", std::env::consts::OS, std::env::consts::ARCH);
+    info!("PID: {}", std::process::id());
+
+    // Log environment info
+    bootstrap::log_environment();
+
+    // Phase 1: Load config
+    info!("── Phase 1: Loading config ──");
+    let config = Config::load();
+    info!(
+        "Config loaded: render_mode={}, tab_layout={}, theme={}",
+        config.render_mode, config.tab_layout, config.theme
+    );
+
+    // Disable WebKitGTK's DMA-BUF renderer on NVIDIA to prevent
+    // "Failed to create GBM buffer" which causes the offscreen pixbuf
+    // to remain empty (no visual content rendered).
+    // Falls back to the shared GL texture path which works on all GPUs.
+    // Only set this on NVIDIA GPUs — AMD/Intel benefit from DMA-BUF.
+    #[cfg(target_os = "linux")]
+    unsafe {
+        let is_nvidia = std::fs::read_to_string("/sys/class/drm/card0/device/vendor")
+            .map(|v| v.trim() == "0x10de\n")
+            .unwrap_or(false);
+        if is_nvidia {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            info!("NVIDIA GPU detected — disabled DMA-BUF renderer (shared GL fallback)");
+        }
+    }
+
+    // Phase 2: Initialize GTK
+    info!("── Phase 2: Initializing GTK ──");
+    init_gtk();
+    info!("GTK initialized successfully");
+
+    // Phase 3: Create event loop
+    info!("── Phase 3: Creating event loop ──");
+    let event_loop = EventLoop::builder().build()?;
+    info!("Event loop created successfully");
+
+    // Workaround: X11 error handler (GTK uses XWayland on Wayland systems)
+    #[cfg(target_os = "linux")]
+    {
+        unsafe {
+            if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
+                (xlib.XSetErrorHandler)(Some(x11_error_handler));
+                info!("X11 error handler installed");
+            }
+        }
+    }
+
+    // Phase 4: Create app and run
+    info!("── Phase 4: Creating application ──");
+    Config::set_session_active();
+    let mut app = AileronApp::new();
+    info!("Application created successfully");
+
+    info!("── Phase 5: Entering event loop ──");
+    event_loop.run_app(&mut app)?;
+
+    info!("Aileron shutting down.");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashSet, VecDeque};
-
     /// Simulate one step of drain_pending_pane_creates logic.
     /// Returns (created_count, remaining_count) and modifies the queue in-place.
     fn drain_one_step(
@@ -2125,105 +2225,4 @@ mod tests {
         assert_eq!(created, 0);
         assert_eq!(remaining, 0);
     }
-}
-
-fn main() -> anyhow::Result<()> {
-    // Install panic hook BEFORE anything else — writes crash report to file
-    bootstrap::install_panic_hook();
-
-    // Initialize tracing to both stderr AND a log file
-    let log_dir = directories::ProjectDirs::from("com", "aileron", "Aileron")
-        .map(|d| d.data_dir().join("logs"))
-        .unwrap_or_else(|| std::path::PathBuf::from("./logs"));
-    let _ = std::fs::create_dir_all(&log_dir);
-    let log_file_path = log_dir.join(format!(
-        "aileron_{}.log",
-        chrono::Local::now().format("%Y%m%d_%H%M%S")
-    ));
-    let log_file = std::fs::File::create(&log_file_path).ok();
-    if log_file.is_some() {
-        eprintln!("[aileron] Logging to: {}", log_file_path.display());
-    }
-
-    // Build subscriber with optional file layer
-    let subscriber = tracing_subscriber::fmt::Subscriber::builder()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                "aileron=debug,wgpu=warn,wry=debug,webkit2gtk=debug,gdk=debug,gtk=debug,egui=info"
-                    .parse()
-                    .unwrap()
-            }),
-        )
-        .with_writer(std::io::stderr)
-        .finish();
-
-    // We can't easily add a file layer with type-compatible subscriber,
-    // so just use stderr + direct file writes via the crash hook
-    tracing::subscriber::set_global_default(subscriber)?;
-
-    info!("Aileron v0.12.0");
-    info!("Keyboard-Driven Web Environment");
-    info!("OS: {} {}", std::env::consts::OS, std::env::consts::ARCH);
-    info!("PID: {}", std::process::id());
-
-    // Log environment info
-    bootstrap::log_environment();
-
-    // Phase 1: Load config
-    info!("── Phase 1: Loading config ──");
-    let config = Config::load();
-    info!(
-        "Config loaded: render_mode={}, tab_layout={}, theme={}",
-        config.render_mode, config.tab_layout, config.theme
-    );
-
-    // Disable WebKitGTK's DMA-BUF renderer on NVIDIA to prevent
-    // "Failed to create GBM buffer" which causes the offscreen pixbuf
-    // to remain empty (no visual content rendered).
-    // Falls back to the shared GL texture path which works on all GPUs.
-    // Only set this on NVIDIA GPUs — AMD/Intel benefit from DMA-BUF.
-    #[cfg(target_os = "linux")]
-    unsafe {
-        let is_nvidia = std::fs::read_to_string("/sys/class/drm/card0/device/vendor")
-            .map(|v| v.trim() == "0x10de\n")
-            .unwrap_or(false);
-        if is_nvidia {
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-            info!("NVIDIA GPU detected — disabled DMA-BUF renderer (shared GL fallback)");
-        }
-    }
-
-    // Phase 2: Initialize GTK
-    info!("── Phase 2: Initializing GTK ──");
-    init_gtk();
-    info!("GTK initialized successfully");
-
-    // Phase 3: Create event loop
-    info!("── Phase 3: Creating event loop ──");
-    let event_loop = EventLoop::builder().build()?;
-    info!("Event loop created successfully");
-
-    // Workaround: X11 error handler (GTK uses XWayland on Wayland systems)
-    #[cfg(target_os = "linux")]
-    {
-        unsafe {
-            if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
-                (xlib.XSetErrorHandler)(Some(x11_error_handler));
-                info!("X11 error handler installed");
-            }
-        }
-    }
-
-    // Phase 4: Create app and run
-    info!("── Phase 4: Creating application ──");
-    Config::set_session_active();
-    let mut app = AileronApp::new();
-    info!("Application created successfully");
-
-    info!("── Phase 5: Entering event loop ──");
-    event_loop.run_app(&mut app)?;
-
-    info!("Aileron shutting down.");
-    Ok(())
 }

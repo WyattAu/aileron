@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use url::Url;
 
 use crate::extensions::types::{ExtensionId, FrameId, Result, RuntimeMessage, TabId};
@@ -68,16 +70,16 @@ pub trait RuntimeApi: Send + Sync {
 
     fn on_message(
         &self,
-        callback: Box<
+        callback: Arc<
             dyn Fn(RuntimeMessage, MessageSender) -> Option<RuntimeMessage> + Send + Sync,
         >,
     );
 
     fn on_connect(&self, callback: Box<dyn Fn(Box<dyn Port>) + Send + Sync>);
 
-    fn on_installed(&self, callback: Box<dyn Fn(InstalledDetails) + Send + Sync>);
+    fn on_installed(&self, callback: Arc<dyn Fn(InstalledDetails) + Send + Sync>);
 
-    fn on_startup(&self, callback: Box<dyn Fn() + Send + Sync>);
+    fn on_startup(&self, callback: Arc<dyn Fn() + Send + Sync>);
 
     fn reload(&self) -> Result<()>;
 

@@ -201,8 +201,10 @@ mod tests {
     /// Helper to create a minimal AppState for omnibox testing.
     fn test_app_state() -> AppState {
         let viewport = crate::wm::rect::Rect::new(0.0, 0.0, 1280.0, 720.0);
-        let mut config = crate::config::Config::default();
-        config.search_engine = "duckduckgo".to_string();
+        let mut config = crate::config::Config {
+            search_engine: "duckduckgo".to_string(),
+            ..Default::default()
+        };
         config.search_engines.insert(
             "duckduckgo".to_string(),
             "https://duckduckgo.com/?q={}".to_string(),

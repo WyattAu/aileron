@@ -7,7 +7,6 @@
 /// 4. Pumps the GTK event loop
 /// 5. Captures pixel data via get_pixbuf()
 /// 6. Verifies non-zero pixel data was captured
-
 #[cfg(target_os = "linux")]
 #[test]
 fn test_offscreen_webview_creates_and_captures() {

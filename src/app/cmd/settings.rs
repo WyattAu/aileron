@@ -329,8 +329,10 @@ mod tests {
 
     #[test]
     fn set_language_auto() {
-        let mut config = Config::default();
-        config.language = Some("en".into());
+        let mut config = Config {
+            language: Some("en".into()),
+            ..Default::default()
+        };
         let msg = apply_set_setting(&mut config, "language", "auto");
         assert_eq!(msg, "language = auto");
         assert!(config.language.is_none());

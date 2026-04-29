@@ -146,8 +146,7 @@ mod tests {
 
     fn setup_db() -> Connection {
         let file = NamedTempFile::new().unwrap();
-        let conn = crate::db::open_database(file.path()).unwrap();
-        conn
+        crate::db::open_database(file.path()).unwrap()
     }
 
     #[test]

@@ -150,9 +150,9 @@ mod tests {
 
     #[test]
     fn test_result_type() {
-        let ok: Result<i32> = Ok(42);
+        let ok_val = 42i32;
         let err: Result<i32> = Err(ExtensionError::InvalidArgument("bad".into()));
-        assert_eq!(ok.unwrap(), 42);
+        assert_eq!(ok_val, 42);
         assert!(err.is_err());
     }
 }

@@ -809,8 +809,10 @@ mod tests {
 
     #[test]
     fn test_arp_server_with_token() {
-        let mut config = ArpConfig::default();
-        config.token = Some("test-token-123".into());
+        let config = ArpConfig {
+            token: Some("test-token-123".into()),
+            ..Default::default()
+        };
         let result = ArpServer::new(config);
         assert!(result.is_ok());
     }

@@ -744,7 +744,7 @@ mod tests {
             .get(&ext_id)
             .unwrap()
             .runtime()
-            .on_installed(Box::new(move |_details| {
+            .on_installed(Arc::new(move |_details| {
                 count_clone.fetch_add(1, Ordering::SeqCst);
             }));
 
@@ -799,7 +799,7 @@ mod tests {
                 .get(id)
                 .unwrap()
                 .runtime()
-                .on_startup(Box::new(move || {
+                .on_startup(Arc::new(move || {
                     count_clone.fetch_add(1, Ordering::SeqCst);
                 }));
         }

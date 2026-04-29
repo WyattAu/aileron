@@ -1,7 +1,7 @@
 use crate::db::workspaces::{SplitDir, WorkspaceData, WorkspaceNode};
 use crate::wm::pane::Pane;
 use crate::wm::rect::{Direction, Rect, SplitDirection};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::fmt;
 use uuid::Uuid;
 
@@ -41,8 +41,8 @@ pub enum TileError {
 pub struct BspTree {
     root: Option<BspNode>,
     active_pane_id: Uuid,
-    panes_cache: Vec<(Uuid, Rect)>,
-    pane_ids_cache: Vec<Uuid>,
+    panes_cache: RefCell<Vec<(Uuid, Rect)>>,
+    pane_ids_cache: RefCell<Vec<Uuid>>,
     cache_dirty: Cell<bool>,
 }
 
@@ -57,8 +57,8 @@ impl BspTree {
                 rect: viewport,
             }),
             active_pane_id: id,
-            panes_cache: Vec::new(),
-            pane_ids_cache: Vec::new(),
+            panes_cache: RefCell::new(Vec::new()),
+            pane_ids_cache: RefCell::new(Vec::new()),
             cache_dirty: Cell::new(true),
         }
     }
@@ -296,22 +296,28 @@ impl BspTree {
     }
 
     fn invalidate_caches(&mut self) {
+        self.panes_cache.borrow_mut().clear();
+        self.pane_ids_cache.borrow_mut().clear();
         self.cache_dirty.set(true);
     }
 
     /// Collect all panes with their rectangles.
     pub fn panes(&self) -> Vec<(Uuid, Rect)> {
         if !self.cache_dirty.get() {
-            return self.panes_cache.clone();
+            return self.panes_cache.borrow().clone();
         }
-        match &self.root {
+        let result = match &self.root {
             None => vec![],
             Some(root) => {
                 let mut result = Vec::new();
                 Self::collect_panes(root, &mut result);
                 result
             }
-        }
+        };
+        *self.panes_cache.borrow_mut() = result.clone();
+        self.pane_ids_cache.borrow_mut().clear();
+        self.cache_dirty.set(false);
+        result
     }
 
     fn collect_panes(node: &BspNode, result: &mut Vec<(Uuid, Rect)>) {
@@ -329,17 +335,21 @@ impl BspTree {
     /// Collect all pane IDs (without rectangles). Cheaper than `panes()` when
     /// only IDs are needed (e.g., checking membership, iterating for commands).
     pub fn pane_ids(&self) -> Vec<Uuid> {
-        if !self.cache_dirty.get() {
-            return self.pane_ids_cache.clone();
+        if !self.cache_dirty.get() && !self.pane_ids_cache.borrow().is_empty() {
+            return self.pane_ids_cache.borrow().clone();
         }
-        match &self.root {
+        let result = match &self.root {
             None => vec![],
             Some(root) => {
                 let mut result = Vec::new();
                 Self::collect_ids(root, &mut result);
                 result
             }
-        }
+        };
+        *self.pane_ids_cache.borrow_mut() = result.clone();
+        self.panes_cache.borrow_mut().clear();
+        self.cache_dirty.set(false);
+        result
     }
 
     fn collect_ids(node: &BspNode, result: &mut Vec<Uuid>) {
@@ -683,8 +693,8 @@ impl BspTree {
         let mut tree = Self {
             root: Some(root),
             active_pane_id: Uuid::nil(),
-            panes_cache: Vec::new(),
-            pane_ids_cache: Vec::new(),
+            panes_cache: RefCell::new(Vec::new()),
+            pane_ids_cache: RefCell::new(Vec::new()),
             cache_dirty: Cell::new(true),
         };
 

@@ -788,8 +788,10 @@ mod tests {
 
     #[test]
     fn test_config_migration_old_version() {
-        let mut config = Config::default();
-        config.config_version = 0;
+        let mut config = Config {
+            config_version: 0,
+            ..Default::default()
+        };
         let migrated = Config::migrate(&mut config);
         assert!(migrated);
         assert_eq!(config.config_version, 2);
@@ -797,8 +799,10 @@ mod tests {
 
     #[test]
     fn test_config_migration_current_version() {
-        let mut config = Config::default();
-        config.config_version = 2;
+        let mut config = Config {
+            config_version: 2,
+            ..Default::default()
+        };
         let migrated = Config::migrate(&mut config);
         assert!(!migrated);
     }

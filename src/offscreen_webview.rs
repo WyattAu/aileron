@@ -608,7 +608,7 @@ a {{ color: #4db4ff; }}
     ///
     /// Reuses an internal buffer across calls to avoid repeated allocation.
     /// Only reallocates when the frame dimensions change.
-    pub fn frame_rgba(&mut self) -> Option<Vec<u8>> {
+    pub fn frame_rgba(&mut self) -> Option<&[u8]> {
         self.frame.as_ref().map(|f| {
             let needed = (f.width as usize) * (f.height as usize) * 4;
             if self.rgba_buffer.capacity() < needed {
@@ -630,7 +630,7 @@ a {{ color: #4db4ff; }}
                 chunk.swap(0, 2);
             }
 
-            std::mem::take(&mut self.rgba_buffer)
+            self.rgba_buffer.as_slice()
         })
     }
 

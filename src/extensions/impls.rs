@@ -35,10 +35,10 @@ type RemovedCallback = Box<dyn Fn(TabId, RemovalInfo) + Send + Sync>;
 type ActivatedCallback = Box<dyn Fn(ActiveInfo) + Send + Sync>;
 type StorageChangeCallback = Arc<dyn Fn(StorageChanges, String) + Send + Sync>;
 type MessageCallback =
-    Box<dyn Fn(RuntimeMessage, MessageSender) -> Option<RuntimeMessage> + Send + Sync>;
+    Arc<dyn Fn(RuntimeMessage, MessageSender) -> Option<RuntimeMessage> + Send + Sync>;
 type ConnectCallback = Box<dyn Fn(Box<dyn Port>) + Send + Sync>;
-type InstalledCallback = Box<dyn Fn(InstalledDetails) + Send + Sync>;
-type StartupCallback = Box<dyn Fn() + Send + Sync>;
+type InstalledCallback = Arc<dyn Fn(InstalledDetails) + Send + Sync>;
+type StartupCallback = Arc<dyn Fn() + Send + Sync>;
 
 // WebRequest handler types
 type BeforeRequestHandler = Box<dyn Fn(RequestDetails) -> BlockingResponse + Send + Sync>;
@@ -505,8 +505,13 @@ impl AileronRuntimeApi {
         message_bus.register_handler(
             extension_id.clone(),
             Box::new(move |msg: RuntimeMessage| {
-                let cbs = cb_clone.lock().unwrap_or_else(|e| e.into_inner());
-                for cb in cbs.iter() {
+                let callbacks: Vec<_> = cb_clone
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .iter()
+                    .cloned()
+                    .collect();
+                for cb in callbacks {
                     let sender = crate::extensions::runtime::MessageSender {
                         tab_id: None,
                         frame_id: None,
@@ -535,18 +540,21 @@ impl AileronRuntimeApi {
     /// Fire all registered `on_installed` callbacks with the given details.
     /// Called by the extension loader after successfully loading an extension.
     fn fire_installed(&self, details: InstalledDetails) {
-        let cbs = self
+        let callbacks: Vec<_> = self
             .installed_callbacks
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        for cb in cbs.iter() {
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .cloned()
+            .collect();
+        for cb in callbacks.iter() {
             cb(details.clone());
         }
-        if !cbs.is_empty() {
+        if !callbacks.is_empty() {
             tracing::debug!(
                 target: "extensions",
                 "Fired {} on_installed callback(s) for extension '{}'",
-                cbs.len(),
+                callbacks.len(),
                 self.extension_id.0
             );
         }
@@ -555,18 +563,21 @@ impl AileronRuntimeApi {
     /// Fire all registered `on_startup` callbacks.
     /// Called by the extension loader during browser startup.
     fn fire_startup(&self) {
-        let cbs = self
+        let callbacks: Vec<_> = self
             .startup_callbacks
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        for cb in cbs.iter() {
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .cloned()
+            .collect();
+        for cb in callbacks.iter() {
             cb();
         }
-        if !cbs.is_empty() {
+        if !callbacks.is_empty() {
             tracing::debug!(
                 target: "extensions",
                 "Fired {} on_startup callback(s) for extension '{}'",
-                cbs.len(),
+                callbacks.len(),
                 self.extension_id.0
             );
         }

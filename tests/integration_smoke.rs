@@ -510,8 +510,10 @@ fn test_config_default_window_sane_aspect() {
 #[test]
 fn test_app_state_uses_config_homepage() {
     let viewport = test_viewport();
-    let mut config = Config::default();
-    config.homepage = "https://my-custom-home.page".into();
+    let config = Config {
+        homepage: "https://my-custom-home.page".into(),
+        ..Default::default()
+    };
 
     let state = AppState::new(viewport, config).unwrap();
     let panes = state.wm.panes();
