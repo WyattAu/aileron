@@ -6,15 +6,23 @@ pub fn levenshtein_distance(a: &str, b: &str) -> usize {
     let b: Vec<char> = b.chars().collect();
     let m = a.len();
     let n = b.len();
-    if m == 0 { return n; }
-    if n == 0 { return m; }
+    if m == 0 {
+        return n;
+    }
+    if n == 0 {
+        return m;
+    }
     let mut dp = vec![vec![0; n + 1]; m + 1];
-    for (i, row) in dp.iter_mut().enumerate().take(m + 1) { row[0] = i; }
-    for (j, val) in dp[0].iter_mut().enumerate().take(n + 1).skip(1) { *val = j; }
+    for (i, row) in dp.iter_mut().enumerate().take(m + 1) {
+        row[0] = i;
+    }
+    for (j, val) in dp[0].iter_mut().enumerate().take(n + 1).skip(1) {
+        *val = j;
+    }
     for i in 1..=m {
         for j in 1..=n {
-            let cost = if a[i-1] == b[j-1] { 0 } else { 1 };
-            dp[i][j] = (dp[i-1][j] + 1).min((dp[i][j-1] + 1).min(dp[i-1][j-1] + cost));
+            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+            dp[i][j] = (dp[i - 1][j] + 1).min((dp[i][j - 1] + 1).min(dp[i - 1][j - 1] + cost));
         }
     }
     dp[m][n]

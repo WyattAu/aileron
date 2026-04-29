@@ -231,7 +231,8 @@ pub struct AppState {
 
     /// ARP command receiver — polled each frame to process mobile mutations.
     /// Stored separately because it must not be dropped while the server runs.
-    pub arp_cmd_receiver: Option<std::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<crate::arp::ArpCommand>>>,
+    pub arp_cmd_receiver:
+        Option<std::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<crate::arp::ArpCommand>>>,
 
     /// Whether the history panel overlay is open.
     pub history_panel_open: bool,
@@ -444,8 +445,7 @@ impl AppState {
         };
 
         // Create extension manager and inject into Lua engine
-        let extension_manager =
-            Arc::new(Mutex::new(ExtensionManager::new(Self::extensions_dir())));
+        let extension_manager = Arc::new(Mutex::new(ExtensionManager::new(Self::extensions_dir())));
         if let Some(ref engine) = lua_engine {
             engine.set_extension_manager(extension_manager.clone());
         }
@@ -574,9 +574,7 @@ impl AppState {
         let active_id = self.wm.active_pane_id();
         let mut best: Option<(uuid::Uuid, std::time::Instant)> = None;
         for (id, instant) in &self.pane_last_focus {
-            if *id != active_id
-                && best.is_none_or(|(_, b)| *instant < b)
-            {
+            if *id != active_id && best.is_none_or(|(_, b)| *instant < b) {
                 best = Some((*id, *instant));
             }
         }
@@ -593,12 +591,17 @@ impl AppState {
 
     /// Look up a quickmark URL by its key character.
     pub fn quickmarks_get(&self, key: &char) -> Option<url::Url> {
-        self.quickmarks.get(key).and_then(|s| url::Url::parse(s).ok())
+        self.quickmarks
+            .get(key)
+            .and_then(|s| url::Url::parse(s).ok())
     }
 
     /// Get all quickmarks as (key, url) pairs.
     pub fn quickmarks_list(&self) -> Vec<(char, String)> {
-        self.quickmarks.iter().map(|(k, v)| (*k, v.clone())).collect()
+        self.quickmarks
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect()
     }
 
     /// Load persisted scroll marks from the database for a given URL into the
@@ -636,7 +639,9 @@ mod tests {
         assert!(crate::app::cmd::util::looks_like_url("https://example.com"));
         assert!(crate::app::cmd::util::looks_like_url("http://example.com"));
         assert!(crate::app::cmd::util::looks_like_url("aileron://welcome"));
-        assert!(crate::app::cmd::util::looks_like_url("ftp://files.example.com"));
+        assert!(crate::app::cmd::util::looks_like_url(
+            "ftp://files.example.com"
+        ));
     }
 
     #[test]
@@ -644,7 +649,9 @@ mod tests {
         assert!(crate::app::cmd::util::looks_like_url("example.com"));
         assert!(crate::app::cmd::util::looks_like_url("www.google.com"));
         assert!(crate::app::cmd::util::looks_like_url("rust-lang.org"));
-        assert!(crate::app::cmd::util::looks_like_url("sub.domain.example.org"));
+        assert!(crate::app::cmd::util::looks_like_url(
+            "sub.domain.example.org"
+        ));
     }
 
     #[test]
@@ -749,10 +756,12 @@ mod tests {
         // The mark is stored asynchronously via IPC. Verify the pending state
         // and that a CaptureScrollFraction action was queued.
         assert_eq!(state.pending_mark_set, Some('a'));
-        assert!(state.pending_wry_actions.iter().any(|a| matches!(
-            a,
-            WryAction::CaptureScrollFraction
-        )));
+        assert!(
+            state
+                .pending_wry_actions
+                .iter()
+                .any(|a| matches!(a, WryAction::CaptureScrollFraction))
+        );
     }
 
     #[test]

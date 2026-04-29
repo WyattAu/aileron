@@ -5,8 +5,8 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -139,7 +139,7 @@ struct DownloadTask {
     total: AtomicU64,
     last_received: AtomicU64,
     last_time: AtomicU64, // milliseconds since epoch
-    speed: AtomicU64, // bytes/sec (smoothed)
+    speed: AtomicU64,     // bytes/sec (smoothed)
 }
 
 /// The main download manager.
@@ -249,11 +249,7 @@ impl DownloadManager {
             let downloads = self.downloads.read();
             if let Some(task) = downloads.get(&id) {
                 task.state.store(true, Ordering::Relaxed);
-                (
-                    task.clone(),
-                    task.url.clone(),
-                    task.dest_path.clone(),
-                )
+                (task.clone(), task.url.clone(), task.dest_path.clone())
             } else {
                 return false;
             }
@@ -360,7 +356,10 @@ impl DownloadManager {
         let downloads = self.downloads.read();
         downloads
             .values()
-            .filter(|t| t.state.load(Ordering::Relaxed) && t.received.load(Ordering::Relaxed) < t.total.load(Ordering::Relaxed))
+            .filter(|t| {
+                t.state.load(Ordering::Relaxed)
+                    && t.received.load(Ordering::Relaxed) < t.total.load(Ordering::Relaxed)
+            })
             .count()
     }
 
@@ -398,10 +397,7 @@ impl DownloadManager {
     /// Perform the actual download using reqwest streaming.
     async fn download_file(task: &DownloadTask, url: &str, dest: &Path) {
         // Check if file exists for resume
-        let existing_size = std::fs::metadata(dest)
-            .ok()
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let existing_size = std::fs::metadata(dest).ok().map(|m| m.len()).unwrap_or(0);
 
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::limited(10))
@@ -463,8 +459,8 @@ impl DownloadManager {
             }
         };
 
-        use tokio::io::AsyncWriteExt;
         use futures_util::StreamExt;
+        use tokio::io::AsyncWriteExt;
 
         let mut file = tokio::fs::File::from_std(file);
 
@@ -532,10 +528,7 @@ mod tests {
             DownloadManager::extract_filename("https://example.com/"),
             "download"
         );
-        assert_eq!(
-            DownloadManager::extract_filename("not-a-url"),
-            "download"
-        );
+        assert_eq!(DownloadManager::extract_filename("not-a-url"), "download");
     }
 
     #[test]
@@ -571,7 +564,10 @@ mod tests {
 
     #[test]
     fn test_download_state_from_str() {
-        assert_eq!(DownloadState::from("downloading"), DownloadState::Downloading);
+        assert_eq!(
+            DownloadState::from("downloading"),
+            DownloadState::Downloading
+        );
         assert_eq!(DownloadState::from("completed"), DownloadState::Completed);
         assert_eq!(DownloadState::from("unknown"), DownloadState::Pending);
     }

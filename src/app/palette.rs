@@ -136,25 +136,26 @@ impl AppState {
             SearchCategory::OpenTab => {
                 if let Some(pane_id_str) = item.id.strip_prefix("tab:")
                     && let Ok(pane_id) = uuid::Uuid::parse_str(pane_id_str)
-                        && self.wm.get_rect(pane_id).is_some() {
-                            let old_active = self.wm.active_pane_id();
-                            if old_active != pane_id {
-                                self.last_active_pane_id = Some(old_active);
-                            }
-                            self.wm.set_active_pane(pane_id);
-                            let url = self
-                                .engines
-                                .get(&pane_id)
-                                .and_then(|e| e.current_url().cloned())
-                                .map(|u| u.to_string())
-                                .unwrap_or_default();
-                            let display = if url.len() > 50 {
-                                format!("{}...", &url[..47])
-                            } else {
-                                url
-                            };
-                            self.status_message = format!("Switched to: {}", display);
-                        }
+                    && self.wm.get_rect(pane_id).is_some()
+                {
+                    let old_active = self.wm.active_pane_id();
+                    if old_active != pane_id {
+                        self.last_active_pane_id = Some(old_active);
+                    }
+                    self.wm.set_active_pane(pane_id);
+                    let url = self
+                        .engines
+                        .get(&pane_id)
+                        .and_then(|e| e.current_url().cloned())
+                        .map(|u| u.to_string())
+                        .unwrap_or_default();
+                    let display = if url.len() > 50 {
+                        format!("{}...", &url[..47])
+                    } else {
+                        url
+                    };
+                    self.status_message = format!("Switched to: {}", display);
+                }
             }
             _ => {
                 self.status_message = format!("Selected: {}", item.label);

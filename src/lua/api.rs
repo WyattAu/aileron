@@ -743,10 +743,12 @@ mod tests {
             "#,
         );
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("callback must be a function"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("callback must be a function")
+        );
     }
 
     #[test]

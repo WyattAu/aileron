@@ -5,7 +5,7 @@
 //! window size — they are recomputed from the viewport on restore.
 
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 

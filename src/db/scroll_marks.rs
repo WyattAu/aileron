@@ -122,7 +122,10 @@ mod tests {
         set_scroll_mark(&db, "https://example.com", 'b', 0.75).unwrap();
         set_scroll_mark(&db, "https://other.com", 'a', 0.1).unwrap();
 
-        assert_eq!(clear_scroll_marks_for_url(&db, "https://example.com").unwrap(), 2);
+        assert_eq!(
+            clear_scroll_marks_for_url(&db, "https://example.com").unwrap(),
+            2
+        );
         let marks = load_scroll_marks_for_url(&db, "https://example.com").unwrap();
         assert!(marks.is_empty());
 

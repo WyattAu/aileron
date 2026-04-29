@@ -184,20 +184,22 @@ impl BspTree {
                 right,
             } => {
                 if let BspNode::Leaf { pane, .. } = left.as_ref()
-                    && pane.id == target_id {
-                        let mut new_right = *right;
-                        Self::resize_node(&mut new_right, rect);
-                        let active = Self::first_leaf_id(&new_right);
-                        return Ok((new_right, active));
-                    }
+                    && pane.id == target_id
+                {
+                    let mut new_right = *right;
+                    Self::resize_node(&mut new_right, rect);
+                    let active = Self::first_leaf_id(&new_right);
+                    return Ok((new_right, active));
+                }
 
                 if let BspNode::Leaf { pane, .. } = right.as_ref()
-                    && pane.id == target_id {
-                        let mut new_left = *left;
-                        Self::resize_node(&mut new_left, rect);
-                        let active = Self::first_leaf_id(&new_left);
-                        return Ok((new_left, active));
-                    }
+                    && pane.id == target_id
+                {
+                    let mut new_left = *left;
+                    Self::resize_node(&mut new_left, rect);
+                    let active = Self::first_leaf_id(&new_left);
+                    return Ok((new_left, active));
+                }
 
                 let (new_left, left_id) = Self::close_recursive(*left, target_id)
                     .map_err(|_| TileError::PaneNotFound(target_id))?;
@@ -347,12 +349,16 @@ impl BspTree {
         borders
     }
 
-    fn collect_split_borders(
-        node: &BspNode,
-        borders: &mut Vec<(f64, SplitDirection, Uuid, Uuid)>,
-    ) {
+    fn collect_split_borders(node: &BspNode, borders: &mut Vec<(f64, SplitDirection, Uuid, Uuid)>) {
         match node {
-            BspNode::Split { direction, ratio, rect, left, right, .. } => {
+            BspNode::Split {
+                direction,
+                ratio,
+                rect,
+                left,
+                right,
+                ..
+            } => {
                 // Find the leftmost/topmost pane ID in the left subtree
                 // and the rightmost/bottommost pane ID in the right subtree
                 let left_ids = Self::collect_leaf_ids(left);
@@ -475,8 +481,10 @@ impl BspTree {
                 left,
                 right,
             } => {
-                let left_is_target = matches!(left.as_ref(), BspNode::Leaf { pane, .. } if pane.id == target_id);
-                let right_is_target = matches!(right.as_ref(), BspNode::Leaf { pane, .. } if pane.id == target_id);
+                let left_is_target =
+                    matches!(left.as_ref(), BspNode::Leaf { pane, .. } if pane.id == target_id);
+                let right_is_target =
+                    matches!(right.as_ref(), BspNode::Leaf { pane, .. } if pane.id == target_id);
 
                 let left_contains = Self::contains_pane(&left, target_id);
                 let right_contains = Self::contains_pane(&right, target_id);
@@ -537,12 +545,14 @@ impl BspTree {
     fn find_pane_by_id(node: &BspNode, pane_id: Uuid) -> Option<&Pane> {
         match node {
             BspNode::Leaf { pane, .. } => {
-                if pane.id == pane_id { Some(pane) } else { None }
+                if pane.id == pane_id {
+                    Some(pane)
+                } else {
+                    None
+                }
             }
-            BspNode::Split { left, right, .. } => {
-                Self::find_pane_by_id(left, pane_id)
-                    .or_else(|| Self::find_pane_by_id(right, pane_id))
-            }
+            BspNode::Split { left, right, .. } => Self::find_pane_by_id(left, pane_id)
+                .or_else(|| Self::find_pane_by_id(right, pane_id)),
         }
     }
 

@@ -460,7 +460,9 @@ mod tests {
         assert_eq!(effects.len(), 1);
         let wry = wry_effects(&effects);
         match &wry[0] {
-            WryAction::RunJs(js) => assert!(js.contains("getSelection") && js.contains("clipboard")),
+            WryAction::RunJs(js) => {
+                assert!(js.contains("getSelection") && js.contains("clipboard"))
+            }
             other => panic!("Expected RunJs, got {:?}", other),
         }
     }
@@ -648,7 +650,9 @@ mod tests {
         assert_eq!(effects.len(), 1);
         let wry = wry_effects(&effects);
         match &wry[0] {
-            WryAction::RunJs(js) => assert!(js.contains("window.find") && js.contains("false,false,true")),
+            WryAction::RunJs(js) => {
+                assert!(js.contains("window.find") && js.contains("false,false,true"))
+            }
             other => panic!("Expected RunJs, got {:?}", other),
         }
     }
@@ -659,7 +663,9 @@ mod tests {
         assert_eq!(effects.len(), 1);
         let wry = wry_effects(&effects);
         match &wry[0] {
-            WryAction::RunJs(js) => assert!(js.contains("window.find") && js.contains("false,true,false")),
+            WryAction::RunJs(js) => {
+                assert!(js.contains("window.find") && js.contains("false,true,false"))
+            }
             other => panic!("Expected RunJs, got {:?}", other),
         }
     }

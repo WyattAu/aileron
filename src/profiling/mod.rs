@@ -77,7 +77,7 @@ impl Profiler {
             .iter()
             .map(|s| s.duration.as_secs_f64() * 1000.0)
             .collect();
-        durations.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        durations.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         FrameStats {
             count: durations.len(),

@@ -61,7 +61,11 @@ impl PlatformOps for WindowsPlatform {
         // Windows clipboard via PowerShell — reliable on all modern Windows
         use std::process::Stdio;
         std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", &format!("Set-Clipboard -Value '{}'", text.replace('\'', "''"))])
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!("Set-Clipboard -Value '{}'", text.replace('\'', "''")),
+            ])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()

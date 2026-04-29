@@ -3,7 +3,7 @@
 //! Bookmarks are stored in the SQLite `bookmarks` table (created in db::init_schema).
 
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use tracing::warn;
 
 /// A bookmark entry.
@@ -23,7 +23,12 @@ pub fn add_bookmark(conn: &Connection, url: &str, title: &str) -> Result<i64> {
 }
 
 /// Add a bookmark with an optional folder.
-pub fn add_bookmark_with_folder(conn: &Connection, url: &str, title: &str, folder: &str) -> Result<i64> {
+pub fn add_bookmark_with_folder(
+    conn: &Connection,
+    url: &str,
+    title: &str,
+    folder: &str,
+) -> Result<i64> {
     conn.execute(
         "INSERT INTO bookmarks (url, title, folder) VALUES (?1, ?2, ?3)
          ON CONFLICT(url) DO UPDATE SET title = excluded.title, folder = excluded.folder",
@@ -43,9 +48,8 @@ pub fn set_bookmark_folder(conn: &Connection, id: i64, folder: &str) -> Result<b
 
 /// Get all distinct folder names.
 pub fn list_folders(conn: &Connection) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT folder FROM bookmarks WHERE folder != '' ORDER BY folder"
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT DISTINCT folder FROM bookmarks WHERE folder != '' ORDER BY folder")?;
     let folders = stmt
         .query_map([], |row| row.get::<_, String>(0))?
         .filter_map(|r| r.ok())
@@ -78,8 +82,9 @@ pub fn is_bookmarked(conn: &Connection, url: &str) -> bool {
 
 /// Get all bookmarks, ordered by creation date (newest first).
 pub fn all_bookmarks(conn: &Connection) -> Result<Vec<Bookmark>> {
-    let mut stmt =
-        conn.prepare("SELECT id, url, title, folder, created_at FROM bookmarks ORDER BY folder, created_at DESC")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, url, title, folder, created_at FROM bookmarks ORDER BY folder, created_at DESC",
+    )?;
     let bookmarks = stmt
         .query_map([], |row| {
             Ok(Bookmark {

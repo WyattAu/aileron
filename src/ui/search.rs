@@ -19,9 +19,9 @@ pub enum SearchCategory {
     Custom,
 }
 
-use nucleo::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo::Matcher;
 use nucleo::Utf32Str;
+use nucleo::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 
 pub fn fuzzy_match(items: &[SearchItem], query: &str, limit: usize) -> Vec<SearchItem> {
     if query.is_empty() {

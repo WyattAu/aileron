@@ -1,5 +1,5 @@
-pub mod arp;
 pub mod app;
+pub mod arp;
 pub mod config;
 pub mod db;
 pub mod downloads;

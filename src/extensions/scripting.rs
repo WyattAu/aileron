@@ -476,9 +476,11 @@ mod tests {
                 .len(),
             1
         );
-        assert!(registry
-            .scripts_for_url("https://google.com", ExtensionRunAt::DocumentIdle)
-            .is_empty());
+        assert!(
+            registry
+                .scripts_for_url("https://google.com", ExtensionRunAt::DocumentIdle)
+                .is_empty()
+        );
     }
 
     #[test]

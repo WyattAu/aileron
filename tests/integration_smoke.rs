@@ -7,8 +7,8 @@
 //! - BSP tree spatial invariants after complex operations
 //! - Config default sanity
 
-use aileron::app::dispatch::{dispatch_action, ActionEffect};
 use aileron::app::AppState;
+use aileron::app::dispatch::{ActionEffect, dispatch_action};
 use aileron::config::Config;
 use aileron::db::workspaces::{SplitDir, WorkspaceData, WorkspaceNode};
 use aileron::input::{Action, Key, KeyEvent, Modifiers};

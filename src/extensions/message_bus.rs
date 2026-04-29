@@ -203,8 +203,8 @@ impl crate::extensions::runtime::Port for LocalPort {
 mod tests {
     use super::*;
     use crate::extensions::runtime::Port;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn test_register_and_send_direct() {

@@ -1,5 +1,3 @@
-use tracing::{info, warn};
-use open::that as open_that;
 use crate::app::WryAction;
 use crate::config::Config;
 use crate::downloads::DownloadProgress;
@@ -7,6 +5,8 @@ use crate::extensions::ExtensionId;
 use crate::passwords::BitwardenClient;
 use crate::ui::search::SearchCategory;
 use crate::ui::search::SearchItem;
+use open::that as open_that;
+use tracing::{info, warn};
 
 use super::AppState;
 
@@ -59,9 +59,11 @@ impl AppState {
                 return;
             }
             "files" | "browse" => {
-                let path = crate::git::repo_root(std::env::current_dir().unwrap_or_default().as_path())
-                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-                let encoded = crate::servo::wry_engine::percent_encode_path(&path.to_string_lossy());
+                let path =
+                    crate::git::repo_root(std::env::current_dir().unwrap_or_default().as_path())
+                        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+                let encoded =
+                    crate::servo::wry_engine::percent_encode_path(&path.to_string_lossy());
                 if let Ok(url) = url::Url::parse(&format!("aileron://files?path={}", encoded)) {
                     self.navigate_with_redirects(url);
                     self.status_message = format!("File browser: {}", path.display());
@@ -99,7 +101,9 @@ impl AppState {
         }
 
         // Bitwarden/credential commands (bw-*, keyring-test, credentials-save)
-        if self.cmd_bitwarden(query).is_some() { return; }
+        if self.cmd_bitwarden(query).is_some() {
+            return;
+        }
 
         if let Some(path) = query.strip_prefix("pdf ") {
             let path = path.trim();
@@ -191,7 +195,8 @@ impl AppState {
 
         // Quick workspace cycling: :ws-next and :ws-prev
         if query == "ws-next" || query == "ws-prev" {
-            let workspaces: Vec<String> = self.list_workspaces()
+            let workspaces: Vec<String> = self
+                .list_workspaces()
                 .into_iter()
                 .filter(|w| w.name != "_autosave")
                 .map(|w| w.name)
@@ -201,13 +206,20 @@ impl AppState {
                 return;
             }
             // Find current workspace index for proper cycling
-            let current_idx = workspaces.iter().position(|w| w == &self.current_workspace_name);
+            let current_idx = workspaces
+                .iter()
+                .position(|w| w == &self.current_workspace_name);
             let target = match (query, current_idx) {
-                ("ws-next", Some(idx)) => {
-                    workspaces.get((idx + 1) % workspaces.len()).cloned().unwrap_or_default()
-                }
+                ("ws-next", Some(idx)) => workspaces
+                    .get((idx + 1) % workspaces.len())
+                    .cloned()
+                    .unwrap_or_default(),
                 ("ws-prev", Some(idx)) => {
-                    let prev = if idx == 0 { workspaces.len() - 1 } else { idx - 1 };
+                    let prev = if idx == 0 {
+                        workspaces.len() - 1
+                    } else {
+                        idx - 1
+                    };
                     workspaces.get(prev).cloned().unwrap_or_default()
                 }
                 _ => workspaces.first().cloned().unwrap_or_default(),
@@ -277,7 +289,8 @@ impl AppState {
             return;
         }
         if query == "network-clear" || query == "netlog-clear" {
-            self.pending_wry_actions.push_back(WryAction::ClearNetworkLog);
+            self.pending_wry_actions
+                .push_back(WryAction::ClearNetworkLog);
             return;
         }
         if query == "console" || query == "consolelog" {
@@ -285,26 +298,36 @@ impl AppState {
             return;
         }
         if query == "console-clear" {
-            self.pending_wry_actions.push_back(WryAction::ClearConsoleLog);
+            self.pending_wry_actions
+                .push_back(WryAction::ClearConsoleLog);
             return;
         }
 
         // Clear/privacy commands
-        if self.cmd_clear_privacy(query).is_some() { return; }
+        if self.cmd_clear_privacy(query).is_some() {
+            return;
+        }
 
         if query == "inspect" {
-            self.pending_wry_actions.push_back(WryAction::ToggleDevTools);
+            self.pending_wry_actions
+                .push_back(WryAction::ToggleDevTools);
             return;
         }
 
         // Extensions/language commands
-        if self.cmd_extensions_language(query).is_some() { return; }
+        if self.cmd_extensions_language(query).is_some() {
+            return;
+        }
 
         // ARP (Aileron Remote Protocol) commands
-        if self.cmd_arp(query).is_some() { return; }
+        if self.cmd_arp(query).is_some() {
+            return;
+        }
 
         // Tools commands (grep, git, terminal, print)
-        if self.cmd_tools(query).is_some() { return; }
+        if self.cmd_tools(query).is_some() {
+            return;
+        }
 
         if query == "config-save" {
             self.pending_wry_actions.push_back(WryAction::SaveConfig);
@@ -319,7 +342,9 @@ impl AppState {
             let estimated = crate::profiling::memory::estimate_pane_memory(web_count, term_count);
             self.status_message = format!(
                 "RSS: {} | WebViews: {}x~50MB | Terminals: {}x~3MB | Est pane: {}",
-                rss, web_count, term_count,
+                rss,
+                web_count,
+                term_count,
                 crate::profiling::memory::format_human_bytes(estimated)
             );
             return;
@@ -345,16 +370,24 @@ impl AppState {
             self.config.adaptive_quality = !self.config.adaptive_quality;
             self.status_message = format!(
                 "Adaptive quality: {}",
-                if self.config.adaptive_quality { "on" } else { "off" }
+                if self.config.adaptive_quality {
+                    "on"
+                } else {
+                    "off"
+                }
             );
             return;
         }
 
         // Downloads commands
-        if self.cmd_downloads(query).is_some() { return; }
+        if self.cmd_downloads(query).is_some() {
+            return;
+        }
 
         // History command
-        if self.cmd_history(query).is_some() { return; }
+        if self.cmd_history(query).is_some() {
+            return;
+        }
 
         // Tab search command
         if query == "tabs" {
@@ -372,7 +405,8 @@ impl AppState {
                     // :tab-restore 0 = most recent
                     if let Some((url, _title)) = self.closed_tab_stack.pop_back() {
                         if let Ok(parsed) = url::Url::parse(&url) {
-                            self.pending_wry_actions.push_back(WryAction::Navigate(parsed));
+                            self.pending_wry_actions
+                                .push_back(WryAction::Navigate(parsed));
                             self.status_message = format!("Restored: {}", url);
                         }
                     } else {
@@ -381,7 +415,8 @@ impl AppState {
                 } else if let Some((url, _title)) = self.closed_tab_stack.get(n.saturating_sub(1)) {
                     let url_clone = url.clone();
                     if let Ok(parsed) = url::Url::parse(&url_clone) {
-                        self.pending_wry_actions.push_back(WryAction::Navigate(parsed));
+                        self.pending_wry_actions
+                            .push_back(WryAction::Navigate(parsed));
                         self.status_message = format!("Restored: {}", url_clone);
                     }
                 } else {
@@ -401,7 +436,8 @@ impl AppState {
             // :tab-restore (no arg) = restore most recent
             if let Some((url, _title)) = self.closed_tab_stack.pop_back() {
                 if let Ok(parsed) = url::Url::parse(&url) {
-                    self.pending_wry_actions.push_back(WryAction::Navigate(parsed));
+                    self.pending_wry_actions
+                        .push_back(WryAction::Navigate(parsed));
                     self.status_message = format!("Restored: {}", url);
                 }
             } else {
@@ -459,7 +495,10 @@ impl AppState {
             }
             let active_id = self.wm.active_pane_id();
             let positions: Vec<_> = panes.iter().map(|(id, _)| *id).collect();
-            let current_idx = positions.iter().position(|&id| id == active_id).unwrap_or(0);
+            let current_idx = positions
+                .iter()
+                .position(|&id| id == active_id)
+                .unwrap_or(0);
             let new_idx = match dir.trim() {
                 "left" | "prev" => current_idx.saturating_sub(1),
                 "right" | "next" => (current_idx + 1) % positions.len(),
@@ -477,7 +516,11 @@ impl AppState {
             if new_idx != current_idx {
                 let target_id = positions[new_idx];
                 if self.wm.swap_pane_ids(active_id, target_id) {
-                    self.status_message = format!("Swapped pane positions: {} → {}", current_idx + 1, new_idx + 1);
+                    self.status_message = format!(
+                        "Swapped pane positions: {} → {}",
+                        current_idx + 1,
+                        new_idx + 1
+                    );
                 } else {
                     self.status_message = "Failed to swap panes.".into();
                 }
@@ -488,7 +531,9 @@ impl AppState {
         }
 
         // Bookmarks command
-        if self.cmd_bookmarks(query).is_some() { return; }
+        if self.cmd_bookmarks(query).is_some() {
+            return;
+        }
 
         // Reader mode command
         if query == "reader" {
@@ -522,7 +567,8 @@ impl AppState {
                     window.ipc.postMessage(JSON.stringify({t:'reader-toggled', enabled: true}));
                 })()
             "#;
-            self.pending_wry_actions.push_back(WryAction::RunJs(reader_css.into()));
+            self.pending_wry_actions
+                .push_back(WryAction::RunJs(reader_css.into()));
             self.status_message = "Reader mode toggled".into();
             return;
         }
@@ -532,7 +578,8 @@ impl AppState {
             if let Some(url) = self.crashed_pane_url.take() {
                 self.webview_crash_detected = false;
                 if let Ok(parsed) = url::Url::parse(&url) {
-                    self.pending_wry_actions.push_back(WryAction::Navigate(parsed));
+                    self.pending_wry_actions
+                        .push_back(WryAction::Navigate(parsed));
                     self.status_message = format!("Reloaded crashed pane: {}", url);
                 }
             } else {
@@ -580,8 +627,15 @@ impl AppState {
                     }})()"#
                 );
                 self.pending_wry_actions.push_back(WryAction::RunJs(js));
-                let mode_str = if case_sensitive { "case-sensitive" } else { "case-insensitive" };
-                self.status_message = format!("Replacing '{}' with '{}' ({})", old_text, new_text, mode_str);
+                let mode_str = if case_sensitive {
+                    "case-sensitive"
+                } else {
+                    "case-insensitive"
+                };
+                self.status_message = format!(
+                    "Replacing '{}' with '{}' ({})",
+                    old_text, new_text, mode_str
+                );
             } else {
                 self.status_message = "Usage: :replace <old> <new> [case]".into();
             }
@@ -614,12 +668,16 @@ impl AppState {
                 // This is acceptable for proxy changes (user-initiated, rare) but a proper
                 // fix requires wry to expose a proxy configuration API instead of env vars.
                 #[allow(unused_unsafe)]
-                unsafe { std::env::remove_var("all_proxy") };
+                unsafe {
+                    std::env::remove_var("all_proxy")
+                };
                 self.status_message = "Proxy disabled".into();
             } else {
                 self.config.proxy = Some(proxy_url.to_string());
                 #[allow(unused_unsafe)]
-                unsafe { std::env::set_var("all_proxy", proxy_url) };
+                unsafe {
+                    std::env::set_var("all_proxy", proxy_url)
+                };
                 self.status_message = format!("Proxy: {}", proxy_url);
             }
             return;
@@ -686,13 +744,18 @@ impl AppState {
                         if let (Some(domain), Some(engine)) = (parts.next(), parts.next()) {
                             let engine = engine.trim();
                             if engine != "webkit" && engine != "servo" {
-                                self.status_message = "Usage: compat-override add <domain> webkit|servo".into();
+                                self.status_message =
+                                    "Usage: compat-override add <domain> webkit|servo".into();
                             } else {
-                                self.config.compat_overrides.insert(domain.to_string(), engine.to_string());
-                                self.status_message = format!("Compat override: {} -> {}", domain, engine);
+                                self.config
+                                    .compat_overrides
+                                    .insert(domain.to_string(), engine.to_string());
+                                self.status_message =
+                                    format!("Compat override: {} -> {}", domain, engine);
                             }
                         } else {
-                            self.status_message = "Usage: compat-override add <domain> webkit|servo".into();
+                            self.status_message =
+                                "Usage: compat-override add <domain> webkit|servo".into();
                         }
                     }
                     "remove" => {
@@ -719,7 +782,10 @@ impl AppState {
             let engine_name = engine_name.trim();
             if engine_name.is_empty() {
                 let current = &self.config.search_engine;
-                let name = self.config.search_engines.iter()
+                let name = self
+                    .config
+                    .search_engines
+                    .iter()
                     .find(|(_, url)| *url == current)
                     .map(|(name, _)| name.as_str())
                     .unwrap_or("default");
@@ -734,7 +800,11 @@ impl AppState {
                 let available: Vec<&str> = std::iter::once("default")
                     .chain(self.config.search_engines.keys().map(|s| s.as_str()))
                     .collect();
-                self.status_message = format!("Unknown engine: {}. Available: {}", engine_name, available.join(", "));
+                self.status_message = format!(
+                    "Unknown engine: {}. Available: {}",
+                    engine_name,
+                    available.join(", ")
+                );
             }
             return;
         }
@@ -746,7 +816,9 @@ impl AppState {
                 "history" => {
                     if let Some(db) = self.db.as_ref() {
                         match crate::db::history::clear_history(db) {
-                            Ok(count) => self.status_message = format!("Cleared {} history entries", count),
+                            Ok(count) => {
+                                self.status_message = format!("Cleared {} history entries", count)
+                            }
                             Err(e) => self.status_message = format!("Failed: {}", e),
                         }
                     }
@@ -754,7 +826,9 @@ impl AppState {
                 "bookmarks" => {
                     if let Some(db) = self.db.as_ref() {
                         match crate::db::bookmarks::clear_bookmarks(db) {
-                            Ok(count) => self.status_message = format!("Cleared {} bookmarks", count),
+                            Ok(count) => {
+                                self.status_message = format!("Cleared {} bookmarks", count)
+                            }
                             Err(e) => self.status_message = format!("Failed: {}", e),
                         }
                     }
@@ -792,7 +866,8 @@ impl AppState {
                     self.status_message = format!("Cleared: {}", parts.join(", "));
                 }
                 _ => {
-                    self.status_message = "Usage: :clear history|bookmarks|workspaces|cookies|all".into();
+                    self.status_message =
+                        "Usage: :clear history|bookmarks|workspaces|cookies|all".into();
                 }
             }
             return;
@@ -851,10 +926,7 @@ impl AppState {
             if let Some(engine) = self.engines.get(&active_id)
                 && let Some(url) = engine.current_url()
             {
-                let title = url
-                    .host_str()
-                    .unwrap_or("untitled")
-                    .to_string();
+                let title = url.host_str().unwrap_or("untitled").to_string();
                 let copied = crate::platform::platform().clipboard_copy(&title);
                 if copied {
                     self.status_message = format!("Copied title: {}", title);
@@ -879,8 +951,7 @@ impl AppState {
             let args = &shell_cmd[1..];
             match std::process::Command::new(shell).args(args).output() {
                 Ok(output) => {
-                    let stdout =
-                        String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     let line = stdout.lines().next().unwrap_or("");
                     if line.len() > 80 {
                         self.status_message = format!("{}...", &line[..77]);
@@ -903,7 +974,8 @@ impl AppState {
             let mut parts = rest.splitn(2, ' ');
             if let Some(key) = parts.next() {
                 let value = parts.next().unwrap_or("");
-                self.status_message = super::cmd::settings::apply_set_setting(&mut self.config, key, value);
+                self.status_message =
+                    super::cmd::settings::apply_set_setting(&mut self.config, key, value);
             }
             return;
         }
@@ -913,7 +985,11 @@ impl AppState {
             self.config.popup_blocker_enabled = !self.config.popup_blocker_enabled;
             self.status_message = format!(
                 "Popup blocker: {}",
-                if self.config.popup_blocker_enabled { "on" } else { "off" }
+                if self.config.popup_blocker_enabled {
+                    "on"
+                } else {
+                    "off"
+                }
             );
             return;
         }
@@ -923,13 +999,19 @@ impl AppState {
                 !val.contains("off") && !val.contains("false") && !val.contains("0");
             self.status_message = format!(
                 "Popup blocker: {}",
-                if self.config.popup_blocker_enabled { "on" } else { "off" }
+                if self.config.popup_blocker_enabled {
+                    "on"
+                } else {
+                    "off"
+                }
             );
             return;
         }
 
         // Cookie/site-settings commands
-        if self.cmd_site_settings(query).is_some() { return; }
+        if self.cmd_site_settings(query).is_some() {
+            return;
+        }
 
         // Mute / unmute
         if query == "mute" {
@@ -974,27 +1056,19 @@ impl AppState {
                                         &self.autofill_password_id,
                                         &cred,
                                     );
-                                    self.pending_wry_actions
-                                        .push_back(WryAction::RunJs(js));
-                                    self.status_message = format!(
-                                        "Auto-filled credentials for {}",
-                                        domain
-                                    );
+                                    self.pending_wry_actions.push_back(WryAction::RunJs(js));
+                                    self.status_message =
+                                        format!("Auto-filled credentials for {}", domain);
                                     self.autofill_available = false;
                                     self.autofill_js = None;
                                 }
-                                Err(e) => {
-                                    self.status_message = format!("Auto-fill failed: {}", e)
-                                }
+                                Err(e) => self.status_message = format!("Auto-fill failed: {}", e),
                             }
                         }
                         Ok(_) => {
-                            self.status_message =
-                                format!("No credentials found for {}", domain)
+                            self.status_message = format!("No credentials found for {}", domain)
                         }
-                        Err(e) => {
-                            self.status_message = format!("Auto-fill failed: {}", e)
-                        }
+                        Err(e) => self.status_message = format!("Auto-fill failed: {}", e),
                     }
                 }
             } else {
@@ -1038,8 +1112,14 @@ impl AppState {
             let letter = query.as_bytes()[1] as char;
             let rest = query[2..].trim();
             if rest.is_empty() {
-                self.status_message = format!("Quickmark {}: {}", letter,
-                    self.quickmarks.get(&letter).map(|s| s.as_str()).unwrap_or("(not set)"));
+                self.status_message = format!(
+                    "Quickmark {}: {}",
+                    letter,
+                    self.quickmarks
+                        .get(&letter)
+                        .map(|s| s.as_str())
+                        .unwrap_or("(not set)")
+                );
                 return;
             }
             self.quickmarks.insert(letter, rest.to_string());
@@ -1170,39 +1250,112 @@ impl AppState {
         } else {
             // Try fuzzy suggestion before falling back to search
             let known_commands = [
-                 "q", "quit", "open", "help", "?", "ssh", "set", "vs", "sp", "files", "browse",
-                 "g",
-                "bw-unlock", "bw-search", "bw-lock", "bw-autofill", "bw-detect",
-                "keyring-test", "credentials-save",
-                "adblock-toggle", "adblock-count", "adblock-update", "privacy", "https-toggle",
-                "downloads", "downloads-open", "downloads-dir", "downloads-clear",
-                "import-firefox", "import-chrome",
-                "site-settings", "cookies", "cookies-clear", "cookies-block", "cookies-allow",
-                 "popups", "mute", "unmute", "theme", "theme-list",
-                 "autofill",
-                "print", "pdf", "pin",
-                "scripts", "network", "network-clear", "console", "console-clear",
-                "inspect", "proxy", "config-save", "clear",
-                "layout-save", "layout-load", "ws-save", "ws-load", "ws-list", "ws-next", "ws-prev",
-                "reader", "minimal", "only", "detach",
+                "q",
+                "quit",
+                "open",
+                "help",
+                "?",
+                "ssh",
+                "set",
+                "vs",
+                "sp",
+                "files",
+                "browse",
+                "g",
+                "bw-unlock",
+                "bw-search",
+                "bw-lock",
+                "bw-autofill",
+                "bw-detect",
+                "keyring-test",
+                "credentials-save",
+                "adblock-toggle",
+                "adblock-count",
+                "adblock-update",
+                "privacy",
+                "https-toggle",
+                "downloads",
+                "downloads-open",
+                "downloads-dir",
+                "downloads-clear",
+                "import-firefox",
+                "import-chrome",
+                "site-settings",
+                "cookies",
+                "cookies-clear",
+                "cookies-block",
+                "cookies-allow",
+                "popups",
+                "mute",
+                "unmute",
+                "theme",
+                "theme-list",
+                "autofill",
+                "print",
+                "pdf",
+                "pin",
+                "scripts",
+                "network",
+                "network-clear",
+                "console",
+                "console-clear",
+                "inspect",
+                "proxy",
+                "config-save",
+                "clear",
+                "layout-save",
+                "layout-load",
+                "ws-save",
+                "ws-load",
+                "ws-list",
+                "ws-next",
+                "ws-prev",
+                "reader",
+                "minimal",
+                "only",
+                "detach",
                 "replace",
-                "memory", "stats", "perf", "perf-on", "perf-off",
-                "adaptive-quality", "adaptive_quality",
-                "language", "language-list",
-                "engine", "compat-override",
-                "extensions", "extension-load", "extension-info",
-                "arp-start", "arp-stop", "arp-status", "arp-token",
-                "history", "history-clear",
-                "tabs", "tab-restore", "tab-unload", "tab-move", "tab-rename",
-                "bookmarks", "bookmark",
+                "memory",
+                "stats",
+                "perf",
+                "perf-on",
+                "perf-off",
+                "adaptive-quality",
+                "adaptive_quality",
+                "language",
+                "language-list",
+                "engine",
+                "compat-override",
+                "extensions",
+                "extension-load",
+                "extension-info",
+                "arp-start",
+                "arp-stop",
+                "arp-status",
+                "arp-token",
+                "history",
+                "history-clear",
+                "tabs",
+                "tab-restore",
+                "tab-unload",
+                "tab-move",
+                "tab-rename",
+                "bookmarks",
+                "bookmark",
                 "reader",
                 "crash-reload",
                 "private",
                 "yt",
                 "stats",
-                "bind", "unbind",
-                "sync", "sync --pull", "sync --both", "sync --status",
-                "sync-watch", "sync-stop", "sync-target",
+                "bind",
+                "unbind",
+                "sync",
+                "sync --pull",
+                "sync --both",
+                "sync --status",
+                "sync-watch",
+                "sync-stop",
+                "sync-target",
             ];
             let cmd = query;
             let suggestion = known_commands
@@ -1260,21 +1413,16 @@ impl AppState {
     pub fn record_visit(&self, url: &url::Url, title: &str) {
         if let Some(ref conn) = self.db
             && !self.private_pane_ids.contains(&self.wm.active_pane_id())
-            && let Err(e) = crate::db::history::record_visit(conn, url, title) {
-                warn!("Failed to record visit: {}", e);
-            }
+            && let Err(e) = crate::db::history::record_visit(conn, url, title)
+        {
+            warn!("Failed to record visit: {}", e);
+        }
     }
 
     fn swap_panes(&mut self) {
         if let Some(last_id) = self.last_active_pane_id {
             let active_id = self.wm.active_pane_id();
-            if last_id != active_id
-                && self
-                    .wm
-                    .panes()
-                    .iter()
-                    .any(|(id, _)| *id == last_id)
-            {
+            if last_id != active_id && self.wm.panes().iter().any(|(id, _)| *id == last_id) {
                 let active_url = self
                     .engines
                     .get(&active_id)
@@ -1467,9 +1615,10 @@ impl AppState {
                             if entries.is_empty() {
                                 self.status_message = "No downloads".into();
                             } else {
-                                let items: Vec<String> = entries.iter().map(|e| {
-                                    format!("{} [{}]", e.filename, e.status)
-                                }).collect();
+                                let items: Vec<String> = entries
+                                    .iter()
+                                    .map(|e| format!("{} [{}]", e.filename, e.status))
+                                    .collect();
                                 self.status_message = format!("Downloads: {}", items.join(", "));
                             }
                         }
@@ -1477,16 +1626,24 @@ impl AppState {
                     }
                 }
             } else {
-                let items: Vec<String> = progress.iter().map(|p| {
-                    let size_str = if p.total_bytes > 0 {
-                        format!("{}/{}", DownloadProgress::format_bytes(p.received_bytes), DownloadProgress::format_bytes(p.total_bytes))
-                    } else {
-                        DownloadProgress::format_bytes(p.received_bytes)
-                    };
-                    format!("{} [{} {}]", p.filename, p.state, size_str)
-                }).collect();
+                let items: Vec<String> = progress
+                    .iter()
+                    .map(|p| {
+                        let size_str = if p.total_bytes > 0 {
+                            format!(
+                                "{}/{}",
+                                DownloadProgress::format_bytes(p.received_bytes),
+                                DownloadProgress::format_bytes(p.total_bytes)
+                            )
+                        } else {
+                            DownloadProgress::format_bytes(p.received_bytes)
+                        };
+                        format!("{} [{} {}]", p.filename, p.state, size_str)
+                    })
+                    .collect();
                 let active = self.download_manager.active_count();
-                self.status_message = format!("Downloads ({} active): {}", active, items.join(" | "));
+                self.status_message =
+                    format!("Downloads ({} active): {}", active, items.join(" | "));
             }
             return Some(());
         }
@@ -1504,15 +1661,13 @@ impl AppState {
             if id_str.is_empty() {
                 if let Some(db) = self.db.as_ref() {
                     match crate::db::downloads::get_latest_download_id(db) {
-                        Ok(id) => {
-                            match crate::db::downloads::get_download_dest_path(db, id) {
-                                Ok(dest) => {
-                                    let _ = open_that(&dest);
-                                    self.status_message = format!("Opened: {}", dest);
-                                }
-                                Err(e) => self.status_message = format!("Error: {}", e),
+                        Ok(id) => match crate::db::downloads::get_download_dest_path(db, id) {
+                            Ok(dest) => {
+                                let _ = open_that(&dest);
+                                self.status_message = format!("Opened: {}", dest);
                             }
-                        }
+                            Err(e) => self.status_message = format!("Error: {}", e),
+                        },
                         Err(e) => self.status_message = format!("No downloads: {}", e),
                     }
                 }
@@ -1534,8 +1689,8 @@ impl AppState {
             return Some(());
         }
         if query == "downloads-dir" {
-            if let Some(downloads_dir) = directories::UserDirs::new()
-                .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
+            if let Some(downloads_dir) =
+                directories::UserDirs::new().and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
             {
                 let _ = open_that(&downloads_dir);
                 self.status_message = format!("Opened: {}", downloads_dir.display());
@@ -1551,7 +1706,8 @@ impl AppState {
             if args.is_empty() {
                 // Show all custom bindings
                 if self.config.keybindings.is_empty() {
-                    self.status_message = "No custom keybindings. Usage: :bind normal j ScrollDown".into();
+                    self.status_message =
+                        "No custom keybindings. Usage: :bind normal j ScrollDown".into();
                 } else {
                     let mut lines: Vec<String> = Vec::new();
                     for (key, action) in &self.config.keybindings {
@@ -1566,25 +1722,28 @@ impl AppState {
                 } else {
                     let mode_str = parts[0];
                     let key_str = parts[1];
-                    if crate::input::keybindings::KeybindingRegistry::parse_mode(mode_str).is_none() {
-                        self.status_message = format!(
-                            "Unknown mode: {}. Use: normal, insert, command",
-                            mode_str
-                        );
+                    if crate::input::keybindings::KeybindingRegistry::parse_mode(mode_str).is_none()
+                    {
+                        self.status_message =
+                            format!("Unknown mode: {}. Use: normal, insert, command", mode_str);
                     } else {
                         let binding_key = format!("{} {}", mode_str, key_str);
                         if parts.len() >= 3 {
                             let action_str = parts[2];
-                            self.config.keybindings.insert(binding_key.clone(), action_str.to_string());
+                            self.config
+                                .keybindings
+                                .insert(binding_key.clone(), action_str.to_string());
                             self.status_message =
                                 format!("Bound: {} → {}", binding_key, action_str);
                         } else {
                             // Show current binding for this key
-                            let current = self.config.keybindings.get(&binding_key)
+                            let current = self
+                                .config
+                                .keybindings
+                                .get(&binding_key)
                                 .map(|s| s.as_str())
                                 .unwrap_or("(default)");
-                            self.status_message =
-                                format!("{} → {}", binding_key, current);
+                            self.status_message = format!("{} → {}", binding_key, current);
                         }
                         if let Err(e) = Config::save(&self.config) {
                             tracing::warn!("Failed to save config: {}", e);
@@ -1618,14 +1777,14 @@ impl AppState {
         if query == "stats" {
             let tab_count = self.wm.pane_ids().len();
             let term_count = self.terminal_pane_ids.len();
-            let ext_count = self.extension_manager.lock().ok()
+            let ext_count = self
+                .extension_manager
+                .lock()
+                .ok()
                 .map(|mgr| mgr.count())
                 .unwrap_or(0);
 
-            let mut stats = format!(
-                "Tabs: {} ({} terminal)",
-                tab_count, term_count
-            );
+            let mut stats = format!("Tabs: {} ({} terminal)", tab_count, term_count);
             stats.push_str(&format!(" | Extensions: {}", ext_count));
 
             // Memory from /proc/self/status (Linux only)
@@ -1634,10 +1793,7 @@ impl AppState {
                 if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
                     for line in status.lines() {
                         if let Some(vms) = line.strip_prefix("VmRSS:") {
-                            let kb: u64 = vms
-                                .trim()
-                                .parse()
-                                .unwrap_or(0);
+                            let kb: u64 = vms.trim().parse().unwrap_or(0);
                             stats.push_str(&format!(" | Memory: {} MB", kb / 1024));
                             break;
                         }
@@ -1649,10 +1805,12 @@ impl AppState {
                 .db
                 .as_ref()
                 .map(|conn| {
-                    let bm: usize =
-                        crate::db::bookmarks::all_bookmarks(conn).unwrap_or_default().len();
-                    let hist: usize =
-                        crate::db::history::recent_entries(conn, 0).unwrap_or_default().len();
+                    let bm: usize = crate::db::bookmarks::all_bookmarks(conn)
+                        .unwrap_or_default()
+                        .len();
+                    let hist: usize = crate::db::history::recent_entries(conn, 0)
+                        .unwrap_or_default()
+                        .len();
                     format!(" | Bookmarks: {} | History: {}", bm, hist)
                 })
                 .unwrap_or_default();
@@ -1762,8 +1920,13 @@ impl AppState {
                     if let Some(db) = self.db.as_ref() {
                         match crate::db::bookmarks::add_bookmark_with_folder(db, url, "", folder) {
                             Ok(id) => {
-                                let folder_msg = if folder.is_empty() { String::new() } else { format!(" [{}]", folder) };
-                                self.status_message = format!("Bookmarked: {}{} (id={})", url, folder_msg, id);
+                                let folder_msg = if folder.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" [{}]", folder)
+                                };
+                                self.status_message =
+                                    format!("Bookmarked: {}{} (id={})", url, folder_msg, id);
                             }
                             Err(e) => {
                                 self.status_message = format!("Bookmark failed: {}", e);
@@ -1786,7 +1949,9 @@ impl AppState {
                 "history" => {
                     if let Some(db) = self.db.as_ref() {
                         match crate::db::history::clear_history(db) {
-                            Ok(count) => self.status_message = format!("Cleared {} history entries", count),
+                            Ok(count) => {
+                                self.status_message = format!("Cleared {} history entries", count)
+                            }
                             Err(e) => self.status_message = format!("Failed: {}", e),
                         }
                     }
@@ -1794,7 +1959,9 @@ impl AppState {
                 "bookmarks" => {
                     if let Some(db) = self.db.as_ref() {
                         match crate::db::bookmarks::clear_bookmarks(db) {
-                            Ok(count) => self.status_message = format!("Cleared {} bookmarks", count),
+                            Ok(count) => {
+                                self.status_message = format!("Cleared {} bookmarks", count)
+                            }
                             Err(e) => self.status_message = format!("Failed: {}", e),
                         }
                     }
@@ -1832,7 +1999,8 @@ impl AppState {
                     self.status_message = format!("Cleared: {}", parts.join(", "));
                 }
                 _ => {
-                    self.status_message = "Usage: :clear history|bookmarks|workspaces|cookies|all".into();
+                    self.status_message =
+                        "Usage: :clear history|bookmarks|workspaces|cookies|all".into();
                 }
             }
             return Some(());
@@ -1860,10 +2028,8 @@ impl AppState {
                 let host_lower = host.to_lowercase();
                 let safe_list = crate::net::privacy::load_https_safe_list();
                 if crate::net::privacy::is_https_safe(&host_lower, &safe_list) {
-                    self.status_message = format!(
-                        "HTTPS upgrade: {} is already in the safe list",
-                        host_lower
-                    );
+                    self.status_message =
+                        format!("HTTPS upgrade: {} is already in the safe list", host_lower);
                 } else {
                     self.status_message = format!(
                         "HTTPS upgrade: {} is not in the safe list ({} domains loaded)",
@@ -1905,26 +2071,40 @@ impl AppState {
                                 let items: Vec<String> = settings
                                     .iter()
                                     .map(|s| {
-                                        let mut parts = vec![format!("{}[{}]", s.pattern, s.pattern_type)];
+                                        let mut parts =
+                                            vec![format!("{}[{}]", s.pattern, s.pattern_type)];
                                         if let Some(z) = s.zoom_level {
                                             parts.push(format!("zoom={}", z));
                                         }
                                         if let Some(b) = s.adblock_enabled {
-                                            parts.push(format!("adblock={}", if b { "on" } else { "off" }));
+                                            parts.push(format!(
+                                                "adblock={}",
+                                                if b { "on" } else { "off" }
+                                            ));
                                         }
                                         if let Some(b) = s.javascript_enabled {
-                                            parts.push(format!("js={}", if b { "on" } else { "off" }));
+                                            parts.push(format!(
+                                                "js={}",
+                                                if b { "on" } else { "off" }
+                                            ));
                                         }
                                         if let Some(b) = s.cookies_enabled {
-                                            parts.push(format!("cookies={}", if b { "on" } else { "off" }));
+                                            parts.push(format!(
+                                                "cookies={}",
+                                                if b { "on" } else { "off" }
+                                            ));
                                         }
                                         if let Some(b) = s.autoplay_enabled {
-                                            parts.push(format!("autoplay={}", if b { "on" } else { "off" }));
+                                            parts.push(format!(
+                                                "autoplay={}",
+                                                if b { "on" } else { "off" }
+                                            ));
                                         }
                                         parts.join(" ")
                                     })
                                     .collect();
-                                self.status_message = format!("Site settings: {}", items.join(" | "));
+                                self.status_message =
+                                    format!("Site settings: {}", items.join(" | "));
                             }
                         }
                         Err(e) => self.status_message = format!("Error: {}", e),
@@ -1953,8 +2133,16 @@ impl AppState {
                 if host.is_empty() {
                     self.status_message = "No active URL for site settings".into();
                 } else if let Some(db) = self.db.as_ref() {
-                    match crate::db::site_settings::set_site_field(db, &host, "exact", key, Some(value)) {
-                        Ok(()) => self.status_message = format!("Set {}={} for {}", key, value, host),
+                    match crate::db::site_settings::set_site_field(
+                        db,
+                        &host,
+                        "exact",
+                        key,
+                        Some(value),
+                    ) {
+                        Ok(()) => {
+                            self.status_message = format!("Set {}={} for {}", key, value, host)
+                        }
                         Err(e) => self.status_message = format!("Failed: {}", e),
                     }
                 }
@@ -1974,7 +2162,9 @@ impl AppState {
                             let items: Vec<String> = settings
                                 .iter()
                                 .take(10)
-                                .map(|s| format!("[{}] {} (id:{})", s.pattern_type, s.pattern, s.id))
+                                .map(|s| {
+                                    format!("[{}] {} (id:{})", s.pattern_type, s.pattern, s.id)
+                                })
                                 .collect();
                             let suffix = if settings.len() > 10 {
                                 format!(" (+{} more)", settings.len() - 10)
@@ -1996,7 +2186,9 @@ impl AppState {
                 if let Some(db) = self.db.as_ref() {
                     match crate::db::site_settings::delete_site_setting(db, id) {
                         Ok(true) => self.status_message = format!("Deleted site setting {}", id),
-                        Ok(false) => self.status_message = format!("No site setting with id {}", id),
+                        Ok(false) => {
+                            self.status_message = format!("No site setting with id {}", id)
+                        }
                         Err(e) => self.status_message = format!("Failed: {}", e),
                     }
                 }
@@ -2014,7 +2206,9 @@ impl AppState {
             }
             if let Some(db) = self.db.as_ref() {
                 match crate::db::site_settings::delete_site_settings_for_domain(db, domain) {
-                    Ok(count) => self.status_message = format!("Cleared {} setting(s) for {}", count, domain),
+                    Ok(count) => {
+                        self.status_message = format!("Cleared {} setting(s) for {}", count, domain)
+                    }
                     Err(e) => self.status_message = format!("Failed: {}", e),
                 }
             }
@@ -2036,7 +2230,13 @@ impl AppState {
                 return Some(());
             }
             if let Some(db) = self.db.as_ref() {
-                match crate::db::site_settings::set_site_field(db, domain, "exact", "cookies", Some("off")) {
+                match crate::db::site_settings::set_site_field(
+                    db,
+                    domain,
+                    "exact",
+                    "cookies",
+                    Some("off"),
+                ) {
                     Ok(()) => self.status_message = format!("Cookies blocked for {}", domain),
                     Err(e) => self.status_message = format!("Failed: {}", e),
                 }
@@ -2050,7 +2250,13 @@ impl AppState {
                 return Some(());
             }
             if let Some(db) = self.db.as_ref() {
-                match crate::db::site_settings::set_site_field(db, domain, "exact", "cookies", Some("on")) {
+                match crate::db::site_settings::set_site_field(
+                    db,
+                    domain,
+                    "exact",
+                    "cookies",
+                    Some("on"),
+                ) {
                     Ok(()) => self.status_message = format!("Cookies allowed for {}", domain),
                     Err(e) => self.status_message = format!("Failed: {}", e),
                 }
@@ -2097,15 +2303,27 @@ impl AppState {
                     if lines.is_empty() {
                         self.status_message = "No matches found".into();
                     } else {
-                        let results: Vec<String> = lines.iter().map(|l| {
-                            if l.len() > 80 { format!("{}...", &l[..77]) } else { l.to_string() }
-                        }).collect();
-                        let suffix = if total > 15 { format!(" (+{} more)", total - 15) } else { String::new() };
+                        let results: Vec<String> = lines
+                            .iter()
+                            .map(|l| {
+                                if l.len() > 80 {
+                                    format!("{}...", &l[..77])
+                                } else {
+                                    l.to_string()
+                                }
+                            })
+                            .collect();
+                        let suffix = if total > 15 {
+                            format!(" (+{} more)", total - 15)
+                        } else {
+                            String::new()
+                        };
                         self.status_message = format!("{}{}", results.join(" │ "), suffix);
                     }
                 }
                 Ok(output) => {
-                    self.status_message = format!("grep: {}", String::from_utf8_lossy(&output.stderr));
+                    self.status_message =
+                        format!("grep: {}", String::from_utf8_lossy(&output.stderr));
                 }
                 Err(e) => {
                     self.status_message = format!("grep failed: {}", e);
@@ -2115,7 +2333,9 @@ impl AppState {
         }
 
         if query == "git-status" || query == "gs" {
-            if let Some(root) = crate::git::repo_root(std::env::current_dir().unwrap_or_default().as_path()) {
+            if let Some(root) =
+                crate::git::repo_root(std::env::current_dir().unwrap_or_default().as_path())
+            {
                 match std::process::Command::new("git")
                     .args(["-C", &root.to_string_lossy(), "status", "--short"])
                     .output()
@@ -2127,12 +2347,17 @@ impl AppState {
                             self.status_message = "Working tree clean".into();
                         } else {
                             let total = stdout.lines().count();
-                            let suffix = if total > 10 { format!(" (+{} more)", total - 10) } else { String::new() };
+                            let suffix = if total > 10 {
+                                format!(" (+{} more)", total - 10)
+                            } else {
+                                String::new()
+                            };
                             self.status_message = format!("{}{}", lines.join(" │ "), suffix);
                         }
                     }
                     Ok(output) => {
-                        self.status_message = format!("git: {}", String::from_utf8_lossy(&output.stderr).trim());
+                        self.status_message =
+                            format!("git: {}", String::from_utf8_lossy(&output.stderr).trim());
                     }
                     Err(e) => self.status_message = format!("git failed: {}", e),
                 }
@@ -2143,17 +2368,24 @@ impl AppState {
         }
 
         if query == "git-log" || query == "gl" {
-            if let Some(root) = crate::git::repo_root(std::env::current_dir().unwrap_or_default().as_path()) {
+            if let Some(root) =
+                crate::git::repo_root(std::env::current_dir().unwrap_or_default().as_path())
+            {
                 match std::process::Command::new("git")
                     .args(["-C", &root.to_string_lossy(), "log", "--oneline", "-10"])
                     .output()
                 {
                     Ok(output) if output.status.success() => {
                         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                        self.status_message = if stdout.is_empty() { "No commits".into() } else { format!("Log: {}", stdout.replace('\n', " │ ")) };
+                        self.status_message = if stdout.is_empty() {
+                            "No commits".into()
+                        } else {
+                            format!("Log: {}", stdout.replace('\n', " │ "))
+                        };
                     }
                     Ok(output) => {
-                        self.status_message = format!("git: {}", String::from_utf8_lossy(&output.stderr).trim());
+                        self.status_message =
+                            format!("git: {}", String::from_utf8_lossy(&output.stderr).trim());
                     }
                     Err(e) => self.status_message = format!("git failed: {}", e),
                 }
@@ -2164,17 +2396,24 @@ impl AppState {
         }
 
         if query == "git-diff" || query == "gd" {
-            if let Some(root) = crate::git::repo_root(std::env::current_dir().unwrap_or_default().as_path()) {
+            if let Some(root) =
+                crate::git::repo_root(std::env::current_dir().unwrap_or_default().as_path())
+            {
                 match std::process::Command::new("git")
                     .args(["-C", &root.to_string_lossy(), "diff", "--stat"])
                     .output()
                 {
                     Ok(output) if output.status.success() => {
                         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                        self.status_message = if stdout.is_empty() { "No changes".into() } else { format!("Diff: {}", stdout.replace('\n', " │ ")) };
+                        self.status_message = if stdout.is_empty() {
+                            "No changes".into()
+                        } else {
+                            format!("Diff: {}", stdout.replace('\n', " │ "))
+                        };
                     }
                     Ok(output) => {
-                        self.status_message = format!("git: {}", String::from_utf8_lossy(&output.stderr).trim());
+                        self.status_message =
+                            format!("git: {}", String::from_utf8_lossy(&output.stderr).trim());
                     }
                     Err(e) => self.status_message = format!("git failed: {}", e),
                 }
@@ -2206,8 +2445,8 @@ impl AppState {
             let active_id = self.wm.active_pane_id();
             if self.terminal_pane_ids.contains(&active_id) {
                 let escaped = pattern.replace('\\', "\\\\").replace('\'', "\\'");
-                self.pending_wry_actions.push_back(WryAction::RunJs(
-                    format!(r#"
+                self.pending_wry_actions.push_back(WryAction::RunJs(format!(
+                    r#"
 if (window._terminal && window._terminal.buffer) {{
     var buffer = window._terminal.buffer;
     var lines = buffer.active.bufferBase.getLines();
@@ -2223,8 +2462,9 @@ if (window._terminal && window._terminal.buffer) {{
     }}
     matches.length + ' match(es) in scrollback';
 }}
-"#, escaped),
-                ));
+"#,
+                    escaped
+                )));
             } else {
                 self.status_message = "Not a terminal pane".into();
             }
@@ -2263,11 +2503,7 @@ if (window._terminal && window._terminal.buffer) {{
                             .unwrap_or_else(|| id.to_string())
                     })
                     .collect();
-                self.status_message = format!(
-                    "Extensions ({}): {}",
-                    ids.len(),
-                    lines.join(" | ")
-                );
+                self.status_message = format!("Extensions ({}): {}", ids.len(), lines.join(" | "));
             }
             return Some(());
         }
@@ -2289,13 +2525,13 @@ if (window._terminal && window._terminal.buffer) {{
                 .map(|m| m.extensions_dir().to_path_buf())
                 .ok();
             if let Some(dir) = dir {
-            if dir.exists() {
-                let dir_str = dir.display().to_string();
-                let _ = crate::platform::platform().shell_command(&format!(
+                if dir.exists() {
+                    let dir_str = dir.display().to_string();
+                    let _ = crate::platform::platform().shell_command(&format!(
                     "xdg-open \"{}\" 2>/dev/null || open \"{}\" 2>/dev/null || explorer.exe \"{}\"",
                     dir_str, dir_str, dir_str,
                 ));
-                self.status_message = format!("Opened {}", dir.display());
+                    self.status_message = format!("Opened {}", dir.display());
                 } else {
                     self.status_message = "Extensions directory does not exist yet".into();
                 }
@@ -2343,7 +2579,8 @@ if (window._terminal && window._terminal.buffer) {{
             };
 
             if !manifest_path.exists() {
-                self.status_message = format!("No manifest.json found at {}", manifest_path.display());
+                self.status_message =
+                    format!("No manifest.json found at {}", manifest_path.display());
                 return Some(());
             }
 
@@ -2354,7 +2591,8 @@ if (window._terminal && window._terminal.buffer) {{
                 .and_then(|mut m| m.load_extension_from_path(&manifest_path).ok())
             {
                 Some(id) => {
-                    self.status_message = format!("Installed extension '{}' from {}", id.0, path_str);
+                    self.status_message =
+                        format!("Installed extension '{}' from {}", id.0, path_str);
                 }
                 None => {
                     self.status_message = format!("Failed to load extension from {}", path_str);
@@ -2386,10 +2624,7 @@ if (window._terminal && window._terminal.buffer) {{
                     } else {
                         format!(" | perms: {}", permissions.join(", "))
                     };
-                    self.status_message = format!(
-                        "{} v{} ({}){}",
-                        name, version, id, perms,
-                    );
+                    self.status_message = format!("{} v{} ({}){}", name, version, id, perms,);
                 }
                 None => {
                     self.status_message = format!("Extension '{}' not found", id_str);
@@ -2425,8 +2660,7 @@ if (window._terminal && window._terminal.buffer) {{
                     .find(|(l, _)| *l == current)
                     .map(|(_, n)| *n)
                     .unwrap_or("?");
-                self.status_message =
-                    format!("Language: {} ({})", name, current.code());
+                self.status_message = format!("Language: {} ({})", name, current.code());
             } else if let Some(locale) = crate::i18n::Locale::from_code(code) {
                 crate::i18n::set_locale(locale);
                 self.config.language = Some(code.to_string());
@@ -2473,21 +2707,17 @@ if (window._terminal && window._terminal.buffer) {{
                 ..Default::default()
             };
             match crate::arp::ArpServer::new(config) {
-                Ok((server, receiver)) => {
-                    match server.start() {
-                        Ok(()) => {
-                            self.status_message = format!(
-                                "ARP server started on ws://127.0.0.1:{}",
-                                server.port(),
-                            );
-                            self.arp_server = Some(server);
-                            self.arp_cmd_receiver = Some(std::sync::Mutex::new(receiver));
-                        }
-                        Err(e) => {
-                            self.status_message = format!("ARP server start failed: {}", e);
-                        }
+                Ok((server, receiver)) => match server.start() {
+                    Ok(()) => {
+                        self.status_message =
+                            format!("ARP server started on ws://127.0.0.1:{}", server.port(),);
+                        self.arp_server = Some(server);
+                        self.arp_cmd_receiver = Some(std::sync::Mutex::new(receiver));
                     }
-                }
+                    Err(e) => {
+                        self.status_message = format!("ARP server start failed: {}", e);
+                    }
+                },
                 Err(e) => {
                     self.status_message = format!("ARP server creation failed: {}", e);
                 }
@@ -2508,12 +2738,13 @@ if (window._terminal && window._terminal.buffer) {{
         if query == "arp-status" {
             match self.arp_server {
                 Some(ref server) => {
-                    let state = if server.is_running() { "running" } else { "stopped" };
-                    self.status_message = format!(
-                        "ARP server: {} on ws://127.0.0.1:{}",
-                        state,
-                        server.port(),
-                    );
+                    let state = if server.is_running() {
+                        "running"
+                    } else {
+                        "stopped"
+                    };
+                    self.status_message =
+                        format!("ARP server: {} on ws://127.0.0.1:{}", state, server.port(),);
                 }
                 None => {
                     self.status_message = "ARP server: not created (use :arp-start)".into();
@@ -2531,7 +2762,6 @@ if (window._terminal && window._terminal.buffer) {{
 
         None
     }
-
 }
 
 #[cfg(test)]
@@ -2571,7 +2801,10 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("config-save");
         assert!(!state.pending_wry_actions.is_empty());
-        matches!(state.pending_wry_actions.front(), Some(WryAction::SaveConfig));
+        matches!(
+            state.pending_wry_actions.front(),
+            Some(WryAction::SaveConfig)
+        );
     }
 
     #[test]
@@ -2579,22 +2812,40 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("inspect");
         assert!(!state.pending_wry_actions.is_empty());
-        matches!(state.pending_wry_actions.front(), Some(WryAction::ToggleDevTools));
+        matches!(
+            state.pending_wry_actions.front(),
+            Some(WryAction::ToggleDevTools)
+        );
     }
 
     #[test]
     fn test_back_forward_reload() {
         let mut state = make_state();
         state.handle_raw_command("back");
-        assert!(state.pending_wry_actions.iter().any(|a| matches!(a, WryAction::Back)));
+        assert!(
+            state
+                .pending_wry_actions
+                .iter()
+                .any(|a| matches!(a, WryAction::Back))
+        );
         state.pending_wry_actions.clear();
 
         state.handle_raw_command("fw");
-        assert!(state.pending_wry_actions.iter().any(|a| matches!(a, WryAction::Forward)));
+        assert!(
+            state
+                .pending_wry_actions
+                .iter()
+                .any(|a| matches!(a, WryAction::Forward))
+        );
         state.pending_wry_actions.clear();
 
         state.handle_raw_command("reload");
-        assert!(state.pending_wry_actions.iter().any(|a| matches!(a, WryAction::Reload)));
+        assert!(
+            state
+                .pending_wry_actions
+                .iter()
+                .any(|a| matches!(a, WryAction::Reload))
+        );
     }
 
     #[test]
@@ -2608,7 +2859,12 @@ mod tests {
     fn test_url_navigation() {
         let mut state = make_state();
         state.handle_raw_command("https://example.com");
-        assert!(state.pending_wry_actions.iter().any(|a| matches!(a, WryAction::Navigate(_))));
+        assert!(
+            state
+                .pending_wry_actions
+                .iter()
+                .any(|a| matches!(a, WryAction::Navigate(_)))
+        );
         assert!(state.status_message.contains("Navigating"));
     }
 
@@ -2616,14 +2872,24 @@ mod tests {
     fn test_bare_domain_navigation() {
         let mut state = make_state();
         state.handle_raw_command("example.com");
-        assert!(state.pending_wry_actions.iter().any(|a| matches!(a, WryAction::Navigate(_))));
+        assert!(
+            state
+                .pending_wry_actions
+                .iter()
+                .any(|a| matches!(a, WryAction::Navigate(_)))
+        );
     }
 
     #[test]
     fn test_open_command() {
         let mut state = make_state();
         state.handle_raw_command("open https://example.com");
-        assert!(state.pending_wry_actions.iter().any(|a| matches!(a, WryAction::Navigate(_))));
+        assert!(
+            state
+                .pending_wry_actions
+                .iter()
+                .any(|a| matches!(a, WryAction::Navigate(_)))
+        );
     }
 
     #[test]
@@ -2644,7 +2910,12 @@ mod tests {
     fn test_print_command() {
         let mut state = make_state();
         state.handle_raw_command("print");
-        assert!(state.pending_wry_actions.iter().any(|a| matches!(a, WryAction::Print)));
+        assert!(
+            state
+                .pending_wry_actions
+                .iter()
+                .any(|a| matches!(a, WryAction::Print))
+        );
         assert!(state.status_message.contains("Printing"));
     }
 
@@ -2669,7 +2940,11 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("print && print");
         // Should have queued two print actions
-        let print_count = state.pending_wry_actions.iter().filter(|a| matches!(a, WryAction::Print)).count();
+        let print_count = state
+            .pending_wry_actions
+            .iter()
+            .filter(|a| matches!(a, WryAction::Print))
+            .count();
         assert_eq!(print_count, 2);
     }
 
@@ -2702,7 +2977,10 @@ mod tests {
     fn test_extensions_list() {
         let mut state = make_state();
         state.handle_raw_command("extensions");
-        assert!(state.status_message.contains("No extensions") || state.status_message.contains("Extensions:"));
+        assert!(
+            state.status_message.contains("No extensions")
+                || state.status_message.contains("Extensions:")
+        );
     }
 
     #[test]
@@ -2770,7 +3048,10 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("pdf https://example.com/document.pdf");
         assert!(
-            state.pending_wry_actions.iter().any(|a| matches!(a, WryAction::Navigate(_))),
+            state
+                .pending_wry_actions
+                .iter()
+                .any(|a| matches!(a, WryAction::Navigate(_))),
             "pdf command should queue a Navigate action"
         );
         assert!(state.status_message.contains("Loading PDF"));
@@ -2796,7 +3077,10 @@ mod tests {
         state.handle_raw_command("pdf /nonexistent/path/file.pdf");
         // file:// URL should still be created (the file might not exist yet)
         assert!(
-            state.pending_wry_actions.iter().any(|a| matches!(a, WryAction::Navigate(_))),
+            state
+                .pending_wry_actions
+                .iter()
+                .any(|a| matches!(a, WryAction::Navigate(_))),
             "pdf command should queue Navigate even for nonexistent files"
         );
     }

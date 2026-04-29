@@ -31,7 +31,10 @@ fn fallback_config_dir() -> PathBuf {
     }
     #[cfg(target_os = "macos")]
     {
-        home_dir().join("Library").join("Application Support").join("Aileron")
+        home_dir()
+            .join("Library")
+            .join("Application Support")
+            .join("Aileron")
     }
     #[cfg(target_os = "linux")]
     {
@@ -50,7 +53,10 @@ fn fallback_data_dir() -> PathBuf {
     }
     #[cfg(target_os = "macos")]
     {
-        home_dir().join("Library").join("Application Support").join("Aileron")
+        home_dir()
+            .join("Library")
+            .join("Application Support")
+            .join("Aileron")
     }
     #[cfg(target_os = "linux")]
     {
@@ -65,7 +71,11 @@ fn fallback_data_dir() -> PathBuf {
 fn fallback_cache_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        home_dir().join("AppData").join("Local").join("Aileron").join("Cache")
+        home_dir()
+            .join("AppData")
+            .join("Local")
+            .join("Aileron")
+            .join("Cache")
     }
     #[cfg(target_os = "macos")]
     {

@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
-use tokio::sync::{broadcast, mpsc, Mutex as AsyncMutex};
+use tokio::sync::{Mutex as AsyncMutex, broadcast, mpsc};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{info, warn};
 
@@ -86,7 +86,8 @@ impl JsonRpcResponse {
             serde_json::json!({
                 "jsonrpc": "2.0",
                 "error": { "code": -32603, "message": "Failed to serialize response" }
-            }).to_string()
+            })
+            .to_string()
         })
     }
 }
@@ -259,7 +260,8 @@ impl ArpServer {
     /// Stop the ARP server.
     /// Note: For graceful shutdown, we'd need a shutdown channel (future work).
     pub fn stop(&self) {
-        self.running.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         info!(target: "arp", "ARP server stop requested");
     }
 
@@ -353,20 +355,15 @@ async fn handle_connection(
         let request: JsonRpcRequest = match serde_json::from_str(text) {
             Ok(r) => r,
             Err(e) => {
-                let response = JsonRpcResponse::error(
-                    None,
-                    ERR_PARSE_ERROR,
-                    &format!("Invalid JSON: {}", e),
-                );
+                let response =
+                    JsonRpcResponse::error(None, ERR_PARSE_ERROR, &format!("Invalid JSON: {}", e));
                 write.send(Message::text(response.to_json())).await?;
                 continue;
             }
         };
 
         // Handle authentication via client.info
-        if !authenticated
-            && request.method.as_deref() == Some("client.info")
-        {
+        if !authenticated && request.method.as_deref() == Some("client.info") {
             // Validate auth token if configured
             if let Some(ref _token) = config.token {
                 // Token would come via Authorization header in real impl
@@ -379,16 +376,15 @@ async fn handle_connection(
             }
             authenticated = true;
 
-            let response = JsonRpcResponse::success(
-                request.id.clone(),
-                serde_json::json!({ "status": "ok" }),
-            );
+            let response =
+                JsonRpcResponse::success(request.id.clone(), serde_json::json!({ "status": "ok" }));
             write.send(Message::text(response.to_json())).await?;
             continue;
         }
 
         // Dispatch authenticated requests
-        let response = dispatch_request(&request, &tabs_state, &quickmarks_state, &cmd_sender).await;
+        let response =
+            dispatch_request(&request, &tabs_state, &quickmarks_state, &cmd_sender).await;
         write.send(Message::text(response.to_json())).await?;
     }
 
@@ -453,18 +449,12 @@ async fn dispatch_request(
                 .map(String::from);
             send_cmd(ArpCommand::TabCreate { url })
         }
-        "tabs.navigate" => {
-            match parse_tab_url_params(&request.params) {
-                Ok((tab_id, url)) => send_cmd(ArpCommand::TabNavigate { tab_id, url }),
-                Err(msg) => {
-                    return JsonRpcResponse::error(
-                        request.id.clone(),
-                        ERR_INVALID_PARAMS,
-                        &msg,
-                    );
-                }
+        "tabs.navigate" => match parse_tab_url_params(&request.params) {
+            Ok((tab_id, url)) => send_cmd(ArpCommand::TabNavigate { tab_id, url }),
+            Err(msg) => {
+                return JsonRpcResponse::error(request.id.clone(), ERR_INVALID_PARAMS, &msg);
             }
-        }
+        },
         "tabs.close" => {
             let tab_id = request
                 .params
@@ -556,9 +546,7 @@ async fn dispatch_request(
         "clipboard.get" => {
             // Reading clipboard requires main thread access — send command,
             // result will be pushed back via notify("clipboard.contents", ...)
-            let req_id = request.id.as_ref()
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
+            let req_id = request.id.as_ref().and_then(|v| v.as_u64()).unwrap_or(0);
             send_cmd(ArpCommand::ClipboardGet { request_id: req_id })
         }
         "clipboard.set" => {
@@ -671,10 +659,7 @@ mod tests {
 
     #[test]
     fn test_json_rpc_notification() {
-        let msg = JsonRpcResponse::notification(
-            "tab.updated",
-            serde_json::json!({"id": 1}),
-        );
+        let msg = JsonRpcResponse::notification("tab.updated", serde_json::json!({"id": 1}));
         let parsed: serde_json::Value = serde_json::from_str(&msg).unwrap();
         assert_eq!(parsed["method"], "tab.updated");
         assert!(parsed.get("id").is_none()); // Notifications have no id
@@ -749,7 +734,9 @@ mod tests {
         assert_eq!(response.result.unwrap()["status"], "queued");
         // Verify command was actually sent
         let cmd = cmd_rx.try_recv().unwrap();
-        assert!(matches!(cmd, ArpCommand::TabCreate { url: Some(ref u) } if u == "https://example.com"));
+        assert!(
+            matches!(cmd, ArpCommand::TabCreate { url: Some(ref u) } if u == "https://example.com")
+        );
     }
 
     #[tokio::test]
@@ -767,7 +754,9 @@ mod tests {
         assert!(response.error.is_none());
         assert_eq!(response.result.unwrap()["status"], "queued");
         let cmd = cmd_rx.try_recv().unwrap();
-        assert!(matches!(cmd, ArpCommand::TabNavigate { url: ref u, .. } if u == "https://example.com"));
+        assert!(
+            matches!(cmd, ArpCommand::TabNavigate { url: ref u, .. } if u == "https://example.com")
+        );
     }
 
     #[tokio::test]

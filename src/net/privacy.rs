@@ -7,8 +7,7 @@ use tracing::{info, warn};
 const HTTPS_SAFE_LIST_URL: &str =
     "https://raw.githubusercontent.com/easylist/easylist/master/easylist_httpseasy.txt";
 
-const TRACKING_DOMAINS_URL: &str =
-    "https://raw.githubusercontent.com/disconnectme/disconnect-tracking-protection/master/services.json";
+const TRACKING_DOMAINS_URL: &str = "https://raw.githubusercontent.com/disconnectme/disconnect-tracking-protection/master/services.json";
 
 const DEFAULT_TRACKING_DOMAINS: &[&str] = &[
     "doubleclick.net",

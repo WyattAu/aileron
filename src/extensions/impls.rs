@@ -33,7 +33,7 @@ type UpdatedCallback = Box<dyn Fn(TabUpdateEvent) + Send + Sync>;
 type CreatedCallback = Box<dyn Fn(Tab) + Send + Sync>;
 type RemovedCallback = Box<dyn Fn(TabId, RemovalInfo) + Send + Sync>;
 type ActivatedCallback = Box<dyn Fn(ActiveInfo) + Send + Sync>;
-type StorageChangeCallback = Box<dyn Fn(StorageChanges, String) + Send + Sync>;
+type StorageChangeCallback = Arc<dyn Fn(StorageChanges, String) + Send + Sync>;
 type MessageCallback =
     Box<dyn Fn(RuntimeMessage, MessageSender) -> Option<RuntimeMessage> + Send + Sync>;
 type ConnectCallback = Box<dyn Fn(Box<dyn Port>) + Send + Sync>;
@@ -42,7 +42,8 @@ type StartupCallback = Box<dyn Fn() + Send + Sync>;
 
 // WebRequest handler types
 type BeforeRequestHandler = Box<dyn Fn(RequestDetails) -> BlockingResponse + Send + Sync>;
-type BeforeSendHeadersHandler = Box<dyn Fn(BeforeSendHeadersDetails) -> BlockingResponse + Send + Sync>;
+type BeforeSendHeadersHandler =
+    Box<dyn Fn(BeforeSendHeadersDetails) -> BlockingResponse + Send + Sync>;
 type HeadersReceivedHandler = Box<dyn Fn(HeadersReceivedDetails) -> BlockingResponse + Send + Sync>;
 type AuthRequiredHandler = Box<dyn Fn(AuthRequiredDetails) -> BlockingResponse + Send + Sync>;
 type BeforeRedirectHandler = Box<dyn Fn(RedirectDetails) + Send + Sync>;
@@ -97,9 +98,7 @@ impl TabsApi for AileronTabsApi {
         // Apply filters
         if let Some(active) = query.active {
             result.retain(|t| {
-                let is_active = active_id
-                    .as_ref()
-                    .is_some_and(|aid| aid.0 == t.id.0);
+                let is_active = active_id.as_ref().is_some_and(|aid| aid.0 == t.id.0);
                 is_active == active
             });
         }
@@ -131,7 +130,8 @@ impl TabsApi for AileronTabsApi {
             return Err(ExtensionError::Unsupported("tabs.create".into()));
         };
         let url = properties.url.unwrap_or_else(|| {
-            url::Url::parse("aileron://newtab").unwrap_or_else(|_| url::Url::parse("about:blank").unwrap())
+            url::Url::parse("aileron://newtab")
+                .unwrap_or_else(|_| url::Url::parse("about:blank").unwrap())
         });
         provider.create_tab(url)
     }
@@ -187,9 +187,7 @@ impl TabsApi for AileronTabsApi {
         _options: CaptureOptions,
     ) -> Result<Vec<u8>> {
         // Requires screenshot infrastructure — not yet wired
-        Err(ExtensionError::Unsupported(
-            "tabs.captureVisibleTab".into(),
-        ))
+        Err(ExtensionError::Unsupported("tabs.captureVisibleTab".into()))
     }
 
     fn on_updated(&self, callback: Box<dyn Fn(TabUpdateEvent) + Send + Sync>) {
@@ -315,11 +313,14 @@ impl AileronStorageArea {
         if changes.is_empty() {
             return;
         }
-        let callbacks = self
+        let callbacks: Vec<_> = self
             .change_callbacks
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        for cb in callbacks.iter() {
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .cloned()
+            .collect();
+        for cb in callbacks {
             cb(changes.clone(), area_name.clone());
         }
     }
@@ -419,7 +420,7 @@ impl StorageArea for AileronStorageArea {
         Ok(bytes as u64)
     }
 
-    fn on_changed(&self, callback: Box<dyn Fn(StorageChanges, String) + Send + Sync>) {
+    fn on_changed(&self, callback: Arc<dyn Fn(StorageChanges, String) + Send + Sync>) {
         self.change_callbacks
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -445,10 +446,7 @@ impl AileronStorageApi {
 
     /// Create a persistent storage API backed by JSON files.
     /// Files are stored under `storage_dir/<extension_id>/<area>.json`.
-    fn with_persistence(
-        storage_dir: std::path::PathBuf,
-        extension_id: &ExtensionId,
-    ) -> Self {
+    fn with_persistence(storage_dir: std::path::PathBuf, extension_id: &ExtensionId) -> Self {
         let ext_dir = storage_dir.join(&extension_id.0);
         Self {
             local: AileronStorageArea::with_persistence(ext_dir.join("local.json")),
@@ -500,26 +498,28 @@ impl AileronRuntimeApi {
         manifest: ExtensionManifest,
         message_bus: Arc<MessageBus>,
     ) -> Self {
-        let callbacks: Arc<Mutex<Vec<MessageCallback>>> =
-            Arc::new(Mutex::new(Vec::new()));
+        let callbacks: Arc<Mutex<Vec<MessageCallback>>> = Arc::new(Mutex::new(Vec::new()));
         let cb_clone = callbacks.clone();
 
         // Register a handler on the bus that invokes our stored callbacks
-        message_bus.register_handler(extension_id.clone(), Box::new(move |msg: RuntimeMessage| {
-            let cbs = cb_clone.lock().unwrap_or_else(|e| e.into_inner());
-            for cb in cbs.iter() {
-                let sender = crate::extensions::runtime::MessageSender {
-                    tab_id: None,
-                    frame_id: None,
-                    url: None,
-                    extension_id: None,
-                };
-                if let Some(response) = cb(msg.clone(), sender) {
-                    return Some(response);
+        message_bus.register_handler(
+            extension_id.clone(),
+            Box::new(move |msg: RuntimeMessage| {
+                let cbs = cb_clone.lock().unwrap_or_else(|e| e.into_inner());
+                for cb in cbs.iter() {
+                    let sender = crate::extensions::runtime::MessageSender {
+                        tab_id: None,
+                        frame_id: None,
+                        url: None,
+                        extension_id: None,
+                    };
+                    if let Some(response) = cb(msg.clone(), sender) {
+                        return Some(response);
+                    }
                 }
-            }
-            None
-        }));
+                None
+            }),
+        );
 
         Self {
             extension_id,
@@ -598,9 +598,7 @@ impl RuntimeApi for AileronRuntimeApi {
 
     fn connect(&self, connect_info: ConnectInfo) -> Result<Box<dyn Port>> {
         let name = connect_info.name.unwrap_or_default();
-        let port: Box<dyn Port> = Box::new(
-            crate::extensions::message_bus::LocalPort::new(&name),
-        );
+        let port: Box<dyn Port> = Box::new(crate::extensions::message_bus::LocalPort::new(&name));
         Ok(port)
     }
 
@@ -669,10 +667,8 @@ impl RuntimeApi for AileronRuntimeApi {
 
 struct AileronWebRequestApi {
     before_request_handlers: Mutex<Vec<(ListenerId, RequestFilter, BeforeRequestHandler)>>,
-    before_send_headers_handlers:
-        Mutex<Vec<(ListenerId, RequestFilter, BeforeSendHeadersHandler)>>,
-    headers_received_handlers:
-        Mutex<Vec<(ListenerId, RequestFilter, HeadersReceivedHandler)>>,
+    before_send_headers_handlers: Mutex<Vec<(ListenerId, RequestFilter, BeforeSendHeadersHandler)>>,
+    headers_received_handlers: Mutex<Vec<(ListenerId, RequestFilter, HeadersReceivedHandler)>>,
     auth_required_handlers: Mutex<Vec<(ListenerId, RequestFilter, AuthRequiredHandler)>>,
     before_redirect_handlers: Mutex<Vec<(ListenerId, RequestFilter, BeforeRedirectHandler)>>,
     completed_handlers: Mutex<Vec<(ListenerId, RequestFilter, CompletedHandler)>>,
@@ -942,11 +938,7 @@ impl WebRequestApi for AileronWebRequestApi {
         id
     }
 
-    fn on_auth_required(
-        &self,
-        filter: RequestFilter,
-        handler: AuthRequiredHandler,
-    ) -> ListenerId {
+    fn on_auth_required(&self, filter: RequestFilter, handler: AuthRequiredHandler) -> ListenerId {
         let id = next_listener_id();
         tracing::info!(
             target: "extensions",
@@ -973,11 +965,7 @@ impl WebRequestApi for AileronWebRequestApi {
         id
     }
 
-    fn on_completed(
-        &self,
-        filter: RequestFilter,
-        callback: CompletedHandler,
-    ) -> ListenerId {
+    fn on_completed(&self, filter: RequestFilter, callback: CompletedHandler) -> ListenerId {
         let id = next_listener_id();
         self.completed_handlers
             .lock()
@@ -1283,15 +1271,12 @@ impl AileronExtensionApi {
             None => AileronTabsApi::new(),
         };
         let runtime_api = match message_bus {
-            Some(bus) => AileronRuntimeApi::with_message_bus(
-                extension_id.clone(),
-                manifest.clone(),
-                bus,
-            ),
+            Some(bus) => {
+                AileronRuntimeApi::with_message_bus(extension_id.clone(), manifest.clone(), bus)
+            }
             None => AileronRuntimeApi::new(extension_id.clone(), manifest.clone()),
         };
-        let granted_permissions =
-            permissions::parse_permissions(&manifest.permissions);
+        let granted_permissions = permissions::parse_permissions(&manifest.permissions);
         let granted_host_permissions = manifest.host_permissions.clone();
         Self {
             tabs_api,
@@ -1332,7 +1317,11 @@ impl AileronExtensionApi {
 
     /// Check if a URL matches any of the extension's granted host permissions.
     pub fn has_host_permission(&self, url: &str) -> bool {
-        if self.granted_host_permissions.iter().any(|p| p == "<all_urls>") {
+        if self
+            .granted_host_permissions
+            .iter()
+            .any(|p| p == "<all_urls>")
+        {
             return true;
         }
         self.granted_host_permissions
@@ -1362,10 +1351,7 @@ impl AileronExtensionApi {
     }
 
     /// Set the background script (called during extension loading).
-    pub fn set_background_script(
-        &mut self,
-        script: crate::extensions::types::BackgroundScript,
-    ) {
+    pub fn set_background_script(&mut self, script: crate::extensions::types::BackgroundScript) {
         self.background_script = Some(script);
     }
 
@@ -1663,9 +1649,17 @@ mod tests {
 
         {
             let api = make_persistent_api(&dir);
-            let local = api.storage().local().get(StorageGetKeys::Single("key".into())).unwrap();
+            let local = api
+                .storage()
+                .local()
+                .get(StorageGetKeys::Single("key".into()))
+                .unwrap();
             assert_eq!(local.get("key").unwrap(), &serde_json::json!("local_value"));
-            let sync = api.storage().sync().get(StorageGetKeys::Single("key".into())).unwrap();
+            let sync = api
+                .storage()
+                .sync()
+                .get(StorageGetKeys::Single("key".into()))
+                .unwrap();
             assert_eq!(sync.get("key").unwrap(), &serde_json::json!("sync_value"));
         }
 
@@ -1694,14 +1688,16 @@ mod tests {
     #[test]
     fn test_storage_change_callback_fired_on_set() {
         let api = make_api();
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
         let call_count = Arc::new(AtomicUsize::new(0));
         let count_clone = call_count.clone();
 
-        api.storage().local().on_changed(Box::new(move |_changes, _area| {
-            count_clone.fetch_add(1, Ordering::Relaxed);
-        }));
+        api.storage()
+            .local()
+            .on_changed(Arc::new(move |_changes, _area| {
+                count_clone.fetch_add(1, Ordering::Relaxed);
+            }));
 
         let mut items = HashMap::new();
         items.insert("key".into(), serde_json::json!("value"));
@@ -1713,14 +1709,16 @@ mod tests {
     #[test]
     fn test_storage_change_callback_fired_on_remove() {
         let api = make_api();
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
         let call_count = Arc::new(AtomicUsize::new(0));
         let count_clone = call_count.clone();
 
-        api.storage().local().on_changed(Box::new(move |_changes, _area| {
-            count_clone.fetch_add(1, Ordering::Relaxed);
-        }));
+        api.storage()
+            .local()
+            .on_changed(Arc::new(move |_changes, _area| {
+                count_clone.fetch_add(1, Ordering::Relaxed);
+            }));
 
         let mut items = HashMap::new();
         items.insert("key".into(), serde_json::json!("value"));
@@ -1733,14 +1731,16 @@ mod tests {
     #[test]
     fn test_storage_change_callback_not_fired_on_clear_empty() {
         let api = make_api();
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
         let call_count = Arc::new(AtomicUsize::new(0));
         let count_clone = call_count.clone();
 
-        api.storage().local().on_changed(Box::new(move |_changes, _area| {
-            count_clone.fetch_add(1, Ordering::Relaxed);
-        }));
+        api.storage()
+            .local()
+            .on_changed(Arc::new(move |_changes, _area| {
+                count_clone.fetch_add(1, Ordering::Relaxed);
+            }));
 
         // Clear empty storage — no callback should fire
         api.storage().local().clear().unwrap();

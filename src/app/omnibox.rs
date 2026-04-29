@@ -23,7 +23,8 @@ impl AppState {
 
         self.last_omnibox_query = query.to_string();
 
-        let looks_like_url = query.contains("://") || query.starts_with("aileron://")
+        let looks_like_url = query.contains("://")
+            || query.starts_with("aileron://")
             || (query.contains('.') && !query.contains(' '));
 
         let mut scored: Vec<ScoredResult> = Vec::new();
@@ -45,7 +46,9 @@ impl AppState {
                 score: 1000.0,
             });
         } else {
-            let search_url = self.config.search_url(query)
+            let search_url = self
+                .config
+                .search_url(query)
                 .map(|u| u.to_string())
                 .unwrap_or_default();
             scored.push(ScoredResult {
@@ -65,7 +68,10 @@ impl AppState {
             let mut open_tab_entries: Vec<(String, String)> = Vec::new();
             for pane_id in &pane_ids {
                 if let Some(state) = self.engines.get(pane_id) {
-                    let url_str = state.current_url().map(|u| u.to_string()).unwrap_or_default();
+                    let url_str = state
+                        .current_url()
+                        .map(|u| u.to_string())
+                        .unwrap_or_default();
                     let title = state.title().to_string();
                     if !url_str.is_empty() {
                         open_tab_entries.push((url_str, title));
@@ -130,14 +136,14 @@ impl AppState {
         });
 
         // Sort by score descending
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Extract items, cap at 10
-        self.omnibox_results = scored
-            .into_iter()
-            .take(10)
-            .map(|s| s.item)
-            .collect();
+        self.omnibox_results = scored.into_iter().take(10).map(|s| s.item).collect();
     }
 
     pub fn handle_omnibox_select(&mut self, index: usize) {
@@ -170,14 +176,12 @@ impl AppState {
                 // Switch to the already-open tab instead of navigating
                 let url_str = url.to_string();
                 let switched = self.wm.pane_ids().iter().any(|pane_id| {
-                    self.engines.get(pane_id)
-                        .is_some_and(|state| {
-                            state.current_url().map(|u| u.to_string()).as_deref() == Some(&url_str)
-                            && {
-                                self.wm.set_active_pane(*pane_id);
-                                true
-                            }
-                        })
+                    self.engines.get(pane_id).is_some_and(|state| {
+                        state.current_url().map(|u| u.to_string()).as_deref() == Some(&url_str) && {
+                            self.wm.set_active_pane(*pane_id);
+                            true
+                        }
+                    })
                 });
                 if !switched {
                     self.navigate_with_redirects(parsed);
@@ -295,7 +299,8 @@ mod tests {
                 state.db.as_ref().unwrap(),
                 &format!("https://test{}.com", i),
                 &format!("Test Bookmark {}", i),
-            ).ok();
+            )
+            .ok();
         }
         state.update_omnibox("test");
         assert!(state.omnibox_results.len() <= 11); // 1 nav + max 10 others

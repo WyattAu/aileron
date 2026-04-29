@@ -138,13 +138,7 @@ impl GfxState {
             },
         );
 
-        let egui_renderer = egui_wgpu::Renderer::new(
-            &device,
-            surface_format,
-            None,
-            1,
-            false,
-        );
+        let egui_renderer = egui_wgpu::Renderer::new(&device, surface_format, None, 1, false);
 
         info!("Graphics initialized (format: {:?})", surface_format);
 

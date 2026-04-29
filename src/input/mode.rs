@@ -139,15 +139,17 @@ mod tests {
     #[test]
     fn test_initial_mode_is_none() {
         // transition returns None when no transition should happen
-        assert!(transition(
-            Mode::Normal,
-            &KeyEvent {
-                key: Key::Character('j'),
-                modifiers: Modifiers::none(),
-                physical_key: None
-            }
-        )
-        .is_none());
+        assert!(
+            transition(
+                Mode::Normal,
+                &KeyEvent {
+                    key: Key::Character('j'),
+                    modifiers: Modifiers::none(),
+                    physical_key: None
+                }
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -239,15 +241,17 @@ mod tests {
 
     #[test]
     fn test_insert_mode_no_transition_on_j() {
-        assert!(transition(
-            Mode::Insert,
-            &KeyEvent {
-                key: Key::Character('j'),
-                modifiers: Modifiers::none(),
-                physical_key: None
-            }
-        )
-        .is_none());
+        assert!(
+            transition(
+                Mode::Insert,
+                &KeyEvent {
+                    key: Key::Character('j'),
+                    modifiers: Modifiers::none(),
+                    physical_key: None
+                }
+            )
+            .is_none()
+        );
     }
 
     #[test]

@@ -321,9 +321,11 @@ mod tests {
         let sm = SyncManager::new(tempfile::tempdir().unwrap().path().to_path_buf());
         let actions = sm.compute_delta(&remote);
 
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, DeltaAction::Download(p) if p == "new.txt")));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, DeltaAction::Download(p) if p == "new.txt"))
+        );
     }
 
     #[test]
@@ -345,9 +347,11 @@ mod tests {
         sm.update_manifest(local);
         let actions = sm.compute_delta(&remote);
 
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, DeltaAction::DeleteLocal(p) if p == "old.txt")));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, DeltaAction::DeleteLocal(p) if p == "old.txt"))
+        );
     }
 
     #[test]

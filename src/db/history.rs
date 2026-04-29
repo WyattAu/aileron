@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -69,7 +69,11 @@ pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Histor
 /// Search history with frecency ranking.
 /// Score = visit_count / log2(age_in_hours + 2).
 /// Returns entries sorted by frecency score (highest first).
-pub fn search_frecency(conn: &Connection, query: &str, limit: usize) -> Result<Vec<(HistoryEntry, f64)>> {
+pub fn search_frecency(
+    conn: &Connection,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<(HistoryEntry, f64)>> {
     // Fetch more candidates than needed, then rank and truncate
     let pattern = format!("%{}%", query);
     let candidate_limit = (limit * 5).max(50);
@@ -95,10 +99,11 @@ pub fn search_frecency(conn: &Connection, query: &str, limit: usize) -> Result<V
         .into_iter()
         .map(|entry| {
             // Parse visited_at as datetime and compute age in hours
-            let age_hours = chrono::DateTime::parse_from_rfc3339(&format!("{}T00:00:00Z", entry.visited_at))
-                .ok()
-                .map(|dt| (now_ts - dt.timestamp()).max(1) as f64 / 3600.0)
-                .unwrap_or(720.0); // default 30 days if parsing fails
+            let age_hours =
+                chrono::DateTime::parse_from_rfc3339(&format!("{}T00:00:00Z", entry.visited_at))
+                    .ok()
+                    .map(|dt| (now_ts - dt.timestamp()).max(1) as f64 / 3600.0)
+                    .unwrap_or(720.0); // default 30 days if parsing fails
             let visit_count = entry.visit_count.max(1) as f64;
             let frecency = visit_count / (age_hours + 2.0).log2().max(1.0);
             (entry, frecency)

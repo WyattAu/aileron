@@ -6,11 +6,24 @@ use crate::config::Config;
 const VALID_TAB_LAYOUTS: &[&str] = &["sidebar", "topbar", "bottom", "sidebar-right", "none"];
 const VALID_RENDER_MODES: &[&str] = &["native", "offscreen"];
 const SETTABLE_KEYS: &[&str] = &[
-    "theme", "homepage", "search_engine", "tab_layout",
-    "adblock", "popup_blocker", "tracking_protection",
-    "auto_save", "render_mode", "language",
-    "https_upgrade", "devtools", "sidebar_width", "sidebar_right",
-    "cosmetic_filtering", "adaptive_quality", "sync_encrypted", "sync_auto",
+    "theme",
+    "homepage",
+    "search_engine",
+    "tab_layout",
+    "adblock",
+    "popup_blocker",
+    "tracking_protection",
+    "auto_save",
+    "render_mode",
+    "language",
+    "https_upgrade",
+    "devtools",
+    "sidebar_width",
+    "sidebar_right",
+    "cosmetic_filtering",
+    "adaptive_quality",
+    "sync_encrypted",
+    "sync_auto",
 ];
 
 /// Parse a boolean-like value from a string.
@@ -59,11 +72,10 @@ pub fn apply_set_setting(config: &mut Config, key: &str, value: &str) -> String 
     }
 
     let msg = apply_set_value(config, key, value);
-    let is_error = msg.contains("Unknown setting") || msg.contains("Invalid") || msg.contains("must be");
+    let is_error =
+        msg.contains("Unknown setting") || msg.contains("Invalid") || msg.contains("must be");
 
-    if !is_error
-        && let Err(e) = Config::save(config)
-    {
+    if !is_error && let Err(e) = Config::save(config) {
         tracing::warn!("Failed to save config after :set {}: {}", key, e);
     }
 
@@ -106,7 +118,10 @@ fn apply_set_value(config: &mut Config, key: &str, value: &str) -> String {
         }
         "tracking_protection" => {
             config.tracking_protection_enabled = parse_bool_value(value);
-            format!("tracking_protection = {}", config.tracking_protection_enabled)
+            format!(
+                "tracking_protection = {}",
+                config.tracking_protection_enabled
+            )
         }
         "auto_save" => {
             config.auto_save = parse_bool_value(value);

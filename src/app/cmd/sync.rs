@@ -2,10 +2,7 @@
 //! Free functions that return status messages, keeping commands.rs focused on dispatch.
 
 /// Execute a sync push to the configured target.
-pub fn execute_sync_push(
-    sync_target: &str,
-    sync_encrypted: bool,
-) -> String {
+pub fn execute_sync_push(sync_target: &str, sync_encrypted: bool) -> String {
     if sync_target.is_empty() {
         return "No sync target set. Use :sync-target <target>".into();
     }
@@ -32,12 +29,7 @@ pub fn execute_sync_push(
     match crate::sync::transport::push(sm.local_dir(), &staging, &target, sync_encrypted) {
         Ok(n) => {
             let _ = sm.save_manifest();
-            format!(
-                "Synced {} {}files to {}",
-                n,
-                prefix,
-                target.display()
-            )
+            format!("Synced {} {}files to {}", n, prefix, target.display())
         }
         Err(e) => {
             format!("Sync push failed: {}", e)
@@ -46,10 +38,7 @@ pub fn execute_sync_push(
 }
 
 /// Execute a sync pull from the configured target.
-pub fn execute_sync_pull(
-    sync_target: &str,
-    sync_encrypted: bool,
-) -> String {
+pub fn execute_sync_pull(sync_target: &str, sync_encrypted: bool) -> String {
     if sync_target.is_empty() {
         return "No sync target set. Use :sync-target <target>".into();
     }
@@ -69,11 +58,7 @@ pub fn execute_sync_pull(
 
     match crate::sync::transport::pull(sm.local_dir(), &staging, &target, sync_encrypted) {
         Ok(n) => {
-            format!(
-                "Pulled {} files from {}",
-                n,
-                target.display()
-            )
+            format!("Pulled {} files from {}", n, target.display())
         }
         Err(e) => {
             format!("Sync pull failed: {}", e)
@@ -96,16 +81,21 @@ pub fn execute_sync_status(
     let parts = [
         format!("target: {}", sync_target),
         format!("encrypted: {}", sync_encrypted),
-        format!("watcher: {}", if watcher_running { "running" } else { "stopped" }),
+        format!(
+            "watcher: {}",
+            if watcher_running {
+                "running"
+            } else {
+                "stopped"
+            }
+        ),
         format!("files: {}", manifest.files.len()),
     ];
     format!("Sync: {}", parts.join(" | "))
 }
 
 /// Start the sync file watcher.
-pub fn execute_sync_watch(
-    sync_target: &str,
-) -> Result<(), String> {
+pub fn execute_sync_watch(sync_target: &str) -> Result<(), String> {
     if sync_target.is_empty() {
         return Err("No sync target set. Use :sync-target <target>".into());
     }

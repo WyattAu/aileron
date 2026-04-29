@@ -627,11 +627,12 @@ mod tests {
         assert_eq!(list.network_filters.len(), 1);
         let f = &list.network_filters[0];
         assert!(f.third_party_only);
-        assert!(f
-            .resource_types
-            .as_ref()
-            .unwrap()
-            .contains(&ResourceType::Script));
+        assert!(
+            f.resource_types
+                .as_ref()
+                .unwrap()
+                .contains(&ResourceType::Script)
+        );
         assert_eq!(f.csp.as_deref(), Some("default-src 'none'"));
     }
 
@@ -688,11 +689,12 @@ mod tests {
         let f = &list.network_filters[0];
         assert!(f.badfilter);
         assert!(f.third_party_only);
-        assert!(f
-            .resource_types
-            .as_ref()
-            .unwrap()
-            .contains(&ResourceType::Script));
+        assert!(
+            f.resource_types
+                .as_ref()
+                .unwrap()
+                .contains(&ResourceType::Script)
+        );
     }
 
     #[test]
@@ -702,10 +704,11 @@ mod tests {
         assert_eq!(list.network_filters.len(), 1);
         let f = &list.network_filters[0];
         assert!(f.important);
-        assert!(f
-            .resource_types
-            .as_ref()
-            .unwrap()
-            .contains(&ResourceType::Image));
+        assert!(
+            f.resource_types
+                .as_ref()
+                .unwrap()
+                .contains(&ResourceType::Image)
+        );
     }
 }

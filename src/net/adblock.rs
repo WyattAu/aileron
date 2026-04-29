@@ -2,9 +2,7 @@ use std::collections::{HashMap, HashSet};
 use tracing::info;
 use url::Url;
 
-use crate::net::filter_list::{
-    CosmeticFilter, FilterList, NetworkFilter,
-};
+use crate::net::filter_list::{CosmeticFilter, FilterList, NetworkFilter};
 
 pub struct AdBlocker {
     blocked_domains: HashSet<String>,
@@ -137,7 +135,9 @@ impl AdBlocker {
                 if let Some(selector) = line.split("##").nth(1)
                     && !selector.is_empty()
                 {
-                    let Some(pos) = line.find("##") else { continue; };
+                    let Some(pos) = line.find("##") else {
+                        continue;
+                    };
                     let domain_part = &line[..pos];
                     let rule = format!("{} {{ display: none !important; }}", selector);
                     if !domain_part.is_empty() {
@@ -247,8 +247,9 @@ impl AdBlocker {
         for filter in &self.network_filters {
             if filter.is_exception
                 && !filter.badfilter
-                && self.pattern_matches_url(filter, &url_str, &host) {
-                    return false;
+                && self.pattern_matches_url(filter, &url_str, &host)
+            {
+                return false;
             }
         }
 
@@ -288,8 +289,9 @@ impl AdBlocker {
             }
 
             if let Some(ref domains) = filter.domain_specific
-                && !self.host_matches_domain(&host, domains) {
-                    continue;
+                && !self.host_matches_domain(&host, domains)
+            {
+                continue;
             }
 
             self.blocked_count += 1;
@@ -360,18 +362,16 @@ impl AdBlocker {
         rules.extend(self.cosmetic_rules.iter().cloned());
 
         for (filter_domain, filter_rules) in &self.domain_cosmetic_rules {
-            if domain == filter_domain
-                || domain.ends_with(&format!(".{}", filter_domain))
-            {
+            if domain == filter_domain || domain.ends_with(&format!(".{}", filter_domain)) {
                 rules.extend(filter_rules.iter().cloned());
             }
         }
 
         for filter in &self.cosmetic_filters {
             if let Some(ref domains) = filter.domains {
-                let matches = domains.iter().any(|d| {
-                    domain == d || domain.ends_with(&format!(".{}", d))
-                });
+                let matches = domains
+                    .iter()
+                    .any(|d| domain == d || domain.ends_with(&format!(".{}", d)));
                 if matches {
                     rules.push(format!(
                         "{} {{ display: none !important; }}",
@@ -395,7 +395,10 @@ impl AdBlocker {
             return None;
         }
 
-        let escaped = css.replace('\\', "\\\\").replace('`', "\\`").replace('$', "\\$");
+        let escaped = css
+            .replace('\\', "\\\\")
+            .replace('`', "\\`")
+            .replace('$', "\\$");
 
         Some(format!(
             "(function() {{ \
@@ -410,7 +413,8 @@ impl AdBlocker {
         ))
     }
 
-    const STUB_GIF: &'static str = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///wAAACH5BAEKAAEALAAAAAABAAEAAAIBRAA7";
+    const STUB_GIF: &'static str =
+        "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///wAAACH5BAEKAAEALAAAAAABAAEAAAIBRAA7";
 
     /// Get the redirect URL for a matched filter rule.
     pub fn get_redirect_url(&self, url: &Url) -> Option<String> {
@@ -454,9 +458,7 @@ impl AdBlocker {
     }
 
     pub fn network_filter_count(&self) -> usize {
-        self.blocked_domains.len()
-            + self.blocked_patterns.len()
-            + self.network_filters.len()
+        self.blocked_domains.len() + self.blocked_patterns.len() + self.network_filters.len()
     }
 
     pub fn cosmetic_filter_count(&self) -> usize {
@@ -468,8 +470,9 @@ impl AdBlocker {
 
         for filter in &self.network_filters {
             if !filter.is_exception
-                && let Some(domain) = Self::extract_domain_from_pattern(&filter.pattern) {
-                    domains.insert(domain);
+                && let Some(domain) = Self::extract_domain_from_pattern(&filter.pattern)
+            {
+                domains.insert(domain);
             }
         }
 
@@ -491,11 +494,7 @@ impl AdBlocker {
 
         self.network_filters
             .iter()
-            .filter(|f| {
-                f.csp.is_some()
-                    && !f.is_exception
-                    && self.pattern_matches_host(f, &domain)
-            })
+            .filter(|f| f.csp.is_some() && !f.is_exception && self.pattern_matches_host(f, &domain))
             .filter_map(|f| f.csp.clone())
             .collect()
     }
@@ -694,7 +693,8 @@ mod tests {
     #[test]
     fn test_cosmetic_css_for_domain() {
         let mut blocker = AdBlocker::new();
-        let list = FilterList::parse("example.com##.ad-slot\ngeneric.com##.sidebar-ad\n##.global-ad");
+        let list =
+            FilterList::parse("example.com##.ad-slot\ngeneric.com##.sidebar-ad\n##.global-ad");
         blocker.load_from_filter_lists(&[list]);
 
         let css = blocker.cosmetic_css_for_domain("example.com");
@@ -809,10 +809,7 @@ mod tests {
             AdBlocker::extract_domain_from_pattern("||example.com/path"),
             Some("example.com".to_string())
         );
-        assert_eq!(
-            AdBlocker::extract_domain_from_pattern("not_a_domain"),
-            None
-        );
+        assert_eq!(AdBlocker::extract_domain_from_pattern("not_a_domain"), None);
     }
 
     #[test]
@@ -977,7 +974,8 @@ mod tests {
     #[test]
     fn test_exception_filter_whitelists_matching_url() {
         let mut blocker = AdBlocker::new();
-        let list = FilterList::parse("||ads.example.com^$third-party\n@@||ads.example.com^$third-party");
+        let list =
+            FilterList::parse("||ads.example.com^$third-party\n@@||ads.example.com^$third-party");
         blocker.load_from_filter_lists(&[list]);
 
         let url = Url::parse("https://ads.example.com/banner.js").unwrap();

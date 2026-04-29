@@ -2,9 +2,9 @@ use crate::app::{AppState, WryAction};
 use crate::git::GitStatus;
 use crate::input::Mode;
 use crate::servo::WryPaneManager;
+use crate::terminal::NativeTerminalManager;
 use crate::terminal::grid::{CellMetrics, TerminalColors};
 use crate::terminal::render::render_terminal;
-use crate::terminal::NativeTerminalManager;
 use crate::ui::search::SearchCategory;
 use egui::{WidgetInfo, WidgetType};
 
@@ -110,12 +110,12 @@ pub fn build_ui(
                     .widget_info(|| a11y_info(WidgetType::Label, format!("Panes: {}", pane_count)));
 
                 // Private mode indicator
-                if app_state.private_pane_ids.contains(&app_state.wm.active_pane_id()) {
+                if app_state
+                    .private_pane_ids
+                    .contains(&app_state.wm.active_pane_id())
+                {
                     ui.separator();
-                    ui.colored_label(
-                        egui::Color32::from_rgb(255, 100, 100),
-                        "[PRIVATE]",
-                    );
+                    ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "[PRIVATE]");
                 }
 
                 if app_state.current_workspace_name != "default" {
@@ -125,7 +125,12 @@ pub fn build_ui(
                         egui::Color32::from_rgb(180, 180, 255),
                         format!("[{}]", ws_name),
                     )
-                    .widget_info(|| a11y_info(WidgetType::Label, format!("Workspace: {}", app_state.current_workspace_name)));
+                    .widget_info(|| {
+                        a11y_info(
+                            WidgetType::Label,
+                            format!("Workspace: {}", app_state.current_workspace_name),
+                        )
+                    });
                 }
 
                 if app_state.adblock_blocked_count > 0 {
@@ -200,33 +205,36 @@ pub fn build_ui(
                 // Show zoom level if non-default
                 if let Some(zoom) = app_state.site_settings_zoom
                     && (zoom - 1.0).abs() > 0.01
-                 {
-                         let pct = (zoom * 100.0).round() as u32;
-                         let zoom_text = format!("{}%", pct);
-                         ui.colored_label(
-                             egui::Color32::from_rgb(180, 180, 100),
-                             zoom_text,
-                         );
-                         ui.separator();
-                 }
+                {
+                    let pct = (zoom * 100.0).round() as u32;
+                    let zoom_text = format!("{}%", pct);
+                    ui.colored_label(egui::Color32::from_rgb(180, 180, 100), zoom_text);
+                    ui.separator();
+                }
 
-                 // Show download progress if any active downloads
+                // Show download progress if any active downloads
                 if app_state.download_manager.has_active() {
                     let progress = app_state.download_manager.progress_all();
                     let active: Vec<_> = progress
                         .iter()
-                        .filter(|p| matches!(p.state, crate::downloads::DownloadState::Downloading) && p.fraction < 1.0)
+                        .filter(|p| {
+                            matches!(p.state, crate::downloads::DownloadState::Downloading)
+                                && p.fraction < 1.0
+                        })
                         .take(2)
                         .collect();
                     if let Some(dl) = active.first() {
                         let dl_text = format!(
                             "DL {:.0}% ({}/s)",
                             dl.fraction * 100.0,
-                            crate::downloads::DownloadProgress::format_bytes(dl.speed_bytes_per_sec as u64),
+                            crate::downloads::DownloadProgress::format_bytes(
+                                dl.speed_bytes_per_sec as u64
+                            ),
                         );
                         let dl_color = egui::Color32::from_rgb(100, 200, 100);
-                        ui.colored_label(dl_color, &dl_text)
-                            .widget_info(|| a11y_info(WidgetType::Label, format!("Download: {}", dl_text)));
+                        ui.colored_label(dl_color, &dl_text).widget_info(|| {
+                            a11y_info(WidgetType::Label, format!("Download: {}", dl_text))
+                        });
                     }
                     ui.separator();
                 }
@@ -238,7 +246,10 @@ pub fn build_ui(
                         "[autofill available]",
                     );
                     autofill_resp.widget_info(|| {
-                        a11y_info(WidgetType::Label, "Auto-fill credentials available - click to fill")
+                        a11y_info(
+                            WidgetType::Label,
+                            "Auto-fill credentials available - click to fill",
+                        )
                     });
                     if autofill_resp.clicked()
                         && let Some(js) = app_state.autofill_js.take()
@@ -336,113 +347,137 @@ pub fn build_ui(
                                     app_state.omnibox_results.clear();
                                     app_state.last_omnibox_query.clear();
                                 }
-                    });
-            });
-    }
-
-    // Help panel overlay
-    if app_state.help_panel_open {
-        let help_sections: &[(&str, &[(&str, &str)])] = &[
-            ("Navigation", &[
-                ("j / k", "Scroll down / up"),
-                ("Ctrl+D / Ctrl+U", "Half page down / up"),
-                ("Ctrl+F", "Find in page"),
-                ("G / gg", "Scroll to bottom / top"),
-                ("H / L", "Go back / forward"),
-                ("f", "Toggle link hints"),
-                ("r", "Reload page"),
-                ("m' / 'a", "Set / jump to scroll mark"),
-            ]),
-            ("Panes & Tabs", &[
-                ("Ctrl+W / Ctrl+S", "Split vertical / horizontal"),
-                ("Ctrl+H/J/K/L", "Navigate panes"),
-                ("q", "Close pane"),
-                ("w", "Close all panes except current"),
-                ("Ctrl+Shift+D", "Detach pane to popup"),
-                ("Ctrl+Shift+P", "Pin / unpin pane"),
-                (":tab-restore", "Reopen closed tab"),
-                (":tabs", "Search open tabs"),
-            ]),
-            ("Modes", &[
-                ("i", "Enter Insert mode"),
-                ("Esc", "Return to Normal mode"),
-                ("Ctrl+P", "Open command palette"),
-                (":help", "Show this help panel"),
-            ]),
-            ("URL & Search", &[
-                ("o <url>", "Open URL"),
-                ("O <url>", "Open in new tab"),
-                ("y", "Copy URL to clipboard"),
-                ("Ctrl+E", "Open in system browser"),
-                (":engine <name>", "Switch search engine"),
-                ("a-s / a-S", "Save / search quickmark"),
-            ]),
-            ("Privacy & Security", &[
-                ("Ctrl+B", "Toggle bookmark"),
-                (":bookmarks", "View bookmarks"),
-                (":adblock-toggle", "Toggle ad block"),
-                (":privacy", "Privacy dashboard"),
-                (":cookies", "View cookies"),
-                (":site-settings", "Per-site settings"),
-            ]),
-            ("Terminal", &[
-                ("`", "Open terminal pane"),
-                (":ssh <host>", "SSH quick-connect"),
-                (":terminal-clear", "Clear terminal"),
-                (":terminal-search", "Search scrollback"),
-                (":! <cmd>", "Run shell command"),
-            ]),
-            ("Developer", &[
-                ("F12", "Toggle dev tools"),
-                ("Ctrl+Shift+N", "Network log"),
-                ("Ctrl+Shift+J", "Console log"),
-                (":inspect", "WebKit inspector"),
-                (":gs / :gl / :gd", "Git status / log / diff"),
-                (":grep <pat>", "Search project (ripgrep)"),
-            ]),
-            ("Sessions", &[
-                (":ws-save <name>", "Save workspace"),
-                (":ws-load <name>", "Load workspace"),
-                (":ws-list", "List workspaces"),
-                (":layout-save <n>", "Save layout"),
-                (":layout-load <n>", "Load layout"),
-            ]),
-        ];
-
-        egui::Window::new("Help")
-            .default_width(640.0)
-            .default_height(520.0)
-            .resizable(true)
-            .collapsible(false)
-            .frame(egui::Frame::new().fill(bg))
-            .pivot(egui::Align2::CENTER_CENTER)
-            .default_pos(ctx.screen_rect().center())
-            .show(ctx, |ui| {
-                ui.strong("Aileron Keybindings");
-                ui.label("Press Esc or ? to close");
-                ui.separator();
-
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    for (section, bindings) in help_sections {
-                        ui.collapsing(*section, |ui| {
-                            egui::Grid::new(format!("help_grid_{section}"))
-                                .num_columns(2)
-                                .striped(true)
-                                .min_col_width(140.0)
-                                .show(ui, |ui| {
-                                    for (key, desc) in *bindings {
-                                        ui.label(
-                                            egui::RichText::new(*key).color(accent),
-                                        );
-                                        ui.label(*desc);
-                                        ui.end_row();
-                                    }
-                                });
+                            });
                         });
-                    }
-                });
-            });
-    }
+                }
+
+                // Help panel overlay
+                if app_state.help_panel_open {
+                    let help_sections: &[(&str, &[(&str, &str)])] = &[
+                        (
+                            "Navigation",
+                            &[
+                                ("j / k", "Scroll down / up"),
+                                ("Ctrl+D / Ctrl+U", "Half page down / up"),
+                                ("Ctrl+F", "Find in page"),
+                                ("G / gg", "Scroll to bottom / top"),
+                                ("H / L", "Go back / forward"),
+                                ("f", "Toggle link hints"),
+                                ("r", "Reload page"),
+                                ("m' / 'a", "Set / jump to scroll mark"),
+                            ],
+                        ),
+                        (
+                            "Panes & Tabs",
+                            &[
+                                ("Ctrl+W / Ctrl+S", "Split vertical / horizontal"),
+                                ("Ctrl+H/J/K/L", "Navigate panes"),
+                                ("q", "Close pane"),
+                                ("w", "Close all panes except current"),
+                                ("Ctrl+Shift+D", "Detach pane to popup"),
+                                ("Ctrl+Shift+P", "Pin / unpin pane"),
+                                (":tab-restore", "Reopen closed tab"),
+                                (":tabs", "Search open tabs"),
+                            ],
+                        ),
+                        (
+                            "Modes",
+                            &[
+                                ("i", "Enter Insert mode"),
+                                ("Esc", "Return to Normal mode"),
+                                ("Ctrl+P", "Open command palette"),
+                                (":help", "Show this help panel"),
+                            ],
+                        ),
+                        (
+                            "URL & Search",
+                            &[
+                                ("o <url>", "Open URL"),
+                                ("O <url>", "Open in new tab"),
+                                ("y", "Copy URL to clipboard"),
+                                ("Ctrl+E", "Open in system browser"),
+                                (":engine <name>", "Switch search engine"),
+                                ("a-s / a-S", "Save / search quickmark"),
+                            ],
+                        ),
+                        (
+                            "Privacy & Security",
+                            &[
+                                ("Ctrl+B", "Toggle bookmark"),
+                                (":bookmarks", "View bookmarks"),
+                                (":adblock-toggle", "Toggle ad block"),
+                                (":privacy", "Privacy dashboard"),
+                                (":cookies", "View cookies"),
+                                (":site-settings", "Per-site settings"),
+                            ],
+                        ),
+                        (
+                            "Terminal",
+                            &[
+                                ("`", "Open terminal pane"),
+                                (":ssh <host>", "SSH quick-connect"),
+                                (":terminal-clear", "Clear terminal"),
+                                (":terminal-search", "Search scrollback"),
+                                (":! <cmd>", "Run shell command"),
+                            ],
+                        ),
+                        (
+                            "Developer",
+                            &[
+                                ("F12", "Toggle dev tools"),
+                                ("Ctrl+Shift+N", "Network log"),
+                                ("Ctrl+Shift+J", "Console log"),
+                                (":inspect", "WebKit inspector"),
+                                (":gs / :gl / :gd", "Git status / log / diff"),
+                                (":grep <pat>", "Search project (ripgrep)"),
+                            ],
+                        ),
+                        (
+                            "Sessions",
+                            &[
+                                (":ws-save <name>", "Save workspace"),
+                                (":ws-load <name>", "Load workspace"),
+                                (":ws-list", "List workspaces"),
+                                (":layout-save <n>", "Save layout"),
+                                (":layout-load <n>", "Load layout"),
+                            ],
+                        ),
+                    ];
+
+                    egui::Window::new("Help")
+                        .default_width(640.0)
+                        .default_height(520.0)
+                        .resizable(true)
+                        .collapsible(false)
+                        .frame(egui::Frame::new().fill(bg))
+                        .pivot(egui::Align2::CENTER_CENTER)
+                        .default_pos(ctx.screen_rect().center())
+                        .show(ctx, |ui| {
+                            ui.strong("Aileron Keybindings");
+                            ui.label("Press Esc or ? to close");
+                            ui.separator();
+
+                            egui::ScrollArea::vertical().show(ui, |ui| {
+                                for (section, bindings) in help_sections {
+                                    ui.collapsing(*section, |ui| {
+                                        egui::Grid::new(format!("help_grid_{section}"))
+                                            .num_columns(2)
+                                            .striped(true)
+                                            .min_col_width(140.0)
+                                            .show(ui, |ui| {
+                                                for (key, desc) in *bindings {
+                                                    ui.label(
+                                                        egui::RichText::new(*key).color(accent),
+                                                    );
+                                                    ui.label(*desc);
+                                                    ui.end_row();
+                                                }
+                                            });
+                                    });
+                                }
+                            });
+                        });
+                }
 
                 if ui.input(|i| i.key_pressed(egui::Key::ArrowDown))
                     && app_state.omnibox_selected
@@ -661,11 +696,16 @@ pub fn build_ui(
             .default_width(600.0)
             .default_height(500.0)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .frame(egui::Frame::new()
-                .fill(bg)
-                .inner_margin(12.0)
-                .corner_radius(6.0)
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x40, 0x40, 0x50))))
+            .frame(
+                egui::Frame::new()
+                    .fill(bg)
+                    .inner_margin(12.0)
+                    .corner_radius(6.0)
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgb(0x40, 0x40, 0x50),
+                    )),
+            )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
@@ -697,17 +737,16 @@ pub fn build_ui(
                         let mut navigate_to: Option<url::Url> = None;
                         for (i, entry) in app_state.history_entries.iter().enumerate() {
                             let is_selected = i == app_state.history_selected;
-                            let response = ui.selectable_label(
-                                is_selected,
-                                egui::RichText::new(format!(
-                                    "{}  {}  [{}×]",
-                                    entry.title,
-                                    entry.url,
-                                    entry.visit_count,
-                                ))
-                                .size(13.0)
-                                .color(if is_selected { accent } else { text }),
-                            );
+                            let response =
+                                ui.selectable_label(
+                                    is_selected,
+                                    egui::RichText::new(format!(
+                                        "{}  {}  [{}×]",
+                                        entry.title, entry.url, entry.visit_count,
+                                    ))
+                                    .size(13.0)
+                                    .color(if is_selected { accent } else { text }),
+                                );
                             if response.clicked() {
                                 navigate_to = url::Url::parse(&entry.url).ok();
                                 app_state.history_selected = i;
@@ -747,11 +786,16 @@ pub fn build_ui(
             .default_width(500.0)
             .default_height(400.0)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .frame(egui::Frame::new()
-                .fill(bg)
-                .inner_margin(12.0)
-                .corner_radius(6.0)
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x40, 0x40, 0x50))))
+            .frame(
+                egui::Frame::new()
+                    .fill(bg)
+                    .inner_margin(12.0)
+                    .corner_radius(6.0)
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgb(0x40, 0x40, 0x50),
+                    )),
+            )
             .show(ctx, |ui| {
                 // Header
                 ui.horizontal(|ui| {
@@ -794,10 +838,12 @@ pub fn build_ui(
                     .show(ui, |ui| {
                         let mut visible_index = 0usize;
                         for id in &pane_ids {
-                            let url = wry_panes.url_for(id)
+                            let url = wry_panes
+                                .url_for(id)
                                 .map(|u| u.to_string())
                                 .unwrap_or_default();
-                            let title = wry_panes.get(id)
+                            let title = wry_panes
+                                .get(id)
                                 .map(|p| p.title().to_string())
                                 .unwrap_or_default();
 
@@ -821,9 +867,13 @@ pub fn build_ui(
                                 let label = format!("{}{}{}  {}", prefix, title, marker, url);
                                 let response = ui.selectable_label(
                                     is_selected || is_active,
-                                    egui::RichText::new(label)
-                                        .size(13.0)
-                                        .color(if is_selected { accent } else if is_active { text } else { dim }),
+                                    egui::RichText::new(label).size(13.0).color(if is_selected {
+                                        accent
+                                    } else if is_active {
+                                        text
+                                    } else {
+                                        dim
+                                    }),
                                 );
                                 if response.clicked() {
                                     switch_to = Some(*id);
@@ -873,11 +923,16 @@ pub fn build_ui(
             .default_width(550.0)
             .default_height(450.0)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .frame(egui::Frame::new()
-                .fill(bg)
-                .inner_margin(12.0)
-                .corner_radius(6.0)
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x40, 0x40, 0x50))))
+            .frame(
+                egui::Frame::new()
+                    .fill(bg)
+                    .inner_margin(12.0)
+                    .corner_radius(6.0)
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgb(0x40, 0x40, 0x50),
+                    )),
+            )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
@@ -906,64 +961,69 @@ pub fn build_ui(
                 ui.separator();
                 ui.add_space(4.0);
 
-                 egui::ScrollArea::vertical()
-                     .max_height(380.0)
-                     .show(ui, |ui| {
-                         if app_state.bookmarks_entries.is_empty() {
-                             ui.label(
-                                 egui::RichText::new("No bookmarks")
-                                     .color(egui::Color32::GRAY),
-                             );
-                         }
-                         let mut navigate_to: Option<url::Url> = None;
-                         let mut delete_id: Option<i64> = None;
+                egui::ScrollArea::vertical()
+                    .max_height(380.0)
+                    .show(ui, |ui| {
+                        if app_state.bookmarks_entries.is_empty() {
+                            ui.label(
+                                egui::RichText::new("No bookmarks").color(egui::Color32::GRAY),
+                            );
+                        }
+                        let mut navigate_to: Option<url::Url> = None;
+                        let mut delete_id: Option<i64> = None;
 
-                         // Group bookmarks by folder for display
-                         let mut last_folder = String::new();
-                         for (i, bm) in app_state.bookmarks_entries.iter().enumerate() {
-                             // Show folder header when folder changes
-                             if last_folder != bm.folder {
-                                 last_folder.clone_from(&bm.folder);
-                                 let folder_label = if bm.folder.is_empty() {
-                                     "📌 Unsorted"
-                                 } else {
-                                     bm.folder.as_str()
-                                 };
-                                 ui.colored_label(
-                                     egui::Color32::from_rgb(140, 180, 255),
-                                     egui::RichText::new(format!("  {}", folder_label))
-                                         .size(12.0)
-                                         .strong(),
-                                 );
-                                 ui.add_space(2.0);
-                             }
+                        // Group bookmarks by folder for display
+                        let mut last_folder = String::new();
+                        for (i, bm) in app_state.bookmarks_entries.iter().enumerate() {
+                            // Show folder header when folder changes
+                            if last_folder != bm.folder {
+                                last_folder.clone_from(&bm.folder);
+                                let folder_label = if bm.folder.is_empty() {
+                                    "📌 Unsorted"
+                                } else {
+                                    bm.folder.as_str()
+                                };
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(140, 180, 255),
+                                    egui::RichText::new(format!("  {}", folder_label))
+                                        .size(12.0)
+                                        .strong(),
+                                );
+                                ui.add_space(2.0);
+                            }
 
-                             let is_selected = i == app_state.bookmarks_selected;
-                             ui.horizontal(|ui| {
-                                 let label = format!("{}  {}", bm.title, bm.url);
-                                 let response = ui.selectable_label(
-                                     is_selected,
-                                     egui::RichText::new(label)
-                                         .size(13.0)
-                                         .color(if is_selected { accent } else { text }),
-                                 );
-                                 if response.clicked() {
-                                     navigate_to = url::Url::parse(&bm.url).ok();
-                                     app_state.bookmarks_selected = i;
-                                 }
-                                 if is_selected {
-                                     response.scroll_to_me(Some(egui::Align::Center));
-                                 }
-                                 response.on_hover_text(format!(
-                                     "Folder: {} | Created: {}\nID: {}",
-                                     if bm.folder.is_empty() { "(unsorted)" } else { &bm.folder },
-                                     bm.created_at, bm.id
-                                 ));
-                                 if ui.small_button("✕").clicked() {
-                                     delete_id = Some(bm.id);
-                                 }
-                             });
-                         }
+                            let is_selected = i == app_state.bookmarks_selected;
+                            ui.horizontal(|ui| {
+                                let label = format!("{}  {}", bm.title, bm.url);
+                                let response =
+                                    ui.selectable_label(
+                                        is_selected,
+                                        egui::RichText::new(label)
+                                            .size(13.0)
+                                            .color(if is_selected { accent } else { text }),
+                                    );
+                                if response.clicked() {
+                                    navigate_to = url::Url::parse(&bm.url).ok();
+                                    app_state.bookmarks_selected = i;
+                                }
+                                if is_selected {
+                                    response.scroll_to_me(Some(egui::Align::Center));
+                                }
+                                response.on_hover_text(format!(
+                                    "Folder: {} | Created: {}\nID: {}",
+                                    if bm.folder.is_empty() {
+                                        "(unsorted)"
+                                    } else {
+                                        &bm.folder
+                                    },
+                                    bm.created_at,
+                                    bm.id
+                                ));
+                                if ui.small_button("✕").clicked() {
+                                    delete_id = Some(bm.id);
+                                }
+                            });
+                        }
                         if let Some(url) = navigate_to {
                             app_state
                                 .pending_wry_actions
@@ -977,7 +1037,8 @@ pub fn build_ui(
                             let _ = crate::db::bookmarks::remove_bookmark_by_id(db, id);
                             app_state.bookmarks_entries.retain(|b| b.id != id);
                             if app_state.bookmarks_selected >= app_state.bookmarks_entries.len() {
-                                app_state.bookmarks_selected = app_state.bookmarks_entries.len().saturating_sub(1);
+                                app_state.bookmarks_selected =
+                                    app_state.bookmarks_entries.len().saturating_sub(1);
                             }
                         }
                     });
@@ -1005,7 +1066,10 @@ pub fn build_ui(
                 ui.horizontal(|ui| {
                     ui.label("Zoom:");
                     let mut zoom = app_state.site_settings_zoom.unwrap_or(100.0);
-                    if ui.add(egui::Slider::new(&mut zoom, 25.0..=300.0).suffix("%")).changed() {
+                    if ui
+                        .add(egui::Slider::new(&mut zoom, 25.0..=300.0).suffix("%"))
+                        .changed()
+                    {
                         app_state.site_settings_zoom = Some(zoom);
                     }
                     if ui.small_button("reset").clicked() {
@@ -1047,7 +1111,8 @@ pub fn build_ui(
                         let pattern = if app_state.site_settings_url_pattern.is_empty() {
                             // Use current active pane URL as wildcard pattern
                             let active_id = app_state.wm.active_pane_id();
-                            wry_panes.url_for(&active_id)
+                            wry_panes
+                                .url_for(&active_id)
                                 .map(|u| {
                                     if let Some(host) = u.host_str() {
                                         format!("*://{}*", host)
@@ -1067,11 +1132,33 @@ pub fn build_ui(
                                     );
                                 };
                             }
-                            save_field!("zoom", app_state.site_settings_zoom.map(|z| z.to_string()).as_deref());
-                            save_field!("adblock", app_state.site_settings_adblock.map(|v| if v { "1" } else { "0" }));
-                            save_field!("javascript", app_state.site_settings_js.map(|v| if v { "1" } else { "0" }));
-                            save_field!("cookies", app_state.site_settings_cookies.map(|v| if v { "1" } else { "0" }));
-                            app_state.status_message = format!("Saved site settings for: {}", pattern);
+                            save_field!(
+                                "zoom",
+                                app_state
+                                    .site_settings_zoom
+                                    .map(|z| z.to_string())
+                                    .as_deref()
+                            );
+                            save_field!(
+                                "adblock",
+                                app_state
+                                    .site_settings_adblock
+                                    .map(|v| if v { "1" } else { "0" })
+                            );
+                            save_field!(
+                                "javascript",
+                                app_state
+                                    .site_settings_js
+                                    .map(|v| if v { "1" } else { "0" })
+                            );
+                            save_field!(
+                                "cookies",
+                                app_state
+                                    .site_settings_cookies
+                                    .map(|v| if v { "1" } else { "0" })
+                            );
+                            app_state.status_message =
+                                format!("Saved site settings for: {}", pattern);
                         }
                     }
                     if ui.button("Close").clicked() {
@@ -1141,7 +1228,8 @@ pub fn build_ui(
                     } else {
                         tracing::debug!(
                             "render pane {}: NO texture ({} total)",
-                            &id.to_string()[..8], webview_textures.len(),
+                            &id.to_string()[..8],
+                            webview_textures.len(),
                         );
                         ui.painter().rect_filled(screen_rect, 0.0, bg);
                         ui.painter().rect_stroke(
@@ -1190,13 +1278,17 @@ pub fn build_ui(
                 if hovering {
                     // Change cursor
                     ui.ctx().set_cursor_icon(match direction {
-                        crate::wm::rect::SplitDirection::Horizontal => egui::CursorIcon::ResizeColumn,
+                        crate::wm::rect::SplitDirection::Horizontal => {
+                            egui::CursorIcon::ResizeColumn
+                        }
                         crate::wm::rect::SplitDirection::Vertical => egui::CursorIcon::ResizeRow,
                     });
                 }
                 if response.drag_started() {
                     ui.ctx().set_cursor_icon(match direction {
-                        crate::wm::rect::SplitDirection::Horizontal => egui::CursorIcon::ResizeColumn,
+                        crate::wm::rect::SplitDirection::Horizontal => {
+                            egui::CursorIcon::ResizeColumn
+                        }
                         crate::wm::rect::SplitDirection::Vertical => egui::CursorIcon::ResizeRow,
                     });
                 }
@@ -1207,9 +1299,11 @@ pub fn build_ui(
                         crate::wm::rect::SplitDirection::Vertical => delta.y,
                     };
                     // Apply resize to both adjacent panes
-                    let viewport = app_state.wm.panes().iter().find_map(|(id, r)| {
-                        if *id == *pane_a_id { Some(*r) } else { None }
-                    });
+                    let viewport = app_state
+                        .wm
+                        .panes()
+                        .iter()
+                        .find_map(|(id, r)| if *id == *pane_a_id { Some(*r) } else { None });
                     if let Some(viewport) = viewport {
                         let resize_amount = match direction {
                             crate::wm::rect::SplitDirection::Horizontal => {
@@ -1289,11 +1383,12 @@ pub fn build_ui(
                         );
                     }
                 }
-            } else if let Some((_, tex_id)) = panes.iter().find_map(|(id, _)| webview_textures.get_key_value(id)) {
-                let image = egui::Image::new(egui::load::SizedTexture::new(
-                    *tex_id,
-                    available.size(),
-                ));
+            } else if let Some((_, tex_id)) = panes
+                .iter()
+                .find_map(|(id, _)| webview_textures.get_key_value(id))
+            {
+                let image =
+                    egui::Image::new(egui::load::SizedTexture::new(*tex_id, available.size()));
                 ui.put(available, image);
             } else {
                 ui.painter().rect_filled(available, 0.0, bg);
@@ -1339,10 +1434,7 @@ pub fn build_tab_list(
 
                 // Use custom tab name if set
                 let display_title = {
-                    let custom = app_state
-                        .tab_names
-                        .get(&pane_id.to_string())
-                        .cloned();
+                    let custom = app_state.tab_names.get(&pane_id.to_string()).cloned();
                     match custom {
                         Some(name) => truncate_str(&name, 21),
                         None => truncate_str(&title, 21),
@@ -1386,7 +1478,10 @@ pub fn build_tab_list(
 
                         let response = ui.selectable_label(
                             is_active,
-                            format!("{}{}{}{}", pinned_prefix, muted_prefix, private_prefix, display_title),
+                            format!(
+                                "{}{}{}{}",
+                                pinned_prefix, muted_prefix, private_prefix, display_title
+                            ),
                         );
                         response.widget_info(|| {
                             let mut label = format!("Tab: {} - {}", a11y_title, a11y_url);
@@ -1444,10 +1539,7 @@ pub fn build_tab_list(
 
                 // Use custom tab name if set
                 let display_title = {
-                    let custom = app_state
-                        .tab_names
-                        .get(&pane_id.to_string())
-                        .cloned();
+                    let custom = app_state.tab_names.get(&pane_id.to_string()).cloned();
                     match custom {
                         Some(name) => truncate_str(&name, 17),
                         None => truncate_str(&title, 17),
@@ -1489,7 +1581,10 @@ pub fn build_tab_list(
 
                         let response = ui.selectable_label(
                             is_active,
-                            format!("{}{}{}{}", pinned_prefix, muted_prefix, private_prefix, display_title),
+                            format!(
+                                "{}{}{}{}",
+                                pinned_prefix, muted_prefix, private_prefix, display_title
+                            ),
                         );
                         response.widget_info(|| {
                             let mut label = format!("Tab: {} - {}", a11y_title, a11y_url);

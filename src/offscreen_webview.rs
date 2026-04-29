@@ -14,17 +14,20 @@ use std::sync::mpsc;
 use tracing::{info, warn};
 use url::Url;
 use uuid::Uuid;
-use wry::{PageLoadEvent, WebViewBuilder};
 use wry::WebViewBuilderExtUnix;
+use wry::{PageLoadEvent, WebViewBuilder};
 
-use crate::servo::wry_engine::{WryEvent, aileron_welcome_page, aileron_new_tab_page, aileron_settings_page, file_browser_page, percent_decode, html_escape};
+use crate::servo::wry_engine::{
+    WryEvent, aileron_new_tab_page, aileron_settings_page, aileron_welcome_page, file_browser_page,
+    html_escape, percent_decode,
+};
 
-#[cfg(target_os = "linux")]
-use gtk::prelude::{GtkWindowExt, OffscreenWindowExt, WidgetExt, BinExt};
 #[cfg(target_os = "linux")]
 use gtk::glib::Cast;
 #[cfg(target_os = "linux")]
-use webkit2gtk::{SnapshotRegion, SnapshotOptions, WebViewExt};
+use gtk::prelude::{BinExt, GtkWindowExt, OffscreenWindowExt, WidgetExt};
+#[cfg(target_os = "linux")]
+use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 
 /// Pixel data captured from an offscreen webview.
 #[derive(Debug, Clone)]
@@ -69,6 +72,8 @@ pub struct OffscreenWebView {
     last_activity_time: std::time::Instant,
     /// Whether a load is in progress (set on LoadStarted, cleared on LoadComplete).
     loading: bool,
+    /// Reusable buffer for RGBA frame data (avoids per-frame allocation).
+    rgba_buffer: Vec<u8>,
 }
 
 impl OffscreenWebView {
@@ -317,6 +322,7 @@ a {{ color: #4db4ff; }}
             event_rx,
             last_activity_time: std::time::Instant::now(),
             loading: false,
+            rgba_buffer: Vec::new(),
         })
     }
 
@@ -495,7 +501,10 @@ a {{ color: #4db4ff; }}
         unsafe {
             let surface_type = cairo::ffi::cairo_surface_get_type(raw);
             if surface_type != 0 {
-                warn!("capture_frame_snapshot: surface is not Image (type={})", surface_type);
+                warn!(
+                    "capture_frame_snapshot: surface is not Image (type={})",
+                    surface_type
+                );
                 return None;
             }
         }
@@ -505,7 +514,10 @@ a {{ color: #4db4ff; }}
         let stride = unsafe { cairo::ffi::cairo_image_surface_get_stride(raw) as u32 };
 
         if width == 0 || height == 0 {
-            warn!("capture_frame_snapshot: zero dimensions {}x{}", width, height);
+            warn!(
+                "capture_frame_snapshot: zero dimensions {}x{}",
+                width, height
+            );
             return None;
         }
 
@@ -523,10 +535,19 @@ a {{ color: #4db4ff; }}
 
         info!(
             "capture_frame_snapshot: pane {} ok: {}x{} stride={} pixels={}",
-            &self.pane_id.to_string()[..8], width, height, stride, pixels.len(),
+            &self.pane_id.to_string()[..8],
+            width,
+            height,
+            stride,
+            pixels.len(),
         );
 
-        Some(FrameData { width, height, rowstride: stride, pixels })
+        Some(FrameData {
+            width,
+            height,
+            rowstride: stride,
+            pixels,
+        })
     }
 
     /// Fallback: capture via OffscreenWindow::pixbuf() (cairo-only rendering).
@@ -539,7 +560,10 @@ a {{ color: #4db4ff; }}
         let pixbuf = match self.offscreen.pixbuf() {
             Some(p) => p,
             None => {
-                warn!("capture_frame: pixbuf() returned None for pane {}", &self.pane_id.to_string()[..8]);
+                warn!(
+                    "capture_frame: pixbuf() returned None for pane {}",
+                    &self.pane_id.to_string()[..8]
+                );
                 return None;
             }
         };
@@ -548,14 +572,29 @@ a {{ color: #4db4ff; }}
         let rowstride = pixbuf.rowstride() as u32;
         let pixels = unsafe { pixbuf.pixels().to_vec() };
         if width == 0 || height == 0 || pixels.is_empty() {
-            warn!("capture_frame: empty pixbuf {}x{} ({} bytes) for pane {}", width, height, pixels.len(), &self.pane_id.to_string()[..8]);
+            warn!(
+                "capture_frame: empty pixbuf {}x{} ({} bytes) for pane {}",
+                width,
+                height,
+                pixels.len(),
+                &self.pane_id.to_string()[..8]
+            );
             return None;
         }
         info!(
             "capture_frame: pane {} ok: {}x{} rowstride={} pixels={}",
-            &self.pane_id.to_string()[..8], width, height, rowstride, pixels.len(),
+            &self.pane_id.to_string()[..8],
+            width,
+            height,
+            rowstride,
+            pixels.len(),
         );
-        self.frame = Some(FrameData { width, height, rowstride, pixels });
+        self.frame = Some(FrameData {
+            width,
+            height,
+            rowstride,
+            pixels,
+        });
         self.dirty = false;
         self.frame.as_ref()
     }
@@ -566,10 +605,33 @@ a {{ color: #4db4ff; }}
     }
 
     /// Get the last captured frame as RGBA8 data.
-    pub fn frame_rgba(&self) -> Option<Vec<u8>> {
-        self.frame
-            .as_ref()
-            .map(|f| bgra_to_rgba(&f.pixels, f.width as usize, f.height as usize, f.rowstride))
+    ///
+    /// Reuses an internal buffer across calls to avoid repeated allocation.
+    /// Only reallocates when the frame dimensions change.
+    pub fn frame_rgba(&mut self) -> Option<Vec<u8>> {
+        self.frame.as_ref().map(|f| {
+            let needed = (f.width as usize) * (f.height as usize) * 4;
+            if self.rgba_buffer.capacity() < needed {
+                self.rgba_buffer = Vec::with_capacity(needed);
+            }
+            self.rgba_buffer.clear();
+
+            let bgra = &f.pixels;
+            let width = f.width as usize;
+            let height = f.height as usize;
+            let stride = f.rowstride as usize;
+            let row_bytes = width * 4;
+            for row in 0..height {
+                let src_start = row * stride;
+                self.rgba_buffer
+                    .extend_from_slice(&bgra[src_start..src_start + row_bytes]);
+            }
+            for chunk in self.rgba_buffer.chunks_exact_mut(4) {
+                chunk.swap(0, 2);
+            }
+
+            std::mem::take(&mut self.rgba_buffer)
+        })
     }
 
     /// Resize the offscreen window and webview.
@@ -728,8 +790,7 @@ pub fn is_pdf_url(url: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Convert BGRA pixel data to RGBA.
-/// Accounts for `rowstride` padding per row (rowstride >= width * 4).
+#[cfg(test)]
 fn bgra_to_rgba(bgra: &[u8], width: usize, height: usize, rowstride: u32) -> Vec<u8> {
     let mut rgba = Vec::with_capacity(width * height * 4);
     let row_bytes = width * 4;
@@ -953,10 +1014,8 @@ mod tests {
         // Row 0: [B0 G0 R0 A0 B1 G1 R1 A1 PP PP PP PP]
         // Row 1: [B2 G2 R2 A2 B3 G3 R3 A3 PP PP PP PP]
         let bgra: Vec<u8> = vec![
-            0x01, 0x02, 0x03, 0xFF, 0x11, 0x12, 0x13, 0xFE,
-            0xAA, 0xBB, 0xCC, 0xDD,
-            0x04, 0x05, 0x06, 0xFF, 0x14, 0x15, 0x16, 0xFE,
-            0xEE, 0xFF, 0x00, 0x11,
+            0x01, 0x02, 0x03, 0xFF, 0x11, 0x12, 0x13, 0xFE, 0xAA, 0xBB, 0xCC, 0xDD, 0x04, 0x05,
+            0x06, 0xFF, 0x14, 0x15, 0x16, 0xFE, 0xEE, 0xFF, 0x00, 0x11,
         ];
         let rgba = bgra_to_rgba(&bgra, 2, 2, 12);
         assert_eq!(rgba.len(), 2 * 2 * 4);
@@ -971,8 +1030,8 @@ mod tests {
         assert_eq!(rgba[6], 0x11); // B
         assert_eq!(rgba[7], 0xFE); // A
         // Row 1, pixel 0
-        assert_eq!(rgba[8], 0x06);  // R
-        assert_eq!(rgba[9], 0x05);  // G
+        assert_eq!(rgba[8], 0x06); // R
+        assert_eq!(rgba[9], 0x05); // G
         assert_eq!(rgba[10], 0x04); // B
         assert_eq!(rgba[11], 0xFF); // A
         // Row 1, pixel 1
@@ -1010,9 +1069,9 @@ mod tests {
     /// Exercises split, close, navigate, and swap operations.
     #[test]
     fn test_bsp_lifecycle() {
-        use crate::wm::tree::BspTree;
-        use crate::wm::rect::{Rect, SplitDirection};
         use crate::wm::rect::Direction;
+        use crate::wm::rect::{Rect, SplitDirection};
+        use crate::wm::tree::BspTree;
 
         let initial_url = url::Url::parse("aileron://new").unwrap();
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
@@ -1061,7 +1120,10 @@ mod tests {
         assert!(id1 > 0);
 
         let id2 = crate::db::bookmarks::add_bookmark_with_folder(
-            &conn, "https://docs.rs", "Docs.rs", "rust",
+            &conn,
+            "https://docs.rs",
+            "Docs.rs",
+            "rust",
         )
         .expect("add bookmark with folder");
         assert!(id2 > 0);
@@ -1073,8 +1135,8 @@ mod tests {
         assert_eq!(all[1].folder, "rust");
 
         // Search
-        let results = crate::db::bookmarks::search_bookmarks(&conn, "github", 10)
-            .expect("search bookmarks");
+        let results =
+            crate::db::bookmarks::search_bookmarks(&conn, "github", 10).expect("search bookmarks");
         assert_eq!(results.len(), 1);
 
         // Add history
@@ -1096,7 +1158,11 @@ mod tests {
 
         // Clear
         crate::db::history::clear_history(&conn).expect("clear history");
-        assert!(crate::db::history::recent_entries(&conn, 10).unwrap().is_empty());
+        assert!(
+            crate::db::history::recent_entries(&conn, 10)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     /// Integration test: Site settings per-domain lifecycle.
@@ -1109,13 +1175,21 @@ mod tests {
 
         // Set zoom for a domain
         crate::db::site_settings::set_site_field(
-            &conn, "example.com", "exact", "zoom", Some("1.5"),
+            &conn,
+            "example.com",
+            "exact",
+            "zoom",
+            Some("1.5"),
         )
         .expect("set zoom");
 
         // Set adblock for another domain
         crate::db::site_settings::set_site_field(
-            &conn, "ads.example.com", "exact", "adblock", Some("true"),
+            &conn,
+            "ads.example.com",
+            "exact",
+            "adblock",
+            Some("true"),
         )
         .expect("set adblock");
 

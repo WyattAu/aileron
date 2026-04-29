@@ -180,11 +180,14 @@ impl ContentScriptManager {
                 s.enabled
                     && s.run_at == run_at
                     && (Self::url_matches_patterns(url, &s.match_patterns)
-                        || s.match_regex.as_ref().map(|r| {
-                            regex::Regex::new(r)
-                                .map(|re| re.is_match(url))
-                                .unwrap_or(false)
-                        }).unwrap_or(false))
+                        || s.match_regex
+                            .as_ref()
+                            .map(|r| {
+                                regex::Regex::new(r)
+                                    .map(|re| re.is_match(url))
+                                    .unwrap_or(false)
+                            })
+                            .unwrap_or(false))
             })
             .collect()
     }
@@ -346,7 +349,8 @@ mod tests {
             extension_registry: None,
         };
 
-        let matches = manager.scripts_for_url("https://api.github.com/user/repo", RunAt::DocumentIdle);
+        let matches =
+            manager.scripts_for_url("https://api.github.com/user/repo", RunAt::DocumentIdle);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].name, "gh-script");
     }
@@ -390,17 +394,15 @@ mod tests {
     #[test]
     fn test_scripts_for_url_with_regex() {
         let manager = ContentScriptManager {
-            scripts: vec![
-                ContentScript {
-                    name: "regex-script".into(),
-                    match_patterns: vec![],
-                    grants: vec![],
-                    js_code: "console.log('regex')".into(),
-                    enabled: true,
-                    run_at: RunAt::DocumentIdle,
-                    match_regex: Some(r"https://.*\.example\.com/.*".into()),
-                },
-            ],
+            scripts: vec![ContentScript {
+                name: "regex-script".into(),
+                match_patterns: vec![],
+                grants: vec![],
+                js_code: "console.log('regex')".into(),
+                enabled: true,
+                run_at: RunAt::DocumentIdle,
+                match_regex: Some(r"https://.*\.example\.com/.*".into()),
+            }],
             scripts_dir: PathBuf::from("/tmp"),
             extension_registry: None,
         };
@@ -442,13 +444,15 @@ mod tests {
         });
 
         let manager = ContentScriptManager::with_extension_registry(Some(registry));
-        let matches = manager.extension_scripts_for_url("https://www.example.com/page", RunAt::DocumentIdle);
+        let matches =
+            manager.extension_scripts_for_url("https://www.example.com/page", RunAt::DocumentIdle);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].script_id, "test-ext-0");
         assert_eq!(matches[0].js_code, "console.log('ext')");
         assert_eq!(matches[0].css_code, "body { color: red; }");
 
-        let no_match = manager.extension_scripts_for_url("https://www.nothing.com/page", RunAt::DocumentIdle);
+        let no_match =
+            manager.extension_scripts_for_url("https://www.nothing.com/page", RunAt::DocumentIdle);
         assert!(no_match.is_empty());
     }
 
@@ -474,11 +478,13 @@ mod tests {
 
         let manager = ContentScriptManager::with_extension_registry(Some(registry));
 
-        let start = manager.extension_scripts_for_url("https://www.example.com/page", RunAt::DocumentStart);
+        let start =
+            manager.extension_scripts_for_url("https://www.example.com/page", RunAt::DocumentStart);
         assert_eq!(start.len(), 1);
         assert_eq!(start[0].script_id, "test-ext-start");
 
-        let idle = manager.extension_scripts_for_url("https://www.example.com/page", RunAt::DocumentIdle);
+        let idle =
+            manager.extension_scripts_for_url("https://www.example.com/page", RunAt::DocumentIdle);
         assert_eq!(idle.len(), 1);
         assert_eq!(idle[0].script_id, "test-ext-idle");
     }

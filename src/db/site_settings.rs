@@ -5,7 +5,7 @@
 //! NULL values mean "use global default from Config".
 
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use tracing::warn;
 
 /// A per-site setting entry.
@@ -112,7 +112,7 @@ pub fn set_site_field(
                 "Unknown field or missing value: {} {:?}",
                 field,
                 value
-            ))
+            ));
         }
     };
     Ok(())

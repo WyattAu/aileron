@@ -254,7 +254,11 @@ impl NativeTerminalPane {
         if bytes.is_empty() {
             // Still check for PtyWrite events (responses from Term back to PTY)
             let pty_write = {
-                let mut buf = self.event_listener.pty_write_tx.lock().unwrap();
+                let mut buf = self
+                    .event_listener
+                    .pty_write_tx
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 std::mem::take(&mut *buf)
             };
             if !pty_write.is_empty() {
@@ -271,7 +275,11 @@ impl NativeTerminalPane {
 
         // Drain any PtyWrite responses (e.g., device attribute replies)
         let pty_write = {
-            let mut buf = self.event_listener.pty_write_tx.lock().unwrap();
+            let mut buf = self
+                .event_listener
+                .pty_write_tx
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             std::mem::take(&mut *buf)
         };
         if !pty_write.is_empty() {
@@ -327,7 +335,7 @@ impl NativeTerminalPane {
 
     /// Get the terminal title (if set by the child process).
     pub fn title(&self) -> Option<String> {
-        self.title.lock().unwrap().clone()
+        self.title.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Get the current grid size.
@@ -428,7 +436,11 @@ impl NativeTerminalPane {
         if !self.bell_flash.load(Ordering::Relaxed) {
             return false;
         }
-        let elapsed = self.bell_flash_time.lock().unwrap().elapsed();
+        let elapsed = self
+            .bell_flash_time
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .elapsed();
         if elapsed > std::time::Duration::from_millis(200) {
             self.bell_flash.store(false, Ordering::Relaxed);
             false

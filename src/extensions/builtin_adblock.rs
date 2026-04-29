@@ -15,7 +15,8 @@ const BUILTIN_ADBLOCK_MANIFEST_JSON: &str = r#"{
 }"#;
 
 pub fn builtin_adblock_manifest() -> ExtensionManifest {
-    ExtensionManifest::from_json(BUILTIN_ADBLOCK_MANIFEST_JSON).expect("built-in adblock manifest is valid")
+    ExtensionManifest::from_json(BUILTIN_ADBLOCK_MANIFEST_JSON)
+        .expect("built-in adblock manifest is valid")
 }
 
 #[cfg(test)]
@@ -37,7 +38,15 @@ mod tests {
             Some("Built-in adblock filter engine")
         );
         assert!(manifest.permissions.contains(&"webRequest".to_string()));
-        assert!(manifest.permissions.contains(&"webRequestBlocking".to_string()));
-        assert!(manifest.host_permissions.contains(&"<all_urls>".to_string()));
+        assert!(
+            manifest
+                .permissions
+                .contains(&"webRequestBlocking".to_string())
+        );
+        assert!(
+            manifest
+                .host_permissions
+                .contains(&"<all_urls>".to_string())
+        );
     }
 }

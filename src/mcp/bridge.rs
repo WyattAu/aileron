@@ -5,7 +5,7 @@
 //! - Shared read-only state (active URL, title) via Arc<RwLock>
 //! - Command channel for mutations (navigate, run JS) processed on main thread
 
-use std::sync::{mpsc, Arc, RwLock};
+use std::sync::{Arc, RwLock, mpsc};
 
 /// Commands that MCP tools can send to the main thread.
 /// These are processed each frame in `about_to_wait`.
@@ -23,9 +23,7 @@ pub enum McpCommand {
         response_tx: mpsc::Sender<(String, String)>,
     },
     /// List all bookmarks from the database.
-    ListBookmarks {
-        response_tx: mpsc::Sender<String>,
-    },
+    ListBookmarks { response_tx: mpsc::Sender<String> },
     /// Add a bookmark to the database.
     AddBookmark {
         url: String,
@@ -45,9 +43,7 @@ pub enum McpCommand {
         response_tx: mpsc::Sender<String>,
     },
     /// List all open tabs with URLs and titles.
-    ListTabs {
-        response_tx: mpsc::Sender<String>,
-    },
+    ListTabs { response_tx: mpsc::Sender<String> },
 }
 
 /// Shared state readable by MCP tools (updated each frame from main thread).

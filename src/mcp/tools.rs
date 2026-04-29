@@ -3,7 +3,7 @@
 //! Tools access pane state via McpBridge (shared state + command channel).
 
 use crate::mcp::bridge::{McpCommand, McpState};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Trait for MCP tools that can be called from an MCP client.
 pub trait McpTool: Send + Sync {
@@ -279,10 +279,10 @@ impl McpTool for BrowserGetTextTool {
 
         if result.is_empty() || result == "String(\"\")" {
             Ok("No visible text content found on the page.".into())
-         } else {
-             Ok(result)
-         }
-     }
+        } else {
+            Ok(result)
+        }
+    }
 }
 
 // ── List Tabs Tool ──────────────────────────────────────────────
@@ -298,8 +298,12 @@ impl ListTabsTool {
 }
 
 impl McpTool for ListTabsTool {
-    fn name(&self) -> &str { "list_tabs" }
-    fn description(&self) -> &str { "List all open tabs with URLs and titles" }
+    fn name(&self) -> &str {
+        "list_tabs"
+    }
+    fn description(&self) -> &str {
+        "List all open tabs with URLs and titles"
+    }
     fn input_schema(&self) -> serde_json::Value {
         serde_json::json!({ "type": "object", "properties": {} })
     }
@@ -308,7 +312,8 @@ impl McpTool for ListTabsTool {
         self.command_tx
             .send(McpCommand::ListTabs { response_tx })
             .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
-        response_rx.recv_timeout(std::time::Duration::from_secs(5))
+        response_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
             .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
     }
 }
@@ -326,8 +331,12 @@ impl BookmarkCrudTool {
 }
 
 impl McpTool for BookmarkCrudTool {
-    fn name(&self) -> &str { "bookmark_crud" }
-    fn description(&self) -> &str { "List, add, or remove bookmarks. Action: list/add/remove." }
+    fn name(&self) -> &str {
+        "bookmark_crud"
+    }
+    fn description(&self) -> &str {
+        "List, add, or remove bookmarks. Action: list/add/remove."
+    }
     fn input_schema(&self) -> serde_json::Value {
         serde_json::json!({
             "type": "object",
@@ -348,11 +357,14 @@ impl McpTool for BookmarkCrudTool {
                 self.command_tx
                     .send(McpCommand::ListBookmarks { response_tx })
                     .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
-                response_rx.recv_timeout(std::time::Duration::from_secs(5))
+                response_rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
                     .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
             }
             "add" => {
-                let url = args["url"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'url'"))?;
+                let url = args["url"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing 'url'"))?;
                 let title = args["title"].as_str().unwrap_or(url);
                 let folder = args["folder"].as_str().unwrap_or("");
                 let (response_tx, response_rx) = std::sync::mpsc::channel();
@@ -364,11 +376,14 @@ impl McpTool for BookmarkCrudTool {
                         response_tx,
                     })
                     .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
-                response_rx.recv_timeout(std::time::Duration::from_secs(5))
+                response_rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
                     .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
             }
             "remove" => {
-                let url = args["url"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'url'"))?;
+                let url = args["url"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing 'url'"))?;
                 let (response_tx, response_rx) = std::sync::mpsc::channel();
                 self.command_tx
                     .send(McpCommand::RemoveBookmark {
@@ -376,7 +391,8 @@ impl McpTool for BookmarkCrudTool {
                         response_tx,
                     })
                     .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
-                response_rx.recv_timeout(std::time::Duration::from_secs(5))
+                response_rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
                     .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
             }
             other => Err(anyhow::anyhow!("Unknown action: {}", other)),
@@ -397,8 +413,12 @@ impl HistorySearchTool {
 }
 
 impl McpTool for HistorySearchTool {
-    fn name(&self) -> &str { "history_search" }
-    fn description(&self) -> &str { "Search browsing history by query string" }
+    fn name(&self) -> &str {
+        "history_search"
+    }
+    fn description(&self) -> &str {
+        "Search browsing history by query string"
+    }
     fn input_schema(&self) -> serde_json::Value {
         serde_json::json!({
             "type": "object",
@@ -410,7 +430,9 @@ impl McpTool for HistorySearchTool {
         })
     }
     fn execute(&self, args: &serde_json::Value) -> anyhow::Result<String> {
-        let query = args["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query'"))?;
+        let query = args["query"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("Missing 'query'"))?;
         let limit = args["limit"].as_u64().unwrap_or(10) as usize;
         let (response_tx, response_rx) = std::sync::mpsc::channel();
         self.command_tx
@@ -420,7 +442,8 @@ impl McpTool for HistorySearchTool {
                 response_tx,
             })
             .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
-        response_rx.recv_timeout(std::time::Duration::from_secs(5))
+        response_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
             .map_err(|e| anyhow::anyhow!("Timeout: {}", e))
     }
 }

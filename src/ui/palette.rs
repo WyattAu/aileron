@@ -1,4 +1,4 @@
-use crate::ui::search::{fuzzy_match, SearchItem};
+use crate::ui::search::{SearchItem, fuzzy_match};
 
 /// State and logic for the command palette overlay.
 /// Manages the list of items, current query, selection, and actions.

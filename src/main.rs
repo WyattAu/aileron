@@ -14,7 +14,7 @@ use aileron::net::adblock::AdBlocker;
 use aileron::offscreen_webview::OffscreenWebViewManager;
 use aileron::popup::PopupManager;
 use aileron::profiling::AdaptiveQuality;
-use aileron::servo::{bsp_rect_to_wry_rect, init_gtk, WryPaneManager};
+use aileron::servo::{WryPaneManager, bsp_rect_to_wry_rect, init_gtk};
 use aileron::terminal::NativeTerminalManager;
 use aileron::ui::panels;
 use aileron::wm::Rect;
@@ -218,7 +218,10 @@ impl AileronApp {
             }
         };
 
-        info!("init_graphics(): GPU initialized, max texture: {}px", gfx.device.limits().max_texture_dimension_2d);
+        info!(
+            "init_graphics(): GPU initialized, max texture: {}px",
+            gfx.device.limits().max_texture_dimension_2d
+        );
         winit_state.set_max_texture_side(gfx.device.limits().max_texture_dimension_2d as usize);
 
         // Initialize app state with viewport and config
@@ -255,14 +258,17 @@ impl AileronApp {
         if let Ok(mgr) = app_state.extension_manager.lock() {
             info!(
                 "Built-in adblock: {}",
-                if mgr.is_builtin_adblock_enabled() { "enabled" } else { "disabled" }
+                if mgr.is_builtin_adblock_enabled() {
+                    "enabled"
+                } else {
+                    "disabled"
+                }
             );
         }
 
         if let Ok(mgr) = app_state.extension_manager.lock() {
-            self.content_scripts.set_extension_registry(
-                mgr.content_script_registry().clone()
-            );
+            self.content_scripts
+                .set_extension_registry(mgr.content_script_registry().clone());
         }
 
         self.egui_winit = Some(winit_state);
@@ -434,7 +440,13 @@ impl AileronApp {
 
         #[cfg(target_os = "linux")]
         match self.offscreen_panes.create_pane(
-            pane_id, url, width, height, blocked_domains, self.config.devtools, self.config.popup_blocker_enabled
+            pane_id,
+            url,
+            width,
+            height,
+            blocked_domains,
+            self.config.devtools,
+            self.config.popup_blocker_enabled,
         ) {
             Ok(()) => {
                 if is_terminal {
@@ -481,8 +493,7 @@ impl AileronApp {
         self.webview_textures.remove(pane_id);
         self.webview_texture_handles.remove(pane_id);
         self.offscreen_last_capture.remove(pane_id);
-        self.pending_pane_creates
-            .retain(|(id, _)| id != pane_id);
+        self.pending_pane_creates.retain(|(id, _)| id != pane_id);
         // Clean up per-pane state to prevent memory leaks
         if let Some(app_state) = &mut self.app_state {
             app_state.cleanup_pane_state(pane_id);
@@ -514,10 +525,7 @@ impl AileronApp {
             return;
         }
 
-        let active_id = self
-            .app_state
-            .as_ref()
-            .map(|s| s.wm.active_pane_id());
+        let active_id = self.app_state.as_ref().map(|s| s.wm.active_pane_id());
 
         let current_pane_ids: std::collections::HashSet<uuid::Uuid> = self
             .app_state
@@ -762,10 +770,7 @@ impl AileronApp {
         let capture_interval = self.adaptive_quality.capture_interval_ms();
         let bg_capture_interval = self.adaptive_quality.background_capture_interval_ms();
         let skip_non_active = self.adaptive_quality.should_skip_non_active();
-        let active_id = self
-            .app_state
-            .as_ref()
-            .map(|s| s.wm.active_pane_id());
+        let active_id = self.app_state.as_ref().map(|s| s.wm.active_pane_id());
 
         let mut dirty_data: Vec<(uuid::Uuid, Vec<u8>, u32, u32)> = Vec::new();
 
@@ -793,7 +798,11 @@ impl AileronApp {
             if dirty && elapsed >= std::time::Duration::from_millis(interval_ms as u64) {
                 tracing::debug!(
                     "capture: pane {} dirty={} elapsed={:?} active={} interval={}ms",
-                    &id.to_string()[..8], dirty, elapsed, is_active, interval_ms,
+                    &id.to_string()[..8],
+                    dirty,
+                    elapsed,
+                    is_active,
+                    interval_ms,
                 );
                 if pane.capture_frame().is_some()
                     && let Some(rgba) = pane.frame_rgba()
@@ -801,7 +810,8 @@ impl AileronApp {
                     let (w, h) = pane.dimensions();
                     dirty_data.push((*id, rgba, w as u32, h as u32));
                 }
-                self.offscreen_last_capture.insert(*id, std::time::Instant::now());
+                self.offscreen_last_capture
+                    .insert(*id, std::time::Instant::now());
             }
         }
 
@@ -974,7 +984,8 @@ impl ApplicationHandler for AileronApp {
         // Handle resize
         if let Some(app_state) = &mut self.app_state
             && let WindowEvent::Resized(physical_size) = &event
-            && physical_size.width > 0 && physical_size.height > 0
+            && physical_size.width > 0
+            && physical_size.height > 0
         {
             app_state.wm.resize(Rect::new(
                 0.0,
@@ -1024,9 +1035,7 @@ impl ApplicationHandler for AileronApp {
                     },
                 ..
             } => {
-                if *repeat
-                    && let Some(app_state) = &self.app_state
-                {
+                if *repeat && let Some(app_state) = &self.app_state {
                     let active_id = app_state.wm.active_pane_id();
                     if !self.terminal_manager.is_terminal(&active_id) {
                         return;
@@ -1091,7 +1100,8 @@ impl ApplicationHandler for AileronApp {
                                 let active_id = app_state.wm.active_pane_id();
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                     wry_pane.execute_js(&js);
-                                } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                                } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id)
+                                {
                                     pane.execute_js(&js);
                                     pane.mark_dirty();
                                 }
@@ -1115,7 +1125,8 @@ impl ApplicationHandler for AileronApp {
                                 "#;
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                     wry_pane.execute_js(clear_js);
-                                } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                                } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id)
+                                {
                                     pane.execute_js(clear_js);
                                     pane.mark_dirty();
                                 }
@@ -1158,22 +1169,14 @@ impl ApplicationHandler for AileronApp {
                         return;
                     }
                     // Track pane count before processing key
-                    let pane_ids_before: std::collections::HashSet<uuid::Uuid> = app_state
-                        .wm
-                        .panes()
-                        .iter()
-                        .map(|(id, _)| *id)
-                        .collect();
+                    let pane_ids_before: std::collections::HashSet<uuid::Uuid> =
+                        app_state.wm.panes().iter().map(|(id, _)| *id).collect();
 
                     app_state.process_key_event(aileron_event);
                     app_state.input_latency.record_key_press();
 
-                    let pane_ids_after: std::collections::HashSet<uuid::Uuid> = app_state
-                        .wm
-                        .panes()
-                        .iter()
-                        .map(|(id, _)| *id)
-                        .collect();
+                    let pane_ids_after: std::collections::HashSet<uuid::Uuid> =
+                        app_state.wm.panes().iter().map(|(id, _)| *id).collect();
 
                     let closed_pane_ids: Vec<uuid::Uuid> = pane_ids_before
                         .difference(&pane_ids_after)
@@ -1201,10 +1204,14 @@ impl ApplicationHandler for AileronApp {
 
                     for pid in &closed_pane_ids {
                         // Save closed tab info for :tab-restore
-                        let url = self.wry_panes.url_for(pid)
+                        let url = self
+                            .wry_panes
+                            .url_for(pid)
                             .map(|u| u.to_string())
                             .unwrap_or_default();
-                        let title = self.wry_panes.get(pid)
+                        let title = self
+                            .wry_panes
+                            .get(pid)
                             .map(|p| p.title().to_string())
                             .unwrap_or_default();
                         if !url.is_empty()
@@ -1238,12 +1245,14 @@ impl ApplicationHandler for AileronApp {
                         if is_terminal {
                             // Native terminal: write directly to PTY
                             if let aileron::input::Key::Character(c) = &key {
-                                self.terminal_manager.write_input(&active_pane_id, &c.to_string());
+                                self.terminal_manager
+                                    .write_input(&active_pane_id, &c.to_string());
                             } else {
                                 // Convert special keys to escape sequences
                                 let escape_seq = key_to_escape_sequence(&key, mods);
                                 if !escape_seq.is_empty() {
-                                    self.terminal_manager.write_input(&active_pane_id, &escape_seq);
+                                    self.terminal_manager
+                                        .write_input(&active_pane_id, &escape_seq);
                                 }
                             }
                         } else if let Some(pane) = self.offscreen_panes.get_mut(&active_pane_id) {
@@ -1253,7 +1262,10 @@ impl ApplicationHandler for AileronApp {
                             } else {
                                 let (js_key, js_code) = key_to_js(&key);
                                 let mods = aileron::offscreen_webview::modifiers_js(
-                                    mods.ctrl, mods.alt, mods.shift, mods.super_key,
+                                    mods.ctrl,
+                                    mods.alt,
+                                    mods.shift,
+                                    mods.super_key,
                                 );
                                 pane.forward_key_event("keydown", &js_key, &js_code, &mods);
                             }
@@ -1284,8 +1296,10 @@ impl ApplicationHandler for AileronApp {
                         if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
                             let (js_key, js_code) = key_to_js(&key);
                             let mods = aileron::offscreen_webview::modifiers_js(
-                                self.modifiers.ctrl, self.modifiers.alt,
-                                self.modifiers.shift, self.modifiers.super_key,
+                                self.modifiers.ctrl,
+                                self.modifiers.alt,
+                                self.modifiers.shift,
+                                self.modifiers.super_key,
                             );
                             pane.forward_key_event("keyup", &js_key, &js_code, &mods);
                         }
@@ -1306,9 +1320,7 @@ impl ApplicationHandler for AileronApp {
                         winit::event::MouseScrollDelta::LineDelta(x, y) => {
                             (*x as f64 * 40.0, *y as f64 * 40.0)
                         }
-                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
-                            (pos.x, pos.y)
-                        }
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => (pos.x, pos.y),
                     };
                     if dx.abs() > 0.1 || dy.abs() > 0.1 {
                         if self.terminal_manager.is_terminal(&active_id) {
@@ -1351,14 +1363,13 @@ impl ApplicationHandler for AileronApp {
                             let panes = app_state.wm.panes();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
                             let top_offset = URL_BAR_HEIGHT as f32;
-                            let sidebar_offset =
-                                if app_state.config.tab_layout == "sidebar"
-                                    && !app_state.config.tab_sidebar_right
-                                {
-                                    app_state.config.tab_sidebar_width
-                                } else {
-                                    0.0
-                                };
+                            let sidebar_offset = if app_state.config.tab_layout == "sidebar"
+                                && !app_state.config.tab_sidebar_right
+                            {
+                                app_state.config.tab_sidebar_width
+                            } else {
+                                0.0
+                            };
                             let local_x = pos.x - rect.x as f32 - sidebar_offset;
                             let local_y = pos.y - rect.y as f32 - top_offset;
                             if local_x >= 0.0 && local_y >= 0.0 {
@@ -1380,24 +1391,37 @@ impl ApplicationHandler for AileronApp {
                                         metrics.cell_height,
                                     );
                                     match (state, button) {
-                                        (winit::event::ElementState::Pressed, winit::event::MouseButton::Left) => {
+                                        (
+                                            winit::event::ElementState::Pressed,
+                                            winit::event::MouseButton::Left,
+                                        ) => {
                                             pane.start_selection(line, col);
                                         }
-                                        (winit::event::ElementState::Released, winit::event::MouseButton::Left) => {
+                                        (
+                                            winit::event::ElementState::Released,
+                                            winit::event::MouseButton::Left,
+                                        ) => {
                                             pane.end_selection();
                                             if let Some(text) = pane.selection_text() {
-                                                ws.egui_ctx()
-                                            .copy_text(text);
+                                                ws.egui_ctx().copy_text(text);
                                             }
                                         }
-                                        (winit::event::ElementState::Pressed, winit::event::MouseButton::Right) => {
+                                        (
+                                            winit::event::ElementState::Pressed,
+                                            winit::event::MouseButton::Right,
+                                        ) => {
                                             pane.clear_selection();
                                         }
-                                        (winit::event::ElementState::Pressed, winit::event::MouseButton::Middle) => {
-                                            if let Some(pane_ref) = self.terminal_manager.get(&active_id)
+                                        (
+                                            winit::event::ElementState::Pressed,
+                                            winit::event::MouseButton::Middle,
+                                        ) => {
+                                            if let Some(pane_ref) =
+                                                self.terminal_manager.get(&active_id)
                                                 && let Some(text) = pane_ref.selection_text()
                                             {
-                                                self.terminal_manager.write_input(&active_id, &text);
+                                                self.terminal_manager
+                                                    .write_input(&active_id, &text);
                                             }
                                         }
                                         _ => {}
@@ -1414,17 +1438,20 @@ impl ApplicationHandler for AileronApp {
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
                             let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
                             let top_offset = URL_BAR_HEIGHT as f32;
-                            let sidebar_offset =
-                                if app_state.config.tab_layout == "sidebar"
-                                    && !app_state.config.tab_sidebar_right
-                                {
-                                    app_state.config.tab_sidebar_width
-                                } else {
-                                    0.0
-                                };
+                            let sidebar_offset = if app_state.config.tab_layout == "sidebar"
+                                && !app_state.config.tab_sidebar_right
+                            {
+                                app_state.config.tab_sidebar_width
+                            } else {
+                                0.0
+                            };
                             let local_x = pos.x - rect.x as f32 - sidebar_offset;
                             let local_y = pos.y - rect.y as f32 - top_offset;
-                            if local_x >= 0.0 && local_y >= 0.0 && local_x < pw as f32 && local_y < ph as f32 {
+                            if local_x >= 0.0
+                                && local_y >= 0.0
+                                && local_x < pw as f32
+                                && local_y < ph as f32
+                            {
                                 let event_type = match state {
                                     winit::event::ElementState::Pressed => "mousedown",
                                     winit::event::ElementState::Released => "mouseup",
@@ -1472,7 +1499,9 @@ impl ApplicationHandler for AileronApp {
                                     self.modifiers.super_key,
                                 );
                                 if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                                    pane.forward_mouse_event(event_type, local_x, local_y, btn, &mods);
+                                    pane.forward_mouse_event(
+                                        event_type, local_x, local_y, btn, &mods,
+                                    );
                                 }
                             }
                         }
@@ -1481,93 +1510,94 @@ impl ApplicationHandler for AileronApp {
             }
 
             WindowEvent::CursorMoved { position, .. }
-                if !egui_response.consumed
-                    && self.config.is_offscreen()
-            => {
-                    let scale = window.scale_factor() as f32;
-                    let logical_pos = egui::pos2(position.x as f32 / scale, position.y as f32 / scale);
+                if !egui_response.consumed && self.config.is_offscreen() =>
+            {
+                let scale = window.scale_factor() as f32;
+                let logical_pos = egui::pos2(position.x as f32 / scale, position.y as f32 / scale);
 
-                    if let Some(app_state) = &self.app_state
-                        && app_state.mode == aileron::input::Mode::Insert
-                    {
-                        let active_id = app_state.wm.active_pane_id();
+                if let Some(app_state) = &self.app_state
+                    && app_state.mode == aileron::input::Mode::Insert
+                {
+                    let active_id = app_state.wm.active_pane_id();
 
-                        if self.terminal_manager.is_terminal(&active_id) {
-                            let terminal_info = (|| {
-                                let panes = app_state.wm.panes();
-                                let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                                let top_offset = URL_BAR_HEIGHT as f32;
-                                let sidebar_offset =
-                                    if app_state.config.tab_layout == "sidebar"
-                                        && !app_state.config.tab_sidebar_right
-                                    {
-                                        app_state.config.tab_sidebar_width
-                                    } else {
-                                        0.0
-                                    };
-                                let local_x = logical_pos.x - rect.x as f32 - sidebar_offset;
-                                let local_y = logical_pos.y - rect.y as f32 - top_offset;
-                                if local_x >= 0.0 && local_y >= 0.0 {
-                                    Some((local_x, local_y))
-                                } else {
-                                    None
-                                }
-                            })();
-
-                            if let Some((local_x, local_y)) = terminal_info {
-                                use aileron::terminal::grid::CellMetrics;
-                                if let Some(ws) = self.egui_winit.as_ref()
-                                    && let Some(pane) = self.terminal_manager.get_mut(&active_id)
-                                    && pane.is_selecting()
-                                {
-                                    let metrics = CellMetrics::from_egui(ws.egui_ctx(), 14.0);
-                                    let (line, col) = pane.pixel_to_grid(
-                                        local_x,
-                                        local_y,
-                                        metrics.cell_width,
-                                        metrics.cell_height,
-                                    );
-                                    pane.extend_selection(line, col);
-                                }
-                            }
-                        } else {
-                            let forward_info = (|| {
-                                let panes = app_state.wm.panes();
-                                let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                                let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
-                                let top_offset = URL_BAR_HEIGHT as f32;
-                                let sidebar_offset =
-                                    if app_state.config.tab_layout == "sidebar"
-                                        && !app_state.config.tab_sidebar_right
-                                    {
-                                        app_state.config.tab_sidebar_width
-                                    } else {
-                                        0.0
-                                    };
-                                let local_x = logical_pos.x - rect.x as f32 - sidebar_offset;
-                                let local_y = logical_pos.y - rect.y as f32 - top_offset;
-                                if local_x >= 0.0 && local_y >= 0.0 && local_x < pw as f32 && local_y < ph as f32 {
-                                    Some((local_x as f64, local_y as f64))
-                                } else {
-                                    None
-                                }
-                            })();
-
-                            if let Some((local_x, local_y)) = forward_info
-                                && self.offscreen_mouse_pressed
+                    if self.terminal_manager.is_terminal(&active_id) {
+                        let terminal_info = (|| {
+                            let panes = app_state.wm.panes();
+                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
+                            let top_offset = URL_BAR_HEIGHT as f32;
+                            let sidebar_offset = if app_state.config.tab_layout == "sidebar"
+                                && !app_state.config.tab_sidebar_right
                             {
-                                let mods = aileron::offscreen_webview::modifiers_js(
-                                    self.modifiers.ctrl,
-                                    self.modifiers.alt,
-                                    self.modifiers.shift,
-                                    self.modifiers.super_key,
+                                app_state.config.tab_sidebar_width
+                            } else {
+                                0.0
+                            };
+                            let local_x = logical_pos.x - rect.x as f32 - sidebar_offset;
+                            let local_y = logical_pos.y - rect.y as f32 - top_offset;
+                            if local_x >= 0.0 && local_y >= 0.0 {
+                                Some((local_x, local_y))
+                            } else {
+                                None
+                            }
+                        })();
+
+                        if let Some((local_x, local_y)) = terminal_info {
+                            use aileron::terminal::grid::CellMetrics;
+                            if let Some(ws) = self.egui_winit.as_ref()
+                                && let Some(pane) = self.terminal_manager.get_mut(&active_id)
+                                && pane.is_selecting()
+                            {
+                                let metrics = CellMetrics::from_egui(ws.egui_ctx(), 14.0);
+                                let (line, col) = pane.pixel_to_grid(
+                                    local_x,
+                                    local_y,
+                                    metrics.cell_width,
+                                    metrics.cell_height,
                                 );
-                                if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                                    pane.forward_mouse_event("mousemove", local_x, local_y, "0", &mods);
-                                }
+                                pane.extend_selection(line, col);
+                            }
+                        }
+                    } else {
+                        let forward_info = (|| {
+                            let panes = app_state.wm.panes();
+                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
+                            let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
+                            let top_offset = URL_BAR_HEIGHT as f32;
+                            let sidebar_offset = if app_state.config.tab_layout == "sidebar"
+                                && !app_state.config.tab_sidebar_right
+                            {
+                                app_state.config.tab_sidebar_width
+                            } else {
+                                0.0
+                            };
+                            let local_x = logical_pos.x - rect.x as f32 - sidebar_offset;
+                            let local_y = logical_pos.y - rect.y as f32 - top_offset;
+                            if local_x >= 0.0
+                                && local_y >= 0.0
+                                && local_x < pw as f32
+                                && local_y < ph as f32
+                            {
+                                Some((local_x as f64, local_y as f64))
+                            } else {
+                                None
+                            }
+                        })();
+
+                        if let Some((local_x, local_y)) = forward_info
+                            && self.offscreen_mouse_pressed
+                        {
+                            let mods = aileron::offscreen_webview::modifiers_js(
+                                self.modifiers.ctrl,
+                                self.modifiers.alt,
+                                self.modifiers.shift,
+                                self.modifiers.super_key,
+                            );
+                            if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                                pane.forward_mouse_event("mousemove", local_x, local_y, "0", &mods);
                             }
                         }
                     }
+                }
             }
 
             WindowEvent::Ime(ime) => {
@@ -1595,8 +1625,7 @@ impl ApplicationHandler for AileronApp {
                                     app_state.status_message.clear();
                                 }
                             } else if let Some(app_state) = &mut self.app_state {
-                                app_state.status_message =
-                                    format!("composing: {}", text);
+                                app_state.status_message = format!("composing: {}", text);
                             }
                         }
                         _ => {}
@@ -1637,7 +1666,8 @@ impl ApplicationHandler for AileronApp {
         }
 
         {
-            let interval = std::time::Duration::from_secs(self.config.adblock_update_interval_hours * 3600);
+            let interval =
+                std::time::Duration::from_secs(self.config.adblock_update_interval_hours * 3600);
             if self.last_filter_update.elapsed() >= interval {
                 self.last_filter_update = std::time::Instant::now();
                 // Run filter list HTTP downloads on a background thread to avoid blocking the UI.
@@ -1785,7 +1815,12 @@ impl ApplicationHandler for AileronApp {
             .as_ref()
             .map(|s| s.wm.active_pane_id())
             .unwrap_or_default();
-        frame_tasks::process_mcp_commands(&self.mcp_bridge, &mut self.wry_panes, active_id, self.app_state.as_ref().unwrap());
+        frame_tasks::process_mcp_commands(
+            &self.mcp_bridge,
+            &mut self.wry_panes,
+            active_id,
+            self.app_state.as_ref().unwrap(),
+        );
 
         if let Some(close_id) = self
             .app_state
@@ -1844,9 +1879,7 @@ impl ApplicationHandler for AileronApp {
             let needs_repaint = egui_ctx.has_requested_repaint()
                 || textures_updated
                 || !self.offscreen_panes.is_empty();
-            if needs_repaint
-                && let Some(window) = &self.window
-            {
+            if needs_repaint && let Some(window) = &self.window {
                 window.request_redraw();
             }
         }
@@ -1908,9 +1941,7 @@ fn key_to_escape_sequence(key: &aileron::input::Key, mods: aileron::input::Modif
     let alt = mods.alt;
 
     // Control letter: Ctrl+A through Ctrl+Z → \x01 through \x1A
-    if ctrl
-        && let Key::Character(c) = key
-    {
+    if ctrl && let Key::Character(c) = key {
         let lower = c.to_ascii_lowercase();
         let byte = lower as u32;
         if (0x61..=0x7a).contains(&byte) {
@@ -1920,9 +1951,7 @@ fn key_to_escape_sequence(key: &aileron::input::Key, mods: aileron::input::Modif
     }
 
     // Alt+letter: ESC followed by the character
-    if alt
-        && let Key::Character(c) = key
-    {
+    if alt && let Key::Character(c) = key {
         return format!("\x1b{}", c);
     }
 
@@ -1932,16 +1961,32 @@ fn key_to_escape_sequence(key: &aileron::input::Key, mods: aileron::input::Modif
         Key::Tab => "\t".into(),
         Key::Escape => "\x1b".into(),
         Key::Up => {
-            if shift { "\x1b[1;2A".into() } else { "\x1b[A".into() }
+            if shift {
+                "\x1b[1;2A".into()
+            } else {
+                "\x1b[A".into()
+            }
         }
         Key::Down => {
-            if shift { "\x1b[1;2B".into() } else { "\x1b[B".into() }
+            if shift {
+                "\x1b[1;2B".into()
+            } else {
+                "\x1b[B".into()
+            }
         }
         Key::Right => {
-            if shift { "\x1b[1;2C".into() } else { "\x1b[C".into() }
+            if shift {
+                "\x1b[1;2C".into()
+            } else {
+                "\x1b[C".into()
+            }
         }
         Key::Left => {
-            if shift { "\x1b[1;2D".into() } else { "\x1b[D".into() }
+            if shift {
+                "\x1b[1;2D".into()
+            } else {
+                "\x1b[D".into()
+            }
         }
         Key::Home => "\x1b[H".into(),
         Key::End => "\x1b[F".into(),
@@ -2090,7 +2135,10 @@ fn main() -> anyhow::Result<()> {
         .map(|d| d.data_dir().join("logs"))
         .unwrap_or_else(|| std::path::PathBuf::from("./logs"));
     let _ = std::fs::create_dir_all(&log_dir);
-    let log_file_path = log_dir.join(format!("aileron_{}.log", chrono::Local::now().format("%Y%m%d_%H%M%S")));
+    let log_file_path = log_dir.join(format!(
+        "aileron_{}.log",
+        chrono::Local::now().format("%Y%m%d_%H%M%S")
+    ));
     let log_file = std::fs::File::create(&log_file_path).ok();
     if log_file.is_some() {
         eprintln!("[aileron] Logging to: {}", log_file_path.display());
@@ -2100,8 +2148,11 @@ fn main() -> anyhow::Result<()> {
     let subscriber = tracing_subscriber::fmt::Subscriber::builder()
         .with_max_level(tracing::Level::DEBUG)
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "aileron=debug,wgpu=warn,wry=debug,webkit2gtk=debug,gdk=debug,gtk=debug,egui=info".parse().unwrap()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                "aileron=debug,wgpu=warn,wry=debug,webkit2gtk=debug,gdk=debug,gtk=debug,egui=info"
+                    .parse()
+                    .unwrap()
+            }),
         )
         .with_writer(std::io::stderr)
         .finish();
@@ -2121,7 +2172,10 @@ fn main() -> anyhow::Result<()> {
     // Phase 1: Load config
     info!("── Phase 1: Loading config ──");
     let config = Config::load();
-    info!("Config loaded: render_mode={}, tab_layout={}, theme={}", config.render_mode, config.tab_layout, config.theme);
+    info!(
+        "Config loaded: render_mode={}, tab_layout={}, theme={}",
+        config.render_mode, config.tab_layout, config.theme
+    );
 
     // Disable WebKitGTK's DMA-BUF renderer on NVIDIA to prevent
     // "Failed to create GBM buffer" which causes the offscreen pixbuf

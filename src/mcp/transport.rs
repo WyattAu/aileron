@@ -39,7 +39,8 @@ impl McpTransport {
         let response = self.server.handle_request(&request);
         Some(serde_json::to_string(&response).unwrap_or_else(|e| {
             tracing::error!("Failed to serialize MCP response: {}", e);
-            r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error"},"id":null}"#.to_string()
+            r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error"},"id":null}"#
+                .to_string()
         }))
     }
 
@@ -99,9 +100,15 @@ mod tests {
 
     struct EchoTool;
     impl McpTool for EchoTool {
-        fn name(&self) -> &str { "echo" }
-        fn description(&self) -> &str { "Echo back the input" }
-        fn input_schema(&self) -> Value { serde_json::json!({"type": "object"}) }
+        fn name(&self) -> &str {
+            "echo"
+        }
+        fn description(&self) -> &str {
+            "Echo back the input"
+        }
+        fn input_schema(&self) -> Value {
+            serde_json::json!({"type": "object"})
+        }
         fn execute(&self, args: &Value) -> anyhow::Result<String> {
             Ok(format!("echo: {}", args))
         }

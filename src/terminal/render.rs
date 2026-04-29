@@ -7,8 +7,8 @@ use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Cell;
 use alacritty_terminal::vte::ansi::{Color, NamedColor};
 
-use super::grid::{CellMetrics, TerminalColors};
 use super::DamageInfo;
+use super::grid::{CellMetrics, TerminalColors};
 
 #[allow(clippy::too_many_arguments)]
 pub fn render_terminal(
@@ -69,10 +69,22 @@ pub fn render_terminal(
     }
 
     draw_cursor(painter, term, screen_rect, metrics, colors, display_offset);
-    draw_selection(painter, term, screen_rect, metrics, selection, cols, screen_lines);
+    draw_selection(
+        painter,
+        term,
+        screen_rect,
+        metrics,
+        selection,
+        cols,
+        screen_lines,
+    );
 
     if bell_flashing {
-        painter.rect_filled(screen_rect, 0.0, egui::Color32::from_rgba_premultiplied(255, 255, 255, 30));
+        painter.rect_filled(
+            screen_rect,
+            0.0,
+            egui::Color32::from_rgba_premultiplied(255, 255, 255, 30),
+        );
     }
 }
 
@@ -88,6 +100,9 @@ fn render_cells(
     rows: std::ops::Range<usize>,
     cols_range: std::ops::Range<usize>,
 ) {
+    let row_font_id = font_id.clone();
+    let mut text_buf = String::with_capacity(4);
+
     for row in rows {
         let grid_line_i32 = (display_offset + row) as i32;
         let y = screen_rect.min.y + row as f32 * metrics.cell_height;
@@ -110,13 +125,12 @@ fn render_cells(
             if cell.c != ' ' && cell.c != '\0' {
                 let text_pos = egui::pos2(x, y + (metrics.cell_height - metrics.font_size) * 0.5);
                 let text_color = apply_cell_flags(fg_color, cell.flags);
-                painter.text(
-                    text_pos,
-                    egui::Align2::LEFT_TOP,
-                    cell.c.to_string(),
-                    font_id.clone(),
-                    text_color,
-                );
+                text_buf.clear();
+                text_buf.push(cell.c);
+                let galley =
+                    painter.layout_no_wrap(text_buf.clone(), row_font_id.clone(), text_color);
+                let rect = egui::Align2::LEFT_TOP.anchor_size(text_pos, galley.size());
+                painter.galley(rect.min, galley, text_color);
             }
         }
     }
@@ -135,7 +149,8 @@ fn draw_cursor(
     let cursor_col = cursor_point.column.0;
     let screen_lines = term.screen_lines();
 
-    if cursor_line >= display_offset as i32 && cursor_line < (display_offset + screen_lines) as i32 {
+    if cursor_line >= display_offset as i32 && cursor_line < (display_offset + screen_lines) as i32
+    {
         let visible_row = (cursor_line - display_offset as i32) as usize;
         let cursor_x = screen_rect.min.x + cursor_col as f32 * metrics.cell_width;
         let cursor_y = screen_rect.min.y + visible_row as f32 * metrics.cell_height;

@@ -89,7 +89,11 @@ fn import_firefox_bookmarks_json(db: &rusqlite::Connection, path: &std::path::Pa
     count
 }
 
-fn walk_firefox_json_bookmarks(node: &serde_json::Value, db: &rusqlite::Connection, count: &mut usize) {
+fn walk_firefox_json_bookmarks(
+    node: &serde_json::Value,
+    db: &rusqlite::Connection,
+    count: &mut usize,
+) {
     if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
         for child in children {
             if child.get("type").and_then(|t| t.as_str()) == Some("text/x-moz-place")
@@ -195,25 +199,53 @@ pub fn import_chrome(db: &rusqlite::Connection) -> String {
             let local = std::env::var("LOCALAPPDATA")
                 .unwrap_or_else(|_| r"C:\Users\Default\AppData\Local".into());
             vec![
-                std::path::PathBuf::from(&local).join("Google").join("Chrome").join("User Data").join("Default"),
-                std::path::PathBuf::from(&local).join("Chromium").join("User Data").join("Default"),
+                std::path::PathBuf::from(&local)
+                    .join("Google")
+                    .join("Chrome")
+                    .join("User Data")
+                    .join("Default"),
+                std::path::PathBuf::from(&local)
+                    .join("Chromium")
+                    .join("User Data")
+                    .join("Default"),
             ]
         }
         #[cfg(target_os = "macos")]
         {
             let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
             vec![
-                std::path::PathBuf::from(&home).join("Library").join("Application Support").join("Google").join("Chrome").join("Default"),
-                std::path::PathBuf::from(&home).join("Library").join("Application Support").join("Chromium").join("Default"),
+                std::path::PathBuf::from(&home)
+                    .join("Library")
+                    .join("Application Support")
+                    .join("Google")
+                    .join("Chrome")
+                    .join("Default"),
+                std::path::PathBuf::from(&home)
+                    .join("Library")
+                    .join("Application Support")
+                    .join("Chromium")
+                    .join("Default"),
             ]
         }
         #[cfg(target_os = "linux")]
         {
             let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
             vec![
-                std::path::PathBuf::from(&home).join(".config").join("google-chrome").join("Default"),
-                std::path::PathBuf::from(&home).join(".config").join("chromium").join("Default"),
-                std::path::PathBuf::from(&home).join(".var").join("app").join("com.google.Chrome").join("config").join("google-chrome").join("Default"),
+                std::path::PathBuf::from(&home)
+                    .join(".config")
+                    .join("google-chrome")
+                    .join("Default"),
+                std::path::PathBuf::from(&home)
+                    .join(".config")
+                    .join("chromium")
+                    .join("Default"),
+                std::path::PathBuf::from(&home)
+                    .join(".var")
+                    .join("app")
+                    .join("com.google.Chrome")
+                    .join("config")
+                    .join("google-chrome")
+                    .join("Default"),
             ]
         }
         #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -272,7 +304,11 @@ fn import_chrome_bookmarks(db: &rusqlite::Connection, path: &std::path::Path) ->
     count
 }
 
-fn walk_chrome_bookmark_node(node: &serde_json::Value, db: &rusqlite::Connection, count: &mut usize) {
+fn walk_chrome_bookmark_node(
+    node: &serde_json::Value,
+    db: &rusqlite::Connection,
+    count: &mut usize,
+) {
     if node.get("type").and_then(|t| t.as_str()) == Some("url")
         && let (Some(url), Some(name)) = (
             node.get("url").and_then(|u| u.as_str()),

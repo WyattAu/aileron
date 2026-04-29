@@ -339,7 +339,10 @@ impl KeybindingRegistry {
     /// - `"<F1>"` - function keys
     ///
     /// Returns the number of bindings applied.
-    pub fn apply_config_overrides(&mut self, overrides: &std::collections::HashMap<String, String>) -> usize {
+    pub fn apply_config_overrides(
+        &mut self,
+        overrides: &std::collections::HashMap<String, String>,
+    ) -> usize {
         let mut applied = 0usize;
         for (key_str, action_str) in overrides {
             let combo = match Self::parse_key_combo(key_str) {
@@ -366,7 +369,10 @@ impl KeybindingRegistry {
     fn parse_key_combo(s: &str) -> Option<KeyCombo> {
         let s = s.trim();
         // Strip angle brackets: <C-p> → C-p
-        let inner = s.strip_prefix('<').and_then(|r| r.strip_suffix('>')).unwrap_or(s);
+        let inner = s
+            .strip_prefix('<')
+            .and_then(|r| r.strip_suffix('>'))
+            .unwrap_or(s);
 
         let mut modifiers = Modifiers::none();
         let mut key_part = inner;
@@ -390,7 +396,9 @@ impl KeybindingRegistry {
         let key = if key_part.starts_with('F') && key_part.len() <= 3 {
             // Function key: F1-F12
             let num: u8 = key_part[1..].parse().ok()?;
-            if num == 0 || num > 12 { return None; }
+            if num == 0 || num > 12 {
+                return None;
+            }
             Key::F(num)
         } else if key_part.len() == 1 {
             Key::Character(key_part.chars().next()?)

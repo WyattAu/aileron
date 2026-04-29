@@ -13,7 +13,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tracing::warn;
 
 /// Handle to a PTY session.
@@ -66,7 +66,7 @@ impl PtyHandle {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        let mut output = pending_clone.lock().unwrap();
+                        let mut output = pending_clone.lock().unwrap_or_else(|e| e.into_inner());
                         output.extend_from_slice(&buf[..n]);
                     }
                     Err(e) => {
@@ -107,7 +107,10 @@ impl PtyHandle {
     /// Drain all pending output from the read thread buffer.
     /// Returns the bytes and clears the buffer.
     pub fn drain_output(&self) -> Vec<u8> {
-        let mut buf = self.pending_output.lock().unwrap();
+        let mut buf = self
+            .pending_output
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         std::mem::take(&mut *buf)
     }
 

@@ -16,18 +16,18 @@
 //! - Navigation events are collected via channels since wry callbacks are `Fn` closures.
 
 #[cfg(target_os = "linux")]
-use gtk::prelude::{ContainerExt, GtkWindowExt, WidgetExt};
-#[cfg(target_os = "linux")]
 use glib_sys;
+#[cfg(target_os = "linux")]
+use gtk::prelude::{ContainerExt, GtkWindowExt, WidgetExt};
 use std::collections::HashMap;
 use std::sync::mpsc;
 use tracing::{info, warn};
 use url::Url;
 use uuid::Uuid;
-use wry::dpi::{LogicalPosition, LogicalSize, Position, Size};
-use wry::raw_window_handle::HasWindowHandle;
 #[cfg(target_os = "linux")]
 use wry::WebViewBuilderExtUnix;
+use wry::dpi::{LogicalPosition, LogicalSize, Position, Size};
+use wry::raw_window_handle::HasWindowHandle;
 use wry::{PageLoadEvent, Rect, WebView, WebViewBuilder};
 
 /// Whether the webview is embedded as a child or in a standalone GTK window.
@@ -73,11 +73,19 @@ pub enum WryEvent {
     /// Page title changed.
     TitleChanged { pane_id: Uuid, title: String },
     /// A download was started.
-    DownloadStarted { pane_id: Uuid, url: String, filename: String },
+    DownloadStarted {
+        pane_id: Uuid,
+        url: String,
+        filename: String,
+    },
     /// Request to open a file (from file browser).
     OpenFile { path: String },
     /// HTTP URL was upgraded to HTTPS.
-    HttpsUpgraded { pane_id: Uuid, from: String, to: String },
+    HttpsUpgraded {
+        pane_id: Uuid,
+        from: String,
+        to: String,
+    },
     /// IPC message from a webview page.
     IpcMessage { pane_id: Uuid, message: String },
 }
@@ -110,9 +118,16 @@ impl WryPane {
 
         // === Path 1: Try build_as_child (X11) ===
         // Builder is built inline so event_tx isn't lost if this path fails.
-        match Self::make_builder(&url_str, pid, event_tx.clone(), blocked_domains.clone(), devtools, popup_blocker)
-            .with_bounds(bounds)
-            .build_as_child(parent)
+        match Self::make_builder(
+            &url_str,
+            pid,
+            event_tx.clone(),
+            blocked_domains.clone(),
+            devtools,
+            popup_blocker,
+        )
+        .with_bounds(bounds)
+        .build_as_child(parent)
         {
             Ok(webview) => {
                 info!(
@@ -145,7 +160,15 @@ impl WryPane {
         // === Path 2: GTK window fallback (Wayland) ===
         #[cfg(target_os = "linux")]
         {
-            Self::create_gtk_pane(pid, initial_url, bounds, event_tx, event_rx, devtools, popup_blocker)
+            Self::create_gtk_pane(
+                pid,
+                initial_url,
+                bounds,
+                event_tx,
+                event_rx,
+                devtools,
+                popup_blocker,
+            )
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -191,7 +214,14 @@ impl WryPane {
         gtk_window.set_child(Some(&fixed));
 
         // Build the webview inside the GTK container using the SAME event_tx
-        let builder = Self::make_builder(&url_str, pane_id, event_tx, Vec::new(), devtools, popup_blocker);
+        let builder = Self::make_builder(
+            &url_str,
+            pane_id,
+            event_tx,
+            Vec::new(),
+            devtools,
+            popup_blocker,
+        );
 
         let webview = builder.build_gtk(&fixed)?;
 
@@ -225,7 +255,16 @@ impl WryPane {
         devtools: bool,
         popup_blocker: bool,
     ) -> WebViewBuilder<'static> {
-        Self::make_builder_with_privacy(url_str, pid, event_tx, blocked_domains, true, true, devtools, popup_blocker)
+        Self::make_builder_with_privacy(
+            url_str,
+            pid,
+            event_tx,
+            blocked_domains,
+            true,
+            true,
+            devtools,
+            popup_blocker,
+        )
     }
 
     /// Build a WebViewBuilder with common configuration and privacy settings.
@@ -667,7 +706,15 @@ impl WryPaneManager {
     where
         W: HasWindowHandle,
     {
-        let pane = WryPane::new(parent, pane_id, initial_url, bounds, blocked_domains, devtools, popup_blocker)?;
+        let pane = WryPane::new(
+            parent,
+            pane_id,
+            initial_url,
+            bounds,
+            blocked_domains,
+            devtools,
+            popup_blocker,
+        )?;
         self.panes.insert(pane_id, pane);
         Ok(())
     }
@@ -1368,7 +1415,12 @@ document.getElementById('search').addEventListener('keydown', function(e) {
 pub fn percent_encode_path(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || b == b'/' || b == b'-' || b == b'_' || b == b'.' || b == b'~'
+        if b.is_ascii_alphanumeric()
+            || b == b'/'
+            || b == b'-'
+            || b == b'_'
+            || b == b'.'
+            || b == b'~'
         {
             out.push(b as char);
         } else {
@@ -1383,11 +1435,9 @@ pub(crate) fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len()
-            && let Ok(byte) = u8::from_str_radix(
-                &String::from_utf8_lossy(&bytes[i + 1..i + 3]),
-                16,
-            )
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let Ok(byte) = u8::from_str_radix(&String::from_utf8_lossy(&bytes[i + 1..i + 3]), 16)
         {
             result.push(byte);
             i += 3;
@@ -1502,12 +1552,10 @@ pub(crate) fn file_browser_page(uri: &wry::http::Uri) -> String {
 
     let mut breadcrumb_parts = Vec::new();
     if dir_path == "/" {
-        breadcrumb_parts.push(
-            "<a href=\"aileron://files?path=%2F\">/</a>".to_string()
-        );
+        breadcrumb_parts.push("<a href=\"aileron://files?path=%2F\">/</a>".to_string());
     } else {
         breadcrumb_parts.push(
-            "<a href=\"aileron://files?path=%2F\">/</a><span class=\"sep\">/</span>".to_string()
+            "<a href=\"aileron://files?path=%2F\">/</a><span class=\"sep\">/</span>".to_string(),
         );
         let segments: Vec<&str> = dir_path.trim_start_matches('/').split('/').collect();
         let mut accumulated = String::new();
@@ -1521,10 +1569,7 @@ pub(crate) fn file_browser_page(uri: &wry::http::Uri) -> String {
                     html_escape(seg)
                 ));
             } else {
-                breadcrumb_parts.push(format!(
-                    "<span>{}</span>",
-                    html_escape(seg)
-                ));
+                breadcrumb_parts.push(format!("<span>{}</span>", html_escape(seg)));
             }
             accumulated.push('/');
         }
@@ -1539,10 +1584,7 @@ pub(crate) fn file_browser_page(uri: &wry::http::Uri) -> String {
         if parent_str.is_empty() {
             "aileron://files?path=%2F".to_string()
         } else {
-            format!(
-                "aileron://files?path={}",
-                percent_encode_path(&parent_str)
-            )
+            format!("aileron://files?path={}", percent_encode_path(&parent_str))
         }
     };
 
@@ -1573,7 +1615,9 @@ pub(crate) fn file_browser_page(uri: &wry::http::Uri) -> String {
         let full_path = entry.path();
         let encoded = percent_encode_path(&full_path.to_string_lossy());
         let meta = entry.metadata().ok();
-        let size = meta.as_ref().map_or("-".to_string(), |m| format_size(m.len()));
+        let size = meta
+            .as_ref()
+            .map_or("-".to_string(), |m| format_size(m.len()));
         let modified = meta.as_ref().map_or("-".to_string(), format_modified_time);
         rows_html.push_str(&format!(
             "<tr data-index=\"{}\"><td class=\"file\"><a href=\"aileron://open?path={}\">{}</a></td><td class=\"size\">{}</td><td class=\"modified\">{}</td></tr>\n",
@@ -1663,7 +1707,8 @@ pub(crate) fn file_browser_page(uri: &wry::http::Uri) -> String {
 }
 
 pub(crate) fn aileron_404_page(requested_url: &str) -> String {
-    format!(r#"<!DOCTYPE html>
+    format!(
+        r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Page Not Found</title>
 <style>
 body {{ font-family: monospace; background: #1a1a2e; color: #ccc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
@@ -1678,7 +1723,9 @@ a {{ color: #4db4ff; }}
 <p>Page not found</p>
 <p class="url">{url}</p>
 <p><a href="aileron://new">Go to new tab</a></p>
-</div></body></html>"#, url = html_escape(requested_url))
+</div></body></html>"#,
+        url = html_escape(requested_url)
+    )
 }
 
 pub(crate) fn aileron_terminal_page() -> String {
@@ -2129,7 +2176,10 @@ mod tests {
             Position::Logical(p) => p,
             _ => panic!("Expected Logical position"),
         };
-        assert_eq!(pos.x, 0.0, "X should not be offset when sidebar is on right");
+        assert_eq!(
+            pos.x, 0.0,
+            "X should not be offset when sidebar is on right"
+        );
         assert_eq!(pos.y, 32.0);
 
         let size = match result.size {

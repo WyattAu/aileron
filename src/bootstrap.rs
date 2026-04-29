@@ -32,7 +32,10 @@ pub fn install_panic_hook() {
         );
 
         let _ = std::fs::write(&crash_path, report);
-        eprintln!("[aileron] CRASH REPORT WRITTEN TO: {}", crash_path.display());
+        eprintln!(
+            "[aileron] CRASH REPORT WRITTEN TO: {}",
+            crash_path.display()
+        );
 
         // Also print to stderr
         default_hook(info);
@@ -43,11 +46,26 @@ pub fn install_panic_hook() {
 pub fn log_environment() {
     #[cfg(target_os = "linux")]
     {
-        tracing::info!("WAYLAND_DISPLAY: {:?}", std::env::var("WAYLAND_DISPLAY").ok());
+        tracing::info!(
+            "WAYLAND_DISPLAY: {:?}",
+            std::env::var("WAYLAND_DISPLAY").ok()
+        );
         tracing::info!("DISPLAY: {:?}", std::env::var("DISPLAY").ok());
-        tracing::info!("XDG_SESSION_TYPE: {:?}", std::env::var("XDG_SESSION_TYPE").ok());
+        tracing::info!(
+            "XDG_SESSION_TYPE: {:?}",
+            std::env::var("XDG_SESSION_TYPE").ok()
+        );
         tracing::info!("GDK_BACKEND: {:?}", std::env::var("GDK_BACKEND").ok());
-        tracing::info!("LD_LIBRARY_PATH: {:?}", std::env::var("LD_LIBRARY_PATH").ok().map(|v| if v.len() > 80 { format!("{}...(truncated)", &v[..80]) } else { v }));
+        tracing::info!(
+            "LD_LIBRARY_PATH: {:?}",
+            std::env::var("LD_LIBRARY_PATH")
+                .ok()
+                .map(|v| if v.len() > 80 {
+                    format!("{}...(truncated)", &v[..80])
+                } else {
+                    v
+                })
+        );
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -59,14 +77,20 @@ pub fn log_environment() {
     #[cfg(target_os = "linux")]
     {
         // Check for Vulkan
-        if let Ok(output) = std::process::Command::new("vulkaninfo").arg("--summary").output() {
+        if let Ok(output) = std::process::Command::new("vulkaninfo")
+            .arg("--summary")
+            .output()
+        {
             if output.status.success() {
                 let summary = String::from_utf8_lossy(&output.stdout);
                 for line in summary.lines().take(10) {
                     tracing::info!("vulkaninfo: {}", line.trim());
                 }
             } else {
-                tracing::warn!("vulkaninfo failed: {}", String::from_utf8_lossy(&output.stderr));
+                tracing::warn!(
+                    "vulkaninfo failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
         } else {
             tracing::warn!("vulkaninfo not found — Vulkan may not be available");
@@ -82,13 +106,17 @@ pub fn log_environment() {
         }
 
         // Check Vulkan ICDs
-        if let Ok(output) = std::process::Command::new("ls").arg("/usr/share/vulkan/icd.d/").output()
+        if let Ok(output) = std::process::Command::new("ls")
+            .arg("/usr/share/vulkan/icd.d/")
+            .output()
             && output.status.success()
         {
             let icds = String::from_utf8_lossy(&output.stdout);
             tracing::info!("Vulkan ICDs: {}", icds.trim());
         }
-        if let Ok(output) = std::process::Command::new("ls").arg("/etc/vulkan/icd.d/").output()
+        if let Ok(output) = std::process::Command::new("ls")
+            .arg("/etc/vulkan/icd.d/")
+            .output()
             && output.status.success()
         {
             let icds = String::from_utf8_lossy(&output.stdout);

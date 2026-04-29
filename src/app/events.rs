@@ -3,9 +3,9 @@ use tracing::info;
 use crate::input::{EventDestination, Key, KeyEvent, Mode};
 use crate::ui::palette::PaletteAction;
 
-use super::dispatch::ActionEffect;
 use super::AppState;
 use super::WryAction;
+use super::dispatch::ActionEffect;
 
 impl AppState {
     pub fn process_key_event(&mut self, event: KeyEvent) {
@@ -14,8 +14,8 @@ impl AppState {
             match &event.key {
                 Key::Character('j') | Key::Down => {
                     if !self.history_entries.is_empty() {
-                        self.history_selected = (self.history_selected + 1)
-                            .min(self.history_entries.len() - 1);
+                        self.history_selected =
+                            (self.history_selected + 1).min(self.history_entries.len() - 1);
                     }
                     return;
                 }
@@ -68,8 +68,8 @@ impl AppState {
             match &event.key {
                 Key::Character('j') | Key::Down => {
                     if !self.bookmarks_entries.is_empty() {
-                        self.bookmarks_selected = (self.bookmarks_selected + 1)
-                            .min(self.bookmarks_entries.len() - 1);
+                        self.bookmarks_selected =
+                            (self.bookmarks_selected + 1).min(self.bookmarks_entries.len() - 1);
                     }
                     return;
                 }
@@ -96,7 +96,8 @@ impl AppState {
                         let removed_id = bm.id;
                         self.bookmarks_entries.retain(|b| b.id != removed_id);
                         if self.bookmarks_selected >= self.bookmarks_entries.len() {
-                            self.bookmarks_selected = self.bookmarks_entries.len().saturating_sub(1);
+                            self.bookmarks_selected =
+                                self.bookmarks_entries.len().saturating_sub(1);
                         }
                     }
                     return;
@@ -153,16 +154,12 @@ impl AppState {
                     // Store the pending mark letter; JS will send the actual
                     // scroll fraction via IPC, which is handled in frame_tasks.rs.
                     self.pending_mark_set = Some(*c);
-                    self.pending_wry_actions.push_back(WryAction::CaptureScrollFraction);
+                    self.pending_wry_actions
+                        .push_back(WryAction::CaptureScrollFraction);
                     self.status_message = format!("Mark {} set", c);
                 }
                 'g' => {
-                    if let Some(frac) = self
-                        .marks
-                        .get(&active_id)
-                        .and_then(|m| m.get(c))
-                        .copied()
-                    {
+                    if let Some(frac) = self.marks.get(&active_id).and_then(|m| m.get(c)).copied() {
                         // Set a pending scroll target; the main loop will apply it.
                         self.pending_mark_jump = Some(frac);
                         self.status_message = format!("Mark {} jumped", c);
@@ -288,7 +285,10 @@ impl AppState {
                 ActionEffect::OpenTerminal => {
                     let active = self.wm.active_pane_id();
                     let term_url = url::Url::parse("aileron://terminal").unwrap();
-                    match self.wm.split(active, crate::wm::SplitDirection::Vertical, 0.5) {
+                    match self
+                        .wm
+                        .split(active, crate::wm::SplitDirection::Vertical, 0.5)
+                    {
                         Ok(new_id) => {
                             self.engines.create_pane(new_id, term_url.clone());
                             self.terminal_pane_ids.insert(new_id);
@@ -324,16 +324,17 @@ impl AppState {
                 ActionEffect::RequestExternalBrowser => {
                     let active_id = self.wm.active_pane_id();
                     if let Some(engine) = self.engines.get(&active_id)
-                        && let Some(url) = engine.current_url() {
-                            match crate::servo::open_in_system_browser(url) {
-                                Ok(()) => {
-                                    self.status_message = "Opened in system browser".into();
-                                }
-                                Err(e) => {
-                                    self.status_message = format!("Failed: {}", e);
-                                }
+                        && let Some(url) = engine.current_url()
+                    {
+                        match crate::servo::open_in_system_browser(url) {
+                            Ok(()) => {
+                                self.status_message = "Opened in system browser".into();
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Failed: {}", e);
                             }
                         }
+                    }
                 }
                 ActionEffect::OpenFindBar => {
                     self.find_bar_open = true;
@@ -372,7 +373,8 @@ impl AppState {
                     self.hint_mode = !self.hint_mode;
                     self.hint_new_tab = self.hint_mode;
                     if self.hint_mode {
-                        self.status_message = "Link hints (new tab): type letters, Escape to cancel".into();
+                        self.status_message =
+                            "Link hints (new tab): type letters, Escape to cancel".into();
                     } else {
                         self.status_message.clear();
                     }
@@ -404,8 +406,7 @@ impl AppState {
                             };
                             self.status_message = format!("Copied: {}", display);
                         } else {
-                            self.status_message =
-                                "Clipboard: no clipboard tool available".into();
+                            self.status_message = "Clipboard: no clipboard tool available".into();
                         }
                     }
                 }
@@ -428,11 +429,13 @@ impl AppState {
                     let active_id = self.wm.active_pane_id();
                     if self.reader_mode_panes.contains(&active_id) {
                         self.reader_mode_panes.remove(&active_id);
-                        self.pending_wry_actions.push_back(WryAction::ExitReaderMode);
+                        self.pending_wry_actions
+                            .push_back(WryAction::ExitReaderMode);
                         self.status_message = "Reader mode off".into();
                     } else {
                         self.reader_mode_panes.insert(active_id);
-                        self.pending_wry_actions.push_back(WryAction::EnterReaderMode);
+                        self.pending_wry_actions
+                            .push_back(WryAction::EnterReaderMode);
                         self.status_message = "Reader mode on".into();
                     }
                 }
@@ -441,11 +444,13 @@ impl AppState {
                     let active_id = self.wm.active_pane_id();
                     if self.minimal_mode_panes.contains(&active_id) {
                         self.minimal_mode_panes.remove(&active_id);
-                        self.pending_wry_actions.push_back(WryAction::ExitMinimalMode);
+                        self.pending_wry_actions
+                            .push_back(WryAction::ExitMinimalMode);
                         self.status_message = "Minimal mode off".into();
                     } else {
                         self.minimal_mode_panes.insert(active_id);
-                        self.pending_wry_actions.push_back(WryAction::EnterMinimalMode);
+                        self.pending_wry_actions
+                            .push_back(WryAction::EnterMinimalMode);
                         self.status_message = "Minimal mode on".into();
                     }
                 }
@@ -507,10 +512,12 @@ impl AppState {
                     let active_id = self.wm.active_pane_id();
                     if self.pinned_pane_ids.contains(&active_id) {
                         self.pinned_pane_ids.remove(&active_id);
-                        self.status_message = crate::i18n::tr(crate::i18n::TrKey("status_unpinned")).into();
+                        self.status_message =
+                            crate::i18n::tr(crate::i18n::TrKey("status_unpinned")).into();
                     } else {
                         self.pinned_pane_ids.insert(active_id);
-                        self.status_message = crate::i18n::tr(crate::i18n::TrKey("status_pinned")).into();
+                        self.status_message =
+                            crate::i18n::tr(crate::i18n::TrKey("status_pinned")).into();
                     }
                 }
             }

@@ -81,14 +81,15 @@ impl PopupManager {
                 }
             }
             winit::event::WindowEvent::Resized(physical_size) => {
-                if physical_size.width > 0 && physical_size.height > 0
+                if physical_size.width > 0
+                    && physical_size.height > 0
                     && let Some(ref mut popup) = self.windows.get_mut(&window_id)
                     && let Some(ref mut pane) = popup.wry_pane
                 {
                     let bounds = wry::Rect {
-                        position: wry::dpi::Position::Logical(
-                            wry::dpi::LogicalPosition::new(0.0, 0.0),
-                        ),
+                        position: wry::dpi::Position::Logical(wry::dpi::LogicalPosition::new(
+                            0.0, 0.0,
+                        )),
                         size: wry::dpi::Size::Logical(wry::dpi::LogicalSize::new(
                             physical_size.width as f64,
                             physical_size.height as f64,

@@ -157,25 +157,27 @@ impl PlatformOps for LinuxPlatform {
             .filter(|o| o.status.success() && !o.stdout.is_empty())
             .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
 
-        wayland_out.or_else(|| {
-            std::process::Command::new("xclip")
-                .args(["-selection", "clipboard", "-o"])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .output()
-                .ok()
-                .filter(|o| o.status.success() && !o.stdout.is_empty())
-                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-        }).or_else(|| {
-            std::process::Command::new("xsel")
-                .args(["--clipboard", "--output"])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .output()
-                .ok()
-                .filter(|o| o.status.success() && !o.stdout.is_empty())
-                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-        })
+        wayland_out
+            .or_else(|| {
+                std::process::Command::new("xclip")
+                    .args(["-selection", "clipboard", "-o"])
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::null())
+                    .output()
+                    .ok()
+                    .filter(|o| o.status.success() && !o.stdout.is_empty())
+                    .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+            })
+            .or_else(|| {
+                std::process::Command::new("xsel")
+                    .args(["--clipboard", "--output"])
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::null())
+                    .output()
+                    .ok()
+                    .filter(|o| o.status.success() && !o.stdout.is_empty())
+                    .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+            })
     }
 }
 

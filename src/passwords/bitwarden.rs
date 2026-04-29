@@ -457,7 +457,12 @@ impl BitwardenClient {
     /// Generate JavaScript to auto-fill credentials using specific element IDs.
     /// Falls back to querySelectorAll if IDs are empty or elements not found.
     /// All values are escaped using Rust debug format (`{:?}`) for safety.
-    pub fn autofill_by_id_js(&self, username_id: &str, password_id: &str, credential: &Credential) -> String {
+    pub fn autofill_by_id_js(
+        &self,
+        username_id: &str,
+        password_id: &str,
+        credential: &Credential,
+    ) -> String {
         let username = credential.username.as_str();
         let password = credential.password.as_str();
         format!(

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::extensions::types::Result;
 
@@ -32,7 +33,7 @@ pub trait StorageArea: Send + Sync {
 
     fn get_bytes_in_use(&self, keys: Option<Vec<String>>) -> Result<u64>;
 
-    fn on_changed(&self, callback: Box<dyn Fn(StorageChanges, String) + Send + Sync>);
+    fn on_changed(&self, callback: Arc<dyn Fn(StorageChanges, String) + Send + Sync>);
 }
 
 /// Key-value storage for extensions.

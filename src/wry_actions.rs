@@ -168,14 +168,17 @@ pub fn process_wry_action(
             } else {
                 return Ok(());
             }
-            let display_title = if title_str.is_empty() { &url_str } else { &title_str };
+            let display_title = if title_str.is_empty() {
+                &url_str
+            } else {
+                &title_str
+            };
             if let Some(app_state) = app_state
                 && let Some(ref conn) = app_state.db
             {
                 if crate::db::bookmarks::is_bookmarked(conn, &url_str) {
                     let _ = crate::db::bookmarks::remove_bookmark(conn, &url_str);
-                    app_state.status_message =
-                        format!("Bookmark removed: {}", display_title);
+                    app_state.status_message = format!("Bookmark removed: {}", display_title);
                 } else {
                     let _ = crate::db::bookmarks::add_bookmark(conn, &url_str, display_title);
                     app_state.status_message = format!("Bookmarked: {}", display_title);
@@ -202,12 +205,14 @@ pub fn process_wry_action(
         crate::app::WryAction::SmoothScroll { x, y } => {
             if let Some(pane) = offscreen_panes.get_mut(&active_id) {
                 pane.execute_js(&format!(
-                    "window.scrollBy({{top: {}, left: {}, behavior: 'smooth'}})", y, x
+                    "window.scrollBy({{top: {}, left: {}, behavior: 'smooth'}})",
+                    y, x
                 ));
             }
             if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
                 let js = format!(
-                    "window.scrollBy({{top: {}, left: {}, behavior: 'smooth'}})", y, x
+                    "window.scrollBy({{top: {}, left: {}, behavior: 'smooth'}})",
+                    y, x
                 );
                 wry_pane.execute_js(&js);
             }
@@ -526,8 +531,10 @@ pub fn process_wry_action(
             }
         }
         crate::app::WryAction::GetNetworkLog => {
-            let json = eval_native(wry_panes, active_id, crate::servo::NETWORK_LOG_JS)
-                .or_else(|| eval_offscreen(offscreen_panes, active_id, crate::servo::NETWORK_LOG_JS));
+            let json =
+                eval_native(wry_panes, active_id, crate::servo::NETWORK_LOG_JS).or_else(|| {
+                    eval_offscreen(offscreen_panes, active_id, crate::servo::NETWORK_LOG_JS)
+                });
             if let Some(msg) = json.as_ref().and_then(|j| format_network_log(j)) {
                 if let Some(app_state) = app_state {
                     app_state.status_message = msg;
@@ -547,8 +554,10 @@ pub fn process_wry_action(
             }
         }
         crate::app::WryAction::GetConsoleLog => {
-            let json = eval_native(wry_panes, active_id, crate::servo::CONSOLE_LOG_JS)
-                .or_else(|| eval_offscreen(offscreen_panes, active_id, crate::servo::CONSOLE_LOG_JS));
+            let json =
+                eval_native(wry_panes, active_id, crate::servo::CONSOLE_LOG_JS).or_else(|| {
+                    eval_offscreen(offscreen_panes, active_id, crate::servo::CONSOLE_LOG_JS)
+                });
             if let Some(msg) = json.as_ref().and_then(|j| format_console_log(j)) {
                 if let Some(app_state) = app_state {
                     app_state.status_message = msg;
