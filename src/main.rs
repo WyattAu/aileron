@@ -100,6 +100,9 @@ struct AileronApp {
     /// Tracks whether the first frame has rendered (for startup timing).
     first_frame: bool,
 
+    /// Whether a resize happened and panes need repositioning.
+    resize_pending: bool,
+
     /// Frame counter for diagnostics.
     frame_count: u64,
 
@@ -183,6 +186,7 @@ impl AileronApp {
             pending_pane_creates: std::collections::VecDeque::new(),
             adblock_reload_pending: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             adaptive_quality,
+            resize_pending: false,
             last_filter_update: std::time::Instant::now(),
         }
     }
@@ -1047,7 +1051,10 @@ impl ApplicationHandler for AileronApp {
                 physical_size.width as f64,
                 physical_size.height as f64,
             ));
-            self.reposition_all_panes();
+            // Defer pane repositioning to RedrawRequested to avoid calling
+            // into GTK/WebKitGTK during the resize event itself, which can
+            // deadlock or crash on NVIDIA + XWayland.
+            self.resize_pending = true;
         }
 
         // Handle events
@@ -1073,8 +1080,12 @@ impl ApplicationHandler for AileronApp {
             }
 
             WindowEvent::Resized(physical_size) => {
-                if let Some(gfx) = &self.gfx {
+                if physical_size.width > 0
+                    && physical_size.height > 0
+                    && let Some(gfx) = &self.gfx
+                {
                     gfx.resize(physical_size.width, physical_size.height);
+                    self.resize_pending = true;
                 }
             }
 
@@ -1699,6 +1710,13 @@ impl ApplicationHandler for AileronApp {
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        // Handle deferred resize (pane repositioning).
+        // Doing this inside the Resized event can crash GTK/WebKitGTK.
+        if self.resize_pending {
+            self.resize_pending = false;
+            self.reposition_all_panes();
+        }
+
         if self.first_frame {
             self.first_frame = false;
             info!("Startup completed in {:?}", self.startup_start.elapsed());
