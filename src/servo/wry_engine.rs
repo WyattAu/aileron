@@ -261,15 +261,14 @@ impl WryPane {
                         context.to_glib_none().0,
                         1,
                     );
-                    let langs: Vec<std::ffi::CString> = vec![
-                        std::ffi::CString::new("en_US").unwrap(),
-                        std::ffi::CString::new("en_GB").unwrap(),
-                    ];
-                    let lang_ptrs: Vec<*const i8> = langs.iter().map(|s| s.as_ptr()).collect();
-                    let lang_ptr: *const *const i8 = lang_ptrs.as_ptr();
+                    // Null-terminated array required by WebKitGTK FFI
+                    let c_en_us = std::ffi::CString::new("en_US").unwrap();
+                    let c_en_gb = std::ffi::CString::new("en_GB").unwrap();
+                    let lang_ptrs: Vec<*const i8> =
+                        vec![c_en_us.as_ptr(), c_en_gb.as_ptr(), std::ptr::null()];
                     webkit2gtk::ffi::webkit_web_context_set_spell_checking_languages(
                         context.to_glib_none().0,
-                        lang_ptr,
+                        lang_ptrs.as_ptr(),
                     );
                 }
             }
