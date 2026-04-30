@@ -2175,28 +2175,6 @@ fn main() -> anyhow::Result<()> {
 
     // Phase 3: Create event loop
     info!("── Phase 3: Creating event loop ──");
-    // On Linux with NVIDIA + Wayland, winit's Wayland backend creates a
-    // Vulkan surface that can't acquire the swapchain (1s timeout per frame).
-    // Force XWayland for winit — GTK/WebKitGTK still use their own backend.
-    #[cfg(target_os = "linux")]
-    let event_loop = {
-        use winit::platform::x11::EventLoopBuilderExtX11;
-        let mut builder = EventLoop::builder();
-        // Check if NVIDIA + Wayland — if so, force X11
-        let is_nvidia = (0..=9).any(|i| {
-            let path = format!("/sys/class/drm/card{}/device/vendor", i);
-            std::fs::read_to_string(&path)
-                .map(|v| v.trim() == "0x10de")
-                .unwrap_or(false)
-        });
-        let is_wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
-        if is_nvidia && is_wayland {
-            builder.with_x11();
-            info!("NVIDIA + Wayland detected — forcing X11 event loop (XWayland)");
-        }
-        builder.build()?
-    };
-    #[cfg(not(target_os = "linux"))]
     let event_loop = EventLoop::builder().build()?;
     info!("Event loop created successfully");
 
