@@ -1082,7 +1082,7 @@ impl ApplicationHandler for AileronApp {
             WindowEvent::Resized(physical_size) => {
                 if physical_size.width > 0
                     && physical_size.height > 0
-                    && let Some(gfx) = &self.gfx
+                    && let Some(gfx) = &mut self.gfx
                 {
                     gfx.resize(physical_size.width, physical_size.height);
                     self.resize_pending = true;

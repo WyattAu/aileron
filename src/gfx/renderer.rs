@@ -11,6 +11,8 @@ pub struct GfxState {
     pub queue: wgpu::Queue,
     pub egui_renderer: egui_wgpu::Renderer,
     pub surface_format: wgpu::TextureFormat,
+    /// Last successfully configured surface size.
+    surface_size: (u32, u32),
 }
 
 /// GPU backend combinations to try, in order of preference.
@@ -124,14 +126,18 @@ impl GfxState {
             .copied()
             .unwrap_or(surface_capabilities.alpha_modes[0]);
 
+        let initial_size = window.inner_size();
+        let initial_w = initial_size.width;
+        let initial_h = initial_size.height;
+
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 format: surface_format,
-                width: window.inner_size().width,
-                height: window.inner_size().height,
-                    present_mode: wgpu::PresentMode::Immediate,
+                width: initial_w,
+                height: initial_h,
+                present_mode: wgpu::PresentMode::Immediate,
                 alpha_mode,
                 view_formats: vec![],
                 desired_maximum_frame_latency: 1,
@@ -149,12 +155,13 @@ impl GfxState {
             queue,
             egui_renderer,
             surface_format,
+            surface_size: (initial_w, initial_h),
         })
     }
 
     /// Resize the surface after a window resize event.
-    pub fn resize(&self, width: u32, height: u32) {
-        if width > 0 && height > 0 {
+    pub fn resize(&mut self, width: u32, height: u32) {
+        if width > 0 && height > 0 && (width, height) != self.surface_size {
             self.surface.configure(
                 &self.device,
                 &wgpu::SurfaceConfiguration {
@@ -162,20 +169,25 @@ impl GfxState {
                     format: self.surface_format,
                     width,
                     height,
-                present_mode: wgpu::PresentMode::Immediate,
+                    present_mode: wgpu::PresentMode::Immediate,
                     alpha_mode: wgpu::CompositeAlphaMode::Opaque,
                     view_formats: vec![],
                     desired_maximum_frame_latency: 1,
                 },
             );
+            self.surface_size = (width, height);
         }
     }
 
     /// Build a ScreenDescriptor from the current window size.
+    /// Clamps to the last successfully configured surface size to prevent
+    /// viewport validation errors during resize.
     pub fn screen_descriptor(&self, window: &Window) -> ScreenDescriptor {
         let size = window.inner_size();
+        let w = size.width.min(self.surface_size.0);
+        let h = size.height.min(self.surface_size.1);
         ScreenDescriptor {
-            size_in_pixels: [size.width, size.height],
+            size_in_pixels: [w, h],
             pixels_per_point: window.scale_factor() as f32,
         }
     }
