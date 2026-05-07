@@ -142,6 +142,12 @@ struct AileronApp {
 
     /// Last time adblock filter lists were updated (for periodic refresh).
     last_filter_update: std::time::Instant,
+
+    /// Guards against double-processing: on Wayland, a single keystroke
+    /// can produce both an Ime::Commit and a KeyboardInput event.
+    /// Set to true after handling an Ime::Commit in Normal/Command mode,
+    /// then cleared after the corresponding KeyboardInput is skipped.
+    ime_just_committed: bool,
 }
 
 impl AileronApp {
@@ -188,6 +194,7 @@ impl AileronApp {
             adaptive_quality,
             resize_pending: false,
             last_filter_update: std::time::Instant::now(),
+            ime_just_committed: false,
         }
     }
 
@@ -228,10 +235,19 @@ impl AileronApp {
         );
         winit_state.set_max_texture_side(gfx.device.limits().max_texture_dimension_2d as usize);
 
-        // Initialize app state with viewport and config
+        // Initialize app state with viewport and config.
+        // The BSP tree and egui operate in logical (CSS) pixels, but
+        // window.inner_size() returns physical pixels. Convert by dividing
+        // by the scale factor so all downstream sizing is correct.
         info!("init_graphics(): Creating AppState...");
         let size = window.inner_size();
-        let viewport = Rect::new(0.0, 0.0, size.width as f64, size.height as f64);
+        let scale = window.scale_factor();
+        let viewport = Rect::new(
+            0.0,
+            0.0,
+            size.width as f64 / scale,
+            size.height as f64 / scale,
+        );
         let app_state = match AppState::new(viewport, self.config.clone()) {
             Ok(s) => {
                 info!(
@@ -675,7 +691,9 @@ impl AileronApp {
                         self.terminal_manager.resize(pane_id, cols, rows);
                     }
                 } else {
-                    self.offscreen_panes.resize(pane_id, w, h);
+                    if w > 0 && h > 0 {
+                        self.offscreen_panes.resize(pane_id, w, h);
+                    }
                 }
             }
         }
@@ -860,12 +878,21 @@ impl AileronApp {
                     is_active,
                     interval_ms,
                 );
-                let (w, h) = pane.dimensions();
                 if pane.capture_frame().is_some()
-                    && let Some(rgba) = pane.frame_rgba()
+                    && let Some(frame) = pane.frame()
                 {
-                    let owned = rgba.to_vec();
-                    dirty_data.push((*id, owned, w as u32, h as u32));
+                    // Use actual frame dimensions from the capture,
+                    // not the configured dimensions — they may differ
+                    // when the snapshot captures mid-render.
+                    let fw = frame.width;
+                    let fh = frame.height;
+                    let needed = (fw as usize) * (fh as usize) * 4;
+                    let mut buf = vec![0u8; needed];
+                    if let Some(rgba) = pane.frame_rgba() {
+                        let copy_len = rgba.len().min(needed);
+                        buf[..copy_len].copy_from_slice(&rgba[..copy_len]);
+                    }
+                    dirty_data.push((*id, buf, fw, fh));
                 }
                 self.offscreen_last_capture
                     .insert(*id, std::time::Instant::now());
@@ -1039,17 +1066,22 @@ impl ApplicationHandler for AileronApp {
             };
         }
 
-        // Handle resize
+        // Handle resize — convert physical pixels to logical for BSP tree
         if let Some(app_state) = &mut self.app_state
             && let WindowEvent::Resized(physical_size) = &event
             && physical_size.width > 0
             && physical_size.height > 0
         {
+            let scale = self
+                .window
+                .as_ref()
+                .map(|w| w.scale_factor())
+                .unwrap_or(1.0);
             app_state.wm.resize(Rect::new(
                 0.0,
                 0.0,
-                physical_size.width as f64,
-                physical_size.height as f64,
+                physical_size.width as f64 / scale,
+                physical_size.height as f64 / scale,
             ));
             // Defer pane repositioning to RedrawRequested to avoid calling
             // into GTK/WebKitGTK during the resize event itself, which can
@@ -1107,8 +1139,28 @@ impl ApplicationHandler for AileronApp {
                     }
                 }
 
-                // Let egui consume the event first
-                if egui_response.consumed {
+                // On Wayland, a single keystroke can produce both an
+                // Ime::Commit and a KeyboardInput event. Skip the
+                // KeyboardInput if we already handled the IME commit.
+                if self.ime_just_committed {
+                    self.ime_just_committed = false;
+                    return;
+                }
+
+                // Let egui consume the event first, UNLESS the command
+                // palette is open or we're in Insert mode (where keys
+                // must reach the offscreen webview, not be swallowed by egui).
+                let palette_open = self
+                    .app_state
+                    .as_ref()
+                    .map(|s| s.palette.open)
+                    .unwrap_or(false);
+                let insert_mode = self
+                    .app_state
+                    .as_ref()
+                    .map(|s| s.mode == aileron::input::Mode::Insert)
+                    .unwrap_or(false);
+                if egui_response.consumed && !palette_open && !insert_mode {
                     return;
                 }
 
@@ -1239,6 +1291,56 @@ impl ApplicationHandler for AileronApp {
 
                     app_state.process_key_event(aileron_event);
                     app_state.input_latency.record_key_press();
+
+                    // Forward keyboard input to offscreen webview in Insert mode.
+                    // process_key_event() routes to Servo destination but the
+                    // Servo handler is a stub — we do the actual forwarding here.
+                    if app_state.mode == aileron::input::Mode::Insert
+                        && !self
+                            .terminal_manager
+                            .is_terminal(&app_state.wm.active_pane_id())
+                        && self.config.is_offscreen()
+                    {
+                        let active_id = app_state.wm.active_pane_id();
+                        if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                            match &key {
+                                aileron::input::Key::Character(c) => {
+                                    pane.insert_text(&c.to_string());
+                                }
+                                aileron::input::Key::Backspace => {
+                                    pane.execute_js("document.execCommand('delete', false, null)");
+                                    pane.mark_dirty();
+                                }
+                                aileron::input::Key::Enter => {
+                                    pane.forward_key_event(
+                                        "keydown",
+                                        "Enter",
+                                        "Enter",
+                                        &aileron::offscreen_webview::modifiers_js(
+                                            self.modifiers.ctrl,
+                                            self.modifiers.alt,
+                                            self.modifiers.shift,
+                                            self.modifiers.super_key,
+                                        ),
+                                    );
+                                }
+                                aileron::input::Key::Tab => {
+                                    pane.forward_key_event(
+                                        "keydown",
+                                        "Tab",
+                                        "Tab",
+                                        &aileron::offscreen_webview::modifiers_js(
+                                            self.modifiers.ctrl,
+                                            self.modifiers.alt,
+                                            self.modifiers.shift,
+                                            self.modifiers.super_key,
+                                        ),
+                                    );
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
 
                     let pane_ids_after: std::collections::HashSet<uuid::Uuid> =
                         app_state.wm.panes().iter().map(|(id, _)| *id).collect();
@@ -1411,8 +1513,7 @@ impl ApplicationHandler for AileronApp {
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
-                if !egui_response.consumed
-                    && self.config.is_offscreen()
+                if self.config.is_offscreen()
                     && let Some(app_state) = &self.app_state
                     && app_state.mode == aileron::input::Mode::Insert
                 {
@@ -1574,9 +1675,7 @@ impl ApplicationHandler for AileronApp {
                 }
             }
 
-            WindowEvent::CursorMoved { position, .. }
-                if !egui_response.consumed && self.config.is_offscreen() =>
-            {
+            WindowEvent::CursorMoved { position, .. } if self.config.is_offscreen() => {
                 let scale = window.scale_factor() as f32;
                 let logical_pos = egui::pos2(position.x as f32 / scale, position.y as f32 / scale);
 
@@ -1666,30 +1765,96 @@ impl ApplicationHandler for AileronApp {
             }
 
             WindowEvent::Ime(ime) => {
-                if self.config.is_offscreen()
-                    && let Some(app_state) = &self.app_state
-                    && app_state.mode == aileron::input::Mode::Insert
-                {
+                if let Some(app_state) = &mut self.app_state {
                     match ime {
                         winit::event::Ime::Commit(text) => {
-                            let active_id = app_state.wm.active_pane_id();
-                            let text_owned = text.clone();
+                            // On Wayland, printable characters arrive as IME events
+                            // instead of KeyboardInput. Route them through the same
+                            // keybind system in Normal/Command modes so that single-
+                            // character keybinds (j, k, i, :, etc.) work.
+                            let chars: Vec<char> = text.chars().collect();
+                            if chars.len() != 1 {
+                                // Multi-char IME results (emoji pickers, etc.)
+                                // — let egui handle them in Insert mode.
+                                if app_state.mode == aileron::input::Mode::Insert
+                                    && self.config.is_offscreen()
+                                {
+                                    let active_id = app_state.wm.active_pane_id();
+                                    let text_owned = text.clone();
+                                    if self.terminal_manager.is_terminal(&active_id) {
+                                        self.terminal_manager.write_input(&active_id, &text_owned);
+                                    } else if let Some(pane) =
+                                        self.offscreen_panes.get_mut(&active_id)
+                                    {
+                                        pane.insert_text(&text_owned);
+                                    }
+                                }
+                                return;
+                            }
 
-                            // Route IME commit to native terminal or webview
-                            if self.terminal_manager.is_terminal(&active_id) {
-                                self.terminal_manager.write_input(&active_id, &text_owned);
-                            } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                                pane.insert_text(&text_owned);
+                            let c = chars[0];
+                            let is_newline = c == '\r' || c == '\n';
+
+                            if app_state.palette.open {
+                                // When the palette is open, egui's TextEdit
+                                // receives the IME commit and updates palette.query
+                                // automatically. We only need to intercept Enter
+                                // (submit) and Escape (close) ourselves.
+                                if is_newline {
+                                    // Enter: submit the query from palette.query
+                                    let query = app_state.palette.query.trim().to_string();
+                                    app_state.execute_command_pub(&query);
+                                    app_state.palette.close();
+                                    app_state.command_palette_input.clear();
+                                } else if c == '\x1b' {
+                                    // Escape: close palette
+                                    app_state.palette.close();
+                                    app_state.command_palette_input.clear();
+                                }
+                                // For regular characters, let egui's TextEdit
+                                // handle them — no action needed here.
+                                self.ime_just_committed = true;
+                            } else {
+                                match app_state.mode {
+                                    aileron::input::Mode::Normal
+                                    | aileron::input::Mode::Command => {
+                                        let key = if is_newline {
+                                            aileron::input::Key::Enter
+                                        } else {
+                                            aileron::input::Key::Character(c)
+                                        };
+                                        let aileron_event = aileron::input::KeyEvent {
+                                            key: key.clone(),
+                                            modifiers: self.modifiers,
+                                            physical_key: None,
+                                        };
+                                        app_state.process_key_event(aileron_event);
+                                        self.ime_just_committed = true;
+                                    }
+                                    aileron::input::Mode::Insert => {
+                                        let active_id = app_state.wm.active_pane_id();
+                                        let text_owned = text.clone();
+
+                                        if self.config.is_offscreen() {
+                                            if self.terminal_manager.is_terminal(&active_id) {
+                                                self.terminal_manager
+                                                    .write_input(&active_id, &text_owned);
+                                            } else if let Some(pane) =
+                                                self.offscreen_panes.get_mut(&active_id)
+                                            {
+                                                pane.insert_text(&text_owned);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                         winit::event::Ime::Preedit(text, _cursor) => {
                             if text.is_empty() {
-                                if let Some(app_state) = &mut self.app_state
-                                    && app_state.status_message.starts_with("composing: ")
-                                {
+                                if app_state.status_message.starts_with("composing: ") {
                                     app_state.status_message.clear();
                                 }
-                            } else if let Some(app_state) = &mut self.app_state {
+                            } else {
                                 app_state.status_message = format!("composing: {}", text);
                             }
                         }
@@ -1707,6 +1872,15 @@ impl ApplicationHandler for AileronApp {
         {
             event_loop.exit();
         }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        _event: winit::event::DeviceEvent,
+    ) {
+        // Reserved for future raw input handling (X11 XInput2 events).
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
@@ -1995,6 +2169,16 @@ impl ApplicationHandler for AileronApp {
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         info!("Clean shutdown — clearing session-active flag");
         Config::clear_session_active();
+
+        // Drop GPU state while the Wayland display is still alive.
+        // NVIDIA's libnvidia-egl-wayland2.so crashes in eglTerminate()
+        // if called after the wl_surface has been destroyed. The implicit
+        // Drop of AileronApp drops `window` (field 1) before `gfx` (field 3),
+        // so the wl_surface is gone before EGL cleanup runs. By dropping
+        // gfx and egui_winit here, the EGL teardown happens while the
+        // Wayland connection and surface are still valid.
+        self.gfx = None;
+        self.egui_winit = None;
     }
 }
 
@@ -2155,28 +2339,69 @@ fn main() -> anyhow::Result<()> {
     // Only set this on NVIDIA GPUs — AMD/Intel benefit from DMA-BUF.
     #[cfg(target_os = "linux")]
     unsafe {
-        let is_nvidia = (0..=9)
-            .any(|i| {
-                let path = format!("/sys/class/drm/card{}/device/vendor", i);
-                std::fs::read_to_string(&path)
-                    .map(|v| v.trim() == "0x10de")
-                    .unwrap_or(false)
-            });
+        let is_nvidia = (0..=9).any(|i| {
+            let path = format!("/sys/class/drm/card{}/device/vendor", i);
+            std::fs::read_to_string(&path)
+                .map(|v| v.trim() == "0x10de")
+                .unwrap_or(false)
+        });
         if is_nvidia {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
             info!("NVIDIA GPU detected — disabled DMA-BUF renderer (shared GL fallback)");
         }
+        // In offscreen mode, WebKitGTK's GL compositor renders to textures
+        // that can't be captured via snapshot() or pixbuf() in an
+        // OffscreenWindow — both return blank surfaces. Disable compositing
+        // to force software rendering, which is capture-compatible.
+        if config.render_mode == "offscreen" {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            info!("Offscreen mode — disabled WebKitGTK compositing for capture compatibility");
+        }
     }
 
-    // Phase 2: Initialize GTK
-    info!("── Phase 2: Initializing GTK ──");
-    init_gtk();
-    info!("GTK initialized successfully");
+    // On NVIDIA + Wayland, winit's Wayland backend (sctk) fails to
+    // dispatch keyboard/mouse events despite the compositor sending
+    // wl_keyboard.enter. WINIT_UNIX_BACKEND was removed in winit 0.30;
+    // backend selection is now based on WAYLAND_DISPLAY presence.
+    // Temporarily hide WAYLAND_DISPLAY to force winit onto X11/XWayland.
+    #[cfg(target_os = "linux")]
+    let wayland_display_backup = {
+        let is_nvidia = (0..=9).any(|i| {
+            let path = format!("/sys/class/drm/card{}/device/vendor", i);
+            std::fs::read_to_string(&path)
+                .map(|v| v.trim() == "0x10de")
+                .unwrap_or(false)
+        });
+        if is_nvidia && std::env::var("WAYLAND_DISPLAY").is_ok() {
+            let backup = std::env::var("WAYLAND_DISPLAY").ok();
+            unsafe { std::env::remove_var("WAYLAND_DISPLAY") };
+            info!(
+                "NVIDIA + Wayland: temporarily hiding WAYLAND_DISPLAY to force winit X11 backend"
+            );
+            backup
+        } else {
+            None
+        }
+    };
+    #[cfg(not(target_os = "linux"))]
+    let wayland_display_backup: Option<String> = None;
 
-    // Phase 3: Create event loop
+    // Defer GTK init to AFTER winit event loop creation.
+    // GTK's X11 event filter intercepts keyboard/mouse events from the
+    // shared X11 event queue, preventing winit from receiving them.
+    // By initializing GTK after the event loop, winit's X11 connection
+    // is established first and gets its own event filter priority.
     info!("── Phase 3: Creating event loop ──");
+
     let event_loop = EventLoop::builder().build()?;
     info!("Event loop created successfully");
+
+    // NOTE: On NVIDIA + Wayland, keep WAYLAND_DISPLAY hidden so winit
+    // stays on the X11 backend. WebKitGTK will use its own Wayland
+    // connection (opened during gtk::init below) independently.
+    if wayland_display_backup.is_some() {
+        info!("WAYLAND_DISPLAY kept hidden (winit locked to X11 backend)");
+    }
 
     // Workaround: X11 error handler (GTK uses XWayland on Wayland systems)
     #[cfg(target_os = "linux")]
@@ -2188,6 +2413,13 @@ fn main() -> anyhow::Result<()> {
             }
         }
     }
+
+    // Phase 2: Initialize GTK (DEFERRED — after winit event loop).
+    // GTK's X11 event filter must be installed AFTER winit's X11
+    // connection, otherwise GTK intercepts all keyboard/mouse events.
+    info!("── Phase 2: Initializing GTK (deferred) ──");
+    init_gtk();
+    info!("GTK initialized successfully");
 
     // Phase 4: Create app and run
     info!("── Phase 4: Creating application ──");

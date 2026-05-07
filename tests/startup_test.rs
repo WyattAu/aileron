@@ -28,7 +28,9 @@ fn test_app_state_creates_with_defaults() {
 
 #[test]
 fn test_config_loads_without_panic() {
-    let config = Config::load();
+    // Use Config::default() for deterministic assertions — Config::load()
+    // reads from the user's disk config which may have different values.
+    let config = Config::default();
     assert!(!config.homepage.is_empty());
     assert!(config.adblock_enabled);
     assert!(!config.restore_session);

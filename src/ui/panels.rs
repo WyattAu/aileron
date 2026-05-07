@@ -47,6 +47,22 @@ pub fn build_ui(
     let _url_fg = tc.url_bar_fg;
     let accent = tc.accent;
     let bg = tc.bg;
+
+    // CRITICAL: In modes without a TextEdit widget, release egui keyboard focus.
+    // Otherwise egui retains focus on the last TextEdit and consumes ALL
+    // character key events, preventing our keybind system from receiving them.
+    let needs_text_edit_focus = app_state.palette.open
+        || app_state.url_bar_focused
+        || app_state.mode == crate::input::Mode::Insert
+        || app_state.find_bar_open
+        || app_state.tab_search_open;
+    if !needs_text_edit_focus {
+        ctx.memory_mut(|mem| {
+            if let Some(focused_id) = mem.focused() {
+                mem.surrender_focus(focused_id);
+            }
+        });
+    }
     let border_color_default = tc.border;
 
     if tab_layout == "sidebar" {
@@ -73,6 +89,10 @@ pub fn build_ui(
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 // Accessibility live region: hidden label that screen readers announce
                 // on important state changes (mode, navigation, error, pane close).
+                // IMPORTANT: Do NOT call request_focus() here — that would steal
+                // keyboard focus from egui's keybind system every frame, blocking
+                // all keyboard input. The WidgetInfo metadata is sufficient for
+                // screen readers; a transparent label never needs keyboard focus.
                 if !app_state.accessibility_text.is_empty() {
                     let a11y_text = app_state.accessibility_text.clone();
                     ui.allocate_ui_with_layout(
@@ -87,7 +107,6 @@ pub fn build_ui(
                                 label: Some(a11y_text.clone()),
                                 ..WidgetInfo::new(WidgetType::Label)
                             });
-                            resp.request_focus();
                         },
                     );
                 }
@@ -316,9 +335,13 @@ pub fn build_ui(
                 response.widget_info(|| a11y_info(WidgetType::TextEdit, "Command palette"));
                 response.request_focus();
 
+                // Sync: egui's TextEdit receives characters from IME commits
+                // directly (fed at line 1056 in main.rs). Push its content into
+                // command_palette_input (the keybind-handler string) so both
+                // paths stay in sync, and update search results.
                 let query_snapshot = app_state.palette.query.clone();
+                app_state.command_palette_input = query_snapshot.clone();
                 app_state.palette.update_query(&query_snapshot);
-                app_state.command_palette_input = app_state.palette.query.clone();
             } else if app_state.url_bar_focused {
                 ui.colored_label(accent, "URL>").widget_info(|| {
                     a11y_info(WidgetType::Label, "URL bar mode indicator: editing")

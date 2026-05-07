@@ -27,7 +27,7 @@ use gtk::glib::Cast;
 #[cfg(target_os = "linux")]
 use gtk::glib::translate::ToGlibPtr;
 #[cfg(target_os = "linux")]
-use gtk::prelude::{BinExt, GtkWindowExt, OffscreenWindowExt, WidgetExt};
+use gtk::prelude::{ContainerExt, FixedExt, OffscreenWindowExt, WidgetExt};
 #[cfg(target_os = "linux")]
 use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 
@@ -53,6 +53,10 @@ pub struct OffscreenWebView {
     /// GTK offscreen window that hosts the webview.
     #[cfg(target_os = "linux")]
     offscreen: gtk::OffscreenWindow,
+    /// GTK Fixed container between OffscreenWindow and WebView.
+    /// Required so wry's build_gtk() can call set_size_request + put.
+    #[cfg(target_os = "linux")]
+    gtk_fixed: gtk::Fixed,
     /// The wry WebView (same API as before, just different container).
     webview: wry::WebView,
     /// Pane identifier (matches BSP tree node).
@@ -68,6 +72,11 @@ pub struct OffscreenWebView {
     height: i32,
     /// Whether the webview content has changed since last capture.
     dirty: bool,
+    /// Pending snapshot receiver for async capture (non-blocking).
+    /// Set when a snapshot is requested, cleared when the result is consumed.
+    snapshot_rx: Option<mpsc::Receiver<Result<cairo::Surface, gtk::glib::Error>>>,
+    /// How many times we've requested a snapshot (diagnostic counter).
+    snapshot_request_count: u64,
     /// Receiver for navigation events from wry callbacks.
     event_rx: mpsc::Receiver<WryEvent>,
     /// Last time we received any event or frame update from this pane.
@@ -128,7 +137,15 @@ impl OffscreenWebView {
         >,
     ) -> Result<Self, wry::Error> {
         let offscreen = gtk::OffscreenWindow::new();
-        offscreen.set_default_size(width, height);
+
+        // OffscreenWindow sizes itself from its child's size requisition,
+        // ignoring set_default_size(). Use a gtk::Fixed container so that
+        // wry's build_gtk() can call webview.set_size_request() and
+        // fixed.put() with the correct dimensions (see wry's
+        // add_to_container: it checks container type == "GtkFixed").
+        let fixed = gtk::Fixed::new();
+        fixed.set_size_request(width, height);
+        offscreen.set_child(Some(&fixed));
 
         let pid = pane_id;
         let url_str = initial_url.as_str().to_string();
@@ -146,6 +163,13 @@ impl OffscreenWebView {
         let builder = WebViewBuilder::new()
             .with_url(&url_str)
             .with_devtools(devtools)
+            .with_bounds(wry::Rect {
+                position: wry::dpi::Position::Logical(wry::dpi::LogicalPosition::new(0.0, 0.0)),
+                size: wry::dpi::Size::Logical(wry::dpi::LogicalSize::new(
+                    width as f64,
+                    height as f64,
+                )),
+            })
             .with_initialization_script(&privacy_script)
             .with_initialization_script(crate::servo::wry_engine::ERROR_MONITOR_JS)
             .with_custom_protocol("aileron".into(), {
@@ -337,7 +361,12 @@ a {{ color: #4db4ff; }}
                 }
             });
 
-        let webview = builder.build_gtk(&offscreen)?;
+        let webview = builder.build_gtk(&fixed)?;
+
+        // Force the WebView to the correct size (wry's add_to_container
+        // handles this for GtkFixed via set_size_request + put).
+        // Also ensure the OffscreenWindow picks up the size.
+        offscreen.queue_resize();
 
         #[cfg(target_os = "linux")]
         {
@@ -376,6 +405,7 @@ a {{ color: #4db4ff; }}
 
         Ok(Self {
             offscreen,
+            gtk_fixed: fixed,
             webview,
             pane_id,
             url: initial_url.clone(),
@@ -384,6 +414,8 @@ a {{ color: #4db4ff; }}
             width,
             height,
             dirty: true,
+            snapshot_rx: None,
+            snapshot_request_count: 0,
             event_rx,
             last_activity_time: std::time::Instant::now(),
             loading: false,
@@ -478,27 +510,45 @@ a {{ color: #4db4ff; }}
     /// snapshot since they're rendered by GTK directly).
     #[cfg(target_os = "linux")]
     pub fn capture_frame(&mut self) -> Option<&FrameData> {
-        // Pump the GTK event loop so pending renders complete.
-        while gtk::events_pending() {
-            gtk::main_iteration();
+        // Pump a few GTK events so pending renders can start, but don't
+        // block the main thread. WebKitGTK layout/compositing can queue
+        // many events that take hundreds of ms each — we only need a
+        // few iterations to unstick the rendering pipeline.
+        let pump_deadline = std::time::Instant::now() + std::time::Duration::from_millis(16);
+        while gtk::events_pending() && std::time::Instant::now() < pump_deadline {
+            gtk::main_iteration_do(false);
         }
 
-        // Use snapshot for real web content (captures GL-composited content).
-        if self.url.scheme() != "aileron" {
-            if let Some(frame) = self.capture_frame_snapshot() {
-                self.frame = Some(frame);
-                self.dirty = false;
-                return self.frame.as_ref();
-            }
-            // Snapshot failed — fall through to pixbuf.
-            warn!(
-                "capture_frame: snapshot failed for pane {}, trying pixbuf fallback",
-                &self.pane_id.to_string()[..8],
-            );
+        info!(
+            "capture_frame: pane {} url={} scheme={}",
+            &self.pane_id.to_string()[..8],
+            &self.url.as_str()[..self.url.as_str().len().min(60)],
+            self.url.scheme(),
+        );
+
+        // Strategy: try pixbuf first (synchronous, always works with
+        // WEBKIT_DISABLE_COMPOSITING_MODE=1). Only fall back to snapshot
+        // if pixbuf returns nothing (e.g., widget not realized yet).
+        if self.capture_frame_pixbuf().is_some() {
+            return self.frame.as_ref();
         }
 
-        // Fallback: pixbuf (works for aileron:// pages rendered via cairo).
-        self.capture_frame_pixbuf()
+        // Pixbuf failed — try snapshot for GL-composited content.
+        warn!(
+            "capture_frame: pixbuf failed for pane {}, trying snapshot fallback",
+            &self.pane_id.to_string()[..8],
+        );
+        if let Some(frame) = self.capture_frame_snapshot() {
+            self.frame = Some(frame);
+            self.dirty = false;
+            return self.frame.as_ref();
+        }
+
+        warn!(
+            "capture_frame: both pixbuf and snapshot failed for pane {}",
+            &self.pane_id.to_string()[..8],
+        );
+        None
     }
 
     /// Capture frame via WebKitGTK's snapshot API.
@@ -508,57 +558,89 @@ a {{ color: #4db4ff; }}
     /// API produces a cairo ImageSurface (ARGB32) regardless of the rendering
     /// pipeline used internally.
     #[cfg(target_os = "linux")]
-    fn capture_frame_snapshot(&self) -> Option<FrameData> {
-        // Get the WebKitWebView widget embedded in our OffscreenWindow.
-        let child = self.offscreen.child()?;
-        let webview = child.downcast_ref::<webkit2gtk::WebView>()?;
+    fn capture_frame_snapshot(&mut self) -> Option<FrameData> {
+        // Non-blocking snapshot: request on first call, collect on subsequent calls.
+        //
+        // Step 1: If no pending snapshot, request one and return None.
+        //         The snapshot callback will fire during a future pump_gtk().
+        if self.snapshot_rx.is_none() {
+            let children = self.gtk_fixed.children();
+            let webview: webkit2gtk::WebView = match children
+                .into_iter()
+                .find_map(|w| w.downcast::<webkit2gtk::WebView>().ok())
+            {
+                Some(wv) => wv,
+                None => {
+                    warn!("capture_frame_snapshot: no WebView child found in gtk::Fixed");
+                    return None;
+                }
+            };
 
-        // Verify we own the GLib MainContext (required by snapshot()).
-        let main_context = gtk::glib::MainContext::ref_thread_default();
-        if !main_context.is_owner() {
-            warn!("capture_frame_snapshot: not MainContext owner");
+            let main_context = gtk::glib::MainContext::ref_thread_default();
+            if !main_context.is_owner() {
+                warn!("capture_frame_snapshot: not main context owner");
+                return None;
+            }
+
+            info!(
+                "capture_frame_snapshot: pane {} requesting snapshot ({})",
+                &self.pane_id.to_string()[..8],
+                self.snapshot_request_count,
+            );
+            self.snapshot_request_count += 1;
+
+            let (tx, rx) = mpsc::channel();
+            webview.snapshot(
+                SnapshotRegion::Visible,
+                SnapshotOptions::NONE,
+                None::<&gtk::gio::Cancellable>,
+                move |result| {
+                    match &result {
+                        Ok(_) => info!("snapshot callback: OK"),
+                        Err(e) => warn!("snapshot callback: error: {}", e),
+                    }
+                    let _ = tx.send(result);
+                },
+            );
+            self.snapshot_rx = Some(rx);
+            // Pump a few GTK events to start the snapshot pipeline.
+            for _ in 0..5 {
+                if gtk::events_pending() {
+                    gtk::main_iteration_do(false);
+                }
+            }
             return None;
         }
 
-        // Set up a channel to receive the async snapshot result.
-        let (tx, rx) = mpsc::channel::<Result<cairo::Surface, gtk::glib::Error>>();
-
-        // Request snapshot of the visible region.
-        webview.snapshot(
-            SnapshotRegion::Visible,
-            SnapshotOptions::NONE,
-            // No cancellable — use gtk::gio to match the gio version webkit2gtk uses.
-            None::<&gtk::gio::Cancellable>,
-            move |result| {
-                let _ = tx.send(result);
-            },
-        );
-
-        // Pump the GLib main loop until the snapshot callback fires.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        let result = loop {
-            if let Ok(r) = rx.try_recv() {
-                break r;
+        // Step 2: Try to collect the result without blocking.
+        let rx = self.snapshot_rx.as_mut()?;
+        match rx.try_recv() {
+            Ok(Ok(surface)) => {
+                info!(
+                    "capture_frame_snapshot: pane {} collected snapshot result",
+                    &self.pane_id.to_string()[..8],
+                );
+                self.snapshot_rx = None;
+                self.process_snapshot_surface(surface)
             }
-            if std::time::Instant::now() > deadline {
-                warn!("capture_frame_snapshot: timed out after 2s");
-                return None;
-            }
-            if gtk::events_pending() {
-                gtk::main_iteration();
-            } else {
-                std::thread::sleep(std::time::Duration::from_millis(1));
-            }
-        };
-
-        let surface: cairo::Surface = match result {
-            Ok(s) => s,
-            Err(e) => {
+            Ok(Err(e)) => {
                 warn!("capture_frame_snapshot: error: {}", e);
-                return None;
+                self.snapshot_rx = None;
+                None
             }
-        };
+            Err(_) => {
+                // Not ready yet — will retry on next frame.
+                tracing::debug!(
+                    "capture_frame_snapshot: pane {} snapshot not ready yet",
+                    &self.pane_id.to_string()[..8],
+                );
+                None
+            }
+        }
+    }
 
+    /// Convert a cairo surface from snapshot() into FrameData.
+    fn process_snapshot_surface(&self, surface: cairo::Surface) -> Option<FrameData> {
         // Convert the cairo surface to raw pixel data.
         // snapshot() returns a cairo_image_surface_t (ARGB32 format).
         let raw = surface.to_raw_none();
@@ -707,7 +789,19 @@ a {{ color: #4db4ff; }}
         if width != self.width || height != self.height {
             self.width = width;
             self.height = height;
-            self.offscreen.set_default_size(width, height);
+            // Resize the Fixed container's size request
+            self.gtk_fixed.set_size_request(width, height);
+            // Resize the WebView widget inside the Fixed container.
+            // wry's add_to_container uses fixed.put() which places the
+            // webview at absolute coordinates — we need to re-position it.
+            let children = self.gtk_fixed.children();
+            if let Some(child) = children.into_iter().next() {
+                child.set_size_request(width, height);
+                // Re-place the widget at (0,0) in the Fixed container
+                // to pick up the new size.
+                self.gtk_fixed.move_(&child, 0, 0);
+            }
+            self.offscreen.queue_resize();
             self.dirty = true;
         }
     }

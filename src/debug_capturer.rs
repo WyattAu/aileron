@@ -462,7 +462,8 @@ mod tests {
         #[cfg(target_os = "linux")]
         {
             let ram = detect_ram_gb();
-            assert!(ram > 0 || ram == 0);
+            // Any real machine has at least 1 GB of RAM
+            assert!(ram > 0, "detected RAM should be > 0, got {ram}");
         }
     }
 

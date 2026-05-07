@@ -702,6 +702,12 @@ impl AppState {
         self.private_pane_ids.remove(pane_id);
     }
 
+    /// Execute a command string (URL, keybind, etc.) from the command palette.
+    /// Public wrapper so main.rs can call it for IME-driven Enter submission.
+    pub fn execute_command_pub(&mut self, cmd: &str) {
+        self.execute_command(cmd);
+    }
+
     /// Look up a quickmark URL by its key string.
     pub fn quickmarks_get(&self, key: &str) -> Option<url::Url> {
         self.quickmarks
