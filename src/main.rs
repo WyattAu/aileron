@@ -7,6 +7,7 @@ use winit::window::{Window, WindowAttributes, WindowId};
 
 use aileron::app::AppState;
 use aileron::config::Config;
+use aileron::frame_tasks;
 use aileron::gfx::GfxState;
 use aileron::input::{KeyEvent as AileronKeyEvent, Modifiers};
 use aileron::mcp::McpBridge;
@@ -20,7 +21,6 @@ use aileron::ui::panels;
 use aileron::wm::Rect;
 
 mod bootstrap;
-mod frame_tasks;
 
 /// Custom X11 error handler that swallows benign X11 errors.
 ///
@@ -1292,56 +1292,6 @@ impl ApplicationHandler for AileronApp {
                     app_state.process_key_event(aileron_event);
                     app_state.input_latency.record_key_press();
 
-                    // Forward keyboard input to offscreen webview in Insert mode.
-                    // process_key_event() routes to Servo destination but the
-                    // Servo handler is a stub — we do the actual forwarding here.
-                    if app_state.mode == aileron::input::Mode::Insert
-                        && !self
-                            .terminal_manager
-                            .is_terminal(&app_state.wm.active_pane_id())
-                        && self.config.is_offscreen()
-                    {
-                        let active_id = app_state.wm.active_pane_id();
-                        if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                            match &key {
-                                aileron::input::Key::Character(c) => {
-                                    pane.insert_text(&c.to_string());
-                                }
-                                aileron::input::Key::Backspace => {
-                                    pane.execute_js("document.execCommand('delete', false, null)");
-                                    pane.mark_dirty();
-                                }
-                                aileron::input::Key::Enter => {
-                                    pane.forward_key_event(
-                                        "keydown",
-                                        "Enter",
-                                        "Enter",
-                                        &aileron::offscreen_webview::modifiers_js(
-                                            self.modifiers.ctrl,
-                                            self.modifiers.alt,
-                                            self.modifiers.shift,
-                                            self.modifiers.super_key,
-                                        ),
-                                    );
-                                }
-                                aileron::input::Key::Tab => {
-                                    pane.forward_key_event(
-                                        "keydown",
-                                        "Tab",
-                                        "Tab",
-                                        &aileron::offscreen_webview::modifiers_js(
-                                            self.modifiers.ctrl,
-                                            self.modifiers.alt,
-                                            self.modifiers.shift,
-                                            self.modifiers.super_key,
-                                        ),
-                                    );
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-
                     let pane_ids_after: std::collections::HashSet<uuid::Uuid> =
                         app_state.wm.panes().iter().map(|(id, _)| *id).collect();
 
@@ -1405,7 +1355,11 @@ impl ApplicationHandler for AileronApp {
                         wry_pane.focus();
                     }
 
-                    // Offscreen mode: forward keyboard to webview via JS or native terminal
+                    // Offscreen mode: forward keyboard to webview via JS or native terminal.
+                    // This is the SOLE forwarding point for offscreen panes — all key
+                    // forwarding (character, backspace, enter, tab, arrows, etc.) happens
+                    // here. The earlier process_key_event() routes to a Servo stub; the
+                    // actual delivery is done in this block.
                     if is_insert_mode && self.config.is_offscreen() {
                         let is_terminal = self.terminal_manager.is_terminal(&active_pane_id);
 
@@ -1426,7 +1380,22 @@ impl ApplicationHandler for AileronApp {
                             // Web content: forward via JS
                             if let aileron::input::Key::Character(c) = &key {
                                 pane.insert_text(&c.to_string());
+                            } else if matches!(
+                                &key,
+                                aileron::input::Key::Backspace
+                                    | aileron::input::Key::Enter
+                                    | aileron::input::Key::Tab
+                            ) {
+                                let (js_key, js_code) = key_to_js(&key);
+                                let mods = aileron::offscreen_webview::modifiers_js(
+                                    mods.ctrl,
+                                    mods.alt,
+                                    mods.shift,
+                                    mods.super_key,
+                                );
+                                pane.forward_key_event("keydown", &js_key, &js_code, &mods);
                             } else {
+                                // Arrow keys, F-keys, Home/End, etc.
                                 let (js_key, js_code) = key_to_js(&key);
                                 let mods = aileron::offscreen_webview::modifiers_js(
                                     mods.ctrl,
@@ -2001,7 +1970,13 @@ impl ApplicationHandler for AileronApp {
             let viewport = match &self.window {
                 Some(w) => {
                     let size = w.inner_size();
-                    Rect::new(0.0, 0.0, size.width as f64, size.height as f64)
+                    let scale = w.scale_factor();
+                    Rect::new(
+                        0.0,
+                        0.0,
+                        size.width as f64 / scale,
+                        size.height as f64 / scale,
+                    )
                 }
                 None => {
                     if let Some(app_state) = &mut self.app_state {
@@ -2279,6 +2254,23 @@ fn key_to_escape_sequence(key: &aileron::input::Key, mods: aileron::input::Modif
     }
 }
 
+/// Detect NVIDIA GPU by checking DRM subsystem vendor IDs.
+/// Returns true if any card0..card9 reports vendor 0x10de (NVIDIA).
+#[cfg(target_os = "linux")]
+fn is_nvidia_gpu() -> bool {
+    (0..=9).any(|i| {
+        let path = format!("/sys/class/drm/card{}/device/vendor", i);
+        std::fs::read_to_string(&path)
+            .map(|v| v.trim() == "0x10de")
+            .unwrap_or(false)
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn is_nvidia_gpu() -> bool {
+    false
+}
+
 fn main() -> anyhow::Result<()> {
     // Install panic hook BEFORE anything else — writes crash report to file
     bootstrap::install_panic_hook();
@@ -2339,13 +2331,7 @@ fn main() -> anyhow::Result<()> {
     // Only set this on NVIDIA GPUs — AMD/Intel benefit from DMA-BUF.
     #[cfg(target_os = "linux")]
     unsafe {
-        let is_nvidia = (0..=9).any(|i| {
-            let path = format!("/sys/class/drm/card{}/device/vendor", i);
-            std::fs::read_to_string(&path)
-                .map(|v| v.trim() == "0x10de")
-                .unwrap_or(false)
-        });
-        if is_nvidia {
+        if is_nvidia_gpu() {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
             info!("NVIDIA GPU detected — disabled DMA-BUF renderer (shared GL fallback)");
         }
@@ -2366,13 +2352,7 @@ fn main() -> anyhow::Result<()> {
     // Temporarily hide WAYLAND_DISPLAY to force winit onto X11/XWayland.
     #[cfg(target_os = "linux")]
     let wayland_display_backup = {
-        let is_nvidia = (0..=9).any(|i| {
-            let path = format!("/sys/class/drm/card{}/device/vendor", i);
-            std::fs::read_to_string(&path)
-                .map(|v| v.trim() == "0x10de")
-                .unwrap_or(false)
-        });
-        if is_nvidia && std::env::var("WAYLAND_DISPLAY").is_ok() {
+        if is_nvidia_gpu() && std::env::var("WAYLAND_DISPLAY").is_ok() {
             let backup = std::env::var("WAYLAND_DISPLAY").ok();
             unsafe { std::env::remove_var("WAYLAND_DISPLAY") };
             info!(

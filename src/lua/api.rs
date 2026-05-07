@@ -22,7 +22,7 @@ pub struct PendingKeybind {
 pub struct LuaEngine {
     lua: Lua,
     /// Custom commands registered via aileron.cmd.create.
-    /// Uses Rc<RefCell> because mlua closures are Fn (not FnMut),
+    /// Uses `Rc<RefCell>` because mlua closures are Fn (not FnMut),
     /// so we can't mutate &self from inside a closure.
     custom_commands: Rc<RefCell<Vec<CustomCommand>>>,
     /// URL redirect rules registered via aileron.url.add_redirect.

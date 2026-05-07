@@ -50,8 +50,8 @@ pub fn init() {
         }
     };
 
-    *LOG_PATH.lock().unwrap() = Some(path.clone());
-    *FILE_HANDLE.lock().unwrap() = Some(file);
+    *LOG_PATH.lock().unwrap_or_else(|e| e.into_inner()) = Some(path.clone());
+    *FILE_HANDLE.lock().unwrap_or_else(|e| e.into_inner()) = Some(file);
 
     eprintln!("[debug] Logging to {}", path.display());
 
@@ -343,7 +343,7 @@ fn write_event(event_type: &str, message: &str, location: &str, thread: &str, ex
 
     let line = format!("{}\n", serde_json::to_string(&event).unwrap_or_default());
 
-    let mut handle = FILE_HANDLE.lock().unwrap();
+    let mut handle = FILE_HANDLE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(ref mut file) = *handle {
         let _ = file.write_all(line.as_bytes());
         let _ = file.flush();
@@ -353,7 +353,7 @@ fn write_event(event_type: &str, message: &str, location: &str, thread: &str, ex
 }
 
 fn rotate_if_needed(handle: &mut Option<std::fs::File>) {
-    let path_guard = LOG_PATH.lock().unwrap();
+    let path_guard = LOG_PATH.lock().unwrap_or_else(|e| e.into_inner());
     let path = match path_guard.as_ref() {
         Some(p) => p.clone(),
         None => return,
@@ -405,7 +405,7 @@ pub fn shutdown() {
         Value::Null,
     );
 
-    let mut handle = FILE_HANDLE.lock().unwrap();
+    let mut handle = FILE_HANDLE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(ref mut file) = *handle {
         let _ = file.flush();
     }

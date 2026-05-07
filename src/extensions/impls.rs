@@ -762,7 +762,6 @@ impl AileronWebRequestApi {
 
     /// Fire all registered on_before_request handlers for a request.
     /// Returns the first non-default BlockingResponse (first handler wins).
-    #[allow(dead_code)]
     pub fn fire_on_before_request(&self, details: &RequestDetails) -> BlockingResponse {
         let handlers = self
             .before_request_handlers
@@ -822,7 +821,6 @@ impl AileronWebRequestApi {
     }
 
     /// Fire all registered on_completed handlers.
-    #[allow(dead_code)]
     pub fn fire_on_completed(&self, details: &CompletedDetails) {
         let handlers = self
             .completed_handlers

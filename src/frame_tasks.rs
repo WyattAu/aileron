@@ -5,16 +5,16 @@ use uuid::Uuid;
 
 use image::ImageEncoder;
 
-use aileron::app::{AppState, WryAction};
-use aileron::arp::ArpCommand;
-use aileron::extensions::web_request::WebRequestInterceptorRegistry;
-use aileron::extensions::{ExtensionId, MessageBus};
-use aileron::git::GitStatus;
-use aileron::mcp::{McpBridge, McpCommand};
-use aileron::offscreen_webview::OffscreenWebViewManager;
-use aileron::scripts::{ContentScriptManager, RunAt};
-use aileron::servo::{WryEvent, WryPaneManager, pump_gtk};
-use aileron::terminal::NativeTerminalManager;
+use crate::app::{AppState, WryAction};
+use crate::arp::ArpCommand;
+use crate::extensions::web_request::WebRequestInterceptorRegistry;
+use crate::extensions::{ExtensionId, MessageBus};
+use crate::git::GitStatus;
+use crate::mcp::{McpBridge, McpCommand};
+use crate::offscreen_webview::OffscreenWebViewManager;
+use crate::scripts::{ContentScriptManager, RunAt};
+use crate::servo::{WryEvent, WryPaneManager, pump_gtk};
+use crate::terminal::NativeTerminalManager;
 
 const EXTENSION_RUNTIME_SHIM_JS: &str = r#"
 (function() {
@@ -53,7 +53,7 @@ const EXTENSION_RUNTIME_SHIM_JS: &str = r#"
 })();
 "#;
 
-pub fn poll_git_status(git_status: &mut GitStatus, git_poller: &Option<aileron::git::GitPoller>) {
+pub fn poll_git_status(git_status: &mut GitStatus, git_poller: &Option<crate::git::GitPoller>) {
     if let Some(poller) = git_poller
         && let Some(new_status) = poller.try_poll()
     {
@@ -163,7 +163,7 @@ pub fn process_arp_commands(app_state: &mut AppState) {
                 let active = app_state.wm.active_pane_id();
                 match app_state
                     .wm
-                    .split(active, aileron::wm::SplitDirection::Vertical, 0.5)
+                    .split(active, crate::wm::SplitDirection::Vertical, 0.5)
                 {
                     Ok(new_id) => {
                         let target_url = url
@@ -217,7 +217,7 @@ pub fn process_arp_commands(app_state: &mut AppState) {
                     .push_back(WryAction::SetClipboard(text));
             }
             ArpCommand::ClipboardGet { request_id } => {
-                let contents = aileron::platform::platform()
+                let contents = crate::platform::platform()
                     .clipboard_paste()
                     .unwrap_or_default();
                 if let Some(server) = &app_state.arp_server {
@@ -246,7 +246,7 @@ pub fn process_wry_events(
     wry_panes: &mut WryPaneManager,
     content_scripts: &ContentScriptManager,
     mcp_bridge: &mut McpBridge,
-    adblocker: &aileron::net::adblock::AdBlocker,
+    adblocker: &crate::net::adblock::AdBlocker,
     interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
 ) {
     let wry_events = wry_panes.poll_all_events();
@@ -265,12 +265,12 @@ pub fn process_wry_events(
                 if interceptor_registry.has_interceptors()
                     && let Ok(parsed_url) = url::Url::parse(&url)
                 {
-                    let details = aileron::extensions::web_request::CompletedDetails {
-                        request_id: aileron::extensions::types::RequestId(0),
+                    let details = crate::extensions::web_request::CompletedDetails {
+                        request_id: crate::extensions::types::RequestId(0),
                         url: parsed_url,
-                        frame_id: aileron::extensions::types::FrameId(0),
+                        frame_id: crate::extensions::types::FrameId(0),
                         tab_id: None,
-                        type_: aileron::extensions::web_request::ResourceType::MainFrame,
+                        type_: crate::extensions::web_request::ResourceType::MainFrame,
                         from_cache: false,
                         status_code: 200,
                         ip: None,
@@ -358,10 +358,10 @@ pub fn process_wry_events(
                         }
                     }
                     if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
-                        wry_pane.execute_js(aileron::servo::NETWORK_MONITOR_JS);
-                        wry_pane.execute_js(aileron::servo::CONSOLE_CAPTURE_JS);
+                        wry_pane.execute_js(crate::servo::NETWORK_MONITOR_JS);
+                        wry_pane.execute_js(crate::servo::CONSOLE_CAPTURE_JS);
                         wry_pane.execute_js(
-                            aileron::passwords::bitwarden::BitwardenClient::form_submit_observer_js(
+                            crate::passwords::bitwarden::BitwardenClient::form_submit_observer_js(
                             ),
                         );
                         wry_pane.execute_js(
@@ -373,7 +373,7 @@ pub fn process_wry_events(
                         );
                         wry_pane.execute_js(&format!(
                             "setTimeout(function() {{ {} }}, 500);",
-                            aileron::passwords::bitwarden::BitwardenClient::form_detect_report_js()
+                            crate::passwords::bitwarden::BitwardenClient::form_detect_report_js()
                         ));
                         wry_pane.execute_js(
                             "(function(){ \
@@ -419,7 +419,7 @@ pub fn process_wry_events(
                     // Apply per-site zoom if configured
                     if let Some(ref db) = app_state.db
                         && let Ok(settings) =
-                            aileron::db::site_settings::get_site_settings_for_url(db, &url)
+                            crate::db::site_settings::get_site_settings_for_url(db, &url)
                         && let Some(zoom) = settings.iter().find_map(|s| s.zoom_level)
                         && let Some(wry_pane) = wry_panes.get_mut(&pane_id)
                     {
@@ -438,6 +438,41 @@ pub fn process_wry_events(
                 app_state.autofill_status_msg.clear();
                 app_state.clear_injected_scripts(pane_id);
                 app_state.update_a11y(&format!("Loading: {}...", &url[..url.len().min(40)]));
+
+                // Fire extension onBeforeRequest lifecycle event
+                if interceptor_registry.has_interceptors()
+                    && let Ok(parsed_url) = url::Url::parse(&url)
+                {
+                    let details = crate::extensions::web_request::RequestDetails {
+                        request_id: crate::extensions::types::RequestId(0),
+                        url: parsed_url,
+                        method: "GET".into(),
+                        frame_id: crate::extensions::types::FrameId(0),
+                        parent_frame_id: crate::extensions::types::FrameId(u32::MAX),
+                        tab_id: None,
+                        type_: crate::extensions::web_request::ResourceType::MainFrame,
+                        origin_url: None,
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs_f64() * 1000.0)
+                            .unwrap_or(0.0),
+                        request_headers: None,
+                    };
+                    let response = interceptor_registry.fire_on_before_request(&details);
+                    if response.cancel == Some(true) {
+                        if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
+                            wry_pane.navigate(&url::Url::parse("about:blank").unwrap());
+                        }
+                        continue;
+                    }
+                    if let Some(redirect_url) = response.redirect_url {
+                        if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
+                            wry_pane.navigate(&redirect_url);
+                        }
+                        continue;
+                    }
+                }
+
                 if !url.starts_with("aileron://") {
                     let start_scripts = content_scripts.scripts_for_url(&url, RunAt::DocumentStart);
                     for script in start_scripts {
@@ -494,7 +529,7 @@ pub fn process_wry_events(
                         .download_manager
                         .downloads_dir()
                         .join(filename.as_str());
-                    if let Err(e) = aileron::db::downloads::record_download(
+                    if let Err(e) = crate::db::downloads::record_download(
                         db,
                         url.as_str(),
                         filename.as_str(),
@@ -528,7 +563,7 @@ pub fn process_offscreen_events(
     offscreen_panes: &mut OffscreenWebViewManager,
     content_scripts: &ContentScriptManager,
     _mcp_bridge: &mut McpBridge,
-    adblocker: &aileron::net::adblock::AdBlocker,
+    adblocker: &crate::net::adblock::AdBlocker,
     interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
 ) {
     let events = offscreen_panes.drain_all_events();
@@ -547,12 +582,12 @@ pub fn process_offscreen_events(
                 if interceptor_registry.has_interceptors()
                     && let Ok(parsed_url) = url::Url::parse(&url)
                 {
-                    let details = aileron::extensions::web_request::CompletedDetails {
-                        request_id: aileron::extensions::types::RequestId(0),
+                    let details = crate::extensions::web_request::CompletedDetails {
+                        request_id: crate::extensions::types::RequestId(0),
                         url: parsed_url,
-                        frame_id: aileron::extensions::types::FrameId(0),
+                        frame_id: crate::extensions::types::FrameId(0),
                         tab_id: None,
-                        type_: aileron::extensions::web_request::ResourceType::MainFrame,
+                        type_: crate::extensions::web_request::ResourceType::MainFrame,
                         from_cache: false,
                         status_code: 200,
                         ip: None,
@@ -648,10 +683,10 @@ pub fn process_offscreen_events(
                         }
                     }
                     if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
-                        pane.execute_js(aileron::servo::NETWORK_MONITOR_JS);
-                        pane.execute_js(aileron::servo::CONSOLE_CAPTURE_JS);
+                        pane.execute_js(crate::servo::NETWORK_MONITOR_JS);
+                        pane.execute_js(crate::servo::CONSOLE_CAPTURE_JS);
                         pane.execute_js(
-                            aileron::passwords::bitwarden::BitwardenClient::form_submit_observer_js(
+                            crate::passwords::bitwarden::BitwardenClient::form_submit_observer_js(
                             ),
                         );
                         pane.suppress_context_menu();
@@ -664,7 +699,7 @@ pub fn process_offscreen_events(
                         );
                         pane.execute_js(&format!(
                             "setTimeout(function() {{ {} }}, 500);",
-                            aileron::passwords::bitwarden::BitwardenClient::form_detect_report_js()
+                            crate::passwords::bitwarden::BitwardenClient::form_detect_report_js()
                         ));
                         pane.execute_js(
                             "(function(){ \
@@ -712,7 +747,7 @@ pub fn process_offscreen_events(
                     // Apply per-site zoom if configured
                     if let Some(ref db) = app_state.db
                         && let Ok(settings) =
-                            aileron::db::site_settings::get_site_settings_for_url(db, &url)
+                            crate::db::site_settings::get_site_settings_for_url(db, &url)
                         && let Some(zoom) = settings.iter().find_map(|s| s.zoom_level)
                         && let Some(pane) = offscreen_panes.get_mut(&pane_id)
                     {
@@ -731,6 +766,43 @@ pub fn process_offscreen_events(
                 app_state.autofill_status_msg.clear();
                 app_state.clear_injected_scripts(pane_id);
                 app_state.update_a11y(&format!("Loading: {}...", &url[..url.len().min(40)]));
+
+                // Fire extension onBeforeRequest lifecycle event
+                if interceptor_registry.has_interceptors()
+                    && let Ok(parsed_url) = url::Url::parse(&url)
+                {
+                    let details = crate::extensions::web_request::RequestDetails {
+                        request_id: crate::extensions::types::RequestId(0),
+                        url: parsed_url,
+                        method: "GET".into(),
+                        frame_id: crate::extensions::types::FrameId(0),
+                        parent_frame_id: crate::extensions::types::FrameId(u32::MAX),
+                        tab_id: None,
+                        type_: crate::extensions::web_request::ResourceType::MainFrame,
+                        origin_url: None,
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs_f64() * 1000.0)
+                            .unwrap_or(0.0),
+                        request_headers: None,
+                    };
+                    let response = interceptor_registry.fire_on_before_request(&details);
+                    if response.cancel == Some(true) {
+                        if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                            pane.navigate(&url::Url::parse("about:blank").unwrap());
+                            pane.mark_dirty();
+                        }
+                        continue;
+                    }
+                    if let Some(redirect_url) = response.redirect_url {
+                        if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                            pane.navigate(&redirect_url);
+                            pane.mark_dirty();
+                        }
+                        continue;
+                    }
+                }
+
                 if !url.starts_with("aileron://") {
                     let start_scripts = content_scripts.scripts_for_url(&url, RunAt::DocumentStart);
                     for script in start_scripts {
@@ -789,7 +861,7 @@ pub fn process_offscreen_events(
                         .download_manager
                         .downloads_dir()
                         .join(filename.as_str());
-                    if let Err(e) = aileron::db::downloads::record_download(
+                    if let Err(e) = crate::db::downloads::record_download(
                         db,
                         url.as_str(),
                         filename.as_str(),
@@ -859,7 +931,7 @@ pub fn process_pending_wry_actions(
         (actions, id)
     };
     for action in pending_actions {
-        if let Err(e) = aileron::wry_actions::process_wry_action(
+        if let Err(e) = crate::wry_actions::process_wry_action(
             action,
             active_id,
             wry_panes,
@@ -892,7 +964,7 @@ pub fn process_mcp_commands(
                         let current_active = app_state.wm.active_pane_id();
                         match app_state.wm.split(
                             current_active,
-                            aileron::wm::SplitDirection::Vertical,
+                            crate::wm::SplitDirection::Vertical,
                             0.5,
                         ) {
                             Ok(new_id) => {
@@ -941,7 +1013,7 @@ pub fn process_mcp_commands(
             }
             McpCommand::ListBookmarks { response_tx } => {
                 let result = if let Some(db) = app_state.db.as_ref() {
-                    match aileron::db::bookmarks::all_bookmarks(db) {
+                    match crate::db::bookmarks::all_bookmarks(db) {
                         Ok(bms) => {
                             let lines: Vec<String> = bms
                                 .iter()
@@ -970,7 +1042,7 @@ pub fn process_mcp_commands(
                 response_tx,
             } => {
                 let result = if let Some(db) = app_state.db.as_ref() {
-                    match aileron::db::bookmarks::add_bookmark_with_folder(
+                    match crate::db::bookmarks::add_bookmark_with_folder(
                         db, &url, &title, &folder,
                     ) {
                         Ok(id) => format!("Bookmarked (id={}) {}", id, url),
@@ -983,7 +1055,7 @@ pub fn process_mcp_commands(
             }
             McpCommand::RemoveBookmark { url, response_tx } => {
                 let result = if let Some(db) = app_state.db.as_ref() {
-                    match aileron::db::bookmarks::remove_bookmark(db, &url) {
+                    match crate::db::bookmarks::remove_bookmark(db, &url) {
                         Ok(true) => format!("Removed bookmark: {}", url),
                         Ok(false) => format!("Not bookmarked: {}", url),
                         Err(e) => format!("Error: {}", e),
@@ -999,7 +1071,7 @@ pub fn process_mcp_commands(
                 response_tx,
             } => {
                 let result = if let Some(db) = app_state.db.as_ref() {
-                    match aileron::db::history::search(db, &query, limit) {
+                    match crate::db::history::search(db, &query, limit) {
                         Ok(entries) => {
                             let lines: Vec<String> = entries
                                 .iter()
@@ -1126,8 +1198,8 @@ pub fn handle_pending_import(app_state: &mut AppState) {
     };
     if let Some(db) = app_state.db.as_ref() {
         let msg = match source.as_str() {
-            "firefox" => aileron::app::cmd::import::import_firefox(db),
-            "chrome" => aileron::app::cmd::import::import_chrome(db),
+            "firefox" => crate::app::cmd::import::import_firefox(db),
+            "chrome" => crate::app::cmd::import::import_chrome(db),
             _ => {
                 app_state.status_message = format!("Unknown import source: {}", source);
                 return;
@@ -1148,7 +1220,7 @@ pub fn pump_gtk_loop() {
     pump_gtk();
 }
 
-pub fn load_default_adblock_rules(adblocker: &mut aileron::net::adblock::AdBlocker) {
+pub fn load_default_adblock_rules(adblocker: &mut crate::net::adblock::AdBlocker) {
     let default_filters = [
         "||doubleclick.net^",
         "||googlesyndication.com^",
@@ -1168,15 +1240,15 @@ pub fn load_default_adblock_rules(adblocker: &mut aileron::net::adblock::AdBlock
 }
 
 pub fn spawn_mcp_server(mcp_bridge: &McpBridge) {
-    use aileron::mcp::tools;
+    use crate::mcp::tools;
     let mcp_state = mcp_bridge.state.clone();
     let mcp_command_tx = mcp_bridge.command_tx.clone();
     let tool_list = tools::create_tools(mcp_state, mcp_command_tx);
-    let mut mcp_server = aileron::mcp::McpServer::new();
+    let mut mcp_server = crate::mcp::McpServer::new();
     for tool in tool_list {
         mcp_server.register_tool(tool);
     }
-    let transport = aileron::mcp::McpTransport::new(mcp_server);
+    let transport = crate::mcp::McpTransport::new(mcp_server);
     info!("MCP server starting on background thread (stdio transport)");
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -1340,7 +1412,7 @@ fn handle_ipc_message(
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
                 {
-                    match aileron::passwords::keyring::store_credential("aileron-sync", v) {
+                    match crate::passwords::keyring::store_credential("aileron-sync", v) {
                         Ok(()) => {
                             app_state.config.sync_passphrase = v.to_string();
                             info!("Sync passphrase stored in system keyring");
@@ -1360,7 +1432,7 @@ fn handle_ipc_message(
                 {
                     app_state.config.sync_auto_interval_sec = v;
                 }
-                if let Err(e) = aileron::config::Config::save(&app_state.config) {
+                if let Err(e) = crate::config::Config::save(&app_state.config) {
                     warn!("Failed to save config: {}", e);
                 }
                 if let Some(pane) = wry_panes.get_mut(&pane_id) {
@@ -1377,7 +1449,7 @@ fn handle_ipc_message(
                 msg.get("url").and_then(|v| v.as_str()),
             ) {
                 let key = format!("{}@{}", username, url);
-                match aileron::passwords::keyring::store_credential(&key, password) {
+                match crate::passwords::keyring::store_credential(&key, password) {
                     Ok(()) => {
                         info!("Saved credential for {}", username);
                         app_state.status_message = format!("Credential saved for {}", username);
@@ -1403,7 +1475,7 @@ fn handle_ipc_message(
                     let url = pane.url().to_string();
                     if let Some(ref conn) = app_state.db
                         && let Err(e) =
-                            aileron::db::scroll_marks::set_scroll_mark(conn, &url, mark_char, frac)
+                            crate::db::scroll_marks::set_scroll_mark(conn, &url, mark_char, frac)
                     {
                         tracing::warn!("Failed to persist scroll mark: {}", e);
                     }
@@ -1457,7 +1529,7 @@ fn handle_ipc_message(
         }
         Some("get-newtab-data") => {
             let bookmarks: Vec<serde_json::Value> = if let Some(db) = app_state.db.as_ref() {
-                aileron::db::bookmarks::all_bookmarks(db)
+                crate::db::bookmarks::all_bookmarks(db)
                     .unwrap_or_default()
                     .into_iter()
                     .take(8)
@@ -1473,7 +1545,7 @@ fn handle_ipc_message(
                 Vec::new()
             };
             let history: Vec<serde_json::Value> = if let Some(db) = app_state.db.as_ref() {
-                aileron::db::history::recent_entries(db, 8)
+                crate::db::history::recent_entries(db, 8)
                     .unwrap_or_default()
                     .into_iter()
                     .map(|h| {
@@ -1683,7 +1755,7 @@ fn handle_ipc_message_offscreen(
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
                 {
-                    match aileron::passwords::keyring::store_credential("aileron-sync", v) {
+                    match crate::passwords::keyring::store_credential("aileron-sync", v) {
                         Ok(()) => {
                             app_state.config.sync_passphrase = v.to_string();
                             info!("Sync passphrase stored in system keyring");
@@ -1703,7 +1775,7 @@ fn handle_ipc_message_offscreen(
                 {
                     app_state.config.sync_auto_interval_sec = v;
                 }
-                if let Err(e) = aileron::config::Config::save(&app_state.config) {
+                if let Err(e) = crate::config::Config::save(&app_state.config) {
                     warn!("Failed to save config: {}", e);
                 }
                 if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
@@ -1721,7 +1793,7 @@ fn handle_ipc_message_offscreen(
                 msg.get("url").and_then(|v| v.as_str()),
             ) {
                 let key = format!("{}@{}", username, url);
-                match aileron::passwords::keyring::store_credential(&key, password) {
+                match crate::passwords::keyring::store_credential(&key, password) {
                     Ok(()) => {
                         info!("Saved credential for {}", username);
                         app_state.status_message = format!("Credential saved for {}", username);
@@ -1747,7 +1819,7 @@ fn handle_ipc_message_offscreen(
                     let url = pane.url().to_string();
                     if let Some(ref conn) = app_state.db
                         && let Err(e) =
-                            aileron::db::scroll_marks::set_scroll_mark(conn, &url, mark_char, frac)
+                            crate::db::scroll_marks::set_scroll_mark(conn, &url, mark_char, frac)
                     {
                         tracing::warn!("Failed to persist scroll mark: {}", e);
                     }
@@ -1761,7 +1833,7 @@ fn handle_ipc_message_offscreen(
         }
         Some("get-newtab-data") => {
             let bookmarks: Vec<serde_json::Value> = if let Some(db) = app_state.db.as_ref() {
-                aileron::db::bookmarks::all_bookmarks(db)
+                crate::db::bookmarks::all_bookmarks(db)
                     .unwrap_or_default()
                     .into_iter()
                     .take(8)
@@ -1777,7 +1849,7 @@ fn handle_ipc_message_offscreen(
                 Vec::new()
             };
             let history: Vec<serde_json::Value> = if let Some(db) = app_state.db.as_ref() {
-                aileron::db::history::recent_entries(db, 8)
+                crate::db::history::recent_entries(db, 8)
                     .unwrap_or_default()
                     .into_iter()
                     .map(|h| {
@@ -1885,20 +1957,20 @@ trait ExecuteJs {
     fn execute_js_code(&self, js: &str);
 }
 
-impl ExecuteJs for aileron::servo::WryPane {
+impl ExecuteJs for crate::servo::WryPane {
     fn execute_js_code(&self, js: &str) {
         self.execute_js(js);
     }
 }
 
-impl ExecuteJs for aileron::offscreen_webview::OffscreenWebView {
+impl ExecuteJs for crate::offscreen_webview::OffscreenWebView {
     fn execute_js_code(&self, js: &str) {
         self.execute_js(js);
     }
 }
 
 fn inject_extension_shim_and_script<T>(
-    ext_script: &aileron::extensions::scripting::ExtensionContentScriptEntry,
+    ext_script: &crate::extensions::scripting::ExtensionContentScriptEntry,
     pane: &T,
     pane_id: Uuid,
     app_state: &mut AppState,
@@ -1964,4 +2036,316 @@ fn inject_extension_shim_and_script<T>(
         pane.execute_js_code(&ext_script.js_code);
     }
 }
-// End of file
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_viewport() -> crate::wm::Rect {
+        crate::wm::Rect::new(0.0, 0.0, 1920.0, 1080.0)
+    }
+
+    fn test_app_state() -> AppState {
+        AppState::new(test_viewport(), crate::config::Config::default()).unwrap()
+    }
+
+    // ─── poll_git_status ────────────────────────────────────────────────
+
+    #[test]
+    fn poll_git_status_none_poller_leaves_status_unchanged() {
+        let mut status = GitStatus {
+            branch: Some("main".into()),
+            modified_count: 3,
+            untracked_count: 1,
+            is_dirty: true,
+        };
+        poll_git_status(&mut status, &None);
+        assert_eq!(status.branch.as_deref(), Some("main"));
+        assert_eq!(status.modified_count, 3);
+        assert!(status.is_dirty);
+    }
+
+    #[test]
+    fn poll_git_status_with_empty_channel_leaves_status_unchanged() {
+        let tmp = std::env::temp_dir().join("aileron_test_git_poller_none");
+        let _ = std::fs::create_dir_all(&tmp);
+        let poller =
+            crate::git::GitPoller::new(tmp.clone(), std::time::Duration::from_secs(3600));
+        let mut status = GitStatus {
+            branch: Some("feature".into()),
+            modified_count: 1,
+            untracked_count: 0,
+            is_dirty: true,
+        };
+        poll_git_status(&mut status, &Some(poller));
+        assert_eq!(status.branch.as_deref(), Some("feature"));
+        assert_eq!(status.modified_count, 1);
+    }
+
+    #[test]
+    fn poll_git_status_with_new_poller_receives_initial_status() {
+        let tmp = std::env::temp_dir().join("aileron_test_git_poller_recv");
+        let _ = std::fs::create_dir_all(&tmp);
+        let poller =
+            crate::git::GitPoller::new(tmp.clone(), std::time::Duration::from_secs(3600));
+        let mut status = GitStatus::default();
+        poll_git_status(&mut status, &Some(poller));
+    }
+
+    // ─── auto_save_workspace ────────────────────────────────────────────
+
+    #[test]
+    fn auto_save_disabled_does_not_save() {
+        let mut app_state = test_app_state();
+        app_state.config.auto_save = false;
+        app_state.session_dirty = true;
+        app_state.last_auto_save = std::time::Instant::now()
+            - std::time::Duration::from_secs(app_state.config.auto_save_interval + 10);
+        let wry_panes = WryPaneManager::new();
+        auto_save_workspace(&mut app_state, &wry_panes);
+        assert!(app_state.session_dirty);
+    }
+
+    #[test]
+    fn auto_save_session_not_dirty_does_not_save() {
+        let mut app_state = test_app_state();
+        app_state.config.auto_save = true;
+        app_state.session_dirty = false;
+        app_state.last_auto_save = std::time::Instant::now()
+            - std::time::Duration::from_secs(app_state.config.auto_save_interval + 10);
+        let wry_panes = WryPaneManager::new();
+        auto_save_workspace(&mut app_state, &wry_panes);
+    }
+
+    #[test]
+    fn auto_save_interval_not_elapsed_does_not_save() {
+        let mut app_state = test_app_state();
+        app_state.config.auto_save = true;
+        app_state.session_dirty = true;
+        app_state.last_auto_save = std::time::Instant::now();
+        let wry_panes = WryPaneManager::new();
+        auto_save_workspace(&mut app_state, &wry_panes);
+    }
+
+    // ─── push_tabs_to_arp ───────────────────────────────────────────────
+
+    #[test]
+    fn push_tabs_to_arp_no_server_does_nothing() {
+        let app_state = test_app_state();
+        assert!(app_state.arp_server.is_none());
+        let wry_panes = WryPaneManager::new();
+        push_tabs_to_arp(&app_state, &wry_panes);
+    }
+
+    #[test]
+    fn push_tabs_to_arp_stopped_server_does_nothing() {
+        let mut app_state = test_app_state();
+        let Ok((server, _receiver)) =
+            crate::arp::ArpServer::new(crate::arp::ArpConfig::default())
+        else {
+            return;
+        };
+        assert!(!server.is_running());
+        app_state.arp_server = Some(server);
+        let wry_panes = WryPaneManager::new();
+        push_tabs_to_arp(&app_state, &wry_panes);
+    }
+
+    // ─── process_arp_commands ───────────────────────────────────────────
+
+    #[test]
+    fn process_arp_commands_no_receiver_does_nothing() {
+        let mut app_state = test_app_state();
+        assert!(app_state.arp_cmd_receiver.is_none());
+        process_arp_commands(&mut app_state);
+    }
+
+    #[test]
+    fn process_arp_commands_tab_navigate_pushes_action() {
+        let mut app_state = test_app_state();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
+        let _ = tx.send(ArpCommand::TabNavigate {
+            tab_id: None,
+            url: "https://example.com".into(),
+        });
+        process_arp_commands(&mut app_state);
+        assert!(!app_state.pending_wry_actions.is_empty());
+    }
+
+    #[test]
+    fn process_arp_commands_clipboard_set_pushes_action() {
+        let mut app_state = test_app_state();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
+        let _ = tx.send(ArpCommand::ClipboardSet {
+            text: "test clipboard".into(),
+        });
+        process_arp_commands(&mut app_state);
+        assert!(!app_state.pending_wry_actions.is_empty());
+    }
+
+    #[test]
+    fn process_arp_commands_quickmark_open_no_match_does_nothing() {
+        let mut app_state = test_app_state();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
+        let _ = tx.send(ArpCommand::QuickmarkOpen {
+            key: "nonexistent".into(),
+        });
+        process_arp_commands(&mut app_state);
+        assert!(app_state.pending_wry_actions.is_empty());
+    }
+
+    #[test]
+    fn process_arp_commands_quickmark_open_with_default_quickmark_pushes_navigate() {
+        let mut app_state = test_app_state();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
+        let _ = tx.send(ArpCommand::QuickmarkOpen { key: "gh".into() });
+        process_arp_commands(&mut app_state);
+        assert_eq!(app_state.pending_wry_actions.len(), 1);
+    }
+
+    #[test]
+    fn process_arp_commands_tab_create_with_no_url() {
+        let mut app_state = test_app_state();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
+        let _ = tx.send(ArpCommand::TabCreate { url: None });
+        process_arp_commands(&mut app_state);
+        assert!(app_state.session_dirty);
+    }
+
+    #[test]
+    fn process_arp_commands_tab_close_with_none_target() {
+        let mut app_state = test_app_state();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
+        let _ = tx.send(ArpCommand::TabClose { tab_id: None });
+        process_arp_commands(&mut app_state);
+    }
+
+    #[test]
+    fn process_arp_commands_tab_activate() {
+        let mut app_state = test_app_state();
+        let active_id = app_state.wm.active_pane_id();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
+        let _ = tx.send(ArpCommand::TabActivate { tab_id: active_id });
+        process_arp_commands(&mut app_state);
+        assert_eq!(app_state.wm.active_pane_id(), active_id);
+    }
+
+    #[test]
+    fn process_arp_commands_tab_go_back() {
+        let mut app_state = test_app_state();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
+        let _ = tx.send(ArpCommand::TabGoBack { tab_id: None });
+        process_arp_commands(&mut app_state);
+        assert_eq!(app_state.pending_wry_actions.len(), 1);
+    }
+
+    #[test]
+    fn process_arp_commands_tab_go_forward() {
+        let mut app_state = test_app_state();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
+        let _ = tx.send(ArpCommand::TabGoForward { tab_id: None });
+        process_arp_commands(&mut app_state);
+        assert_eq!(app_state.pending_wry_actions.len(), 1);
+    }
+
+    #[test]
+    fn process_arp_commands_tab_reload() {
+        let mut app_state = test_app_state();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
+        let _ = tx.send(ArpCommand::TabReload { tab_id: None });
+        process_arp_commands(&mut app_state);
+        assert_eq!(app_state.pending_wry_actions.len(), 1);
+    }
+
+    #[test]
+    fn process_arp_commands_clipboard_get() {
+        let mut app_state = test_app_state();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
+        let _ = tx.send(ArpCommand::ClipboardGet { request_id: 42 });
+        process_arp_commands(&mut app_state);
+    }
+
+    // ─── load_default_adblock_rules ─────────────────────────────────────
+
+    #[test]
+    fn load_default_adblock_rules_loads_without_panic() {
+        let mut adblocker = crate::net::adblock::AdBlocker::new();
+        load_default_adblock_rules(&mut adblocker);
+        assert!(adblocker.is_enabled());
+    }
+
+    #[test]
+    fn load_default_adblock_rules_adds_blocked_domains() {
+        let mut adblocker = crate::net::adblock::AdBlocker::new();
+        load_default_adblock_rules(&mut adblocker);
+        let test_url = url::Url::parse("https://doubleclick.net/track").unwrap();
+        assert!(
+            adblocker.should_block(&test_url),
+            "doubleclick.net should be blocked after loading default rules"
+        );
+    }
+
+    // ─── handle_pending_import ──────────────────────────────────────────
+
+    #[test]
+    fn handle_pending_import_none_does_nothing() {
+        let mut app_state = test_app_state();
+        assert!(app_state.pending_import.is_none());
+        handle_pending_import(&mut app_state);
+        assert!(app_state.status_message.is_empty());
+    }
+
+    #[test]
+    fn handle_pending_import_no_database_sets_message() {
+        let mut app_state = test_app_state();
+        app_state.pending_import = Some("firefox".into());
+        app_state.db = None;
+        handle_pending_import(&mut app_state);
+        assert!(app_state.pending_import.is_none());
+        assert!(app_state.status_message.contains("No database"));
+    }
+
+    #[test]
+    fn handle_pending_import_unknown_source_sets_message() {
+        let mut app_state = test_app_state();
+        app_state.pending_import = Some("safari".into());
+        handle_pending_import(&mut app_state);
+        assert!(app_state.pending_import.is_none());
+        assert!(app_state.status_message.contains("Unknown import source"));
+    }
+
+    // ─── poll_terminal_output ───────────────────────────────────────────
+
+    #[test]
+    fn poll_terminal_output_calls_tick_all_without_panic() {
+        let mut terminal_manager = NativeTerminalManager::new();
+        poll_terminal_output(&mut terminal_manager);
+    }
+
+    // ─── process_pending_wry_actions ────────────────────────────────────
+
+    #[test]
+    fn process_pending_wry_actions_none_app_state_does_nothing() {
+        let mut app_state: Option<AppState> = None;
+        let mut wry_panes = WryPaneManager::new();
+        let mut offscreen_panes = OffscreenWebViewManager::new();
+        let content_scripts = ContentScriptManager::new();
+        process_pending_wry_actions(
+            &mut app_state,
+            &mut wry_panes,
+            &mut offscreen_panes,
+            &content_scripts,
+        );
+    }
+}

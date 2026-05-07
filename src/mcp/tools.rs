@@ -5,6 +5,9 @@
 use crate::mcp::bridge::{McpCommand, McpState};
 use serde_json::{Value, json};
 
+#[allow(unused_imports)]
+use {attohttpc, urlencoding};
+
 /// Trait for MCP tools that can be called from an MCP client.
 pub trait McpTool: Send + Sync {
     /// The tool name (used in tools/call requests).
@@ -178,7 +181,9 @@ impl McpTool for RunJsTool {
     }
 }
 
-/// Tool: Search the web (stub — requires actual search engine integration).
+/// Tool: Search the web using DuckDuckGo HTML lite endpoint.
+/// Performs a real HTTP request to DuckDuckGo's lite HTML interface
+/// and extracts search result titles and URLs.
 pub struct SearchWebTool;
 
 impl McpTool for SearchWebTool {
@@ -186,7 +191,7 @@ impl McpTool for SearchWebTool {
         "search_web"
     }
     fn description(&self) -> &str {
-        "Search the web using a search engine (stub — requires integration)"
+        "Search the web using DuckDuckGo. Returns top results with titles and URLs."
     }
     fn input_schema(&self) -> Value {
         json!({
@@ -206,14 +211,92 @@ impl McpTool for SearchWebTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'query' parameter"))?;
 
-        // Stub: return a DuckDuckGo search URL
+        // Use DuckDuckGo HTML lite endpoint (returns simple HTML, no JS required)
         let encoded = urlencoding::encode(query);
-        let search_url = format!("https://duckduckgo.com/?q={}", encoded);
-        Ok(format!(
-            "Search results for '{}': {}\n\nNote: Aileron does not yet have a built-in search API. \
-             Opening in the active pane may work.",
-            query, search_url
-        ))
+        let ddg_url = format!("https://duckduckgo.com/?q={}", encoded);
+        let url = format!("https://lite.duckduckgo.com/lite/?q={}", encoded);
+
+        let response = attohttpc::get(&url)
+            .header("User-Agent", "Aileron/0.18 (MCP search tool)")
+            .header("Accept", "text/html")
+            .send();
+
+        let body = match response {
+            Ok(resp) => match resp.text() {
+                Ok(text) => text,
+                Err(e) => {
+                    return Ok(format!(
+                        "Search request failed (body read error): {}\nFallback URL: {}",
+                        e, ddg_url
+                    ));
+                }
+            },
+            Err(e) => {
+                return Ok(format!(
+                    "Search request failed: {}\nFallback URL: {}",
+                    e, ddg_url
+                ));
+            }
+        };
+
+        // Extract result links from DuckDuckGo lite HTML.
+        // Lite results are in <a class="result-link" href="...">Title</a> tags,
+        // and the main results table has <td class="result-link"> anchors.
+        let mut results: Vec<String> = Vec::new();
+        let mut seen_urls: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        // Parse simple <a href="URL">Title</a> patterns from result rows
+        for line in body.lines() {
+            // DuckDuckGo lite uses <a class="result-link" href="URL">
+            if let Some(start) = line.find("href=\"") {
+                let rest = &line[start + 6..];
+                if let Some(end) = rest.find('"') {
+                    let href = &rest[..end];
+                    // Skip DuckDuckGo internal links and ads
+                    if href.contains("duckduckgo.com")
+                        || href.contains("ad.")
+                        || href.starts_with('#')
+                        || href.starts_with('/')
+                    {
+                        continue;
+                    }
+                    // Extract title from the link text
+                    let title = if let Some(title_start) = line.find('>') {
+                        let title_rest = &line[title_start + 1..];
+                        if let Some(title_end) = title_rest.find("</a>") {
+                            let t = title_rest[..title_end].trim();
+                            // Decode HTML entities minimally
+                            t.replace("&amp;", "&")
+                                .replace("&lt;", "<")
+                                .replace("&gt;", ">")
+                                .replace("&quot;", "\"")
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    };
+
+                    if seen_urls.insert(href.to_string()) && results.len() < 10 {
+                        results.push(format!("{}. {} - {}", results.len() + 1, title, href));
+                    }
+                }
+            }
+        }
+
+        if results.is_empty() {
+            Ok(format!(
+                "No results found for '{}'.\nDirect search URL: {}",
+                query, ddg_url
+            ))
+        } else {
+            Ok(format!(
+                "Search results for '{}':\n\n{}\n\nDirect search URL: {}",
+                query,
+                results.join("\n"),
+                ddg_url
+            ))
+        }
     }
 }
 

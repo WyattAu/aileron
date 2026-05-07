@@ -308,7 +308,7 @@ pub struct AppState {
     /// ID of the pane that crashed.
     pub crashed_pane_id: Option<uuid::Uuid>,
 
-    /// Pending URL to open in a new tab (set by :g <url> command).
+    /// Pending URL to open in a new tab (set by `:g <url>` command).
     pub pending_new_tab_url: Option<url::Url>,
 
     /// Whether auto-fill is available for the current page.

@@ -2,7 +2,7 @@
 //!
 //! Since wry::WebView is !Send + !Sync, MCP tools on the background thread
 //! cannot directly interact with wry panes. This bridge provides:
-//! - Shared read-only state (active URL, title) via Arc<RwLock>
+//! - Shared read-only state (active URL, title) via `Arc<RwLock>`
 //! - Command channel for mutations (navigate, run JS) processed on main thread
 
 use std::sync::{Arc, RwLock, mpsc};
