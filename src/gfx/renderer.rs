@@ -192,3 +192,42 @@ impl GfxState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn returns_exactly_three_elements() {
+        let opts = backend_options();
+        assert_eq!(opts.len(), 3);
+    }
+
+    #[test]
+    fn first_element_contains_vulkan_and_gl() {
+        let opts = backend_options();
+        assert_eq!(
+            opts[0],
+            wgpu::Backends::VULKAN | wgpu::Backends::GL
+        );
+    }
+
+    #[test]
+    fn second_element_is_gl_only() {
+        let opts = backend_options();
+        assert_eq!(opts[1], wgpu::Backends::GL);
+    }
+
+    #[test]
+    fn third_element_is_vulkan_only() {
+        let opts = backend_options();
+        assert_eq!(opts[2], wgpu::Backends::VULKAN);
+    }
+
+    #[test]
+    fn no_duplicate_combinations() {
+        let opts = backend_options();
+        let unique: std::collections::HashSet<_> = opts.iter().collect();
+        assert_eq!(unique.len(), 3);
+    }
+}

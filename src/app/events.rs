@@ -539,3 +539,72 @@ impl AppState {
         self.accessibility_text = msg.to_string();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::input::Mode;
+    use crate::wm::Rect;
+
+    fn make_state() -> AppState {
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        AppState::new(viewport, Config::default()).unwrap()
+    }
+
+    #[test]
+    fn test_update_status_normal() {
+        let mut state = make_state();
+        state.mode = Mode::Normal;
+        state.update_status();
+        assert_eq!(state.status_message, "-- NORMAL --");
+        assert_eq!(state.accessibility_text, "Mode: NORMAL");
+    }
+
+    #[test]
+    fn test_update_status_insert() {
+        let mut state = make_state();
+        state.mode = Mode::Insert;
+        state.update_status();
+        assert_eq!(state.status_message, "-- INSERT --");
+        assert_eq!(state.accessibility_text, "Mode: INSERT");
+    }
+
+    #[test]
+    fn test_update_status_command() {
+        let mut state = make_state();
+        state.mode = Mode::Command;
+        state.update_status();
+        assert_eq!(state.status_message, "-- COMMAND --");
+        assert_eq!(state.accessibility_text, "Mode: COMMAND");
+    }
+
+    #[test]
+    fn test_update_a11y() {
+        let mut state = make_state();
+        state.update_a11y("Navigation complete");
+        assert_eq!(state.status_message, "Navigation complete");
+        assert_eq!(state.accessibility_text, "Navigation complete");
+    }
+
+    #[test]
+    fn test_update_a11y_overrides_status() {
+        let mut state = make_state();
+        state.mode = Mode::Normal;
+        state.update_status();
+        assert_eq!(state.status_message, "-- NORMAL --");
+        state.update_a11y("Error: page crashed");
+        assert_eq!(state.status_message, "Error: page crashed");
+        assert_eq!(state.accessibility_text, "Error: page crashed");
+    }
+
+    #[test]
+    fn test_update_status_after_a11y() {
+        let mut state = make_state();
+        state.update_a11y("some message");
+        state.mode = Mode::Insert;
+        state.update_status();
+        assert_eq!(state.status_message, "-- INSERT --");
+        assert_eq!(state.accessibility_text, "Mode: INSERT");
+    }
+}

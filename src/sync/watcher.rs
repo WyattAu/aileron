@@ -107,3 +107,45 @@ impl Default for SyncWatcher {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_is_not_running() {
+        let watcher = SyncWatcher::new();
+        assert!(!watcher.is_running());
+    }
+
+    #[test]
+    fn test_default_trait() {
+        let watcher = SyncWatcher::default();
+        assert!(!watcher.is_running());
+    }
+
+    #[test]
+    fn test_is_running_false_on_new() {
+        let watcher = SyncWatcher::new();
+        assert!(!watcher.is_running());
+    }
+
+    #[test]
+    fn test_poll_changes_empty_on_new() {
+        let watcher = SyncWatcher::new();
+        let changes = watcher.poll_changes();
+        assert!(changes.is_empty());
+    }
+
+    #[test]
+    fn test_start_stop() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut watcher = SyncWatcher::new();
+
+        assert!(watcher.start(dir.path()).is_ok());
+        assert!(watcher.is_running());
+
+        watcher.stop();
+        assert!(!watcher.is_running());
+    }
+}

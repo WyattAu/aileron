@@ -118,3 +118,29 @@ impl Default for PopupManager {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_is_empty() {
+        let mgr = PopupManager::new();
+        assert!(!mgr.pending_new_window);
+        assert!(mgr.pending_popup_window.is_none());
+    }
+
+    #[test]
+    fn test_default_trait() {
+        let mgr = PopupManager::default();
+        assert!(!mgr.pending_new_window);
+        assert!(mgr.pending_popup_window.is_none());
+    }
+
+    #[test]
+    fn test_contains_key_false_on_new() {
+        let mgr = PopupManager::new();
+        let id = WindowId::dummy();
+        assert!(!mgr.contains_key(&id));
+    }
+}

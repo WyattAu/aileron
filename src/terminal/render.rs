@@ -271,3 +271,180 @@ fn apply_cell_flags(
     }
     c
 }
+
+#[cfg(test)]
+mod tests {
+    use alacritty_terminal::term::cell::Flags;
+    use alacritty_terminal::vte::ansi::{Color, NamedColor, Rgb};
+
+    use super::*;
+
+    fn test_cell() -> Cell {
+        Cell::default()
+    }
+
+    fn test_colors() -> TerminalColors {
+        let mut ansi = [egui::Color32::BLACK; 256];
+        ansi[0] = egui::Color32::from_rgb(1, 1, 1);   // Black
+        ansi[1] = egui::Color32::from_rgb(2, 2, 2);   // Red
+        ansi[2] = egui::Color32::from_rgb(3, 3, 3);   // Green
+        ansi[3] = egui::Color32::from_rgb(4, 4, 4);   // Yellow
+        ansi[4] = egui::Color32::from_rgb(5, 5, 5);   // Blue
+        ansi[5] = egui::Color32::from_rgb(6, 6, 6);   // Magenta
+        ansi[6] = egui::Color32::from_rgb(7, 7, 7);   // Cyan
+        ansi[7] = egui::Color32::from_rgb(8, 8, 8);   // White
+        ansi[8] = egui::Color32::from_rgb(9, 9, 9);   // BrightBlack
+        ansi[9] = egui::Color32::from_rgb(10, 10, 10); // BrightRed
+        ansi[10] = egui::Color32::from_rgb(11, 11, 11); // BrightGreen
+        ansi[11] = egui::Color32::from_rgb(12, 12, 12); // BrightYellow
+        ansi[12] = egui::Color32::from_rgb(13, 13, 13); // BrightBlue
+        ansi[13] = egui::Color32::from_rgb(14, 14, 14); // BrightMagenta
+        ansi[14] = egui::Color32::from_rgb(15, 15, 15); // BrightCyan
+        ansi[15] = egui::Color32::from_rgb(16, 16, 16); // BrightWhite
+        TerminalColors {
+            background: egui::Color32::from_rgb(10, 20, 30),
+            foreground: egui::Color32::from_rgb(200, 210, 220),
+            cursor: egui::Color32::from_rgb(255, 0, 0),
+            cursor_text: egui::Color32::WHITE,
+            selection_bg: egui::Color32::from_rgba_premultiplied(77, 180, 255, 60),
+            ansi,
+        }
+    }
+
+    #[test]
+    fn resolve_fg_color_named() {
+        let mut cell = test_cell();
+        cell.fg = Color::Named(NamedColor::Red);
+        let colors = test_colors();
+        assert_eq!(resolve_fg_color(&cell, &colors), egui::Color32::from_rgb(2, 2, 2));
+    }
+
+    #[test]
+    fn resolve_fg_color_spec() {
+        let mut cell = test_cell();
+        cell.fg = Color::Spec(Rgb { r: 100, g: 150, b: 200 });
+        let colors = test_colors();
+        assert_eq!(
+            resolve_fg_color(&cell, &colors),
+            egui::Color32::from_rgb(100, 150, 200)
+        );
+    }
+
+    #[test]
+    fn resolve_fg_color_indexed() {
+        let mut cell = test_cell();
+        cell.fg = Color::Indexed(5);
+        let colors = test_colors();
+        assert_eq!(resolve_fg_color(&cell, &colors), egui::Color32::from_rgb(6, 6, 6));
+    }
+
+    #[test]
+    fn resolve_fg_color_out_of_range_falls_back() {
+        let mut cell = test_cell();
+        cell.fg = Color::Named(NamedColor::Foreground);
+        let colors = test_colors();
+        assert_eq!(
+            resolve_fg_color(&cell, &colors),
+            egui::Color32::from_rgb(200, 210, 220)
+        );
+    }
+
+    #[test]
+    fn resolve_bg_color_named_background() {
+        let cell = test_cell();
+        let colors = test_colors();
+        assert_eq!(
+            resolve_bg_color(&cell, &colors),
+            egui::Color32::from_rgb(10, 20, 30)
+        );
+    }
+
+    #[test]
+    fn resolve_bg_color_named_non_background() {
+        let mut cell = test_cell();
+        cell.bg = Color::Named(NamedColor::Blue);
+        let colors = test_colors();
+        assert_eq!(resolve_bg_color(&cell, &colors), egui::Color32::from_rgb(5, 5, 5));
+    }
+
+    #[test]
+    fn resolve_bg_color_spec() {
+        let mut cell = test_cell();
+        cell.bg = Color::Spec(Rgb { r: 50, g: 60, b: 70 });
+        let colors = test_colors();
+        assert_eq!(
+            resolve_bg_color(&cell, &colors),
+            egui::Color32::from_rgb(50, 60, 70)
+        );
+    }
+
+    #[test]
+    fn resolve_bg_color_indexed() {
+        let mut cell = test_cell();
+        cell.bg = Color::Indexed(9);
+        let colors = test_colors();
+        assert_eq!(
+            resolve_bg_color(&cell, &colors),
+            egui::Color32::from_rgb(10, 10, 10)
+        );
+    }
+
+    #[test]
+    fn resolve_bg_color_out_of_range_falls_back() {
+        let mut cell = test_cell();
+        cell.bg = Color::Named(NamedColor::Cursor);
+        let colors = test_colors();
+        assert_eq!(
+            resolve_bg_color(&cell, &colors),
+            egui::Color32::from_rgb(10, 20, 30)
+        );
+    }
+
+    #[test]
+    fn apply_cell_flags_no_flags() {
+        let color = egui::Color32::from_rgb(100, 150, 200);
+        assert_eq!(apply_cell_flags(color, Flags::empty()), color);
+    }
+
+    #[test]
+    fn apply_cell_flags_bold() {
+        let color = egui::Color32::from_rgb(100, 150, 200);
+        assert_eq!(
+            apply_cell_flags(color, Flags::BOLD),
+            egui::Color32::from_rgb(130, 180, 230)
+        );
+    }
+
+    #[test]
+    fn apply_cell_flags_bold_saturates() {
+        let color = egui::Color32::from_rgb(240, 250, 255);
+        assert_eq!(
+            apply_cell_flags(color, Flags::BOLD),
+            egui::Color32::from_rgb(255, 255, 255)
+        );
+    }
+
+    #[test]
+    fn apply_cell_flags_dim() {
+        let color = egui::Color32::from_rgb(100, 150, 201);
+        assert_eq!(
+            apply_cell_flags(color, Flags::DIM),
+            egui::Color32::from_rgb(50, 75, 100)
+        );
+    }
+
+    #[test]
+    fn apply_cell_flags_hidden() {
+        let color = egui::Color32::from_rgb(100, 150, 200);
+        assert_eq!(apply_cell_flags(color, Flags::HIDDEN), egui::Color32::TRANSPARENT);
+    }
+
+    #[test]
+    fn apply_cell_flags_bold_dim() {
+        let color = egui::Color32::from_rgb(100, 150, 200);
+        assert_eq!(
+            apply_cell_flags(color, Flags::BOLD | Flags::DIM),
+            egui::Color32::from_rgb(65, 90, 115)
+        );
+    }
+}

@@ -640,3 +640,94 @@ pub fn process_wry_action(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn console_log_valid_entries() {
+        let json = r#"[{"level":"info","msg":"hello"},{"level":"warn","msg":"world"}]"#;
+        let result = format_console_log(json).unwrap();
+        assert!(result.starts_with("Console (2):"));
+        assert!(result.contains("[info] hello"));
+        assert!(result.contains("[warn] world"));
+    }
+
+    #[test]
+    fn console_log_empty_array() {
+        let result = format_console_log("[]").unwrap();
+        assert_eq!(result, "Console (0): empty");
+    }
+
+    #[test]
+    fn console_log_invalid_json() {
+        assert!(format_console_log("not json").is_none());
+    }
+
+    #[test]
+    fn console_log_long_msg_truncated() {
+        let long_msg = "x".repeat(60);
+        let json = format!(r#"[{{"level":"info","msg":"{}"}}]"#, long_msg);
+        let result = format_console_log(&json).unwrap();
+        assert!(result.contains(&format!("[info] {}...", &long_msg[..47])));
+    }
+
+    #[test]
+    fn console_log_missing_fields() {
+        let json = r#"[{"foo":"bar"}]"#;
+        let result = format_console_log(json).unwrap();
+        assert!(result.contains("[?] ?"));
+    }
+
+    #[test]
+    fn console_log_capped_at_twenty() {
+        let entries: Vec<String> = (0..25).map(|i| format!(r#"{{"level":"info","msg":"e{}"}}"#, i)).collect();
+        let json = format!("[{}]", entries.join(","));
+        let result = format_console_log(&json).unwrap();
+        assert!(result.starts_with("Console (25):"));
+        let lines: Vec<&str> = result.split(" │ ").collect();
+        assert_eq!(lines.len(), 20);
+    }
+
+    #[test]
+    fn network_log_valid_entries() {
+        let json = r#"[{"method":"GET","url":"https://example.com","status":200}]"#;
+        let result = format_network_log(json).unwrap();
+        assert!(result.starts_with("Network (1):"));
+        assert!(result.contains("GET https://example.com [200]"));
+    }
+
+    #[test]
+    fn network_log_empty_array() {
+        let result = format_network_log("[]").unwrap();
+        assert_eq!(result, "Network (0): empty");
+    }
+
+    #[test]
+    fn network_log_invalid_json() {
+        assert!(format_network_log("not json").is_none());
+    }
+
+    #[test]
+    fn network_log_null_status() {
+        let json = r#"[{"method":"GET","url":"https://example.com","status":null}]"#;
+        let result = format_network_log(json).unwrap();
+        assert!(result.contains("[...]"));
+    }
+
+    #[test]
+    fn network_log_long_url_truncated() {
+        let long_url = format!("https://example.com/{}", "a".repeat(70));
+        let json = format!(r#"[{{"method":"GET","url":"{}","status":200}}]"#, long_url);
+        let result = format_network_log(&json).unwrap();
+        assert!(result.contains(&format!("{}...", &long_url[..57])));
+    }
+
+    #[test]
+    fn network_log_missing_fields() {
+        let json = r#"[{"foo":"bar"}]"#;
+        let result = format_network_log(json).unwrap();
+        assert!(result.contains("? ? [?]"));
+    }
+}
