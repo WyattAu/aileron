@@ -112,7 +112,7 @@ fn test_adblocker_default() {
     let _blocker = AdBlocker::new();
     let url = url::Url::parse("https://example.com").unwrap();
     let mut blocker = AdBlocker::new();
-    assert!(!blocker.should_block(&url));
+    assert!(!blocker.should_block(&url, None, None));
     assert!(blocker.is_enabled());
 }
 

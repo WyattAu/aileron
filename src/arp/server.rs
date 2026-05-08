@@ -17,8 +17,8 @@ use super::commands::ArpCommand;
 
 /// A JSON-RPC 2.0 request (from client).
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
 pub struct JsonRpcRequest {
+    #[allow(dead_code)] // Protocol field — always "2.0"; presence validated by serde.
     pub jsonrpc: String,
     #[serde(default)]
     pub method: Option<String>,
@@ -99,12 +99,6 @@ const ERR_INVALID_REQUEST: i64 = -32600;
 const ERR_METHOD_NOT_FOUND: i64 = -32601;
 #[allow(dead_code)]
 const ERR_INVALID_PARAMS: i64 = -32602;
-#[allow(dead_code)]
-const ERR_AUTH_FAILED: i64 = -32001;
-#[allow(dead_code)]
-const ERR_RATE_LIMITED: i64 = -32002;
-#[allow(dead_code)]
-const ERR_NOT_FOUND: i64 = -32003;
 
 // ─── ARP Server ────────────────────────────────────────────
 

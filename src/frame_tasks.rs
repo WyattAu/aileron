@@ -2285,7 +2285,7 @@ mod tests {
         load_default_adblock_rules(&mut adblocker);
         let test_url = url::Url::parse("https://doubleclick.net/track").unwrap();
         assert!(
-            adblocker.should_block(&test_url),
+            adblocker.should_block(&test_url, None, None),
             "doubleclick.net should be blocked after loading default rules"
         );
     }

@@ -375,6 +375,8 @@ a {{ color: #4db4ff; }}
                 .unwrap_or(true);
             if enabled {
                 let context = webkit2gtk::WebContext::default();
+                // SAFETY: FFI call with valid pointer obtained from WebContext::default().to_glib_none().
+                // CString pointers are null-terminated and outlive the call (borrowed by lang_ptrs Vec).
                 unsafe {
                     webkit2gtk::ffi::webkit_web_context_set_spell_checking_enabled(
                         context.to_glib_none().0,
@@ -647,6 +649,7 @@ a {{ color: #4db4ff; }}
 
         // Verify it's actually an image surface.
         // cairo_surface_type_t::Image == 0 (per cairo spec).
+        // SAFETY: FFI call to cairo_surface_get_type. raw is a valid cairo surface from to_raw_none().
         unsafe {
             let surface_type = cairo::ffi::cairo_surface_get_type(raw);
             if surface_type != 0 {
@@ -658,6 +661,7 @@ a {{ color: #4db4ff; }}
             }
         }
 
+        // SAFETY: FFI calls to cairo_image_surface_get_* accessors. Surface type verified as Image above.
         let width = unsafe { cairo::ffi::cairo_image_surface_get_width(raw) as u32 };
         let height = unsafe { cairo::ffi::cairo_image_surface_get_height(raw) as u32 };
         let stride = unsafe { cairo::ffi::cairo_image_surface_get_stride(raw) as u32 };
@@ -672,6 +676,8 @@ a {{ color: #4db4ff; }}
 
         // Copy pixel data from the cairo surface.
         // ARGB32 on little-endian = BGRA byte order, matching our FrameData format.
+        // SAFETY: FFI call to cairo_image_surface_get_data returns pointer into valid Image surface.
+        // Null-checked below. Slice length computed from stride*height matches the surface's pixel buffer.
         let pixels = unsafe {
             let data_ptr = cairo::ffi::cairo_image_surface_get_data(raw);
             if data_ptr.is_null() {

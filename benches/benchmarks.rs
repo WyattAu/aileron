@@ -233,7 +233,7 @@ fn bench_adblock_domain_check(c: &mut Criterion) {
 
     c.bench_function("adblock_check_allowed", |b| {
         let url = url::Url::parse("https://github.com").unwrap();
-        b.iter(|| adblocker.should_block(&url));
+        b.iter(|| adblocker.should_block(&url, None, None));
     });
 }
 

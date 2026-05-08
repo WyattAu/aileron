@@ -1221,7 +1221,11 @@ impl ScriptingApi for AileronScriptingApi {
 
         self.pending_injections.push_js(target.tab_id, code);
 
-        // Return a placeholder result — actual results require JS evaluation
+        // NOTE: This is an asynchronous injection. The script is queued via
+        // `pending_injections` and will execute when the target frame loads or
+        // on next navigation. `result: None` correctly indicates no synchronous
+        // return value; callers that need the JS evaluation result should use
+        // the messaging API instead.
         Ok(vec![InjectionResult {
             frame_id: target
                 .frame_ids

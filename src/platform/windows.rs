@@ -58,20 +58,22 @@ impl PlatformOps for WindowsPlatform {
     }
 
     fn clipboard_copy(&self, text: &str) -> bool {
-        // Windows clipboard via PowerShell — reliable on all modern Windows
-        use std::process::Stdio;
-        std::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!("Set-Clipboard -Value '{}'", text.replace('\'', "''")),
-            ])
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        let mut child = match Command::new("powershell")
+            .args(["-NoProfile", "-Command", "$input | Set-Clipboard"])
+            .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status()
-            .ok()
-            .map(|s| s.success())
-            .unwrap_or(false)
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(text.as_bytes());
+        }
+        child.wait().ok().map(|s| s.success()).unwrap_or(false)
     }
 
     fn clipboard_paste(&self) -> Option<String> {

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use tracing::info;
 use url::Url;
 
-use crate::net::filter_list::{CosmeticFilter, FilterList, NetworkFilter};
+use crate::net::filter_list::{CosmeticFilter, FilterList, NetworkFilter, ResourceType};
 
 pub struct AdBlocker {
     blocked_domains: HashSet<String>,
@@ -280,7 +280,12 @@ impl AdBlocker {
         Some(domain.to_lowercase())
     }
 
-    pub fn should_block(&mut self, url: &Url) -> bool {
+    pub fn should_block(
+        &mut self,
+        url: &Url,
+        resource_type: Option<ResourceType>,
+        is_third_party: Option<bool>,
+    ) -> bool {
         if !self.enabled {
             return false;
         }
@@ -300,6 +305,17 @@ impl AdBlocker {
             }
 
             if !self.pattern_matches_url(filter, &url_str, &host) {
+                continue;
+            }
+
+            if let (Some(types), Some(rt)) = (&filter.resource_types, &resource_type)
+                && !filter.all_resources
+                && !types.iter().any(|t| t == rt)
+            {
+                continue;
+            }
+
+            if filter.third_party_only && is_third_party == Some(false) {
                 continue;
             }
 
@@ -345,14 +361,37 @@ impl AdBlocker {
         }
 
         for pattern in &self.blocked_patterns {
-            if (pattern.contains('*')
-                || pattern.starts_with("||")
-                || pattern.starts_with('|')
-                || pattern.ends_with('|'))
-                && url_str.contains(&pattern.replace('*', ""))
+            if !pattern.contains('*')
+                && !pattern.starts_with("||")
+                && !pattern.starts_with('|')
+                && !pattern.ends_with('|')
             {
-                self.blocked_count += 1;
-                return true;
+                continue;
+            }
+            let segments: Vec<&str> = pattern.split('*').collect();
+            if segments.len() == 1 {
+                if url_str.contains(segments[0]) {
+                    self.blocked_count += 1;
+                    return true;
+                }
+            } else {
+                let mut search_from = 0;
+                let mut all_match = true;
+                for segment in &segments {
+                    if segment.is_empty() {
+                        continue;
+                    }
+                    if let Some(pos) = url_str[search_from..].find(*segment) {
+                        search_from += pos + segment.len();
+                    } else {
+                        all_match = false;
+                        break;
+                    }
+                }
+                if all_match {
+                    self.blocked_count += 1;
+                    return true;
+                }
             }
         }
 
@@ -362,6 +401,17 @@ impl AdBlocker {
             }
 
             if !self.pattern_matches_url(filter, &url_str, &host) {
+                continue;
+            }
+
+            if let (Some(types), Some(rt)) = (&filter.resource_types, &resource_type)
+                && !filter.all_resources
+                && !types.iter().any(|t| t == rt)
+            {
+                continue;
+            }
+
+            if filter.third_party_only && is_third_party == Some(false) {
                 continue;
             }
 
@@ -642,7 +692,7 @@ mod tests {
         blocker.block_domain("ads.example.com");
 
         let url = Url::parse("https://ads.example.com/banner.js").unwrap();
-        assert!(blocker.should_block(&url));
+        assert!(blocker.should_block(&url, None, None));
         assert_eq!(blocker.blocked_count(), 1);
     }
 
@@ -652,7 +702,7 @@ mod tests {
         blocker.block_domain("ads.example.com");
 
         let url = Url::parse("https://example.com/page").unwrap();
-        assert!(!blocker.should_block(&url));
+        assert!(!blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -662,7 +712,7 @@ mod tests {
         blocker.whitelist_domain("ads.example.com");
 
         let url = Url::parse("https://ads.example.com/banner.js").unwrap();
-        assert!(!blocker.should_block(&url));
+        assert!(!blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -672,7 +722,7 @@ mod tests {
         blocker.set_enabled(false);
 
         let url = Url::parse("https://ads.example.com/banner.js").unwrap();
-        assert!(!blocker.should_block(&url));
+        assert!(!blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -681,7 +731,7 @@ mod tests {
         blocker.block_domain("*.ads.example.com");
 
         let url = Url::parse("https://cdn.ads.example.com/banner.js").unwrap();
-        assert!(blocker.should_block(&url));
+        assert!(blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -690,7 +740,7 @@ mod tests {
         blocker.block_pattern("/ads/tracker.js");
 
         let url = Url::parse("https://cdn.example.com/ads/tracker.js?id=123").unwrap();
-        assert!(blocker.should_block(&url));
+        assert!(blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -708,10 +758,10 @@ mod tests {
         assert_eq!(count, 5);
 
         let url = Url::parse("https://ads.example.com/ad.js").unwrap();
-        assert!(blocker.should_block(&url));
+        assert!(blocker.should_block(&url, None, None));
 
         let url = Url::parse("https://safe.example.com/page").unwrap();
-        assert!(!blocker.should_block(&url));
+        assert!(!blocker.should_block(&url, None, None));
 
         let css = blocker.cosmetic_css();
         assert!(css.contains("div.ad-banner"));
@@ -744,7 +794,7 @@ mod tests {
         let mut blocker = AdBlocker::new();
         blocker.block_domain("ads.example.com");
         let url = Url::parse("https://ads.example.com/ad.js").unwrap();
-        blocker.should_block(&url);
+        blocker.should_block(&url, None, None);
         assert_eq!(blocker.blocked_count(), 1);
         blocker.reset_blocked_count();
         assert_eq!(blocker.blocked_count(), 0);
@@ -829,14 +879,14 @@ mod tests {
         blocker.block_domain("ads.example.com");
 
         let url = Url::parse("https://ads.example.com/ad.js").unwrap();
-        assert!(blocker.should_block(&url));
+        assert!(blocker.should_block(&url, None, None));
 
         blocker.toggle_site_exception("example.com");
         assert!(blocker.is_site_excepted("example.com"));
         assert!(blocker.is_site_excepted("sub.example.com"));
 
         let url2 = Url::parse("https://ads.example.com/ad.js").unwrap();
-        assert!(blocker.should_block(&url2));
+        assert!(blocker.should_block(&url2, None, None));
 
         blocker.toggle_site_exception("example.com");
         assert!(!blocker.is_site_excepted("example.com"));
@@ -1028,7 +1078,7 @@ mod tests {
         blocker.load_from_filter_lists(&[list]);
 
         let url = Url::parse("https://ads.example.com/ad.js").unwrap();
-        assert!(!blocker.should_block(&url));
+        assert!(!blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -1038,7 +1088,7 @@ mod tests {
         blocker.load_from_filter_lists(&[list]);
 
         let url = Url::parse("https://example.com/page").unwrap();
-        assert!(blocker.should_block(&url));
+        assert!(blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -1048,7 +1098,7 @@ mod tests {
         blocker.load_from_filter_lists(&[list]);
 
         let url = Url::parse("https://ads.tracker.com/ad.js").unwrap();
-        assert!(blocker.should_block(&url));
+        assert!(blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -1058,7 +1108,7 @@ mod tests {
         blocker.load_from_filter_lists(&[list]);
 
         let url = Url::parse("https://ads.tracker.com/ad.js").unwrap();
-        assert!(!blocker.should_block(&url));
+        assert!(!blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -1069,7 +1119,7 @@ mod tests {
         blocker.load_from_filter_lists(&[list]);
 
         let url = Url::parse("https://ads.example.com/banner.js").unwrap();
-        assert!(!blocker.should_block(&url));
+        assert!(!blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -1079,10 +1129,10 @@ mod tests {
         blocker.load_from_filter_lists(&[list]);
 
         let blocked_url = Url::parse("https://ads.example.com/ad.js").unwrap();
-        assert!(blocker.should_block(&blocked_url));
+        assert!(blocker.should_block(&blocked_url, None, None));
 
         let safe_url = Url::parse("https://safe.example.com/page").unwrap();
-        assert!(!blocker.should_block(&safe_url));
+        assert!(!blocker.should_block(&safe_url, None, None));
     }
 
     #[test]
@@ -1092,7 +1142,7 @@ mod tests {
         blocker.load_from_filter_lists(&[list]);
 
         let url = Url::parse("https://ads.example.com/ad.js").unwrap();
-        assert!(blocker.should_block(&url));
+        assert!(blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -1132,7 +1182,12 @@ mod tests {
 
         for (url_str, expected) in &urls {
             let url = Url::parse(url_str).unwrap();
-            assert_eq!(blocker.should_block(&url), *expected, "URL: {}", url_str);
+            assert_eq!(
+                blocker.should_block(&url, None, None),
+                *expected,
+                "URL: {}",
+                url_str
+            );
         }
     }
 
@@ -1173,7 +1228,7 @@ mod tests {
 
         for url_str in &urls {
             let url = Url::parse(url_str).unwrap();
-            let _ = blocker.should_block(&url);
+            let _ = blocker.should_block(&url, None, None);
         }
 
         assert!(blocker.blocked_count() > 0);
@@ -1189,16 +1244,16 @@ mod tests {
         blocker.load_from_filter_lists(&[list]);
 
         let url_match = Url::parse("https://evil.com/path").unwrap();
-        assert!(blocker.should_block(&url_match));
+        assert!(blocker.should_block(&url_match, None, None));
 
         let url_suffix = Url::parse("https://example.com/scripts/footer.js").unwrap();
-        assert!(blocker.should_block(&url_suffix));
+        assert!(blocker.should_block(&url_suffix, None, None));
 
         let url_no_match = Url::parse("https://good.com/evil.com/path").unwrap();
-        assert!(!blocker.should_block(&url_no_match));
+        assert!(!blocker.should_block(&url_no_match, None, None));
 
         let url_no_suffix = Url::parse("https://example.com/scripts/header.js").unwrap();
-        assert!(!blocker.should_block(&url_no_suffix));
+        assert!(!blocker.should_block(&url_no_suffix, None, None));
     }
 
     #[test]
@@ -1207,7 +1262,7 @@ mod tests {
         blocker.block_pattern("/ads/");
 
         let url = Url::parse("https://cdn.example.com/ads/v3/tracker.js").unwrap();
-        assert!(blocker.should_block(&url));
+        assert!(blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -1224,7 +1279,7 @@ mod tests {
 
         let start = std::time::Instant::now();
         for url in &urls {
-            let _ = blocker.should_block(url);
+            let _ = blocker.should_block(url, None, None);
         }
         let elapsed = start.elapsed();
 
@@ -1245,7 +1300,7 @@ mod tests {
         blocker.load_from_filter_lists(&[list]);
 
         let url = Url::parse("https://example.com/page").unwrap();
-        assert!(blocker.should_block(&url));
+        assert!(blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -1255,7 +1310,7 @@ mod tests {
         blocker.load_from_filter_lists(&[list]);
 
         let url = Url::parse("https://ads.tracker.com/ad.js").unwrap();
-        assert!(blocker.should_block(&url));
+        assert!(blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -1263,17 +1318,17 @@ mod tests {
         let mut blocker = AdBlocker::new();
 
         let url1 = Url::parse("https://example.com/ads/tracker.js").unwrap();
-        assert!(!blocker.should_block(&url1));
+        assert!(!blocker.should_block(&url1, None, None));
 
         blocker.block_pattern("/ads/tracker.js");
-        assert!(blocker.should_block(&url1));
+        assert!(blocker.should_block(&url1, None, None));
     }
 
     #[test]
     fn test_aho_corasick_empty_filters() {
         let mut blocker = AdBlocker::new();
         let url = Url::parse("https://example.com/page").unwrap();
-        assert!(!blocker.should_block(&url));
+        assert!(!blocker.should_block(&url, None, None));
     }
 
     #[test]
@@ -1286,9 +1341,9 @@ mod tests {
         blocker.load_from_filter_lists(&[list]);
 
         let url_blocked = Url::parse("https://example.com/ads/banner.js").unwrap();
-        assert!(blocker.should_block(&url_blocked));
+        assert!(blocker.should_block(&url_blocked, None, None));
 
         let url_safe = Url::parse("https://example.com/ads/safe/content.js").unwrap();
-        assert!(!blocker.should_block(&url_safe));
+        assert!(!blocker.should_block(&url_safe, None, None));
     }
 }

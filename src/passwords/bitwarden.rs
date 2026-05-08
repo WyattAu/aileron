@@ -50,6 +50,12 @@ impl BitwardenClient {
 
     /// Unlock the vault. Returns the session key.
     /// In a real implementation, this would prompt for the master password.
+    ///
+    /// # Security
+    /// The returned session key is a plain `String` and will NOT be zeroized on
+    /// drop. Callers that pass it to `std::env::set_var` accept that it will
+    /// persist in process memory until exit. The internally stored copy in
+    /// `self.session_key` IS zeroized on drop/lock.
     pub fn unlock(&mut self, master_password: &str) -> anyhow::Result<String> {
         let output = Command::new(&self.bw_path)
             .arg("unlock")

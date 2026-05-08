@@ -85,6 +85,11 @@ portable-pty = "0.8"
 alacritty_terminal = "0.26"
 
 # WebView engine (wry = Tauri's system WebView wrapper)
+# NOTE: "devtools" feature is kept unconditionally because open_devtools() and
+# with_devtools() APIs are used at runtime. Actual devtools panel exposure is
+# gated at runtime via `cfg!(debug_assertions) || config.devtools` in
+# offscreen_webview.rs and servo/wry_engine.rs, so release builds default to
+# devtools-off unless the user explicitly enables them in config.
 wry = { version = "0.55.0", default-features = false, features = [
   "os-webview",
   "protocol",

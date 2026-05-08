@@ -30,11 +30,13 @@ mod bootstrap;
 /// This handler intercepts known benign errors and returns 0 (ignored).
 /// All other errors are logged but still swallowed to prevent Xlib abort().
 #[cfg(target_os = "linux")]
+// SAFETY: FFI callback registered via XSetErrorHandler. Signature matches XErrorHandler typedef.
 unsafe extern "C" fn x11_error_handler(
     _display: *mut x11_dl::xlib::Display,
     event: *mut x11_dl::xlib::XErrorEvent,
 ) -> std::os::raw::c_int {
     if !event.is_null() {
+        // SAFETY: Pointer validity guaranteed by null check above. X11 provides a valid XErrorEvent.
         let error = unsafe { &*event };
         match error.error_code {
             170 => {
@@ -156,6 +158,8 @@ impl AileronApp {
 
         // Set proxy environment variable if configured
         if let Some(ref proxy) = config.proxy {
+            // SAFETY: This runs before any threads are spawned (before event loop creation).
+            // No other thread can read env vars at this point.
             unsafe { std::env::set_var("all_proxy", proxy) };
             info!("Proxy configured: {}", proxy);
         }
@@ -2330,6 +2334,8 @@ fn main() -> anyhow::Result<()> {
     // Falls back to the shared GL texture path which works on all GPUs.
     // Only set this on NVIDIA GPUs — AMD/Intel benefit from DMA-BUF.
     #[cfg(target_os = "linux")]
+    // SAFETY: This runs before any threads are spawned (before event loop creation).
+    // WebKitGTK reads these env vars during init, which happens later on the main thread.
     unsafe {
         if is_nvidia_gpu() {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
@@ -2354,6 +2360,7 @@ fn main() -> anyhow::Result<()> {
     let wayland_display_backup = {
         if is_nvidia_gpu() && std::env::var("WAYLAND_DISPLAY").is_ok() {
             let backup = std::env::var("WAYLAND_DISPLAY").ok();
+            // SAFETY: This runs before any threads are spawned (before event loop creation).
             unsafe { std::env::remove_var("WAYLAND_DISPLAY") };
             info!(
                 "NVIDIA + Wayland: temporarily hiding WAYLAND_DISPLAY to force winit X11 backend"
@@ -2386,6 +2393,7 @@ fn main() -> anyhow::Result<()> {
     // Workaround: X11 error handler (GTK uses XWayland on Wayland systems)
     #[cfg(target_os = "linux")]
     {
+        // SAFETY: FFI call to XSetErrorHandler. xlib handle is checked via `if let Ok()`.
         unsafe {
             if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
                 (xlib.XSetErrorHandler)(Some(x11_error_handler));

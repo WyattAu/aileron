@@ -256,6 +256,8 @@ impl WryPane {
                 .unwrap_or(true);
             if enabled {
                 let context = webkit2gtk::WebContext::default();
+                // SAFETY: FFI call with valid pointer obtained from WebContext::default().to_glib_none().
+                // CString pointers are null-terminated and outlive the call (borrowed by lang_ptrs Vec).
                 unsafe {
                     webkit2gtk::ffi::webkit_web_context_set_spell_checking_enabled(
                         context.to_glib_none().0,
@@ -292,31 +294,6 @@ impl WryPane {
             gtk_window: Some(gtk_window),
             gtk_fixed: Some(fixed),
         })
-    }
-
-    /// Build a WebViewBuilder with common configuration.
-    /// The event_tx is moved into the builder's closures.
-    #[allow(dead_code)]
-    fn make_builder(
-        url_str: &str,
-        pid: Uuid,
-        event_tx: mpsc::Sender<WryEvent>,
-        blocked_domains: Vec<String>,
-        devtools: bool,
-        popup_blocker: bool,
-    ) -> WebViewBuilder<'static> {
-        Self::make_builder_with_privacy(
-            url_str,
-            pid,
-            event_tx,
-            blocked_domains,
-            std::collections::HashSet::new(),
-            true,
-            true,
-            devtools,
-            popup_blocker,
-            None,
-        )
     }
 
     /// Build a WebViewBuilder with common configuration and privacy settings.
@@ -977,6 +954,8 @@ pub fn pump_gtk() {
         // WebKitGTK sometimes emits G_LOG_LEVEL_ERROR messages during draw
         // propagation that default to SIGTRAP. We intercept these, log them via
         // tracing, and suppress the fatal signal.
+        // SAFETY: FFI call to g_log_set_handler. log_domain is a valid CString pointer.
+        // glib_log_handler is a valid function pointer matching GLogFunc signature.
         unsafe {
             let log_domain = std::ffi::CString::new("WebKitGTK").unwrap();
             glib_sys::g_log_set_handler(
@@ -1008,6 +987,7 @@ pub fn pump_gtk() {
 /// tracing, and suppress the fatal signal by returning without calling the
 /// default handler.
 #[cfg(target_os = "linux")]
+// SAFETY: FFI callback registered via g_log_set_handler. Signature matches GLogFunc typedef.
 unsafe extern "C" fn glib_log_handler(
     log_domain: *const std::os::raw::c_char,
     log_level: glib_sys::GLogLevelFlags,
@@ -1019,6 +999,7 @@ unsafe extern "C" fn glib_log_handler(
     let domain = if log_domain.is_null() {
         "*".to_string()
     } else {
+        // SAFETY: Pointer validity guaranteed by null check above. Provided by GLib logging machinery.
         unsafe { std::ffi::CStr::from_ptr(log_domain) }
             .to_string_lossy()
             .into_owned()
@@ -1044,6 +1025,7 @@ unsafe extern "C" fn glib_log_handler(
     let msg = if message.is_null() {
         "(null)".to_string()
     } else {
+        // SAFETY: Pointer validity guaranteed by null check above. Provided by GLib logging machinery.
         unsafe { std::ffi::CStr::from_ptr(message) }
             .to_string_lossy()
             .into_owned()

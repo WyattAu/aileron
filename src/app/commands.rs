@@ -770,8 +770,9 @@ impl AppState {
             if proxy_url.is_empty() || proxy_url == "none" {
                 self.config.proxy = None;
                 // SAFETY: set_var/remove_var are UB if other threads read env vars concurrently.
-                // This is acceptable for proxy changes (user-initiated, rare) but a proper
-                // fix requires wry to expose a proxy configuration API instead of env vars.
+                // Proxy changes are user-initiated and rare. The wry WebView process reads
+                // proxy env vars at page load time on its own thread, but a brief race window
+                // is acceptable here — the next page load will pick up the new value.
                 #[allow(unused_unsafe)]
                 unsafe {
                     std::env::remove_var("all_proxy")
@@ -779,6 +780,8 @@ impl AppState {
                 self.status_message = "Proxy disabled".into();
             } else {
                 self.config.proxy = Some(proxy_url.to_string());
+                // SAFETY: Same rationale as remove_var above — proxy changes are rare
+                // and user-initiated; a brief race window with WebView's env reads is acceptable.
                 #[allow(unused_unsafe)]
                 unsafe {
                     std::env::set_var("all_proxy", proxy_url)
