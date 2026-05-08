@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn test_fuzzy_match_respects_limit() {
         let items: Vec<SearchItem> = (0..20)
-            .map(|i| make_item(&i.to_string(), &format!("item_{}", i), "desc"))
+            .map(|i| make_item(&i.to_string(), &format!("item_{i}"), "desc"))
             .collect();
         let results = fuzzy_match(&items, "item", 5);
         assert_eq!(results.len(), 5);

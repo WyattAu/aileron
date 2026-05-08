@@ -67,8 +67,7 @@ impl McpTool for ReadActivePaneTool {
             Ok("No active pane.".into())
         } else {
             Ok(format!(
-                "## Active Pane\n\n**URL:** {}\n**Title:** {}\n",
-                url, title
+                "## Active Pane\n\n**URL:** {url}\n**Title:** {title}\n"
             ))
         }
     }
@@ -113,7 +112,7 @@ impl McpTool for BrowserNavigateTool {
 
         // Validate URL
         if url::Url::parse(url).is_err() {
-            return Err(anyhow::anyhow!("Invalid URL: {}", url));
+            return Err(anyhow::anyhow!("Invalid URL: {url}"));
         }
 
         self.command_tx
@@ -121,9 +120,9 @@ impl McpTool for BrowserNavigateTool {
                 url: url.to_string(),
                 new_tab: false,
             })
-            .map_err(|e| anyhow::anyhow!("Failed to send command: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
 
-        Ok(format!("Navigating to: {}", url))
+        Ok(format!("Navigating to: {url}"))
     }
 }
 
@@ -171,7 +170,7 @@ impl McpTool for RunJsTool {
                 code: code.to_string(),
                 response_tx,
             })
-            .map_err(|e| anyhow::anyhow!("Failed to send command: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
 
         let result = response_rx
             .blocking_recv()
@@ -213,8 +212,8 @@ impl McpTool for SearchWebTool {
 
         // Use DuckDuckGo HTML lite endpoint (returns simple HTML, no JS required)
         let encoded = urlencoding::encode(query);
-        let ddg_url = format!("https://duckduckgo.com/?q={}", encoded);
-        let url = format!("https://lite.duckduckgo.com/lite/?q={}", encoded);
+        let ddg_url = format!("https://duckduckgo.com/?q={encoded}");
+        let url = format!("https://lite.duckduckgo.com/lite/?q={encoded}");
 
         let response = attohttpc::get(&url)
             .header("User-Agent", "Aileron/0.18 (MCP search tool)")
@@ -226,15 +225,13 @@ impl McpTool for SearchWebTool {
                 Ok(text) => text,
                 Err(e) => {
                     return Ok(format!(
-                        "Search request failed (body read error): {}\nFallback URL: {}",
-                        e, ddg_url
+                        "Search request failed (body read error): {e}\nFallback URL: {ddg_url}"
                     ));
                 }
             },
             Err(e) => {
                 return Ok(format!(
-                    "Search request failed: {}\nFallback URL: {}",
-                    e, ddg_url
+                    "Search request failed: {e}\nFallback URL: {ddg_url}"
                 ));
             }
         };
@@ -286,8 +283,7 @@ impl McpTool for SearchWebTool {
 
         if results.is_empty() {
             Ok(format!(
-                "No results found for '{}'.\nDirect search URL: {}",
-                query, ddg_url
+                "No results found for '{query}'.\nDirect search URL: {ddg_url}"
             ))
         } else {
             Ok(format!(
@@ -342,16 +338,15 @@ impl McpTool for BrowserGetTextTool {
         let code = format!(
             "(function() {{ \
                 var text = document.body ? document.body.innerText : ''; \
-                if (text.length > {}) {{ text = text.substring(0, {}) + '... [truncated]'; }} \
+                if (text.length > {max_length}) {{ text = text.substring(0, {max_length}) + '... [truncated]'; }} \
                 return text; \
-            }})()",
-            max_length, max_length
+            }})()"
         );
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(McpCommand::ExecuteJs { code, response_tx })
-            .map_err(|e| anyhow::anyhow!("Failed to send command: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
 
         let result = response_rx
             .blocking_recv()
@@ -391,7 +386,7 @@ impl McpTool for ListTabsTool {
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(McpCommand::ListTabs { response_tx })
-            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
         response_rx
             .blocking_recv()
             .map_err(|_| anyhow::anyhow!("Response channel cancelled"))
@@ -436,7 +431,7 @@ impl McpTool for BookmarkCrudTool {
                 let (response_tx, response_rx) = tokio::sync::oneshot::channel();
                 self.command_tx
                     .send(McpCommand::ListBookmarks { response_tx })
-                    .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
                 response_rx
                     .blocking_recv()
                     .map_err(|_| anyhow::anyhow!("Response channel cancelled"))
@@ -455,7 +450,7 @@ impl McpTool for BookmarkCrudTool {
                         folder: folder.into(),
                         response_tx,
                     })
-                    .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
                 response_rx
                     .blocking_recv()
                     .map_err(|_| anyhow::anyhow!("Response channel cancelled"))
@@ -470,12 +465,12 @@ impl McpTool for BookmarkCrudTool {
                         url: url.into(),
                         response_tx,
                     })
-                    .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
                 response_rx
                     .blocking_recv()
                     .map_err(|_| anyhow::anyhow!("Response channel cancelled"))
             }
-            other => Err(anyhow::anyhow!("Unknown action: {}", other)),
+            other => Err(anyhow::anyhow!("Unknown action: {other}")),
         }
     }
 }
@@ -521,7 +516,7 @@ impl McpTool for HistorySearchTool {
                 limit,
                 response_tx,
             })
-            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
         response_rx
             .blocking_recv()
             .map_err(|_| anyhow::anyhow!("Response channel cancelled"))
@@ -593,35 +588,33 @@ impl McpTool for BrowserFillFormTool {
         let code = if submit {
             format!(
                 "(function() {{ \
-                    var el = document.querySelector('{}'); \
+                    var el = document.querySelector('{escaped_selector}'); \
                     if (!el) return 'Error: element not found'; \
-                    el.value = '{}'; \
+                    el.value = '{escaped_value}'; \
                     el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
                     el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
                     var form = el.closest('form'); \
                     if (form) {{ form.submit(); return 'Filled and submitted'; }} \
                     return 'Filled (no form to submit)'; \
-                }})()",
-                escaped_selector, escaped_value
+                }})()"
             )
         } else {
             format!(
                 "(function() {{ \
-                    var el = document.querySelector('{}'); \
+                    var el = document.querySelector('{escaped_selector}'); \
                     if (!el) return 'Error: element not found'; \
-                    el.value = '{}'; \
+                    el.value = '{escaped_value}'; \
                     el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
                     el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
                     return 'Filled'; \
-                }})()",
-                escaped_selector, escaped_value
+                }})()"
             )
         };
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(McpCommand::ExecuteJs { code, response_tx })
-            .map_err(|e| anyhow::anyhow!("Failed to send command: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
 
         let result = response_rx
             .blocking_recv()
@@ -667,7 +660,7 @@ impl McpTool for NavigateTool {
             .ok_or_else(|| anyhow::anyhow!("Missing 'url' parameter"))?;
 
         if url::Url::parse(url).is_err() {
-            return Err(anyhow::anyhow!("Invalid URL: {}", url));
+            return Err(anyhow::anyhow!("Invalid URL: {url}"));
         }
 
         let new_tab = args
@@ -680,12 +673,12 @@ impl McpTool for NavigateTool {
                 url: url.to_string(),
                 new_tab,
             })
-            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
 
         if new_tab {
-            Ok(format!("Opening in new tab: {}", url))
+            Ok(format!("Opening in new tab: {url}"))
         } else {
-            Ok(format!("Navigating to: {}", url))
+            Ok(format!("Navigating to: {url}"))
         }
     }
 }
@@ -730,7 +723,7 @@ impl McpTool for ExecuteJsTool {
                 code: code.to_string(),
                 response_tx,
             })
-            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
 
         response_rx
             .blocking_recv()
@@ -764,7 +757,7 @@ impl McpTool for ScreenshotTool {
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(McpCommand::Screenshot { response_tx })
-            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
         response_rx
             .blocking_recv()
             .map_err(|_| anyhow::anyhow!("Screenshot cancelled"))
@@ -808,18 +801,17 @@ impl McpTool for ClickTool {
         let escaped = selector.replace('\\', "\\\\").replace('\'', "\\'");
         let code = format!(
             "(function() {{ \
-                var el = document.querySelector('{}'); \
+                var el = document.querySelector('{escaped}'); \
                 if (!el) return 'Error: element not found'; \
                 el.click(); \
                 return 'clicked'; \
-            }})()",
-            escaped
+            }})()"
         );
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(McpCommand::ExecuteJs { code, response_tx })
-            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
         response_rx
             .blocking_recv()
             .map_err(|_| anyhow::anyhow!("Click cancelled"))
@@ -871,20 +863,19 @@ impl McpTool for FillFormTool {
 
         let code = format!(
             "(function() {{ \
-                var el = document.querySelector('{}'); \
+                var el = document.querySelector('{escaped_selector}'); \
                 if (!el) return 'Error: element not found'; \
-                el.value = '{}'; \
+                el.value = '{escaped_value}'; \
                 el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
                 el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
                 return 'filled'; \
-            }})()",
-            escaped_selector, escaped_value
+            }})()"
         );
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(McpCommand::ExecuteJs { code, response_tx })
-            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
         response_rx
             .blocking_recv()
             .map_err(|_| anyhow::anyhow!("Form fill cancelled"))
@@ -924,7 +915,7 @@ impl McpTool for GetCookiesTool {
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(McpCommand::ExecuteJs { code, response_tx })
-            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
 
         let raw = response_rx
             .blocking_recv()
@@ -996,27 +987,25 @@ impl McpTool for WaitForTool {
         let escaped = selector.replace('\\', "\\\\").replace('\'', "\\'");
         let code = format!(
             "(function() {{ \
-                var el = document.querySelector('{}'); \
+                var el = document.querySelector('{escaped}'); \
                 return el ? 'found' : 'not_found'; \
-            }})()",
-            escaped
+            }})()"
         );
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(McpCommand::ExecuteJs { code, response_tx })
-            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
 
         let result = response_rx
             .blocking_recv()
             .map_err(|_| anyhow::anyhow!("Wait cancelled"))?;
 
         if result == "found" {
-            Ok(format!("Element '{}' is present on the page.", selector))
+            Ok(format!("Element '{selector}' is present on the page."))
         } else {
             Ok(format!(
-                "Element '{}' not found. Retry after a delay or check the selector.",
-                selector
+                "Element '{selector}' not found. Retry after a delay or check the selector."
             ))
         }
     }
@@ -1060,9 +1049,9 @@ impl McpTool for CreateTabTool {
                 url: url.to_string(),
                 new_tab: true,
             })
-            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
 
-        Ok(format!("Opened new tab: {}", url))
+        Ok(format!("Opened new tab: {url}"))
     }
 }
 
@@ -1106,7 +1095,7 @@ impl McpTool for CloseTabTool {
                 index: index as usize,
                 response_tx,
             })
-            .map_err(|e| anyhow::anyhow!("Send failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
 
         response_rx
             .blocking_recv()
@@ -1216,7 +1205,7 @@ mod tests {
                 assert_eq!(url, "https://example.com");
                 assert!(!new_tab);
             }
-            _ => panic!("Unexpected command: {:?}", cmd),
+            _ => panic!("Unexpected command: {cmd:?}"),
         }
     }
 
@@ -1438,7 +1427,7 @@ mod tests {
                 assert_eq!(url, "https://example.com");
                 assert!(!new_tab);
             }
-            _ => panic!("Unexpected command: {:?}", cmd),
+            _ => panic!("Unexpected command: {cmd:?}"),
         }
     }
 
@@ -1457,7 +1446,7 @@ mod tests {
                 assert_eq!(url, "https://example.com");
                 assert!(new_tab);
             }
-            _ => panic!("Unexpected command: {:?}", cmd),
+            _ => panic!("Unexpected command: {cmd:?}"),
         }
     }
 
@@ -1723,7 +1712,7 @@ mod tests {
                 assert_eq!(url, "aileron://new");
                 assert!(new_tab);
             }
-            _ => panic!("Unexpected command: {:?}", cmd),
+            _ => panic!("Unexpected command: {cmd:?}"),
         }
     }
 
@@ -1743,7 +1732,7 @@ mod tests {
                 assert_eq!(url, "https://example.com");
                 assert!(new_tab);
             }
-            _ => panic!("Unexpected command: {:?}", cmd),
+            _ => panic!("Unexpected command: {cmd:?}"),
         }
     }
 

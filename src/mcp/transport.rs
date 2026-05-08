@@ -27,7 +27,7 @@ impl McpTransport {
                 warn!(target: "mcp", "Failed to parse JSON-RPC request: {}", e);
                 let response = JsonRpcResponse::error(
                     None,
-                    super::server::JsonRpcError::new(-32700, format!("Parse error: {}", e)),
+                    super::server::JsonRpcError::new(-32700, format!("Parse error: {e}")),
                 );
                 return Some(serde_json::to_string(&response).unwrap_or_else(|e| {
                     tracing::error!("Failed to serialize MCP response: {}", e);
@@ -67,7 +67,7 @@ impl McpTransport {
             }
 
             if let Some(response) = self.handle_message(line) {
-                if let Err(e) = writeln!(stdout, "{}", response) {
+                if let Err(e) = writeln!(stdout, "{response}") {
                     warn!(target: "mcp", "Failed to write response: {}", e);
                     break;
                 }
@@ -110,7 +110,7 @@ mod tests {
             serde_json::json!({"type": "object"})
         }
         fn execute(&self, args: &Value) -> anyhow::Result<String> {
-            Ok(format!("echo: {}", args))
+            Ok(format!("echo: {args}"))
         }
     }
 

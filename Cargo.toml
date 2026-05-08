@@ -3,7 +3,11 @@ name = "aileron"
 version = "0.18.0"
 edition = "2024"
 description = "A blazingly fast, keyboard-driven web environment for developers"
-license = "MIT"
+license = "Apache-2.0"
+repository = "https://github.com/WyattAu/aileron"
+readme = "README.md"
+keywords = ["browser", "web-browser", "tiling", "keyboard-driven", "developer-tools"]
+categories = ["development-tools", "web-programming"]
 
 [dependencies]
 # Error handling

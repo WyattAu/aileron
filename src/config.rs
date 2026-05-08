@@ -559,7 +559,7 @@ impl Config {
             std::fs::create_dir_all(parent)?;
         }
         let toml = toml::to_string_pretty(config)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize config: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to serialize config: {e}"))?;
         std::fs::write(&config_path, toml)?;
         Ok(())
     }

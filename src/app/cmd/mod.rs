@@ -1,4 +1,15 @@
+pub mod arp_cmd;
+pub mod bitwarden;
+pub mod bookmarks;
+pub mod downloads;
+pub mod extensions_cmd;
+pub mod history;
 pub mod import;
+pub mod privacy;
 pub mod settings;
+pub mod site_settings;
 pub mod sync;
+pub mod tabs;
+pub mod tools;
 pub mod util;
+pub mod workspaces;

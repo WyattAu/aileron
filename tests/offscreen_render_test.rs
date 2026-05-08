@@ -28,9 +28,8 @@ fn test_offscreen_webview_creates_and_captures() {
         Ok(wv) => wv,
         Err(e) => {
             panic!(
-                "build_gtk failed: {}. This means OffscreenWindow \
-                    is not accepted as a gtk::Container, which breaks Architecture B.",
-                e
+                "build_gtk failed: {e}. This means OffscreenWindow \
+                    is not accepted as a gtk::Container, which breaks Architecture B."
             );
         }
     };
@@ -64,10 +63,8 @@ fn test_offscreen_webview_creates_and_captures() {
     let total_pixels = width as usize * height as usize * 4; // BGRA
     assert!(
         non_zero_count > total_pixels / 10,
-        "Offscreen window rendered mostly zeros ({} non-zero out of {} pixels). \
+        "Offscreen window rendered mostly zeros ({non_zero_count} non-zero out of {total_pixels} pixels). \
          The webview content may not have rendered into the offscreen buffer.",
-        non_zero_count,
-        total_pixels,
     );
 
     // Verify the green background (#0000ff00 in BGRA = bytes 0,255,0,0 on little-endian)

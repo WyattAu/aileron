@@ -46,7 +46,7 @@ impl JsonRpcError {
     }
 
     pub fn method_not_found(method: &str) -> Self {
-        Self::new(-32601, format!("Method not found: {}", method))
+        Self::new(-32601, format!("Method not found: {method}"))
     }
 
     pub fn invalid_params(msg: impl Into<String>) -> Self {
@@ -188,7 +188,7 @@ impl McpServer {
             None => {
                 return JsonRpcResponse::error(
                     request.id.clone(),
-                    JsonRpcError::invalid_params(format!("Unknown tool: {}", tool_name)),
+                    JsonRpcError::invalid_params(format!("Unknown tool: {tool_name}")),
                 );
             }
         };
@@ -207,7 +207,7 @@ impl McpServer {
                 warn!(target: "mcp", "Tool '{}' failed: {}", tool_name, e);
                 JsonRpcResponse::error(
                     request.id.clone(),
-                    JsonRpcError::internal_error(format!("Tool execution failed: {}", e)),
+                    JsonRpcError::internal_error(format!("Tool execution failed: {e}")),
                 )
             }
         }

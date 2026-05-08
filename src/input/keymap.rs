@@ -216,8 +216,7 @@ mod tests {
             assert_eq!(
                 map_winit_key(*code, &unknown_logical()),
                 Key::Character(c),
-                "KeyCode::{:?} should map to Key::Character('{c}')",
-                code
+                "KeyCode::{code:?} should map to Key::Character('{c}')"
             );
         }
     }

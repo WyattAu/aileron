@@ -84,14 +84,14 @@ impl DownloadProgress {
         } else if bytes >= KB {
             format!("{:.0} KB", bytes as f64 / KB as f64)
         } else {
-            format!("{} B", bytes)
+            format!("{bytes} B")
         }
     }
 
     /// Format speed as human-readable string.
     pub fn format_speed(bytes_per_sec: f64) -> String {
         if bytes_per_sec < 1024.0 {
-            format!("{:.0} B/s", bytes_per_sec)
+            format!("{bytes_per_sec:.0} B/s")
         } else if bytes_per_sec < 1024.0 * 1024.0 {
             format!("{:.0} KB/s", bytes_per_sec / 1024.0)
         } else {
@@ -106,7 +106,7 @@ impl DownloadProgress {
         }
         let secs = seconds as u64;
         if secs < 60 {
-            format!("{}s", secs)
+            format!("{secs}s")
         } else if secs < 3600 {
             format!("{}m {}s", secs / 60, secs % 60)
         } else {
@@ -415,7 +415,7 @@ impl DownloadManager {
         let mut request = client.get(url);
         if existing_size > 0 {
             // Request resume from where we left off
-            request = request.header("Range", format!("bytes={}-", existing_size));
+            request = request.header("Range", format!("bytes={existing_size}-"));
         }
 
         let response = match request.send().await {

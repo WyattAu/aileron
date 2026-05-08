@@ -114,10 +114,10 @@ impl ExtensionManager {
 
     fn load_extension(&mut self, manifest_path: &Path) -> Result<ExtensionId, ExtensionError> {
         let content = std::fs::read_to_string(manifest_path)
-            .map_err(|e| ExtensionError::LoadFailed(format!("Cannot read manifest: {}", e)))?;
+            .map_err(|e| ExtensionError::LoadFailed(format!("Cannot read manifest: {e}")))?;
 
         let manifest: ExtensionManifest = serde_json::from_str(&content)
-            .map_err(|e| ExtensionError::LoadFailed(format!("Invalid manifest JSON: {}", e)))?;
+            .map_err(|e| ExtensionError::LoadFailed(format!("Invalid manifest JSON: {e}")))?;
 
         let id = ExtensionId(
             manifest_path
@@ -465,10 +465,9 @@ mod tests {
                 format!(
                     r#"{{
                     "manifest_version": 3,
-                    "name": "Extension {}",
+                    "name": "Extension {name}",
                     "version": "1.0.0"
-                }}"#,
-                    name
+                }}"#
                 ),
             )
             .unwrap();
@@ -804,10 +803,9 @@ mod tests {
                 format!(
                     r#"{{
                     "manifest_version": 3,
-                    "name": "Startup {}",
+                    "name": "Startup {name}",
                     "version": "1.0.0"
-                }}"#,
-                    name
+                }}"#
                 ),
             )
             .unwrap();

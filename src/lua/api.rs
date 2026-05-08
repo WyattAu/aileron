@@ -1,7 +1,7 @@
 use mlua::{Lua, LuaOptions, StdLib, Value};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::extensions::ExtensionManager;
@@ -32,7 +32,7 @@ pub struct LuaEngine {
     /// Extension manager — injected after construction via set_extension_manager().
     /// Rc<RefCell<Option<...>>> because the Lua VM is created before the extension manager,
     /// and mlua closures require Fn (not FnMut).
-    extension_manager: Rc<RefCell<Option<Arc<Mutex<ExtensionManager>>>>>,
+    extension_manager: Rc<RefCell<Option<Arc<parking_lot::RwLock<ExtensionManager>>>>>,
 }
 
 /// A user-defined command from Lua.
@@ -66,7 +66,7 @@ impl LuaEngine {
         let pending_keybinds: Rc<RefCell<Vec<PendingKeybind>>> = Rc::new(RefCell::new(Vec::new()));
         let custom_commands: Rc<RefCell<Vec<CustomCommand>>> = Rc::new(RefCell::new(Vec::new()));
         let url_redirects: Rc<RefCell<Vec<UrlRedirect>>> = Rc::new(RefCell::new(Vec::new()));
-        let extension_manager: Rc<RefCell<Option<Arc<Mutex<ExtensionManager>>>>> =
+        let extension_manager: Rc<RefCell<Option<Arc<parking_lot::RwLock<ExtensionManager>>>>> =
             Rc::new(RefCell::new(None));
 
         let mut engine = Self {
@@ -92,7 +92,7 @@ impl LuaEngine {
         pending_keybinds: Rc<RefCell<Vec<PendingKeybind>>>,
         custom_commands: Rc<RefCell<Vec<CustomCommand>>>,
         url_redirects: Rc<RefCell<Vec<UrlRedirect>>>,
-        extension_manager: Rc<RefCell<Option<Arc<Mutex<ExtensionManager>>>>>,
+        extension_manager: Rc<RefCell<Option<Arc<parking_lot::RwLock<ExtensionManager>>>>>,
     ) -> mlua::Result<()> {
         let lua = &self.lua;
 
@@ -271,7 +271,7 @@ impl LuaEngine {
                         ));
                     }
                 };
-                let guard = mgr.lock().unwrap_or_else(|e| e.into_inner());
+                let guard = mgr.read();
                 let ids = guard.list();
                 let result = lua.create_table()?;
                 for (i, id) in ids.iter().enumerate() {
@@ -307,7 +307,7 @@ impl LuaEngine {
                         ));
                     }
                 };
-                let guard = mgr.lock().unwrap_or_else(|e| e.into_inner());
+                let guard = mgr.read();
                 let ext_id = crate::extensions::ExtensionId(id);
                 match guard.get(&ext_id) {
                     Some(api) => {
@@ -323,7 +323,7 @@ impl LuaEngine {
                             "permissions",
                             api.granted_permissions()
                                 .iter()
-                                .map(|p| format!("{:?}", p))
+                                .map(|p| format!("{p:?}"))
                                 .collect::<Vec<_>>(),
                         )?;
                         ext_info
@@ -371,7 +371,7 @@ impl LuaEngine {
     /// Inject the extension manager after construction.
     /// Called during app startup once the ExtensionManager is created.
     /// This allows Lua scripts to call aileron.extensions.* APIs.
-    pub fn set_extension_manager(&self, manager: Arc<Mutex<ExtensionManager>>) {
+    pub fn set_extension_manager(&self, manager: Arc<parking_lot::RwLock<ExtensionManager>>) {
         info!(target: "lua", "Extension manager injected into Lua engine");
         *self.extension_manager.borrow_mut() = Some(manager);
     }
@@ -388,7 +388,7 @@ impl LuaEngine {
     pub fn load_file(&self, path: &std::path::Path) -> anyhow::Result<()> {
         let contents = std::fs::read_to_string(path)?;
         self.load_script(&contents)
-            .map_err(|e| anyhow::anyhow!("Lua error: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Lua error: {e}"))?;
         Ok(())
     }
 
@@ -398,8 +398,8 @@ impl LuaEngine {
             .lua
             .load(expr)
             .eval()
-            .map_err(|e| anyhow::anyhow!("Lua error: {}", e))?;
-        Ok(format!("{:?}", result))
+            .map_err(|e| anyhow::anyhow!("Lua error: {e}"))?;
+        Ok(format!("{result:?}"))
     }
 
     /// Call a registered custom command by name.
@@ -407,24 +407,24 @@ impl LuaEngine {
         let globals = self.lua.globals();
         let aileron: Value = globals
             .get("aileron")
-            .map_err(|e| anyhow::anyhow!("Lua error: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Lua error: {e}"))?;
         if let Value::Table(aileron_tbl) = aileron {
             let cmds: Value = aileron_tbl
                 .get("_commands")
-                .map_err(|e| anyhow::anyhow!("Lua error: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Lua error: {e}"))?;
             if let Value::Table(cmds_tbl) = cmds {
                 let func: Value = cmds_tbl
                     .get(name)
-                    .map_err(|e| anyhow::anyhow!("Lua error: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("Lua error: {e}"))?;
                 if let Value::Function(f) = func {
                     let result: Value = f
                         .call(args)
-                        .map_err(|e| anyhow::anyhow!("Lua error: {}", e))?;
-                    return Ok(format!("{:?}", result));
+                        .map_err(|e| anyhow::anyhow!("Lua error: {e}"))?;
+                    return Ok(format!("{result:?}"));
                 }
             }
         }
-        anyhow::bail!("Lua command '{}' not found", name)
+        anyhow::bail!("Lua command '{name}' not found")
     }
 
     /// Get the list of registered custom commands.
@@ -1010,9 +1010,11 @@ mod tests {
         )
         .unwrap();
 
-        let mgr = Arc::new(Mutex::new(ExtensionManager::new(dir.path().to_path_buf())));
+        let mgr = Arc::new(parking_lot::RwLock::new(ExtensionManager::new(
+            dir.path().to_path_buf(),
+        )));
         {
-            let mut guard = mgr.lock().unwrap();
+            let mut guard = mgr.write();
             guard.load_all();
         }
         engine.set_extension_manager(mgr);
@@ -1020,8 +1022,7 @@ mod tests {
         let result = engine.eval("return #aileron.extensions.list()").unwrap();
         assert!(
             result.contains("1"),
-            "Should list 1 extension, got: {}",
-            result
+            "Should list 1 extension, got: {result}"
         );
     }
 
@@ -1043,9 +1044,11 @@ mod tests {
         )
         .unwrap();
 
-        let mgr = Arc::new(Mutex::new(ExtensionManager::new(dir.path().to_path_buf())));
+        let mgr = Arc::new(parking_lot::RwLock::new(ExtensionManager::new(
+            dir.path().to_path_buf(),
+        )));
         {
-            let mut guard = mgr.lock().unwrap();
+            let mut guard = mgr.write();
             guard.load_all();
         }
         engine.set_extension_manager(mgr);
@@ -1053,12 +1056,12 @@ mod tests {
         let name = engine
             .eval("return aileron.extensions.info('info-ext').name")
             .unwrap();
-        assert!(name.contains("Info Extension"), "Got: {}", name);
+        assert!(name.contains("Info Extension"), "Got: {name}");
 
         let version = engine
             .eval("return aileron.extensions.info('info-ext').version")
             .unwrap();
-        assert!(version.contains("2.0.0"), "Got: {}", version);
+        assert!(version.contains("2.0.0"), "Got: {version}");
     }
 
     #[test]

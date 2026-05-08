@@ -46,7 +46,7 @@ pub fn recent_entries(conn: &Connection, limit: usize) -> Result<Vec<HistoryEntr
 }
 
 pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<HistoryEntry>> {
-    let pattern = format!("%{}%", query);
+    let pattern = format!("%{query}%");
     let mut stmt = conn.prepare(
         "SELECT id, url, title, visited_at, visit_count FROM history
          WHERE url LIKE ?1 OR title LIKE ?1
@@ -75,7 +75,7 @@ pub fn search_frecency(
     limit: usize,
 ) -> Result<Vec<(HistoryEntry, f64)>> {
     // Fetch more candidates than needed, then rank and truncate
-    let pattern = format!("%{}%", query);
+    let pattern = format!("%{query}%");
     let candidate_limit = (limit * 5).max(50);
     let mut stmt = conn.prepare(
         "SELECT id, url, title, visited_at, visit_count FROM history
@@ -225,7 +225,7 @@ mod tests {
         for i in 0..5 {
             record_visit(
                 &conn,
-                &Url::parse(&format!("https://{}.com", i)).unwrap(),
+                &Url::parse(&format!("https://{i}.com")).unwrap(),
                 &i.to_string(),
             )
             .unwrap();

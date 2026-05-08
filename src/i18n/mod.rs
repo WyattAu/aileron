@@ -370,7 +370,7 @@ mod tests {
         let translations = loader::load_all();
         let codes: Vec<&str> = translations.iter().map(|(c, _)| *c).collect();
         for expected in &["en", "zh", "ja", "ko", "de", "fr", "es", "pt", "ru"] {
-            assert!(codes.contains(expected), "Missing locale: {}", expected);
+            assert!(codes.contains(expected), "Missing locale: {expected}");
         }
     }
 

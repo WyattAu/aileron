@@ -40,7 +40,7 @@ impl GfxState {
             let surf = match inst.create_surface(Arc::clone(&window)) {
                 Ok(s) => s,
                 Err(e) => {
-                    last_err = format!("Surface creation failed (backends {:?}): {}", backends, e);
+                    last_err = format!("Surface creation failed (backends {backends:?}): {e}");
                     warn!("{}", last_err);
                     continue;
                 }
@@ -83,11 +83,10 @@ impl GfxState {
         let (instance, surface, adapter) = result.ok_or_else(|| {
             anyhow::anyhow!(
                 "No suitable GPU adapter found after trying all backend combinations.\n\
-                 Last error: {}\n\
+                 Last error: {last_err}\n\
                  Hints:\n  - Ensure Vulkan or OpenGL drivers are installed\n  \
                  - Try: WINIT_UNIX_BACKEND=x11\n  \
-                 - Check: vulkaninfo | head -20",
-                last_err
+                 - Check: vulkaninfo | head -20"
             )
         })?;
 

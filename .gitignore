@@ -30,3 +30,18 @@ target
 
 # Lean dependency caches
 **/.lake/
+
+# Environment / secrets
+.env
+*.env
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Editor temp files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

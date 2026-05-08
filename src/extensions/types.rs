@@ -78,13 +78,13 @@ pub enum ExtensionError {
 impl fmt::Display for ExtensionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Unsupported(msg) => write!(f, "Unsupported: {}", msg),
-            Self::PermissionDenied(msg) => write!(f, "Permission denied: {}", msg),
-            Self::InvalidArgument(msg) => write!(f, "Invalid argument: {}", msg),
-            Self::NotFound(msg) => write!(f, "Not found: {}", msg),
-            Self::Runtime(msg) => write!(f, "Runtime error: {}", msg),
-            Self::Serialization(msg) => write!(f, "Serialization error: {}", msg),
-            Self::LoadFailed(msg) => write!(f, "Load failed: {}", msg),
+            Self::Unsupported(msg) => write!(f, "Unsupported: {msg}"),
+            Self::PermissionDenied(msg) => write!(f, "Permission denied: {msg}"),
+            Self::InvalidArgument(msg) => write!(f, "Invalid argument: {msg}"),
+            Self::NotFound(msg) => write!(f, "Not found: {msg}"),
+            Self::Runtime(msg) => write!(f, "Runtime error: {msg}"),
+            Self::Serialization(msg) => write!(f, "Serialization error: {msg}"),
+            Self::LoadFailed(msg) => write!(f, "Load failed: {msg}"),
         }
     }
 }

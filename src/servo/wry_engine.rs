@@ -434,7 +434,7 @@ a {{ color: #4db4ff; }}
 
                         if blocked_domains.iter().any(|d: &String| {
                             let d_lower = d.to_lowercase();
-                            host_lower == d_lower || host_lower.ends_with(&format!(".{}", d_lower))
+                            host_lower == d_lower || host_lower.ends_with(&format!(".{d_lower}"))
                         }) {
                             return false;
                         }
@@ -561,7 +561,7 @@ a {{ color: #4db4ff; }}
     pub fn execute_js(&self, js: &str) {
         if let Err(e) = self.webview.evaluate_script(js) {
             warn!("JS evaluation error: {}", e);
-            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{}", e));
+            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{e}"));
         }
     }
 
@@ -569,7 +569,7 @@ a {{ color: #4db4ff; }}
     pub fn execute_js_with_callback(&self, js: &str, callback: impl Fn(String) + Send + 'static) {
         if let Err(e) = self.webview.evaluate_script_with_callback(js, callback) {
             warn!("JS evaluation error: {}", e);
-            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{}", e));
+            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{e}"));
         }
     }
 
@@ -650,7 +650,7 @@ a {{ color: #4db4ff; }}
                     // Update GTK window title on Wayland
                     #[cfg(target_os = "linux")]
                     if let Some(ref win) = self.gtk_window {
-                        win.set_title(&format!("Aileron - {}", title));
+                        win.set_title(&format!("Aileron - {title}"));
                     }
                 }
                 WryEvent::HttpsUpgraded { to, .. } => {
@@ -1687,7 +1687,7 @@ pub fn percent_encode_path(s: &str) -> String {
         {
             out.push(b as char);
         } else {
-            out.push_str(&format!("%{:02X}", b));
+            out.push_str(&format!("%{b:02X}"));
         }
     }
     out
@@ -1717,7 +1717,7 @@ fn format_size(bytes: u64) -> String {
     const MB: u64 = 1024 * KB;
     const GB: u64 = 1024 * MB;
     match bytes {
-        0..1024 => format!("{} B", bytes),
+        0..1024 => format!("{bytes} B"),
         n if n < MB => format!("{:.1} KB", n as f64 / KB as f64),
         n if n < GB => format!("{:.1} MB", n as f64 / MB as f64),
         n => format!("{:.1} GB", n as f64 / GB as f64),
@@ -1824,7 +1824,7 @@ pub(crate) fn file_browser_page(uri: &wry::http::Uri) -> String {
         let mut accumulated = String::new();
         for (i, seg) in segments.iter().enumerate() {
             accumulated.push_str(seg);
-            let encoded = percent_encode_path(&format!("/{}", accumulated));
+            let encoded = percent_encode_path(&format!("/{accumulated}"));
             if i < segments.len() - 1 {
                 breadcrumb_parts.push(format!(
                     "<a href=\"aileron://files?path={}\">{}</a><span class=\"sep\">/</span>",
@@ -1856,8 +1856,7 @@ pub(crate) fn file_browser_page(uri: &wry::http::Uri) -> String {
 
     if !parent_url.is_empty() {
         rows_html.push_str(&format!(
-            "<tr data-index=\"{}\"><td class=\"dir\"><a href=\"{}\" data-parent>..</a></td><td class=\"size\">-</td><td class=\"modified\">-</td></tr>\n",
-            index, parent_url
+            "<tr data-index=\"{index}\"><td class=\"dir\"><a href=\"{parent_url}\" data-parent>..</a></td><td class=\"size\">-</td><td class=\"modified\">-</td></tr>\n"
         ));
         index += 1;
     }

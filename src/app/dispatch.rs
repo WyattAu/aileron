@@ -289,8 +289,8 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
         Action::ResizePane(direction) => vec![ActionEffect::ResizePane(*direction)],
 
         // ─── Marks ──────────────────────────────────────────
-        Action::SetMark(c) => vec![ActionEffect::Status(format!("Mark {} set", c))],
-        Action::GoToMark(c) => vec![ActionEffect::Status(format!("Go to mark {}", c))],
+        Action::SetMark(c) => vec![ActionEffect::Status(format!("Mark {c} set"))],
+        Action::GoToMark(c) => vec![ActionEffect::Status(format!("Go to mark {c}"))],
 
         // ─── Zoom ──────────────────────────────────────────────
         Action::ZoomIn => vec![
@@ -313,7 +313,7 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
         ],
 
         // ─── Custom / unknown ─────────────────────────────────────
-        Action::Custom(name) => vec![ActionEffect::Status(format!("Action: {}", name))],
+        Action::Custom(name) => vec![ActionEffect::Status(format!("Action: {name}"))],
 
         // ─── Reader mode ──────────────────────────────────────────
         Action::ToggleReaderMode => {
@@ -463,7 +463,7 @@ mod tests {
             WryAction::RunJs(js) => {
                 assert!(js.contains("getSelection") && js.contains("clipboard"))
             }
-            other => panic!("Expected RunJs, got {:?}", other),
+            other => panic!("Expected RunJs, got {other:?}"),
         }
     }
 
@@ -474,7 +474,7 @@ mod tests {
         let wry = wry_effects(&effects);
         match &wry[0] {
             WryAction::RunJs(js) => assert!(js.contains("readText") && js.contains("insertText")),
-            other => panic!("Expected RunJs, got {:?}", other),
+            other => panic!("Expected RunJs, got {other:?}"),
         }
     }
 
@@ -621,7 +621,7 @@ mod tests {
             WryAction::Navigate(url) => {
                 assert_eq!(url.as_str(), "aileron://new");
             }
-            other => panic!("Expected Navigate, got {:?}", other),
+            other => panic!("Expected Navigate, got {other:?}"),
         }
         assert_eq!(status_msg(&effects), Some("New tab"));
     }
@@ -653,7 +653,7 @@ mod tests {
             WryAction::RunJs(js) => {
                 assert!(js.contains("window.find") && js.contains("false,false,true"))
             }
-            other => panic!("Expected RunJs, got {:?}", other),
+            other => panic!("Expected RunJs, got {other:?}"),
         }
     }
 
@@ -666,7 +666,7 @@ mod tests {
             WryAction::RunJs(js) => {
                 assert!(js.contains("window.find") && js.contains("false,true,false"))
             }
-            other => panic!("Expected RunJs, got {:?}", other),
+            other => panic!("Expected RunJs, got {other:?}"),
         }
     }
 
@@ -695,7 +695,7 @@ mod tests {
                     "JS should set hint attributes"
                 );
             }
-            other => panic!("Expected RunJs, got {:?}", other),
+            other => panic!("Expected RunJs, got {other:?}"),
         }
         assert_eq!(
             status_msg(&effects),
@@ -773,8 +773,7 @@ mod tests {
             let effects = dispatch_action(action);
             assert!(
                 !effects.is_empty(),
-                "Action {:?} should produce at least one effect",
-                action
+                "Action {action:?} should produce at least one effect"
             );
         }
     }
@@ -805,8 +804,7 @@ mod tests {
             );
             assert!(
                 matches!(effects[0], ActionEffect::Wry(_)),
-                "Scroll action {:?} should produce a Wry effect",
-                action
+                "Scroll action {action:?} should produce a Wry effect"
             );
         }
     }

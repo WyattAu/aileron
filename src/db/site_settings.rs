@@ -138,9 +138,7 @@ pub fn set_site_field(
         }
         _ => {
             return Err(anyhow::anyhow!(
-                "Unknown field or missing value: {} {:?}",
-                field,
-                value
+                "Unknown field or missing value: {field} {value:?}"
             ));
         }
     };

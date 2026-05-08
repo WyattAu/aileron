@@ -63,7 +63,7 @@ impl GitStatus {
             Some(branch) => {
                 if self.is_dirty {
                     let total = self.modified_count + self.untracked_count;
-                    format!("{} *{}", branch, total)
+                    format!("{branch} *{total}")
                 } else {
                     branch.clone()
                 }

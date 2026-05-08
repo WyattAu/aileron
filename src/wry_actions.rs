@@ -19,7 +19,7 @@ fn format_console_log(json: &str) -> Option<String> {
             } else {
                 msg.to_string()
             };
-            format!("[{}] {}", level, short_msg)
+            format!("[{level}] {short_msg}")
         })
         .collect();
     Some(format!(
@@ -61,7 +61,7 @@ fn format_network_log(json: &str) -> Option<String> {
             } else {
                 url.to_string()
             };
-            format!("{} {} [{}]", method, short_url, status)
+            format!("{method} {short_url} [{status}]")
         })
         .collect();
     Some(format!(
@@ -180,14 +180,14 @@ pub fn process_wry_action(
                     if let Err(e) = crate::db::bookmarks::remove_bookmark(conn, &url_str) {
                         tracing::warn!("Failed to remove bookmark: {}", e);
                     }
-                    app_state.status_message = format!("Bookmark removed: {}", display_title);
+                    app_state.status_message = format!("Bookmark removed: {display_title}");
                 } else {
                     if let Err(e) =
                         crate::db::bookmarks::add_bookmark(conn, &url_str, display_title)
                     {
                         tracing::warn!("Failed to add bookmark: {}", e);
                     }
-                    app_state.status_message = format!("Bookmarked: {}", display_title);
+                    app_state.status_message = format!("Bookmarked: {display_title}");
                 }
             }
         }
@@ -211,21 +211,17 @@ pub fn process_wry_action(
         crate::app::WryAction::SmoothScroll { x, y } => {
             if let Some(pane) = offscreen_panes.get_mut(&active_id) {
                 pane.execute_js(&format!(
-                    "window.scrollBy({{top: {}, left: {}, behavior: 'smooth'}})",
-                    y, x
+                    "window.scrollBy({{top: {y}, left: {x}, behavior: 'smooth'}})"
                 ));
             }
             if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
-                let js = format!(
-                    "window.scrollBy({{top: {}, left: {}, behavior: 'smooth'}})",
-                    y, x
-                );
+                let js = format!("window.scrollBy({{top: {y}, left: {x}, behavior: 'smooth'}})");
                 wry_pane.execute_js(&js);
             }
         }
         crate::app::WryAction::ScrollBy { x, y } => {
             if let Some(wry_pane) = wry_panes.get(&active_id) {
-                let js = format!("window.scrollBy({}, {})", x, y);
+                let js = format!("window.scrollBy({x}, {y})");
                 wry_pane.execute_js(&js);
             } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
                 pane.scroll_by(x, y);
@@ -234,14 +230,12 @@ pub fn process_wry_action(
         crate::app::WryAction::ScrollTo { fraction } => {
             if let Some(wry_pane) = wry_panes.get(&active_id) {
                 let js = format!(
-                    "window.scrollTo(0, document.documentElement.scrollHeight * {})",
-                    fraction
+                    "window.scrollTo(0, document.documentElement.scrollHeight * {fraction})"
                 );
                 wry_pane.execute_js(&js);
             } else if let Some(pane) = offscreen_panes.get(&active_id) {
                 let js = format!(
-                    "window.scrollTo(0, document.documentElement.scrollHeight * {})",
-                    fraction
+                    "window.scrollTo(0, document.documentElement.scrollHeight * {fraction})"
                 );
                 pane.execute_js(&js);
             }
@@ -483,11 +477,11 @@ pub fn process_wry_action(
             if let Some(app_state) = app_state {
                 match app_state.save_workspace_with_urls(&name, &pane_urls) {
                     Ok(()) => {
-                        app_state.status_message = format!("Workspace saved: {}", name);
+                        app_state.status_message = format!("Workspace saved: {name}");
                         info!("Workspace saved: {} ({} panes)", name, pane_urls.len());
                     }
                     Err(e) => {
-                        return Err(format!("Save failed: {}", e));
+                        return Err(format!("Save failed: {e}"));
                     }
                 }
             }
@@ -495,13 +489,13 @@ pub fn process_wry_action(
         crate::app::WryAction::ShowPaneError { message } => {
             if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
                 let encoded = urlencoding::encode(&message);
-                let error_url = url::Url::parse(&format!("aileron://error?msg={}", encoded))
-                    .map_err(|e| format!("Invalid error URL: {}", e))?;
+                let error_url = url::Url::parse(&format!("aileron://error?msg={encoded}"))
+                    .map_err(|e| format!("Invalid error URL: {e}"))?;
                 wry_pane.navigate(&error_url);
             } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
                 let encoded = urlencoding::encode(&message);
-                let error_url = url::Url::parse(&format!("aileron://error?msg={}", encoded))
-                    .map_err(|e| format!("Invalid error URL: {}", e))?;
+                let error_url = url::Url::parse(&format!("aileron://error?msg={encoded}"))
+                    .map_err(|e| format!("Invalid error URL: {e}"))?;
                 pane.navigate(&error_url);
             } else {
                 return Err(format!(
@@ -591,7 +585,7 @@ pub fn process_wry_action(
                     app_state.status_message = "Config saved".into();
                 }
                 Err(e) => {
-                    app_state.status_message = format!("Save failed: {}", e);
+                    app_state.status_message = format!("Save failed: {e}");
                 }
             }
         }
@@ -668,7 +662,7 @@ mod tests {
     #[test]
     fn console_log_long_msg_truncated() {
         let long_msg = "x".repeat(60);
-        let json = format!(r#"[{{"level":"info","msg":"{}"}}]"#, long_msg);
+        let json = format!(r#"[{{"level":"info","msg":"{long_msg}"}}]"#);
         let result = format_console_log(&json).unwrap();
         assert!(result.contains(&format!("[info] {}...", &long_msg[..47])));
     }
@@ -683,7 +677,7 @@ mod tests {
     #[test]
     fn console_log_capped_at_twenty() {
         let entries: Vec<String> = (0..25)
-            .map(|i| format!(r#"{{"level":"info","msg":"e{}"}}"#, i))
+            .map(|i| format!(r#"{{"level":"info","msg":"e{i}"}}"#))
             .collect();
         let json = format!("[{}]", entries.join(","));
         let result = format_console_log(&json).unwrap();
@@ -721,7 +715,7 @@ mod tests {
     #[test]
     fn network_log_long_url_truncated() {
         let long_url = format!("https://example.com/{}", "a".repeat(70));
-        let json = format!(r#"[{{"method":"GET","url":"{}","status":200}}]"#, long_url);
+        let json = format!(r#"[{{"method":"GET","url":"{long_url}","status":200}}]"#);
         let result = format_network_log(&json).unwrap();
         assert!(result.contains(&format!("{}...", &long_url[..57])));
     }

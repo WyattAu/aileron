@@ -9,7 +9,7 @@ pub fn execute_sync_push(sync_target: &str, sync_encrypted: bool) -> String {
     let target = match crate::sync::SyncTarget::parse(sync_target) {
         Ok(t) => t,
         Err(e) => {
-            return format!("Invalid sync target: {}", e);
+            return format!("Invalid sync target: {e}");
         }
     };
 
@@ -18,11 +18,11 @@ pub fn execute_sync_push(sync_target: &str, sync_encrypted: bool) -> String {
     let staging = sm.state_dir().to_path_buf();
 
     if let Err(e) = std::fs::create_dir_all(&staging) {
-        return format!("Failed to create staging dir: {}", e);
+        return format!("Failed to create staging dir: {e}");
     }
 
     if let Err(e) = sm.create_db_snapshots() {
-        return format!("DB snapshot failed: {}", e);
+        return format!("DB snapshot failed: {e}");
     }
 
     let prefix = if sync_encrypted { "(encrypted) " } else { "" };
@@ -32,7 +32,7 @@ pub fn execute_sync_push(sync_target: &str, sync_encrypted: bool) -> String {
             format!("Synced {} {}files to {}", n, prefix, target.display())
         }
         Err(e) => {
-            format!("Sync push failed: {}", e)
+            format!("Sync push failed: {e}")
         }
     }
 }
@@ -45,7 +45,7 @@ pub fn execute_sync_pull(sync_target: &str, sync_encrypted: bool) -> String {
     let target = match crate::sync::SyncTarget::parse(sync_target) {
         Ok(t) => t,
         Err(e) => {
-            return format!("Invalid sync target: {}", e);
+            return format!("Invalid sync target: {e}");
         }
     };
 
@@ -53,7 +53,7 @@ pub fn execute_sync_pull(sync_target: &str, sync_encrypted: bool) -> String {
     let sm = crate::sync::SyncManager::new(config_dir);
     let staging = sm.state_dir().join("incoming");
     if let Err(e) = std::fs::create_dir_all(&staging) {
-        return format!("Failed to create staging dir: {}", e);
+        return format!("Failed to create staging dir: {e}");
     }
 
     match crate::sync::transport::pull(sm.local_dir(), &staging, &target, sync_encrypted) {
@@ -61,7 +61,7 @@ pub fn execute_sync_pull(sync_target: &str, sync_encrypted: bool) -> String {
             format!("Pulled {} files from {}", n, target.display())
         }
         Err(e) => {
-            format!("Sync pull failed: {}", e)
+            format!("Sync pull failed: {e}")
         }
     }
 }
@@ -79,8 +79,8 @@ pub fn execute_sync_status(
     let sm = crate::sync::SyncManager::new(config_dir);
     let manifest = sm.compute_manifest().unwrap_or_default();
     let parts = [
-        format!("target: {}", sync_target),
-        format!("encrypted: {}", sync_encrypted),
+        format!("target: {sync_target}"),
+        format!("encrypted: {sync_encrypted}"),
         format!(
             "watcher: {}",
             if watcher_running {

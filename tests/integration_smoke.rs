@@ -101,8 +101,7 @@ fn test_dispatch_split_vertical_produces_request_split() {
         effects
             .iter()
             .any(|e| matches!(e, ActionEffect::RequestSplit(SplitDirection::Vertical))),
-        "SplitVertical should produce RequestSplit(Vertical), got {:?}",
-        effects
+        "SplitVertical should produce RequestSplit(Vertical), got {effects:?}"
     );
 }
 
@@ -111,8 +110,7 @@ fn test_dispatch_close_pane_produces_request_close() {
     let effects = dispatch_action(&Action::ClosePane);
     assert!(
         effects.contains(&ActionEffect::RequestClosePane),
-        "ClosePane should produce RequestClosePane, got {:?}",
-        effects
+        "ClosePane should produce RequestClosePane, got {effects:?}"
     );
 }
 
@@ -121,8 +119,7 @@ fn test_dispatch_quit_produces_quit_effect() {
     let effects = dispatch_action(&Action::Quit);
     assert!(
         effects.contains(&ActionEffect::Quit),
-        "Quit should produce Quit effect, got {:?}",
-        effects
+        "Quit should produce Quit effect, got {effects:?}"
     );
 }
 
@@ -131,8 +128,7 @@ fn test_dispatch_open_command_palette_produces_open_palette() {
     let effects = dispatch_action(&Action::OpenCommandPalette);
     assert!(
         effects.contains(&ActionEffect::OpenPalette),
-        "OpenCommandPalette should produce OpenPalette, got {:?}",
-        effects
+        "OpenCommandPalette should produce OpenPalette, got {effects:?}"
     );
 }
 
@@ -151,10 +147,7 @@ fn test_dispatch_navigate_produces_correct_directions() {
             effects
                 .iter()
                 .any(|e| matches!(e, ActionEffect::RequestNavigatePane(d) if *d == expected_dir)),
-            "{:?} should produce RequestNavigatePane({:?}), got {:?}",
-            action,
-            expected_dir,
-            effects
+            "{action:?} should produce RequestNavigatePane({expected_dir:?}), got {effects:?}"
         );
     }
 }
@@ -183,8 +176,7 @@ fn test_dispatch_scroll_actions_are_wry_effects() {
         );
         assert!(
             matches!(effects[0], ActionEffect::Wry(_)),
-            "{:?} should produce a Wry effect",
-            action
+            "{action:?} should produce a Wry effect"
         );
     }
 }
@@ -500,8 +492,7 @@ fn test_config_default_window_sane_aspect() {
     let ratio = config.window_width as f64 / config.window_height as f64;
     assert!(
         (0.5..3.0).contains(&ratio),
-        "default window aspect ratio ({:.2}) should be reasonable",
-        ratio
+        "default window aspect ratio ({ratio:.2}) should be reasonable"
     );
 }
 
@@ -590,8 +581,7 @@ fn test_keybinding_lookup_consistency_with_dispatch() {
             let effects = dispatch_action(action);
             assert!(
                 !effects.is_empty(),
-                "action {:?} from keybinding should produce effects",
-                action
+                "action {action:?} from keybinding should produce effects"
             );
         }
     }

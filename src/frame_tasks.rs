@@ -396,10 +396,9 @@ pub fn process_wry_events(
                         wry_pane.execute_js(&format!(
                             "setTimeout(function() {{ \
                                 var s = document.createElement('style'); \
-                                s.textContent = `{}`; \
+                                s.textContent = `{escaped}`; \
                                 (document.head || document.documentElement).appendChild(s); \
-                            }}, 0);",
-                            escaped
+                            }}, 0);"
                         ));
                     }
 
@@ -409,8 +408,7 @@ pub fn process_wry_events(
                         let escaped = csp.replace('\\', "\\\\").replace('\'', "\\'");
                         if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
                             wry_pane.execute_js(&format!(
-                                "var meta = document.createElement('meta'); meta['http-equiv'] = 'Content-Security-Policy'; meta.content = '{}'; document.head.appendChild(meta);",
-                                escaped
+                                "var meta = document.createElement('meta'); meta['http-equiv'] = 'Content-Security-Policy'; meta.content = '{escaped}'; document.head.appendChild(meta);"
                             ));
                         }
                     }
@@ -423,8 +421,7 @@ pub fn process_wry_events(
                         && let Some(wry_pane) = wry_panes.get_mut(&pane_id)
                     {
                         wry_pane.execute_js(&format!(
-                            "if(document.body) document.body.style.zoom = '{:.2}';",
-                            zoom
+                            "if(document.body) document.body.style.zoom = '{zoom:.2}';"
                         ));
                     }
                 }
@@ -519,8 +516,7 @@ pub fn process_wry_events(
                     .download_manager
                     .start(url.as_str(), Some(filename.as_str()));
                 let short_url = if url.len() > 40 { &url[..37] } else { &url };
-                app_state.status_message =
-                    format!("Download #{}: {} ({})", dl_id, filename, short_url);
+                app_state.status_message = format!("Download #{dl_id}: {filename} ({short_url})");
                 info!("Download #{} started: {} from {}", dl_id, filename, url);
                 // Record in database for history
                 if let Some(db) = app_state.db.as_ref() {
@@ -540,10 +536,10 @@ pub fn process_wry_events(
             }
             WryEvent::OpenFile { path } => {
                 let _ = open_that(&path);
-                app_state.status_message = format!("Opened: {}", path);
+                app_state.status_message = format!("Opened: {path}");
             }
             WryEvent::HttpsUpgraded { to, .. } => {
-                app_state.status_message = format!("HTTPS upgrade: {}", to);
+                app_state.status_message = format!("HTTPS upgrade: {to}");
             }
             WryEvent::IpcMessage { pane_id, message } => {
                 handle_ipc_message(app_state, wry_panes, pane_id, &message);
@@ -722,10 +718,9 @@ pub fn process_offscreen_events(
                         pane.execute_js(&format!(
                             "setTimeout(function() {{ \
                                 var s = document.createElement('style'); \
-                                s.textContent = `{}`; \
+                                s.textContent = `{escaped}`; \
                                 (document.head || document.documentElement).appendChild(s); \
-                            }}, 0);",
-                            escaped
+                            }}, 0);"
                         ));
                         pane.mark_dirty();
                     }
@@ -736,8 +731,7 @@ pub fn process_offscreen_events(
                         let escaped = csp.replace('\\', "\\\\").replace('\'', "\\'");
                         if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                             pane.execute_js(&format!(
-                                "var meta = document.createElement('meta'); meta['http-equiv'] = 'Content-Security-Policy'; meta.content = '{}'; document.head.appendChild(meta);",
-                                escaped
+                                "var meta = document.createElement('meta'); meta['http-equiv'] = 'Content-Security-Policy'; meta.content = '{escaped}'; document.head.appendChild(meta);"
                             ));
                         }
                     }
@@ -750,8 +744,7 @@ pub fn process_offscreen_events(
                         && let Some(pane) = offscreen_panes.get_mut(&pane_id)
                     {
                         pane.execute_js(&format!(
-                            "if(document.body) document.body.style.zoom = '{:.2}';",
-                            zoom
+                            "if(document.body) document.body.style.zoom = '{zoom:.2}';"
                         ));
                     }
                 }
@@ -850,8 +843,7 @@ pub fn process_offscreen_events(
                     .download_manager
                     .start(url.as_str(), Some(filename.as_str()));
                 let short_url = if url.len() > 40 { &url[..37] } else { &url };
-                app_state.status_message =
-                    format!("Download #{}: {} ({})", dl_id, filename, short_url);
+                app_state.status_message = format!("Download #{dl_id}: {filename} ({short_url})");
                 info!("Download #{} started: {} from {}", dl_id, filename, url);
                 // Record in database for history
                 if let Some(db) = app_state.db.as_ref() {
@@ -871,10 +863,10 @@ pub fn process_offscreen_events(
             }
             WryEvent::OpenFile { path } => {
                 let _ = open_that(&path);
-                app_state.status_message = format!("Opened: {}", path);
+                app_state.status_message = format!("Opened: {path}");
             }
             WryEvent::HttpsUpgraded { to, .. } => {
-                app_state.status_message = format!("HTTPS upgrade: {}", to);
+                app_state.status_message = format!("HTTPS upgrade: {to}");
                 if let Some(pane) = offscreen_panes.get_mut(&_pane_id) {
                     pane.mark_dirty();
                 }
@@ -939,7 +931,7 @@ pub fn process_pending_wry_actions(
         ) {
             warn!("WryAction error: {}", e);
             if let Some(app_state) = app_state {
-                app_state.status_message = format!("Action failed: {}", e);
+                app_state.status_message = format!("Action failed: {e}");
             }
         }
     }
@@ -1026,7 +1018,7 @@ pub fn process_mcp_commands(
                                 .collect();
                             lines.join("\n")
                         }
-                        Err(e) => format!("Error: {}", e),
+                        Err(e) => format!("Error: {e}"),
                     }
                 } else {
                     "Error: No database".into()
@@ -1042,8 +1034,8 @@ pub fn process_mcp_commands(
                 let result = if let Some(db) = app_state.db.as_ref() {
                     match crate::db::bookmarks::add_bookmark_with_folder(db, &url, &title, &folder)
                     {
-                        Ok(id) => format!("Bookmarked (id={}) {}", id, url),
-                        Err(e) => format!("Error: {}", e),
+                        Ok(id) => format!("Bookmarked (id={id}) {url}"),
+                        Err(e) => format!("Error: {e}"),
                     }
                 } else {
                     "Error: No database".into()
@@ -1053,9 +1045,9 @@ pub fn process_mcp_commands(
             McpCommand::RemoveBookmark { url, response_tx } => {
                 let result = if let Some(db) = app_state.db.as_ref() {
                     match crate::db::bookmarks::remove_bookmark(db, &url) {
-                        Ok(true) => format!("Removed bookmark: {}", url),
-                        Ok(false) => format!("Not bookmarked: {}", url),
-                        Err(e) => format!("Error: {}", e),
+                        Ok(true) => format!("Removed bookmark: {url}"),
+                        Ok(false) => format!("Not bookmarked: {url}"),
+                        Err(e) => format!("Error: {e}"),
                     }
                 } else {
                     "Error: No database".into()
@@ -1078,7 +1070,7 @@ pub fn process_mcp_commands(
                                 .collect();
                             lines.join("\n")
                         }
-                        Err(e) => format!("Error: {}", e),
+                        Err(e) => format!("Error: {e}"),
                     }
                 } else {
                     "Error: No database".into()
@@ -1136,7 +1128,7 @@ pub fn process_mcp_commands(
                                         use base64::Engine;
                                         let b64 = base64::engine::general_purpose::STANDARD
                                             .encode(&png_bytes);
-                                        format!("data:image/png;base64,{}", b64)
+                                        format!("data:image/png;base64,{b64}")
                                     } else {
                                         "Error: failed to encode PNG".into()
                                     }
@@ -1165,7 +1157,7 @@ pub fn process_mcp_commands(
                         app_state.wm.set_active_pane(next);
                     }
                     app_state.session_dirty = true;
-                    format!("Closed tab at index {}.", index)
+                    format!("Closed tab at index {index}.")
                 } else {
                     format!(
                         "Error: tab index {} out of range ({} tabs open)",
@@ -1198,7 +1190,7 @@ pub fn handle_pending_import(app_state: &mut AppState) {
             "firefox" => crate::app::cmd::import::import_firefox(db),
             "chrome" => crate::app::cmd::import::import_chrome(db),
             _ => {
-                app_state.status_message = format!("Unknown import source: {}", source);
+                app_state.status_message = format!("Unknown import source: {source}");
                 return;
             }
         };
@@ -1283,9 +1275,9 @@ fn handle_ipc_message(
         ));
         // Navigate to our error page
         if let Some(pane) = wry_panes.get_mut(&pane_id) {
-            let display_msg = format!("Failed to load: {}\n\n{}", failed_url, error_detail);
+            let display_msg = format!("Failed to load: {failed_url}\n\n{error_detail}");
             let encoded = urlencoding::encode(&display_msg);
-            if let Ok(error_url) = url::Url::parse(&format!("aileron://error?msg={}", encoded)) {
+            if let Ok(error_url) = url::Url::parse(&format!("aileron://error?msg={encoded}")) {
                 pane.navigate(&error_url);
             }
         }
@@ -1307,8 +1299,7 @@ fn handle_ipc_message(
                 app_state.config_json_cache.clone()
             };
             let js = format!(
-                "window._aileron_config = {}; window._onConfigLoaded && window._onConfigLoaded(window._aileron_config);",
-                config_json
+                "window._aileron_config = {config_json}; window._onConfigLoaded && window._onConfigLoaded(window._aileron_config);"
             );
             if let Some(pane) = wry_panes.get_mut(&pane_id) {
                 pane.execute_js(&js);
@@ -1416,7 +1407,7 @@ fn handle_ipc_message(
                         }
                         Err(e) => {
                             warn!("Failed to store sync passphrase in keyring: {}", e);
-                            app_state.status_message = format!("Failed to store passphrase: {}", e);
+                            app_state.status_message = format!("Failed to store passphrase: {e}");
                         }
                     }
                 }
@@ -1445,15 +1436,15 @@ fn handle_ipc_message(
                 msg.get("password").and_then(|v| v.as_str()),
                 msg.get("url").and_then(|v| v.as_str()),
             ) {
-                let key = format!("{}@{}", username, url);
+                let key = format!("{username}@{url}");
                 match crate::passwords::keyring::store_credential(&key, password) {
                     Ok(()) => {
                         info!("Saved credential for {}", username);
-                        app_state.status_message = format!("Credential saved for {}", username);
+                        app_state.status_message = format!("Credential saved for {username}");
                     }
                     Err(e) => {
                         warn!("Failed to store credential: {}", e);
-                        app_state.status_message = format!("Credential save failed: {}", e);
+                        app_state.status_message = format!("Credential save failed: {e}");
                     }
                 }
             } else {
@@ -1516,7 +1507,7 @@ fn handle_ipc_message(
                         );
                         app_state.autofill_js = Some(js);
                         app_state.autofill_status_msg =
-                            format!("Auto-filled credentials for {}", domain);
+                            format!("Auto-filled credentials for {domain}");
                     }
                 }
             } else {
@@ -1557,8 +1548,7 @@ fn handle_ipc_message(
             };
             let data = serde_json::json!({ "bookmarks": bookmarks, "history": history });
             let js = format!(
-                "window._aileron_newtab_data = {}; if (window._onNewTabData) window._onNewTabData(window._aileron_newtab_data);",
-                data
+                "window._aileron_newtab_data = {data}; if (window._onNewTabData) window._onNewTabData(window._aileron_newtab_data);"
             );
             if let Some(pane) = wry_panes.get_mut(&pane_id) {
                 pane.execute_js(&js);
@@ -1583,19 +1573,17 @@ fn handle_ipc_message(
                 .unwrap_or("")
                 .to_string();
 
-            if let Ok(mgr) = app_state.extension_manager.lock() {
-                let bus: &Arc<MessageBus> = mgr.message_bus();
-                let response = bus.send_message(source_id.as_ref(), target_id.as_ref(), message);
-                let response_json =
-                    serde_json::to_string(&response).unwrap_or_else(|_| "null".into());
-                if let Some(pane) = wry_panes.get_mut(&pane_id) {
-                    pane.execute_js(&format!(
-                        "if (window.__aileron_ext_response) \
-                         window.__aileron_ext_response({}, {});",
-                        serde_json::to_string(&req_id).unwrap_or_else(|_| "\"\"".into()),
-                        response_json
-                    ));
-                }
+            let mgr = app_state.extension_manager.read();
+            let bus: &Arc<MessageBus> = mgr.message_bus();
+            let response = bus.send_message(source_id.as_ref(), target_id.as_ref(), message);
+            let response_json = serde_json::to_string(&response).unwrap_or_else(|_| "null".into());
+            if let Some(pane) = wry_panes.get_mut(&pane_id) {
+                pane.execute_js(&format!(
+                    "if (window.__aileron_ext_response) \
+                     window.__aileron_ext_response({}, {});",
+                    serde_json::to_string(&req_id).unwrap_or_else(|_| "\"\"".into()),
+                    response_json
+                ));
             }
         }
         _ => {}
@@ -1624,9 +1612,9 @@ fn handle_ipc_message_offscreen(
             &error_detail[..error_detail.len().min(60)]
         ));
         if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
-            let display_msg = format!("Failed to load: {}\n\n{}", failed_url, error_detail);
+            let display_msg = format!("Failed to load: {failed_url}\n\n{error_detail}");
             let encoded = urlencoding::encode(&display_msg);
-            if let Ok(error_url) = url::Url::parse(&format!("aileron://error?msg={}", encoded)) {
+            if let Ok(error_url) = url::Url::parse(&format!("aileron://error?msg={encoded}")) {
                 pane.navigate(&error_url);
                 pane.mark_dirty();
             }
@@ -1649,8 +1637,7 @@ fn handle_ipc_message_offscreen(
                 app_state.config_json_cache.clone()
             };
             let js = format!(
-                "window._aileron_config = {}; window._onConfigLoaded && window._onConfigLoaded(window._aileron_config);",
-                config_json
+                "window._aileron_config = {config_json}; window._onConfigLoaded && window._onConfigLoaded(window._aileron_config);"
             );
             if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                 pane.execute_js(&js);
@@ -1759,7 +1746,7 @@ fn handle_ipc_message_offscreen(
                         }
                         Err(e) => {
                             warn!("Failed to store sync passphrase in keyring: {}", e);
-                            app_state.status_message = format!("Failed to store passphrase: {}", e);
+                            app_state.status_message = format!("Failed to store passphrase: {e}");
                         }
                     }
                 }
@@ -1789,15 +1776,15 @@ fn handle_ipc_message_offscreen(
                 msg.get("password").and_then(|v| v.as_str()),
                 msg.get("url").and_then(|v| v.as_str()),
             ) {
-                let key = format!("{}@{}", username, url);
+                let key = format!("{username}@{url}");
                 match crate::passwords::keyring::store_credential(&key, password) {
                     Ok(()) => {
                         info!("Saved credential for {}", username);
-                        app_state.status_message = format!("Credential saved for {}", username);
+                        app_state.status_message = format!("Credential saved for {username}");
                     }
                     Err(e) => {
                         warn!("Failed to store credential: {}", e);
-                        app_state.status_message = format!("Credential save failed: {}", e);
+                        app_state.status_message = format!("Credential save failed: {e}");
                     }
                 }
             } else {
@@ -1861,8 +1848,7 @@ fn handle_ipc_message_offscreen(
             };
             let data = serde_json::json!({ "bookmarks": bookmarks, "history": history });
             let js = format!(
-                "window._aileron_newtab_data = {}; if (window._onNewTabData) window._onNewTabData(window._aileron_newtab_data);",
-                data
+                "window._aileron_newtab_data = {data}; if (window._onNewTabData) window._onNewTabData(window._aileron_newtab_data);"
             );
             if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                 pane.execute_js(&js);
@@ -1901,7 +1887,7 @@ fn handle_ipc_message_offscreen(
                         );
                         app_state.autofill_js = Some(js);
                         app_state.autofill_status_msg =
-                            format!("Auto-filled credentials for {}", domain);
+                            format!("Auto-filled credentials for {domain}");
                     }
                 }
             } else {
@@ -1928,20 +1914,18 @@ fn handle_ipc_message_offscreen(
                 .unwrap_or("")
                 .to_string();
 
-            if let Ok(mgr) = app_state.extension_manager.lock() {
-                let bus: &Arc<MessageBus> = mgr.message_bus();
-                let response = bus.send_message(source_id.as_ref(), target_id.as_ref(), message);
-                let response_json =
-                    serde_json::to_string(&response).unwrap_or_else(|_| "null".into());
-                if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
-                    pane.execute_js(&format!(
-                        "if (window.__aileron_ext_response) \
-                         window.__aileron_ext_response({}, {});",
-                        serde_json::to_string(&req_id).unwrap_or_else(|_| "\"\"".into()),
-                        response_json
-                    ));
-                    pane.mark_dirty();
-                }
+            let mgr = app_state.extension_manager.read();
+            let bus: &Arc<MessageBus> = mgr.message_bus();
+            let response = bus.send_message(source_id.as_ref(), target_id.as_ref(), message);
+            let response_json = serde_json::to_string(&response).unwrap_or_else(|_| "null".into());
+            if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
+                pane.execute_js(&format!(
+                    "if (window.__aileron_ext_response) \
+                     window.__aileron_ext_response({}, {});",
+                    serde_json::to_string(&req_id).unwrap_or_else(|_| "\"\"".into()),
+                    response_json
+                ));
+                pane.mark_dirty();
             }
         }
         _ => {}
@@ -1976,11 +1960,7 @@ fn inject_extension_shim_and_script<T>(
     T: ExecuteJs,
 {
     let ext_id = ExtensionId(ext_script.extension_id.clone());
-    let is_loaded = app_state
-        .extension_manager
-        .lock()
-        .ok()
-        .is_some_and(|mgr| mgr.get(&ext_id).is_some());
+    let is_loaded = app_state.extension_manager.read().get(&ext_id).is_some();
     if !is_loaded {
         warn!(
             "Extension '{}' is not loaded, skipping content script '{}'",
@@ -2008,17 +1988,15 @@ fn inject_extension_shim_and_script<T>(
             format!(
                 "setTimeout(function() {{ \
                     var s = document.createElement('style'); \
-                    s.textContent = `{}`; \
+                    s.textContent = `{escaped}`; \
                     (document.head || document.documentElement).appendChild(s); \
-                }}, 0);",
-                escaped
+                }}, 0);"
             )
         } else {
             format!(
                 "var s = document.createElement('style'); \
-                 s.textContent = `{}`; \
-                 (document.head || document.documentElement).appendChild(s);",
-                escaped
+                 s.textContent = `{escaped}`; \
+                 (document.head || document.documentElement).appendChild(s);"
             )
         };
         pane.execute_js_code(&css_js);

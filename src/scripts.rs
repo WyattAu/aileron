@@ -159,7 +159,7 @@ impl ContentScriptManager {
         let js_code: String = lua
             .load(source)
             .eval()
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
         Ok(js_code)
     }
 

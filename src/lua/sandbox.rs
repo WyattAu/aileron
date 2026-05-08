@@ -34,9 +34,9 @@ pub fn validate_script(script: &str) -> Result<(), SandboxViolation> {
     for blocked in BLOCKED_MODULES {
         // Look for patterns like "os.execute", "require('os')", etc.
         let patterns = [
-            format!("{}.", blocked),
-            format!("require('{}')", blocked),
-            format!("require(\"{}\")", blocked),
+            format!("{blocked}."),
+            format!("require('{blocked}')"),
+            format!("require(\"{blocked}\")"),
         ];
         for pattern in &patterns {
             if script.contains(pattern.as_str()) {
@@ -53,7 +53,7 @@ pub fn validate_script(script: &str) -> Result<(), SandboxViolation> {
     for blocked in BLOCKED_GLOBALS {
         if script.contains(blocked) {
             // Only flag if it looks like a function call, not just a substring
-            let call_pattern = format!("{}(", blocked);
+            let call_pattern = format!("{blocked}(");
             if script.contains(&call_pattern) {
                 return Err(SandboxViolation {
                     kind: SandboxViolationKind::BlockedGlobal(blocked.to_string()),
@@ -103,10 +103,10 @@ impl std::fmt::Display for SandboxViolationKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SandboxViolationKind::BlockedModule(name) => {
-                write!(f, "blocked module '{}' access", name)
+                write!(f, "blocked module '{name}' access")
             }
             SandboxViolationKind::BlockedGlobal(name) => {
-                write!(f, "blocked global '{}' call", name)
+                write!(f, "blocked global '{name}' call")
             }
         }
     }
@@ -211,7 +211,7 @@ mod tests {
     fn test_violation_display() {
         let script = r#"os.execute("evil")"#;
         let result = validate_script(script).unwrap_err();
-        let msg = format!("{}", result);
+        let msg = format!("{result}");
         assert!(msg.contains("os"));
     }
 

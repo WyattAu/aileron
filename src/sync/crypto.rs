@@ -10,7 +10,7 @@ pub fn encrypt_file(
     let secret = age::secrecy::SecretString::from(passphrase.to_string());
     let recipient = age::scrypt::Recipient::new(secret);
     let encrypted =
-        age::encrypt(&recipient, &plaintext).map_err(|e| anyhow::anyhow!("age encrypt: {}", e))?;
+        age::encrypt(&recipient, &plaintext).map_err(|e| anyhow::anyhow!("age encrypt: {e}"))?;
 
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -28,7 +28,7 @@ pub fn decrypt_file(
     let secret = age::secrecy::SecretString::from(passphrase.to_string());
     let identity = age::scrypt::Identity::new(secret);
     let decrypted =
-        age::decrypt(&identity, &ciphertext).map_err(|e| anyhow::anyhow!("age decrypt: {}", e))?;
+        age::decrypt(&identity, &ciphertext).map_err(|e| anyhow::anyhow!("age decrypt: {e}"))?;
 
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -41,20 +41,20 @@ pub fn encrypt_data(data: &[u8], passphrase: &str) -> Result<String, anyhow::Err
     let secret = age::secrecy::SecretString::from(passphrase.to_string());
     let recipient = age::scrypt::Recipient::new(secret);
     let encrypted =
-        age::encrypt(&recipient, data).map_err(|e| anyhow::anyhow!("age encrypt: {}", e))?;
+        age::encrypt(&recipient, data).map_err(|e| anyhow::anyhow!("age encrypt: {e}"))?;
 
     let mut output = Vec::new();
     let mut armored =
         age::armor::ArmoredWriter::wrap_output(&mut output, age::armor::Format::AsciiArmor)
-            .map_err(|e| anyhow::anyhow!("age armor wrap: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("age armor wrap: {e}"))?;
     armored
         .write_all(&encrypted)
-        .map_err(|e| anyhow::anyhow!("age armor write: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("age armor write: {e}"))?;
     armored
         .finish()
-        .map_err(|e| anyhow::anyhow!("age armor finish: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("age armor finish: {e}"))?;
 
-    String::from_utf8(output).map_err(|e| anyhow::anyhow!("armor utf8: {}", e))
+    String::from_utf8(output).map_err(|e| anyhow::anyhow!("armor utf8: {e}"))
 }
 
 pub fn decrypt_data(armored: &str, passphrase: &str) -> Result<Vec<u8>, anyhow::Error> {
@@ -65,10 +65,10 @@ pub fn decrypt_data(armored: &str, passphrase: &str) -> Result<Vec<u8>, anyhow::
     let mut encrypted = Vec::new();
     reader
         .read_to_end(&mut encrypted)
-        .map_err(|e| anyhow::anyhow!("age armor read: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("age armor read: {e}"))?;
 
     let decrypted =
-        age::decrypt(&identity, &encrypted).map_err(|e| anyhow::anyhow!("age decrypt: {}", e))?;
+        age::decrypt(&identity, &encrypted).map_err(|e| anyhow::anyhow!("age decrypt: {e}"))?;
     Ok(decrypted)
 }
 

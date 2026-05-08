@@ -196,7 +196,7 @@ impl AdBlocker {
                         continue;
                     };
                     let domain_part = &line[..pos];
-                    let rule = format!("{} {{ display: none !important; }}", selector);
+                    let rule = format!("{selector} {{ display: none !important; }}");
                     if !domain_part.is_empty() {
                         for domain in domain_part.split(',') {
                             let domain = domain.trim().trim_start_matches('~').to_lowercase();
@@ -436,7 +436,7 @@ impl AdBlocker {
             let domain = domain.trim_end_matches('^');
             let domain = domain.split('/').next().unwrap_or(domain);
 
-            if host == domain || host.ends_with(&format!(".{}", domain)) {
+            if host == domain || host.ends_with(&format!(".{domain}")) {
                 return true;
             }
         } else if let Some(stripped) = pattern.strip_prefix('|') {
@@ -457,7 +457,7 @@ impl AdBlocker {
     }
 
     fn host_matches_domain(&self, host: &str, domain: &str) -> bool {
-        host == domain || host.ends_with(&format!(".{}", domain))
+        host == domain || host.ends_with(&format!(".{domain}"))
     }
 
     fn is_whitelisted(&self, host: &str) -> bool {
@@ -493,7 +493,7 @@ impl AdBlocker {
         rules.extend(self.cosmetic_rules.iter().cloned());
 
         for (filter_domain, filter_rules) in &self.domain_cosmetic_rules {
-            if domain == filter_domain || domain.ends_with(&format!(".{}", filter_domain)) {
+            if domain == filter_domain || domain.ends_with(&format!(".{filter_domain}")) {
                 rules.extend(filter_rules.iter().cloned());
             }
         }
@@ -502,7 +502,7 @@ impl AdBlocker {
             if let Some(ref domains) = filter.domains {
                 let matches = domains
                     .iter()
-                    .any(|d| domain == d || domain.ends_with(&format!(".{}", d)));
+                    .any(|d| domain == d || domain.ends_with(&format!(".{d}")));
                 if matches {
                     rules.push(format!(
                         "{} {{ display: none !important; }}",
@@ -538,12 +538,11 @@ impl AdBlocker {
             "(function() {{ \
                 var style = document.createElement('style'); \
                 style.id = '__aileron_adblock_css'; \
-                style.textContent = `{}`; \
+                style.textContent = `{escaped}`; \
                 var existing = document.getElementById('__aileron_adblock_css'); \
                 if (existing) existing.remove(); \
                 (document.head || document.documentElement).appendChild(style); \
-            }})()",
-            escaped
+            }})()"
         ))
     }
 
@@ -578,7 +577,7 @@ impl AdBlocker {
                     }
                     "empty.css" | "noop.css" => Some(String::new()),
                     "empty.js" | "noop.js" => Some(String::new()),
-                    other => Some(format!("data:text/plain,{}", other)),
+                    other => Some(format!("data:text/plain,{other}")),
                 }
             })
     }
@@ -669,7 +668,7 @@ impl AdBlocker {
                 .split('/')
                 .next()
                 .unwrap_or("");
-            host == domain || host.ends_with(&format!(".{}", domain))
+            host == domain || host.ends_with(&format!(".{domain}"))
         } else {
             false
         }
@@ -1185,8 +1184,7 @@ mod tests {
             assert_eq!(
                 blocker.should_block(&url, None, None),
                 *expected,
-                "URL: {}",
-                url_str
+                "URL: {url_str}"
             );
         }
     }
@@ -1269,12 +1267,12 @@ mod tests {
     fn test_aho_corasick_performance() {
         let mut blocker = AdBlocker::new();
         for i in 0..1000 {
-            blocker.block_pattern(&format!("/tracker_pattern_{}/ad.js", i));
+            blocker.block_pattern(&format!("/tracker_pattern_{i}/ad.js"));
         }
 
         let mut urls: Vec<Url> = Vec::new();
         for i in 0..100 {
-            urls.push(Url::parse(&format!("https://cdn.example.com/page_{}.js", i)).unwrap());
+            urls.push(Url::parse(&format!("https://cdn.example.com/page_{i}.js")).unwrap());
         }
 
         let start = std::time::Instant::now();

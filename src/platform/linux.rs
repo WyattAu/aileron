@@ -90,8 +90,7 @@ impl PlatformOps for LinuxPlatform {
             "zenity" => {
                 cmd.arg("--file-selection").arg("--title").arg(title);
                 for (name, patterns) in filters {
-                    cmd.arg("--file-filter")
-                        .arg(format!("{}|{}", name, patterns));
+                    cmd.arg("--file-filter").arg(format!("{name}|{patterns}"));
                 }
             }
             "kdialog" => {
@@ -102,12 +101,15 @@ impl PlatformOps for LinuxPlatform {
                     .arg(
                         filters
                             .iter()
-                            .map(|(name, patterns)| format!("{} ({})", name, patterns))
+                            .map(|(name, patterns)| format!("{name} ({patterns})"))
                             .collect::<Vec<_>>()
                             .join("\n"),
                     );
             }
-            _ => unreachable!(),
+            other => {
+                tracing::warn!(target: "platform", "unknown file dialog tool: {other}, skipping");
+                return None;
+            }
         }
 
         cmd.output().ok().and_then(|output| {

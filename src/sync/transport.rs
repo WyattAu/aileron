@@ -31,7 +31,7 @@ impl SyncTarget {
             SyncTarget::Ssh {
                 user_host,
                 remote_path,
-            } => format!("{}:{}", user_host, remote_path),
+            } => format!("{user_host}:{remote_path}"),
         }
     }
 }
@@ -52,7 +52,7 @@ pub fn push(
             user_host,
             remote_path,
         } => {
-            let target_arg = format!("{}:{}", user_host, remote_path);
+            let target_arg = format!("{user_host}:{remote_path}");
 
             let status = std::process::Command::new("ssh")
                 .args([user_host.as_str(), "mkdir", "-p", remote_path.as_str()])
@@ -96,7 +96,7 @@ pub fn pull(
             user_host,
             remote_path,
         } => {
-            let source_arg = format!("{}:{}", user_host, remote_path);
+            let source_arg = format!("{user_host}:{remote_path}");
 
             let status = std::process::Command::new("scp")
                 .args([

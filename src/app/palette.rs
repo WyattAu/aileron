@@ -46,12 +46,12 @@ impl AppState {
                 .unwrap_or_else(|| "aileron://new".into());
             let is_active = *pane_id == self.wm.active_pane_id();
             let label = if is_active {
-                format!("● {}", url_str)
+                format!("● {url_str}")
             } else {
                 url_str.clone()
             };
             self.palette.add_item(SearchItem {
-                id: format!("tab:{}", pane_id),
+                id: format!("tab:{pane_id}"),
                 label,
                 description: url_str,
                 category: SearchCategory::OpenTab,
@@ -112,7 +112,7 @@ impl AppState {
                             self.status_message = format!("Auto-filled: {}", credential.name);
                         }
                         Err(e) => {
-                            self.status_message = format!("Failed to get credential: {}", e);
+                            self.status_message = format!("Failed to get credential: {e}");
                             warn!("Bitwarden get_credential failed: {}", e);
                         }
                     }
@@ -124,10 +124,10 @@ impl AppState {
                     match self.call_lua_command(name) {
                         Ok(result) => {
                             info!("Lua command '{}' executed: {}", name, result);
-                            self.status_message = format!("✓ {}", name);
+                            self.status_message = format!("✓ {name}");
                         }
                         Err(e) => {
-                            self.status_message = format!("Command '{}' failed: {}", name, e);
+                            self.status_message = format!("Command '{name}' failed: {e}");
                             warn!("Lua command '{}' failed: {}", name, e);
                         }
                     }
@@ -154,7 +154,7 @@ impl AppState {
                     } else {
                         url
                     };
-                    self.status_message = format!("Switched to: {}", display);
+                    self.status_message = format!("Switched to: {display}");
                 }
             }
             _ => {

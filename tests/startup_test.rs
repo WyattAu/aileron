@@ -77,11 +77,7 @@ fn test_terminal_manager_lifecycle() {
 fn test_keybinding_registry_all_defaults() {
     let registry = KeybindingRegistry::default();
     let count = registry.len();
-    assert!(
-        count > 20,
-        "Expected at least 20 keybindings, got {}",
-        count
-    );
+    assert!(count > 20, "Expected at least 20 keybindings, got {count}");
 }
 
 #[test]

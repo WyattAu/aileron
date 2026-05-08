@@ -65,10 +65,10 @@ fn get_current_value(config: &Config, key: &str) -> Option<String> {
 pub fn apply_set_setting(config: &mut Config, key: &str, value: &str) -> String {
     if value.is_empty() {
         match get_current_value(config, key) {
-            Some(v) => return format!("{} = {}", key, v),
+            Some(v) => return format!("{key} = {v}"),
             None => {
                 let keys = SETTABLE_KEYS.join(", ");
-                return format!("Unknown setting: {} (try: {})", key, keys);
+                return format!("Unknown setting: {key} (try: {keys})");
             }
         }
     }
@@ -88,20 +88,20 @@ fn apply_set_value(config: &mut Config, key: &str, value: &str) -> String {
     match key {
         "theme" => {
             config.theme = value.to_string();
-            format!("theme = {}", value)
+            format!("theme = {value}")
         }
         "homepage" => {
             config.homepage = value.to_string();
-            format!("homepage = {}", value)
+            format!("homepage = {value}")
         }
         "search_engine" => {
             config.search_engine = value.to_string();
-            format!("search_engine = {}", value)
+            format!("search_engine = {value}")
         }
         "tab_layout" => {
             if VALID_TAB_LAYOUTS.contains(&value) {
                 config.tab_layout = value.to_string();
-                format!("tab_layout = {}", value)
+                format!("tab_layout = {value}")
             } else {
                 format!(
                     "Invalid tab_layout '{}' (try: {})",
@@ -132,7 +132,7 @@ fn apply_set_value(config: &mut Config, key: &str, value: &str) -> String {
         "render_mode" => {
             if VALID_RENDER_MODES.contains(&value) {
                 config.render_mode = value.to_string();
-                format!("render_mode = {} (restart required)", value)
+                format!("render_mode = {value} (restart required)")
             } else {
                 format!(
                     "Invalid render_mode '{}' (try: {})",
@@ -147,7 +147,7 @@ fn apply_set_value(config: &mut Config, key: &str, value: &str) -> String {
                 "language = auto".into()
             } else {
                 config.language = Some(value.to_string());
-                format!("language = {}", value)
+                format!("language = {value}")
             }
         }
         "https_upgrade" | "https-upgrade" => {
@@ -162,7 +162,7 @@ fn apply_set_value(config: &mut Config, key: &str, value: &str) -> String {
             if let Ok(w) = value.parse::<f32>() {
                 if (100.0..=600.0).contains(&w) {
                     config.tab_sidebar_width = w;
-                    format!("sidebar_width = {}", w)
+                    format!("sidebar_width = {w}")
                 } else {
                     "sidebar_width must be between 100 and 600".into()
                 }
@@ -196,7 +196,7 @@ fn apply_set_value(config: &mut Config, key: &str, value: &str) -> String {
         }
         _ => {
             let keys = SETTABLE_KEYS.join(", ");
-            format!("Unknown setting: {} (try: {})", key, keys)
+            format!("Unknown setting: {key} (try: {keys})")
         }
     }
 }

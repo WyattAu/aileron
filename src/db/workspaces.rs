@@ -56,13 +56,13 @@ impl WorkspaceData {
     /// Serialize this workspace data to JSON.
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string(self)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize workspace: {}", e))
+            .map_err(|e| anyhow::anyhow!("Failed to serialize workspace: {e}"))
     }
 
     /// Deserialize workspace data from JSON.
     pub fn from_json(json: &str) -> Result<Self> {
         serde_json::from_str(json)
-            .map_err(|e| anyhow::anyhow!("Failed to deserialize workspace: {}", e))
+            .map_err(|e| anyhow::anyhow!("Failed to deserialize workspace: {e}"))
     }
 }
 

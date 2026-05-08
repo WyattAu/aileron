@@ -74,7 +74,7 @@ mod tests {
     fn test_pane_debug() {
         let url = Url::parse("https://example.com").unwrap();
         let pane = Pane::new(url);
-        let debug = format!("{:?}", pane);
+        let debug = format!("{pane:?}");
         assert!(debug.contains("Pane"));
         assert!(debug.contains("id:"));
     }

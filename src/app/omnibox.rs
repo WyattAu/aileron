@@ -34,11 +34,11 @@ impl AppState {
             let url = if query.contains("://") || query.starts_with("aileron://") {
                 query.to_string()
             } else {
-                format!("https://{}", query)
+                format!("https://{query}")
             };
             scored.push(ScoredResult {
                 item: SearchItem {
-                    id: format!("nav:{}", url),
+                    id: format!("nav:{url}"),
                     label: url.clone(),
                     description: "Navigate to URL".to_string(),
                     category: SearchCategory::Command,
@@ -53,8 +53,8 @@ impl AppState {
                 .unwrap_or_default();
             scored.push(ScoredResult {
                 item: SearchItem {
-                    id: format!("search:{}", query),
-                    label: format!("Search: {}", query),
+                    id: format!("search:{query}"),
+                    label: format!("Search: {query}"),
                     description: search_url,
                     category: SearchCategory::Command,
                 },
@@ -82,9 +82,9 @@ impl AppState {
                 if tab_url.contains(query) || tab_title.contains(query) {
                     scored.push(ScoredResult {
                         item: SearchItem {
-                            id: format!("tab:{}", tab_url),
+                            id: format!("tab:{tab_url}"),
                             label: tab_title.clone(),
-                            description: format!("[tab] {}", tab_url),
+                            description: format!("[tab] {tab_url}"),
                             category: SearchCategory::OpenTab,
                         },
                         score: 900.0,
@@ -153,23 +153,23 @@ impl AppState {
             if let Some(url_str) = id.strip_prefix("nav:") {
                 if let Ok(url) = url::Url::parse(url_str) {
                     self.navigate_with_redirects(url);
-                    self.status_message = format!("Navigating to {}", url_str);
+                    self.status_message = format!("Navigating to {url_str}");
                 }
             } else if let Some(query) = id.strip_prefix("search:") {
                 if let Some(url) = self.config.search_url(query) {
                     self.navigate_with_redirects(url);
-                    self.status_message = format!("Searching: {}", query);
+                    self.status_message = format!("Searching: {query}");
                 }
             } else if let Some(url) = id.strip_prefix("bookmark:") {
                 if let Ok(parsed) = url::Url::parse(url) {
                     self.navigate_with_redirects(parsed);
-                    self.status_message = format!("Opening bookmark: {}", label);
+                    self.status_message = format!("Opening bookmark: {label}");
                 }
             } else if let Some(url) = id.strip_prefix("history:")
                 && let Ok(parsed) = url::Url::parse(url)
             {
                 self.navigate_with_redirects(parsed);
-                self.status_message = format!("Opening: {}", url);
+                self.status_message = format!("Opening: {url}");
             } else if let Some(url) = id.strip_prefix("tab:")
                 && let Ok(parsed) = url::Url::parse(url)
             {
@@ -185,9 +185,9 @@ impl AppState {
                 });
                 if !switched {
                     self.navigate_with_redirects(parsed);
-                    self.status_message = format!("Opening: {}", url);
+                    self.status_message = format!("Opening: {url}");
                 } else {
-                    self.status_message = format!("Switched to tab: {}", label);
+                    self.status_message = format!("Switched to tab: {label}");
                 }
             }
         }
@@ -299,8 +299,8 @@ mod tests {
         for i in 0..15 {
             crate::db::bookmarks::add_bookmark(
                 state.db.as_ref().unwrap(),
-                &format!("https://test{}.com", i),
-                &format!("Test Bookmark {}", i),
+                &format!("https://test{i}.com"),
+                &format!("Test Bookmark {i}"),
             )
             .ok();
         }

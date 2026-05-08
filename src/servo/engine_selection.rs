@@ -33,8 +33,7 @@ impl std::str::FromStr for EngineSelection {
             "servo" => Ok(Self::Servo),
             "webkit" => Ok(Self::WebKit),
             _ => Err(format!(
-                "Unknown engine selection: '{}'. Use: auto, servo, webkit",
-                s
+                "Unknown engine selection: '{s}'. Use: auto, servo, webkit"
             )),
         }
     }

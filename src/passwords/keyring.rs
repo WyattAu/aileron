@@ -20,7 +20,7 @@ pub fn get_credential(username: &str) -> Result<Option<String>> {
     match entry.get_password() {
         Ok(password) => Ok(Some(password)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => anyhow::bail!("Keyring error: {}", e),
+        Err(e) => anyhow::bail!("Keyring error: {e}"),
     }
 }
 

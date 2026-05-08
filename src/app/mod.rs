@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tracing::{info, warn};
 
 pub mod cmd;
@@ -177,7 +177,7 @@ pub struct AppState {
     pub pending_detach_url: Option<url::Url>,
 
     /// Quickmarks — bookmarks mapping to URLs (single-char or short string keys).
-    quickmarks: std::collections::HashMap<String, String>,
+    pub(crate) quickmarks: std::collections::HashMap<String, String>,
 
     /// Per-pane scroll marks. Maps pane_id → letter → scroll fraction (0.0-1.0).
     marks: std::collections::HashMap<uuid::Uuid, std::collections::HashMap<char, f64>>,
@@ -195,7 +195,7 @@ pub struct AppState {
     pub pending_mark_jump: Option<f64>,
 
     /// ID of the previously active pane, for tab-swap.
-    last_active_pane_id: Option<uuid::Uuid>,
+    pub(crate) last_active_pane_id: Option<uuid::Uuid>,
 
     /// Per-pane last-focus timestamp for LRU tab unloading.
     /// Updated each time a pane becomes active.
@@ -225,8 +225,8 @@ pub struct AppState {
     pub adblock_blocked_count: u64,
 
     /// Extension manager — loads and manages WebExtensions.
-    /// Wrapped in Arc<Mutex<>> so the Lua engine can share access.
-    pub extension_manager: Arc<Mutex<ExtensionManager>>,
+    /// Wrapped in Arc<RwLock<>> so readers don't block each other.
+    pub extension_manager: Arc<parking_lot::RwLock<ExtensionManager>>,
 
     /// Sync filesystem watcher (started/stopped by sync commands).
     pub sync_watcher: crate::sync::watcher::SyncWatcher,
@@ -512,7 +512,9 @@ impl AppState {
         };
 
         // Create extension manager and inject into Lua engine
-        let extension_manager = Arc::new(Mutex::new(ExtensionManager::new(Self::extensions_dir())));
+        let extension_manager = Arc::new(parking_lot::RwLock::new(ExtensionManager::new(
+            Self::extensions_dir(),
+        )));
         if let Some(ref engine) = lua_engine {
             engine.set_extension_manager(extension_manager.clone());
         }

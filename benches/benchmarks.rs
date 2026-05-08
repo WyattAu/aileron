@@ -86,9 +86,9 @@ fn bench_fuzzy_search(c: &mut Criterion) {
 
     for i in 0..100 {
         engine.upsert(aileron::ui::SearchItem {
-            id: format!("entry_{}", i),
-            label: format!("entry_{}", i),
-            description: format!("Entry {} description for testing", i),
+            id: format!("entry_{i}"),
+            label: format!("entry_{i}"),
+            description: format!("Entry {i} description for testing"),
             category: aileron::ui::SearchCategory::History,
         });
     }
@@ -208,7 +208,7 @@ fn bench_content_script_matching(c: &mut Criterion) {
     let mut manager = aileron::scripts::ContentScriptManager::new();
     for i in 0..100 {
         manager.add_script(aileron::scripts::ContentScript {
-            name: format!("script_{}", i),
+            name: format!("script_{i}"),
             match_patterns: vec![format!("https://*.example{}.com/*", i)],
             grants: vec![],
             js_code: "console.log('bench')".into(),

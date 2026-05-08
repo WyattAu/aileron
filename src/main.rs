@@ -266,20 +266,17 @@ impl AileronApp {
             }
         };
 
-        let loaded_count = app_state
-            .extension_manager
-            .lock()
-            .map(|mut m| {
-                let count = m.load_all().len();
-                // Register built-in adblock extension
-                m.register_builtin_adblock();
-                count
-            })
-            .unwrap_or(0);
+        let loaded_count = {
+            let mut m = app_state.extension_manager.write();
+            let count = m.load_all().len();
+            m.register_builtin_adblock();
+            count
+        };
         if loaded_count > 0 {
             info!("Loaded {} user extension(s)", loaded_count);
         }
-        if let Ok(mgr) = app_state.extension_manager.lock() {
+        {
+            let mgr = app_state.extension_manager.read();
             info!(
                 "Built-in adblock: {}",
                 if mgr.is_builtin_adblock_enabled() {
@@ -290,10 +287,13 @@ impl AileronApp {
             );
         }
 
-        if let Ok(mgr) = app_state.extension_manager.lock() {
-            self.content_scripts
-                .set_extension_registry(mgr.content_script_registry().clone());
-        }
+        self.content_scripts.set_extension_registry(
+            app_state
+                .extension_manager
+                .read()
+                .content_script_registry()
+                .clone(),
+        );
 
         self.egui_winit = Some(winit_state);
         self.gfx = Some(gfx);
@@ -374,8 +374,7 @@ impl AileronApp {
         let interceptor_registry = self
             .app_state
             .as_ref()
-            .and_then(|s| s.extension_manager.lock().ok())
-            .map(|m| m.interceptor_registry.clone());
+            .map(|s| s.extension_manager.read().interceptor_registry.clone());
 
         match self.wry_panes.create_pane(
             &*window,
@@ -420,7 +419,7 @@ impl AileronApp {
             Err(e) => {
                 warn!("Failed to create WryPane: {}", e);
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.status_message = format!("Pane creation failed: {}", e);
+                    app_state.status_message = format!("Pane creation failed: {e}");
                 }
             }
         }
@@ -491,8 +490,7 @@ impl AileronApp {
         let interceptor_registry = self
             .app_state
             .as_ref()
-            .and_then(|s| s.extension_manager.lock().ok())
-            .map(|m| m.interceptor_registry.clone());
+            .map(|s| s.extension_manager.read().interceptor_registry.clone());
 
         #[cfg(target_os = "linux")]
         match self.offscreen_panes.create_pane_with_privacy(
@@ -533,7 +531,7 @@ impl AileronApp {
             Err(e) => {
                 warn!("Failed to create OffscreenWebView: {}", e);
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.status_message = format!("Pane creation failed: {}", e);
+                    app_state.status_message = format!("Pane creation failed: {e}");
                 }
             }
         }
@@ -916,7 +914,7 @@ impl AileronApp {
                         handle.set(color_image, egui::TextureOptions::LINEAR);
                     } else {
                         let new_handle = ctx.load_texture(
-                            format!("webview-{}", pane_id),
+                            format!("webview-{pane_id}"),
                             color_image,
                             egui::TextureOptions::LINEAR,
                         );
@@ -925,7 +923,7 @@ impl AileronApp {
                     }
                 } else {
                     let handle = ctx.load_texture(
-                        format!("webview-{}", pane_id),
+                        format!("webview-{pane_id}"),
                         color_image,
                         egui::TextureOptions::LINEAR,
                     );
@@ -1190,32 +1188,30 @@ impl ApplicationHandler for AileronApp {
                                 let js = if new_tab {
                                     format!(
                                         "(function() {{ \
-                                            var el = document.querySelector('[data-aileron-hint=\"{}\"]'); \
+                                            var el = document.querySelector('[data-aileron-hint=\"{hint_buf}\"]'); \
                                             if (el && el.href) {{ window.open(el.href, '_blank'); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
                                             if (el) {{ el.click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
                                             var all = document.querySelectorAll('[data-aileron-hint]'); \
                                             var matches = []; \
                                             all.forEach(function(e) {{ \
-                                                if (e.getAttribute('data-aileron-hint').startsWith('{}')) matches.push(e); \
+                                                if (e.getAttribute('data-aileron-hint').startsWith('{hint_buf}')) matches.push(e); \
                                             }}); \
                                             if (matches.length === 1 && matches[0].href) {{ window.open(matches[0].href, '_blank'); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
                                             if (matches.length === 1) {{ matches[0].click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
-                                        }})()",
-                                        hint_buf, hint_buf
+                                        }})()"
                                     )
                                 } else {
                                     format!(
                                         "(function() {{ \
-                                            var el = document.querySelector('[data-aileron-hint=\"{}\"]'); \
+                                            var el = document.querySelector('[data-aileron-hint=\"{hint_buf}\"]'); \
                                             if (el) {{ el.click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
                                             var all = document.querySelectorAll('[data-aileron-hint]'); \
                                             var matches = []; \
                                             all.forEach(function(e) {{ \
-                                                if (e.getAttribute('data-aileron-hint').startsWith('{}')) matches.push(e); \
+                                                if (e.getAttribute('data-aileron-hint').startsWith('{hint_buf}')) matches.push(e); \
                                             }}); \
                                             if (matches.length === 1) {{ matches[0].click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
-                                        }})()",
-                                        hint_buf, hint_buf
+                                        }})()"
                                     )
                                 };
                                 let active_id = app_state.wm.active_pane_id();
@@ -1473,8 +1469,7 @@ impl ApplicationHandler for AileronApp {
                         } else if !self.config.is_offscreen() {
                             if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                 let js = format!(
-                                    "window.scrollBy({{top: {}, left: {}, behavior: 'smooth'}})",
-                                    dy, dx
+                                    "window.scrollBy({{top: {dy}, left: {dx}, behavior: 'smooth'}})"
                                 );
                                 wry_pane.execute_js(&js);
                             }
@@ -1619,13 +1614,12 @@ impl ApplicationHandler for AileronApp {
                             {
                                 let js = format!(
                                     r#"(function() {{
-                                        var el = document.elementFromPoint({}, {});
+                                        var el = document.elementFromPoint({local_x}, {local_y});
                                         while (el && el.tagName !== 'A') {{ el = el.parentElement; }}
                                         if (el && el.href) {{
                                             window.open(el.href, '_blank');
                                         }}
-                                    }})();"#,
-                                    local_x, local_y
+                                    }})();"#
                                 );
                                 if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
                                     pane.execute_js(&js);
@@ -1828,7 +1822,7 @@ impl ApplicationHandler for AileronApp {
                                     app_state.status_message.clear();
                                 }
                             } else {
-                                app_state.status_message = format!("composing: {}", text);
+                                app_state.status_message = format!("composing: {text}");
                             }
                         }
                         _ => {}
@@ -1918,10 +1912,9 @@ impl ApplicationHandler for AileronApp {
             };
             let interceptor_registry = app_state
                 .extension_manager
-                .lock()
-                .ok()
-                .map(|m| m.interceptor_registry.clone())
-                .unwrap_or_default();
+                .read()
+                .interceptor_registry
+                .clone();
             frame_tasks::process_wry_events(
                 app_state,
                 &mut self.wry_panes,
@@ -1944,10 +1937,9 @@ impl ApplicationHandler for AileronApp {
         {
             let interceptor_registry = app_state
                 .extension_manager
-                .lock()
-                .ok()
-                .map(|m| m.interceptor_registry.clone())
-                .unwrap_or_default();
+                .read()
+                .interceptor_registry
+                .clone();
             frame_tasks::process_offscreen_events(
                 app_state,
                 &mut self.offscreen_panes,
@@ -2033,7 +2025,7 @@ impl ApplicationHandler for AileronApp {
                 }
                 aileron::workspace_restore::RestoreOutcome::NotFound => {
                     if let Some(s) = self.app_state.as_mut() {
-                        s.status_message = format!("Workspace '{}' not found", ws_name);
+                        s.status_message = format!("Workspace '{ws_name}' not found");
                     }
                 }
                 aileron::workspace_restore::RestoreOutcome::NoDatabase => {
@@ -2043,7 +2035,7 @@ impl ApplicationHandler for AileronApp {
                 }
                 aileron::workspace_restore::RestoreOutcome::TreeError(e) => {
                     if let Some(s) = self.app_state.as_mut() {
-                        s.status_message = format!("Restore failed (tree): {}", e);
+                        s.status_message = format!("Restore failed (tree): {e}");
                     }
                 }
             }
@@ -2054,13 +2046,15 @@ impl ApplicationHandler for AileronApp {
             .as_ref()
             .map(|s| s.wm.active_pane_id())
             .unwrap_or_default();
-        frame_tasks::process_mcp_commands(
-            &self.mcp_bridge,
-            &mut self.wry_panes,
-            active_id,
-            self.app_state.as_mut().unwrap(),
-            &mut self.offscreen_panes,
-        );
+        if let Some(app_state) = self.app_state.as_mut() {
+            frame_tasks::process_mcp_commands(
+                &self.mcp_bridge,
+                &mut self.wry_panes,
+                active_id,
+                app_state,
+                &mut self.offscreen_panes,
+            );
+        }
 
         if let Some(close_id) = self
             .app_state
@@ -2087,10 +2081,8 @@ impl ApplicationHandler for AileronApp {
         {
             let active_id = app_state.wm.active_pane_id();
             if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                let js = format!(
-                    "window.scrollTo(0, document.documentElement.scrollHeight * {})",
-                    frac
-                );
+                let js =
+                    format!("window.scrollTo(0, document.documentElement.scrollHeight * {frac})");
                 pane.execute_js(&js);
                 pane.mark_dirty();
             }
@@ -2175,7 +2167,7 @@ fn key_to_js(key: &aileron::input::Key) -> (String, String) {
         aileron::input::Key::End => ("End".into(), "End".into()),
         aileron::input::Key::PageUp => ("PageUp".into(), "PageUp".into()),
         aileron::input::Key::PageDown => ("PageDown".into(), "PageDown".into()),
-        aileron::input::Key::F(n) => (format!("F{}", n), format!("F{}", n)),
+        aileron::input::Key::F(n) => (format!("F{n}"), format!("F{n}")),
         _ => ("".into(), "".into()),
     }
 }
@@ -2202,7 +2194,7 @@ fn key_to_escape_sequence(key: &aileron::input::Key, mods: aileron::input::Modif
 
     // Alt+letter: ESC followed by the character
     if alt && let Key::Character(c) = key {
-        return format!("\x1b{}", c);
+        return format!("\x1b{c}");
     }
 
     match key {
@@ -2263,7 +2255,7 @@ fn key_to_escape_sequence(key: &aileron::input::Key, mods: aileron::input::Modif
 #[cfg(target_os = "linux")]
 fn is_nvidia_gpu() -> bool {
     (0..=9).any(|i| {
-        let path = format!("/sys/class/drm/card{}/device/vendor", i);
+        let path = format!("/sys/class/drm/card{i}/device/vendor");
         std::fs::read_to_string(&path)
             .map(|v| v.trim() == "0x10de")
             .unwrap_or(false)
@@ -2436,7 +2428,7 @@ fn main() -> anyhow::Result<()> {
                 "unknown panic".to_string()
             };
             tracing::error!("Event loop panicked: {}", msg);
-            aileron::debug_capturer::capture_info(&format!("Event loop panic caught: {}", msg));
+            aileron::debug_capturer::capture_info(&format!("Event loop panic caught: {msg}"));
         }
     }
 

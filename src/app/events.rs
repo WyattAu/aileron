@@ -158,15 +158,15 @@ impl AppState {
                     self.pending_mark_set = Some(*c);
                     self.pending_wry_actions
                         .push_back(WryAction::CaptureScrollFraction);
-                    self.status_message = format!("Mark {} set", c);
+                    self.status_message = format!("Mark {c} set");
                 }
                 'g' => {
                     if let Some(frac) = self.marks.get(&active_id).and_then(|m| m.get(c)).copied() {
                         // Set a pending scroll target; the main loop will apply it.
                         self.pending_mark_jump = Some(frac);
-                        self.status_message = format!("Mark {} jumped", c);
+                        self.status_message = format!("Mark {c} jumped");
                     } else {
-                        self.status_message = format!("Mark {} not set", c);
+                        self.status_message = format!("Mark {c} not set");
                     }
                 }
                 _ => {}
@@ -281,7 +281,7 @@ impl AppState {
                             }
                             self.status_message = "Split vertical".into();
                         }
-                        Err(e) => self.status_message = format!("Split failed: {}", e),
+                        Err(e) => self.status_message = format!("Split failed: {e}"),
                     }
                 }
                 ActionEffect::OpenTerminal => {
@@ -296,7 +296,7 @@ impl AppState {
                             self.terminal_pane_ids.insert(new_id);
                             self.status_message = "Terminal opened".into();
                         }
-                        Err(e) => self.status_message = format!("Terminal failed: {}", e),
+                        Err(e) => self.status_message = format!("Terminal failed: {e}"),
                     }
                 }
                 ActionEffect::RequestClosePane => {
@@ -333,7 +333,7 @@ impl AppState {
                                 self.status_message = "Opened in system browser".into();
                             }
                             Err(e) => {
-                                self.status_message = format!("Failed: {}", e);
+                                self.status_message = format!("Failed: {e}");
                             }
                         }
                     }
@@ -356,8 +356,7 @@ impl AppState {
                         let direction = if *forward { "true" } else { "false" };
                         let escaped = query.replace('\\', "\\\\").replace('\'', "\\'");
                         self.pending_wry_actions.push_back(WryAction::RunJs(format!(
-                            "window.find('{}', false, true, {}, false, false, false)",
-                            escaped, direction
+                            "window.find('{escaped}', false, true, {direction}, false, false, false)"
                         )));
                     }
                 }
@@ -391,7 +390,7 @@ impl AppState {
                             name: name.clone(),
                             pane_urls: std::collections::HashMap::new(),
                         });
-                    self.status_message = format!("Saving workspace: {}...", name);
+                    self.status_message = format!("Saving workspace: {name}...");
                 }
                 ActionEffect::CopyUrl => {
                     let active_id = self.wm.active_pane_id();
@@ -406,7 +405,7 @@ impl AppState {
                             } else {
                                 url_str
                             };
-                            self.status_message = format!("Copied: {}", display);
+                            self.status_message = format!("Copied: {display}");
                         } else {
                             self.status_message = "Clipboard: no clipboard tool available".into();
                         }
@@ -420,7 +419,7 @@ impl AppState {
                     };
                     match self.wm.resize_pane(active, amount) {
                         Ok(()) => self.status_message = "Pane resized".into(),
-                        Err(e) => self.status_message = format!("Resize failed: {}", e),
+                        Err(e) => self.status_message = format!("Resize failed: {e}"),
                     }
                 }
                 ActionEffect::NewWindow => {
@@ -501,7 +500,7 @@ impl AppState {
                         self.terminal_pane_ids.remove(id);
                     }
                     if let Err(e) = self.wm.retain_only(active_id) {
-                        self.status_message = format!("Failed: {}", e);
+                        self.status_message = format!("Failed: {e}");
                     } else {
                         self.status_message = format!("Closed {} other pane(s)", other_ids.len());
                     }
@@ -528,8 +527,8 @@ impl AppState {
 
     pub fn update_status(&mut self) {
         let mode_str = self.mode.as_str().to_string();
-        self.status_message = format!("-- {} --", mode_str);
-        self.accessibility_text = format!("Mode: {}", mode_str);
+        self.status_message = format!("-- {mode_str} --");
+        self.accessibility_text = format!("Mode: {mode_str}");
     }
 
     /// Update the accessibility live-region text with a status summary.

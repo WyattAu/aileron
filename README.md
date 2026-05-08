@@ -1,6 +1,6 @@
 # Aileron
 
-**v0.15.0** — 806 tests, ~38,000 Rust LOC
+**v0.18.0** — 806 tests, ~38,000 Rust LOC
 
 **The terminal for the web.** A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals. Written in Rust with wry (WebKitGTK) for web rendering and egui for the UI overlay.
 
@@ -436,4 +436,4 @@ Key event → AppState.process_key_event()
 
 ## License
 
-MIT
+Apache-2.0

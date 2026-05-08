@@ -123,23 +123,23 @@ pub fn build_ui(
                 } else if app_state.hint_new_tab {
                     mode_str = format!("{} HINT-TAB[{}]", mode_str, &app_state.hint_buffer);
                 } else if app_state.find_bar_open {
-                    mode_str = format!("{} FIND", mode_str);
+                    mode_str = format!("{mode_str} FIND");
                 } else if app_state.url_bar_focused {
-                    mode_str = format!("{} URL", mode_str);
+                    mode_str = format!("{mode_str} URL");
                 } else if app_state.tab_search_open {
-                    mode_str = format!("{} TABS", mode_str);
+                    mode_str = format!("{mode_str} TABS");
                 } else if app_state.history_panel_open {
-                    mode_str = format!("{} HIST", mode_str);
+                    mode_str = format!("{mode_str} HIST");
                 } else if app_state.bookmarks_panel_open {
-                    mode_str = format!("{} BM", mode_str);
+                    mode_str = format!("{mode_str} BM");
                 } else if app_state.help_panel_open {
-                    mode_str = format!("{} HELP", mode_str);
+                    mode_str = format!("{mode_str} HELP");
                 } else if app_state.workspace_panel_open {
-                    mode_str = format!("{} WS", mode_str);
+                    mode_str = format!("{mode_str} WS");
                 }
 
                 ui.colored_label(mode_color, &mode_str).widget_info(|| {
-                    a11y_info(WidgetType::Label, format!("Current mode: {}", mode_str))
+                    a11y_info(WidgetType::Label, format!("Current mode: {mode_str}"))
                 });
 
                 ui.separator();
@@ -153,8 +153,8 @@ pub fn build_ui(
                     } else {
                         app_state.cached_pane_count
                     };
-                ui.label(format!("panes: {}", pane_count))
-                    .widget_info(|| a11y_info(WidgetType::Label, format!("Panes: {}", pane_count)));
+                ui.label(format!("panes: {pane_count}"))
+                    .widget_info(|| a11y_info(WidgetType::Label, format!("Panes: {pane_count}")));
 
                 // Private mode indicator
                 if app_state
@@ -170,7 +170,7 @@ pub fn build_ui(
                     let ws_name = app_state.current_workspace_name.clone();
                     ui.colored_label(
                         egui::Color32::from_rgb(180, 180, 255),
-                        format!("[{}]", ws_name),
+                        format!("[{ws_name}]"),
                     )
                     .widget_info(|| {
                         a11y_info(
@@ -185,10 +185,10 @@ pub fn build_ui(
                     let blocked = app_state.adblock_blocked_count;
                     ui.colored_label(
                         egui::Color32::from_rgb(255, 100, 100),
-                        format!("[AB: {}]", blocked),
+                        format!("[AB: {blocked}]"),
                     )
                     .widget_info(|| {
-                        a11y_info(WidgetType::Label, format!("Blocked ads: {}", blocked))
+                        a11y_info(WidgetType::Label, format!("Blocked ads: {blocked}"))
                     });
                 }
 
@@ -202,7 +202,7 @@ pub fn build_ui(
                     };
                     let et = engine_text.clone();
                     ui.colored_label(engine_color, engine_text)
-                        .widget_info(|| a11y_info(WidgetType::Label, format!("Engine: {}", et)));
+                        .widget_info(|| a11y_info(WidgetType::Label, format!("Engine: {et}")));
                 }
 
                 let git_text = git_status.status_bar_text();
@@ -215,7 +215,7 @@ pub fn build_ui(
                     };
                     let gt = git_text.clone();
                     ui.colored_label(git_color, git_text)
-                        .widget_info(|| a11y_info(WidgetType::Label, format!("Git: {}", gt)));
+                        .widget_info(|| a11y_info(WidgetType::Label, format!("Git: {gt}")));
                 }
 
                 ui.separator();
@@ -227,7 +227,7 @@ pub fn build_ui(
                     let full_url = url_str.to_string();
                     let url_resp = ui.label(display_url.clone());
                     url_resp.widget_info(|| {
-                        a11y_info(WidgetType::Label, format!("Current URL: {}", full_url))
+                        a11y_info(WidgetType::Label, format!("Current URL: {full_url}"))
                     });
                     if url_resp.clicked() {
                         app_state.url_bar_focused = true;
@@ -239,7 +239,7 @@ pub fn build_ui(
                     let full_url = url_str.to_string();
                     let url_resp = ui.label(display_url.clone());
                     url_resp.widget_info(|| {
-                        a11y_info(WidgetType::Label, format!("Current URL: {}", full_url))
+                        a11y_info(WidgetType::Label, format!("Current URL: {full_url}"))
                     });
                     if url_resp.clicked() {
                         app_state.url_bar_focused = true;
@@ -254,7 +254,7 @@ pub fn build_ui(
                     && (zoom - 1.0).abs() > 0.01
                 {
                     let pct = (zoom * 100.0).round() as u32;
-                    let zoom_text = format!("{}%", pct);
+                    let zoom_text = format!("{pct}%");
                     ui.colored_label(egui::Color32::from_rgb(180, 180, 100), zoom_text);
                     ui.separator();
                 }
@@ -280,7 +280,7 @@ pub fn build_ui(
                         );
                         let dl_color = egui::Color32::from_rgb(100, 200, 100);
                         ui.colored_label(dl_color, &dl_text).widget_info(|| {
-                            a11y_info(WidgetType::Label, format!("Download: {}", dl_text))
+                            a11y_info(WidgetType::Label, format!("Download: {dl_text}"))
                         });
                     }
                     ui.separator();
@@ -316,7 +316,7 @@ pub fn build_ui(
                 } else if !app_state.status_message.is_empty() {
                     let msg = app_state.status_message.clone();
                     ui.label(&msg)
-                        .widget_info(|| a11y_info(WidgetType::Label, format!("Status: {}", msg)));
+                        .widget_info(|| a11y_info(WidgetType::Label, format!("Status: {msg}")));
                 }
             });
         });
@@ -557,10 +557,10 @@ pub fn build_ui(
                                         app_state
                                             .pending_wry_actions
                                             .push_back(WryAction::Navigate(url));
-                                        app_state.status_message = format!("Quickmark: {}", name);
+                                        app_state.status_message = format!("Quickmark: {name}");
                                     } else {
                                         app_state.status_message =
-                                            format!("Quickmark '{}' not found", name);
+                                            format!("Quickmark '{name}' not found");
                                     }
                                 }
                             } else {
@@ -574,7 +574,7 @@ pub fn build_ui(
                                     app_state
                                         .pending_wry_actions
                                         .push_back(WryAction::Navigate(url));
-                                    app_state.status_message = format!("Navigating to {}", input);
+                                    app_state.status_message = format!("Navigating to {input}");
                                 }
                             }
                         }
@@ -598,7 +598,7 @@ pub fn build_ui(
                 };
                 let ml = mode_label;
                 ui.colored_label(mode_color, mode_label)
-                    .widget_info(|| a11y_info(WidgetType::Label, format!("URL bar mode: {}", ml)));
+                    .widget_info(|| a11y_info(WidgetType::Label, format!("URL bar mode: {ml}")));
                 ui.separator();
 
                 let active_id = app_state.wm.active_pane_id();
@@ -610,8 +610,7 @@ pub fn build_ui(
 
                 let url_clone = url_str.clone();
                 let url_label = ui.strong(&url_str);
-                url_label
-                    .widget_info(|| a11y_info(WidgetType::Label, format!("URL: {}", url_clone)));
+                url_label.widget_info(|| a11y_info(WidgetType::Label, format!("URL: {url_clone}")));
 
                 if url_label.clicked() {
                     app_state.url_bar_focused = true;
@@ -652,10 +651,9 @@ pub fn build_ui(
                             if let Some(wry_pane) = wry_panes.get(&active_id) {
                                 let q = app_state.find_query.replace('\'', "\\'");
                                 // Store query in JS for FindNext/FindPrev reuse
-                                wry_pane.execute_js(&format!("window._aileronFindQuery='{}'", q));
+                                wry_pane.execute_js(&format!("window._aileronFindQuery='{q}'"));
                                 wry_pane.execute_js(&format!(
-                                    "window.find('{}', false, false, true, true, false)",
-                                    q
+                                    "window.find('{q}', false, false, true, true, false)"
                                 ));
                             }
                         }
@@ -935,7 +933,7 @@ pub fn build_ui(
                             let marker = if is_active { " ●" } else { "" };
 
                             ui.horizontal(|ui| {
-                                let label = format!("{}{}{}  {}", prefix, title, marker, url);
+                                let label = format!("{prefix}{title}{marker}  {url}");
                                 let response = ui.selectable_label(
                                     is_selected || is_active,
                                     egui::RichText::new(label).size(13.0).color(if is_selected {
@@ -1056,7 +1054,7 @@ pub fn build_ui(
                                 };
                                 ui.colored_label(
                                     egui::Color32::from_rgb(140, 180, 255),
-                                    egui::RichText::new(format!("  {}", folder_label))
+                                    egui::RichText::new(format!("  {folder_label}"))
                                         .size(12.0)
                                         .strong(),
                                 );
@@ -1164,7 +1162,7 @@ pub fn build_ui(
                                     pane_urls: std::collections::HashMap::new(),
                                 });
                             app_state.current_workspace_name = name.clone();
-                            app_state.status_message = format!("Saving workspace: {}...", name);
+                            app_state.status_message = format!("Saving workspace: {name}...");
                         }
                         if ui.button("New Tab").clicked() {
                             let active = app_state.wm.active_pane_id();
@@ -1242,7 +1240,7 @@ pub fn build_ui(
                         if let Some(name) = switch_to {
                             app_state.pending_workspace_restore = Some(name.clone());
                             app_state.current_workspace_name = name.clone();
-                            app_state.status_message = format!("Restoring workspace: {}...", name);
+                            app_state.status_message = format!("Restoring workspace: {name}...");
                             app_state.workspace_panel_open = false;
                             app_state.workspace_entries.clear();
                         }
@@ -1254,7 +1252,7 @@ pub fn build_ui(
                             if name == app_state.current_workspace_name {
                                 app_state.current_workspace_name = "default".into();
                             }
-                            app_state.status_message = format!("Workspace deleted: {}", name);
+                            app_state.status_message = format!("Workspace deleted: {name}");
                         }
                     });
             });
@@ -1330,7 +1328,7 @@ pub fn build_ui(
                                 .url_for(&active_id)
                                 .map(|u| {
                                     if let Some(host) = u.host_str() {
-                                        format!("*://{}*", host)
+                                        format!("*://{host}*")
                                     } else {
                                         u.to_string()
                                     }
@@ -1379,7 +1377,7 @@ pub fn build_ui(
                                     .map(|v| if v { "1" } else { "0" })
                             );
                             app_state.status_message =
-                                format!("Saved site settings for: {}", pattern);
+                                format!("Saved site settings for: {pattern}");
                         }
                     }
                     if ui.button("Close").clicked() {
@@ -1727,10 +1725,7 @@ pub fn build_tab_list(
 
                         let response = ui.selectable_label(
                             is_active,
-                            format!(
-                                "{}{}{}{}",
-                                pinned_prefix, muted_prefix, private_prefix, display_title
-                            ),
+                            format!("{pinned_prefix}{muted_prefix}{private_prefix}{display_title}"),
                         );
                         response.widget_info(|| {
                             let mut label = format!("Tab: {} - {}", info.title, info.url);
@@ -1753,7 +1748,7 @@ pub fn build_tab_list(
                         let close_title = display_title.clone();
                         let close_btn = ui.small_button("\u{00d7}");
                         close_btn.widget_info(|| {
-                            a11y_info(WidgetType::Button, format!("Close tab: {}", close_title))
+                            a11y_info(WidgetType::Button, format!("Close tab: {close_title}"))
                         });
                         if close_btn.clicked() {
                             app_state.pending_tab_close = Some(*pane_id);
@@ -1824,10 +1819,7 @@ pub fn build_tab_list(
 
                         let response = ui.selectable_label(
                             is_active,
-                            format!(
-                                "{}{}{}{}",
-                                pinned_prefix, muted_prefix, private_prefix, display_title
-                            ),
+                            format!("{pinned_prefix}{muted_prefix}{private_prefix}{display_title}"),
                         );
                         response.widget_info(|| {
                             let mut label = format!("Tab: {} - {}", info.title, info.url);
@@ -1850,7 +1842,7 @@ pub fn build_tab_list(
                         let close_title = display_title.clone();
                         let close_btn = ui.small_button("\u{00d7}");
                         close_btn.widget_info(|| {
-                            a11y_info(WidgetType::Button, format!("Close tab: {}", close_title))
+                            a11y_info(WidgetType::Button, format!("Close tab: {close_title}"))
                         });
                         if close_btn.clicked() {
                             app_state.pending_tab_close = Some(*pane_id);

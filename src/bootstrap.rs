@@ -11,7 +11,7 @@ pub fn install_panic_hook() {
         let _ = std::fs::create_dir_all(&crash_dir);
 
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let crash_path = crash_dir.join(format!("crash_{}.txt", timestamp));
+        let crash_path = crash_dir.join(format!("crash_{timestamp}.txt"));
 
         let report = format!(
             "=== Aileron Crash Report ===\n\

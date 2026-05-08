@@ -107,7 +107,7 @@ pub fn all_bookmarks(conn: &Connection) -> Result<Vec<Bookmark>> {
 
 /// Search bookmarks by query string (matches URL or title).
 pub fn search_bookmarks(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Bookmark>> {
-    let pattern = format!("%{}%", query);
+    let pattern = format!("%{query}%");
     let mut stmt = conn.prepare(
         "SELECT id, url, title, folder, created_at FROM bookmarks
          WHERE url LIKE ?1 OR title LIKE ?1
@@ -236,8 +236,8 @@ mod tests {
         for i in 0..10 {
             add_bookmark(
                 &conn,
-                &format!("https://example{}.com", i),
-                &format!("Site {}", i),
+                &format!("https://example{i}.com"),
+                &format!("Site {i}"),
             )
             .unwrap();
         }

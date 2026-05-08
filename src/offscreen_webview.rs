@@ -276,7 +276,7 @@ a {{ color: #4db4ff; }}
 
                         if blocked_domains.iter().any(|d: &String| {
                             let d_lower = d.to_lowercase();
-                            host_lower == d_lower || host_lower.ends_with(&format!(".{}", d_lower))
+                            host_lower == d_lower || host_lower.ends_with(&format!(".{d_lower}"))
                         }) {
                             return false;
                         }
@@ -472,7 +472,7 @@ a {{ color: #4db4ff; }}
     pub fn execute_js(&self, js: &str) {
         if let Err(e) = self.webview.evaluate_script(js) {
             warn!("JS evaluation error: {}", e);
-            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{}", e));
+            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{e}"));
         }
     }
 
@@ -480,7 +480,7 @@ a {{ color: #4db4ff; }}
     pub fn execute_js_with_callback(&self, js: &str, callback: impl Fn(String) + Send + 'static) {
         if let Err(e) = self.webview.evaluate_script_with_callback(js, callback) {
             warn!("JS evaluation error: {}", e);
-            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{}", e));
+            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{e}"));
         }
     }
 
@@ -873,16 +873,15 @@ a {{ color: #4db4ff; }}
     ) {
         let js = format!(
             "(function() {{ \
-                var el = document.elementFromPoint({}, {}); \
+                var el = document.elementFromPoint({x}, {y}); \
                 if (el) {{ \
-                    el.dispatchEvent(new MouseEvent('{}', {{ \
-                        clientX: {}, clientY: {}, \
-                        button: {}, bubbles: true, cancelable: true, \
-                        {} \
+                    el.dispatchEvent(new MouseEvent('{event_type}', {{ \
+                        clientX: {x}, clientY: {y}, \
+                        button: {button}, bubbles: true, cancelable: true, \
+                        {modifiers} \
                     }})); \
                 }} \
-            }})()",
-            x, y, event_type, x, y, button, modifiers
+            }})()"
         );
         self.execute_js(&js);
         self.mark_dirty();
@@ -891,11 +890,10 @@ a {{ color: #4db4ff; }}
     /// Forward a keyboard event to the webview via JavaScript.
     pub fn forward_key_event(&mut self, event_type: &str, key: &str, code: &str, modifiers: &str) {
         let js = format!(
-            "document.dispatchEvent(new KeyboardEvent('{}', {{ \
-                key: '{}', code: '{}', bubbles: true, cancelable: true, \
-                {} \
-            }}))",
-            event_type, key, code, modifiers
+            "document.dispatchEvent(new KeyboardEvent('{event_type}', {{ \
+                key: '{key}', code: '{code}', bubbles: true, cancelable: true, \
+                {modifiers} \
+            }}))"
         );
         self.execute_js(&js);
         self.mark_dirty();
@@ -904,17 +902,14 @@ a {{ color: #4db4ff; }}
     /// Insert text at the current cursor position (for IME commits and printable chars).
     pub fn insert_text(&mut self, text: &str) {
         let escaped = text.replace('\\', "\\\\").replace('\'', "\\'");
-        let js = format!("document.execCommand('insertText', false, '{}')", escaped);
+        let js = format!("document.execCommand('insertText', false, '{escaped}')");
         self.execute_js(&js);
         self.mark_dirty();
     }
 
     /// Scroll the webview by the given delta with smooth animation.
     pub fn scroll_by(&mut self, dx: f64, dy: f64) {
-        let js = format!(
-            "window.scrollBy({{top: {}, left: {}, behavior: 'smooth'}})",
-            dy, dx
-        );
+        let js = format!("window.scrollBy({{top: {dy}, left: {dx}, behavior: 'smooth'}})");
         self.execute_js(&js);
         self.mark_dirty();
     }

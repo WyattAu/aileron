@@ -63,6 +63,12 @@ jobs:
       - name: Run startup test
         run: AILERON_TESTING=1 cargo test --test startup_test -- --test-threads=4
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Security audit
+        run: cargo audit --deny warnings
+
       - name: Cross-compile check (x86_64-unknown-linux-gnu)
         run: cargo check --target x86_64-unknown-linux-gnu
 

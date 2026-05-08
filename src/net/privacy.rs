@@ -90,12 +90,12 @@ pub fn download_https_safe_list() -> anyhow::Result<()> {
     let response = std::io::BufReader::new(
         attohttpc::get(HTTPS_SAFE_LIST_URL)
             .send()
-            .map_err(|e| anyhow::anyhow!("Download failed: {}", e))?,
+            .map_err(|e| anyhow::anyhow!("Download failed: {e}"))?,
     );
     let mut domains = HashSet::new();
 
     for line in response.lines() {
-        let line = line.map_err(|e| anyhow::anyhow!("Read line failed: {}", e))?;
+        let line = line.map_err(|e| anyhow::anyhow!("Read line failed: {e}"))?;
         let line = line.trim();
         if line.is_empty() || line.starts_with('!') || line.starts_with('[') {
             continue;

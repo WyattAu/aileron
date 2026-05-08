@@ -117,7 +117,7 @@ fn write_startup_banner() {
 
     write_event(
         "startup",
-        &format!("Aileron v{} starting", VERSION),
+        &format!("Aileron v{VERSION} starting"),
         "",
         "main",
         json!({
@@ -278,8 +278,8 @@ pub fn write_periodic_stats(
 pub fn capture_glib(level: &str, domain: &str, message: &str) {
     write_event(
         "glib_warning",
-        &format!("[GLib {}::{}] {}", domain, level, message),
-        &format!("glib:{}", domain),
+        &format!("[GLib {domain}::{level}] {message}"),
+        &format!("glib:{domain}"),
         std::thread::current().name().unwrap_or("unnamed"),
         json!({
             "glib_level": level,
@@ -301,7 +301,7 @@ pub fn capture_js_error(pane_id: &str, error_msg: &str) {
 pub fn capture_navigation_error(pane_id: &str, url: &str, error: &str) {
     write_event(
         "navigation_error",
-        &format!("{}: {}", url, error),
+        &format!("{url}: {error}"),
         "",
         std::thread::current().name().unwrap_or("unnamed"),
         json!({
@@ -372,7 +372,7 @@ fn rotate_if_needed(handle: &mut Option<std::fs::File>) {
     *handle = None;
 
     for i in (1..MAX_ROTATED_FILES).rev() {
-        let src = path.with_extension(format!("log.{}", i));
+        let src = path.with_extension(format!("log.{i}"));
         let dst = path.with_extension(format!("log.{}", i + 1));
         if src.exists() {
             let _ = std::fs::rename(&src, &dst);

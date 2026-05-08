@@ -409,15 +409,14 @@ impl BitwardenClient {
             r#"
             (function() {{
                 var inputs = document.querySelectorAll('input[type="text"], input[type="email"], input[name="username"], input[name="email"], input[name="user"]');
-                if (inputs.length > 0) inputs[0].value = {:?};
+                if (inputs.length > 0) inputs[0].value = {username:?};
                 var passInputs = document.querySelectorAll('input[type="password"]');
-                if (passInputs.length > 0) passInputs[0].value = {:?};
+                if (passInputs.length > 0) passInputs[0].value = {password:?};
                 // Trigger change events
                 inputs.forEach(function(i) {{ i.dispatchEvent(new Event('input', {{bubbles: true}})); }});
                 passInputs.forEach(function(i) {{ i.dispatchEvent(new Event('input', {{bubbles: true}})); }});
             }})();
-            "#,
-            username, password
+            "#
         )
     }
 
@@ -473,28 +472,27 @@ impl BitwardenClient {
         let password = credential.password.as_str();
         format!(
             r#"(function() {{
-                var uEl = document.getElementById({:?});
+                var uEl = document.getElementById({username_id:?});
                 if (!uEl) {{
                     var uInputs = document.querySelectorAll('input[type="text"], input[type="email"], input[autocomplete="username"], input[autocomplete="email"], input[name*="user"], input[name*="email"], input[name*="login"]');
                     uEl = uInputs.length > 0 ? uInputs[0] : null;
                 }}
                 if (uEl) {{
-                    uEl.value = {:?};
+                    uEl.value = {username:?};
                     uEl.dispatchEvent(new Event('input', {{bubbles: true}}));
                     uEl.dispatchEvent(new Event('change', {{bubbles: true}}));
                 }}
-                var pEl = document.getElementById({:?});
+                var pEl = document.getElementById({password_id:?});
                 if (!pEl) {{
                     var pInputs = document.querySelectorAll('input[type="password"]');
                     pEl = pInputs.length > 0 ? pInputs[0] : null;
                 }}
                 if (pEl) {{
-                    pEl.value = {:?};
+                    pEl.value = {password:?};
                     pEl.dispatchEvent(new Event('input', {{bubbles: true}}));
                     pEl.dispatchEvent(new Event('change', {{bubbles: true}}));
                 }}
-            }})();"#,
-            username_id, username, password_id, password
+            }})();"#
         )
     }
 }

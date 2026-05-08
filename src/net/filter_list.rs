@@ -322,7 +322,7 @@ pub fn load_filter_lists_from_disk() -> Vec<FilterList> {
 
 pub fn save_filter_list(name: &str, content: &str) -> std::io::Result<PathBuf> {
     let dir = ensure_filter_list_dir();
-    let path = dir.join(format!("{}.txt", name));
+    let path = dir.join(format!("{name}.txt"));
     std::fs::write(&path, content)?;
     Ok(path)
 }
@@ -333,7 +333,7 @@ pub fn download_filter_list(url: &str) -> anyhow::Result<String> {
         .timeout(std::time::Duration::from_secs(30))
         .connect_timeout(std::time::Duration::from_secs(10))
         .send()
-        .map_err(|e| anyhow::anyhow!("Failed to download filter list: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to download filter list: {e}"))?;
 
     if !response.status().is_success() {
         anyhow::bail!("HTTP request failed with status {}", response.status());
@@ -341,9 +341,9 @@ pub fn download_filter_list(url: &str) -> anyhow::Result<String> {
 
     let body = response
         .text()
-        .map_err(|e| anyhow::anyhow!("Response not UTF-8: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Response not UTF-8: {e}"))?;
     if body.is_empty() {
-        anyhow::bail!("Empty response from {}", url);
+        anyhow::bail!("Empty response from {url}");
     }
 
     info!("Downloaded filter list from {} ({} bytes)", url, body.len());
@@ -376,7 +376,7 @@ pub fn initialize_default_filter_lists() -> usize {
     let mut total_rules = 0;
 
     for (name, url) in default_filter_list_urls() {
-        let file_path = dir.join(format!("{}.txt", name));
+        let file_path = dir.join(format!("{name}.txt"));
         if !file_path.exists() {
             info!("Filter list {} not found, downloading from {}", name, url);
             match download_filter_list(url) {
@@ -412,7 +412,7 @@ pub fn update_all_filter_lists() -> usize {
     let mut updated = 0;
 
     for (name, url) in default_filter_list_urls() {
-        let file_path = dir.join(format!("{}.txt", name));
+        let file_path = dir.join(format!("{name}.txt"));
         match download_filter_list(url) {
             Ok(content) => {
                 if let Err(e) = std::fs::write(&file_path, &content) {

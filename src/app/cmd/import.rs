@@ -69,10 +69,7 @@ pub fn import_firefox(db: &rusqlite::Connection) -> String {
         }
     }
 
-    format!(
-        "Firefox import: {} bookmarks, {} history entries",
-        bookmarks_imported, history_imported
-    )
+    format!("Firefox import: {bookmarks_imported} bookmarks, {history_imported} history entries")
 }
 
 fn import_firefox_bookmarks_json(db: &rusqlite::Connection, path: &std::path::Path) -> usize {
@@ -280,10 +277,7 @@ pub fn import_chrome(db: &rusqlite::Connection) -> String {
         history_imported = import_chrome_history(db, &history_path);
     }
 
-    format!(
-        "Chrome import: {} bookmarks, {} history entries",
-        bookmarks_imported, history_imported
-    )
+    format!("Chrome import: {bookmarks_imported} bookmarks, {history_imported} history entries")
 }
 
 fn import_chrome_bookmarks(db: &rusqlite::Connection, path: &std::path::Path) -> usize {

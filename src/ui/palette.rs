@@ -299,7 +299,7 @@ mod tests {
         let mut palette = CommandPalette::new();
         palette.max_results = 3;
         for i in 0..5 {
-            palette.add_item(item(&i.to_string(), &format!("Item {}", i)));
+            palette.add_item(item(&i.to_string(), &format!("Item {i}")));
         }
         palette.open();
         palette.update_query(""); // Empty query shows recent items (last 3, reversed)

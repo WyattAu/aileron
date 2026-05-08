@@ -8,7 +8,7 @@ pub fn open_in_system_browser(url: &Url) -> anyhow::Result<()> {
     info!("Opening in system browser: {}", url_str);
     open::that(url_str).map_err(|e| {
         warn!("Failed to open system browser for '{}': {}", url_str, e);
-        anyhow::anyhow!("Failed to open system browser: {}", e)
+        anyhow::anyhow!("Failed to open system browser: {e}")
     })
 }
 

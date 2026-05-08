@@ -151,7 +151,7 @@ impl ArpServer {
             .worker_threads(2)
             .enable_all()
             .build()
-            .map_err(|e| anyhow::anyhow!("Failed to create ARP runtime: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to create ARP runtime: {e}"))?;
 
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
 
@@ -193,7 +193,7 @@ impl ArpServer {
         let has_token = config.token.is_some();
 
         self.runtime.spawn(async move {
-            let addr = format!("{}:{}", host, port);
+            let addr = format!("{host}:{port}");
             let listener = match TcpListener::bind(&addr).await {
                 Ok(l) => l,
                 Err(e) => {
@@ -350,7 +350,7 @@ async fn handle_connection(
             Ok(r) => r,
             Err(e) => {
                 let response =
-                    JsonRpcResponse::error(None, ERR_PARSE_ERROR, &format!("Invalid JSON: {}", e));
+                    JsonRpcResponse::error(None, ERR_PARSE_ERROR, &format!("Invalid JSON: {e}"));
                 write.send(Message::text(response.to_json())).await?;
                 continue;
             }
@@ -590,7 +590,7 @@ async fn dispatch_request(
             return JsonRpcResponse::error(
                 request.id.clone(),
                 ERR_METHOD_NOT_FOUND,
-                &format!("Unknown method: {}", method),
+                &format!("Unknown method: {method}"),
             );
         }
     };

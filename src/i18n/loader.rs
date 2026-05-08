@@ -65,7 +65,7 @@ mod tests {
         let codes: Vec<&str> = translations.iter().map(|(c, _)| *c).collect();
         assert_eq!(codes.len(), 9);
         for expected in &["en", "zh", "ja", "ko", "de", "fr", "es", "pt", "ru"] {
-            assert!(codes.contains(expected), "Missing locale: {}", expected);
+            assert!(codes.contains(expected), "Missing locale: {expected}");
         }
     }
 
@@ -118,7 +118,7 @@ mod tests {
             "err_save_failed",
         ];
         for key in &expected_keys {
-            assert!(en.1.contains_key(*key), "Missing English key: {}", key);
+            assert!(en.1.contains_key(*key), "Missing English key: {key}");
         }
     }
 
@@ -129,8 +129,7 @@ mod tests {
         for (key, value) in &en.1 {
             assert!(
                 !value.is_empty(),
-                "English translation for '{}' should not be empty",
-                key
+                "English translation for '{key}' should not be empty"
             );
         }
     }
@@ -162,7 +161,7 @@ key2 = "value2"
     fn test_all_locales_non_empty() {
         let translations = load_all();
         for (code, map) in &translations {
-            assert!(!map.is_empty(), "Locale '{}' should not be empty", code);
+            assert!(!map.is_empty(), "Locale '{code}' should not be empty");
         }
     }
 
