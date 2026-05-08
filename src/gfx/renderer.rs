@@ -206,10 +206,7 @@ mod tests {
     #[test]
     fn first_element_contains_vulkan_and_gl() {
         let opts = backend_options();
-        assert_eq!(
-            opts[0],
-            wgpu::Backends::VULKAN | wgpu::Backends::GL
-        );
+        assert_eq!(opts[0], wgpu::Backends::VULKAN | wgpu::Backends::GL);
     }
 
     #[test]

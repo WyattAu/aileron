@@ -682,7 +682,9 @@ mod tests {
 
     #[test]
     fn console_log_capped_at_twenty() {
-        let entries: Vec<String> = (0..25).map(|i| format!(r#"{{"level":"info","msg":"e{}"}}"#, i)).collect();
+        let entries: Vec<String> = (0..25)
+            .map(|i| format!(r#"{{"level":"info","msg":"e{}"}}"#, i))
+            .collect();
         let json = format!("[{}]", entries.join(","));
         let result = format_console_log(&json).unwrap();
         assert!(result.starts_with("Console (25):"));

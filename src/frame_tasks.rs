@@ -361,8 +361,7 @@ pub fn process_wry_events(
                         wry_pane.execute_js(crate::servo::NETWORK_MONITOR_JS);
                         wry_pane.execute_js(crate::servo::CONSOLE_CAPTURE_JS);
                         wry_pane.execute_js(
-                            crate::passwords::bitwarden::BitwardenClient::form_submit_observer_js(
-                            ),
+                            crate::passwords::bitwarden::BitwardenClient::form_submit_observer_js(),
                         );
                         wry_pane.execute_js(
                             "setTimeout(function() { \
@@ -686,8 +685,7 @@ pub fn process_offscreen_events(
                         pane.execute_js(crate::servo::NETWORK_MONITOR_JS);
                         pane.execute_js(crate::servo::CONSOLE_CAPTURE_JS);
                         pane.execute_js(
-                            crate::passwords::bitwarden::BitwardenClient::form_submit_observer_js(
-                            ),
+                            crate::passwords::bitwarden::BitwardenClient::form_submit_observer_js(),
                         );
                         pane.suppress_context_menu();
                         pane.execute_js(
@@ -1042,9 +1040,8 @@ pub fn process_mcp_commands(
                 response_tx,
             } => {
                 let result = if let Some(db) = app_state.db.as_ref() {
-                    match crate::db::bookmarks::add_bookmark_with_folder(
-                        db, &url, &title, &folder,
-                    ) {
+                    match crate::db::bookmarks::add_bookmark_with_folder(db, &url, &title, &folder)
+                    {
                         Ok(id) => format!("Bookmarked (id={}) {}", id, url),
                         Err(e) => format!("Error: {}", e),
                     }
@@ -2069,8 +2066,7 @@ mod tests {
     fn poll_git_status_with_empty_channel_leaves_status_unchanged() {
         let tmp = std::env::temp_dir().join("aileron_test_git_poller_none");
         let _ = std::fs::create_dir_all(&tmp);
-        let poller =
-            crate::git::GitPoller::new(tmp.clone(), std::time::Duration::from_secs(3600));
+        let poller = crate::git::GitPoller::new(tmp.clone(), std::time::Duration::from_secs(3600));
         let mut status = GitStatus {
             branch: Some("feature".into()),
             modified_count: 1,
@@ -2086,8 +2082,7 @@ mod tests {
     fn poll_git_status_with_new_poller_receives_initial_status() {
         let tmp = std::env::temp_dir().join("aileron_test_git_poller_recv");
         let _ = std::fs::create_dir_all(&tmp);
-        let poller =
-            crate::git::GitPoller::new(tmp.clone(), std::time::Duration::from_secs(3600));
+        let poller = crate::git::GitPoller::new(tmp.clone(), std::time::Duration::from_secs(3600));
         let mut status = GitStatus::default();
         poll_git_status(&mut status, &Some(poller));
     }
@@ -2140,8 +2135,7 @@ mod tests {
     #[test]
     fn push_tabs_to_arp_stopped_server_does_nothing() {
         let mut app_state = test_app_state();
-        let Ok((server, _receiver)) =
-            crate::arp::ArpServer::new(crate::arp::ArpConfig::default())
+        let Ok((server, _receiver)) = crate::arp::ArpServer::new(crate::arp::ArpConfig::default())
         else {
             return;
         };
