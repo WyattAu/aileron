@@ -68,14 +68,14 @@ pub fn auto_save_workspace(app_state: &mut AppState, wry_panes: &WryPaneManager)
     if !app_state.config.auto_save {
         return;
     }
-    if !app_state.session_dirty {
+    if !app_state.session.session_dirty {
         return;
     }
     let interval = std::time::Duration::from_secs(app_state.config.auto_save_interval);
-    if app_state.last_auto_save.elapsed() < interval {
+    if app_state.session.last_auto_save.elapsed() < interval {
         return;
     }
-    app_state.last_auto_save = std::time::Instant::now();
+    app_state.session.last_auto_save = std::time::Instant::now();
 
     let pane_urls: std::collections::HashMap<Uuid, String> = wry_panes
         .pane_ids()
@@ -122,8 +122,8 @@ pub fn push_tabs_to_arp(app_state: &AppState, wry_panes: &WryPaneManager) {
                 "url": url.as_str(),
                 "title": title,
                 "active": active_id == *id,
-                "muted": app_state.muted_pane_ids.contains(id),
-                "pinned": app_state.pinned_pane_ids.contains(id),
+                "muted": app_state.tabs.muted_pane_ids.contains(id),
+                "pinned": app_state.tabs.pinned_pane_ids.contains(id),
             }))
         })
         .collect();
@@ -170,7 +170,7 @@ pub fn process_arp_commands(app_state: &mut AppState) {
                             .and_then(|u| url::Url::parse(&u).ok())
                             .unwrap_or_else(|| url::Url::parse("aileron://newtab").unwrap());
                         app_state.engines.create_pane(new_id, target_url, None);
-                        app_state.session_dirty = true;
+                        app_state.session.session_dirty = true;
                     }
                     Err(e) => {
                         warn!(target: "arp", "Tab create failed: {}", e);
@@ -182,7 +182,7 @@ pub fn process_arp_commands(app_state: &mut AppState) {
                     app_state
                         .pending_wry_actions
                         .push_back(WryAction::Navigate(parsed));
-                    app_state.session_dirty = true;
+                    app_state.session.session_dirty = true;
                 }
                 Err(e) => {
                     warn!(target: "arp", "Tab navigate invalid URL: {}", e);
@@ -192,7 +192,7 @@ pub fn process_arp_commands(app_state: &mut AppState) {
                 let target = tab_id.unwrap_or_else(|| app_state.wm.active_pane_id());
                 match app_state.wm.close(target) {
                     Ok(_next) => {
-                        app_state.session_dirty = true;
+                        app_state.session.session_dirty = true;
                     }
                     Err(e) => {
                         warn!(target: "arp", "Tab close failed: {}", e);
@@ -253,9 +253,9 @@ pub fn process_wry_events(
     for event in wry_events {
         match event {
             WryEvent::LoadComplete { pane_id, url, .. } => {
-                app_state.session_dirty = true;
-                app_state.tab_display_dirty = true;
-                app_state.pane_count_dirty = true;
+                app_state.session.session_dirty = true;
+                app_state.tabs.tab_display_dirty = true;
+                app_state.cache.pane_count_dirty = true;
                 if let Ok(parsed) = url::Url::parse(&url) {
                     app_state.record_visit(&parsed, &url);
                 }
@@ -427,11 +427,11 @@ pub fn process_wry_events(
                 }
             }
             WryEvent::LoadStarted { url, pane_id, .. } => {
-                app_state.autofill_available = false;
-                app_state.autofill_username_id.clear();
-                app_state.autofill_password_id.clear();
-                app_state.autofill_js = None;
-                app_state.autofill_status_msg.clear();
+                app_state.autofill.available = false;
+                app_state.autofill.username_id.clear();
+                app_state.autofill.password_id.clear();
+                app_state.autofill.js = None;
+                app_state.autofill.status_msg.clear();
                 app_state.clear_injected_scripts(pane_id);
                 app_state.update_a11y(&format!("Loading: {}...", &url[..url.len().min(40)]));
 
@@ -508,7 +508,7 @@ pub fn process_wry_events(
             }
             WryEvent::TitleChanged { title, .. } => {
                 app_state.update_a11y(&title[..title.len().min(60)]);
-                app_state.tab_display_dirty = true;
+                app_state.tabs.tab_display_dirty = true;
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
                 // Use the download manager for actual downloading with progress
@@ -516,7 +516,8 @@ pub fn process_wry_events(
                     .download_manager
                     .start(url.as_str(), Some(filename.as_str()));
                 let short_url = if url.len() > 40 { &url[..37] } else { &url };
-                app_state.status_message = format!("Download #{dl_id}: {filename} ({short_url})");
+                app_state.ui.status_message =
+                    format!("Download #{dl_id}: {filename} ({short_url})");
                 info!("Download #{} started: {} from {}", dl_id, filename, url);
                 // Record in database for history
                 if let Some(db) = app_state.db.as_ref() {
@@ -536,10 +537,10 @@ pub fn process_wry_events(
             }
             WryEvent::OpenFile { path } => {
                 let _ = open_that(&path);
-                app_state.status_message = format!("Opened: {path}");
+                app_state.ui.status_message = format!("Opened: {path}");
             }
             WryEvent::HttpsUpgraded { to, .. } => {
-                app_state.status_message = format!("HTTPS upgrade: {to}");
+                app_state.ui.status_message = format!("HTTPS upgrade: {to}");
             }
             WryEvent::IpcMessage { pane_id, message } => {
                 handle_ipc_message(app_state, wry_panes, pane_id, &message);
@@ -565,9 +566,9 @@ pub fn process_offscreen_events(
     for (_pane_id, event) in events {
         match event {
             WryEvent::LoadComplete { pane_id, url, .. } => {
-                app_state.session_dirty = true;
-                app_state.tab_display_dirty = true;
-                app_state.pane_count_dirty = true;
+                app_state.session.session_dirty = true;
+                app_state.tabs.tab_display_dirty = true;
+                app_state.cache.pane_count_dirty = true;
                 if let Ok(parsed) = url::Url::parse(&url) {
                     app_state.record_visit(&parsed, &url);
                 }
@@ -750,11 +751,11 @@ pub fn process_offscreen_events(
                 }
             }
             WryEvent::LoadStarted { url, pane_id, .. } => {
-                app_state.autofill_available = false;
-                app_state.autofill_username_id.clear();
-                app_state.autofill_password_id.clear();
-                app_state.autofill_js = None;
-                app_state.autofill_status_msg.clear();
+                app_state.autofill.available = false;
+                app_state.autofill.username_id.clear();
+                app_state.autofill.password_id.clear();
+                app_state.autofill.js = None;
+                app_state.autofill.status_msg.clear();
                 app_state.clear_injected_scripts(pane_id);
                 app_state.update_a11y(&format!("Loading: {}...", &url[..url.len().min(40)]));
 
@@ -835,7 +836,7 @@ pub fn process_offscreen_events(
             }
             WryEvent::TitleChanged { title, .. } => {
                 app_state.update_a11y(&title[..title.len().min(60)]);
-                app_state.tab_display_dirty = true;
+                app_state.tabs.tab_display_dirty = true;
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
                 // Use the download manager for actual downloading with progress
@@ -843,7 +844,8 @@ pub fn process_offscreen_events(
                     .download_manager
                     .start(url.as_str(), Some(filename.as_str()));
                 let short_url = if url.len() > 40 { &url[..37] } else { &url };
-                app_state.status_message = format!("Download #{dl_id}: {filename} ({short_url})");
+                app_state.ui.status_message =
+                    format!("Download #{dl_id}: {filename} ({short_url})");
                 info!("Download #{} started: {} from {}", dl_id, filename, url);
                 // Record in database for history
                 if let Some(db) = app_state.db.as_ref() {
@@ -863,10 +865,10 @@ pub fn process_offscreen_events(
             }
             WryEvent::OpenFile { path } => {
                 let _ = open_that(&path);
-                app_state.status_message = format!("Opened: {path}");
+                app_state.ui.status_message = format!("Opened: {path}");
             }
             WryEvent::HttpsUpgraded { to, .. } => {
-                app_state.status_message = format!("HTTPS upgrade: {to}");
+                app_state.ui.status_message = format!("HTTPS upgrade: {to}");
                 if let Some(pane) = offscreen_panes.get_mut(&_pane_id) {
                     pane.mark_dirty();
                 }
@@ -888,17 +890,17 @@ pub fn check_offscreen_crashes(
     let crash_timeout = std::time::Duration::from_secs(15);
 
     for (pane_id, pane) in offscreen_panes.iter_mut() {
-        if pane.is_crashed(crash_timeout) && !app_state.webview_crash_detected {
+        if pane.is_crashed(crash_timeout) && !app_state.crash.webview_crash_detected {
             let url = pane.url().to_string();
             warn!(
                 "WebView crash detected in pane {}: stalled while loading {}",
                 &pane_id.to_string()[..8],
                 &url[..url.len().min(80)]
             );
-            app_state.webview_crash_detected = true;
-            app_state.crashed_pane_url = Some(url);
-            app_state.crashed_pane_id = Some(*pane_id);
-            app_state.status_message =
+            app_state.crash.webview_crash_detected = true;
+            app_state.crash.crashed_pane_url = Some(url);
+            app_state.crash.crashed_pane_id = Some(*pane_id);
+            app_state.ui.status_message =
                 "WebView appears crashed — type :crash-reload to recover".into();
             pane.set_loading(false);
         }
@@ -931,7 +933,7 @@ pub fn process_pending_wry_actions(
         ) {
             warn!("WryAction error: {}", e);
             if let Some(app_state) = app_state {
-                app_state.status_message = format!("Action failed: {e}");
+                app_state.ui.status_message = format!("Action failed: {e}");
             }
         }
     }
@@ -961,7 +963,7 @@ pub fn process_mcp_commands(
                                 info!("MCP: opening in new tab {}", url);
                                 app_state.engines.create_pane(new_id, parsed, None);
                                 app_state.wm.set_active_pane(new_id);
-                                app_state.session_dirty = true;
+                                app_state.session.session_dirty = true;
                             }
                             Err(e) => {
                                 warn!("MCP: failed to create new tab: {}", e);
@@ -1156,7 +1158,7 @@ pub fn process_mcp_commands(
                     {
                         app_state.wm.set_active_pane(next);
                     }
-                    app_state.session_dirty = true;
+                    app_state.session.session_dirty = true;
                     format!("Closed tab at index {index}.")
                 } else {
                     format!(
@@ -1190,13 +1192,13 @@ pub fn handle_pending_import(app_state: &mut AppState) {
             "firefox" => crate::app::cmd::import::import_firefox(db),
             "chrome" => crate::app::cmd::import::import_chrome(db),
             _ => {
-                app_state.status_message = format!("Unknown import source: {source}");
+                app_state.ui.status_message = format!("Unknown import source: {source}");
                 return;
             }
         };
-        app_state.status_message = msg;
+        app_state.ui.status_message = msg;
     } else {
-        app_state.status_message = "No database available for import.".into();
+        app_state.ui.status_message = "No database available for import.".into();
     }
 }
 
@@ -1290,13 +1292,13 @@ fn handle_ipc_message(
     };
     match msg.get("t").and_then(|v| v.as_str()) {
         Some("get-config") => {
-            let config_json = if app_state.config_json_dirty {
-                app_state.config_json_cache =
+            let config_json = if app_state.cache.config_json_dirty {
+                app_state.cache.config_json_cache =
                     serde_json::to_string(&app_state.config).unwrap_or_default();
-                app_state.config_json_dirty = false;
-                app_state.config_json_cache.clone()
+                app_state.cache.config_json_dirty = false;
+                app_state.cache.config_json_cache.clone()
             } else {
-                app_state.config_json_cache.clone()
+                app_state.cache.config_json_cache.clone()
             };
             let js = format!(
                 "window._aileron_config = {config_json}; window._onConfigLoaded && window._onConfigLoaded(window._aileron_config);"
@@ -1407,7 +1409,8 @@ fn handle_ipc_message(
                         }
                         Err(e) => {
                             warn!("Failed to store sync passphrase in keyring: {}", e);
-                            app_state.status_message = format!("Failed to store passphrase: {e}");
+                            app_state.ui.status_message =
+                                format!("Failed to store passphrase: {e}");
                         }
                     }
                 }
@@ -1426,8 +1429,8 @@ fn handle_ipc_message(
                 if let Some(pane) = wry_panes.get_mut(&pane_id) {
                     pane.execute_js("window._onConfigSaved && window._onConfigSaved();");
                 }
-                app_state.status_message = "Settings saved".into();
-                app_state.config_json_dirty = true;
+                app_state.ui.status_message = "Settings saved".into();
+                app_state.cache.config_json_dirty = true;
             }
         }
         Some("credential_save") => {
@@ -1440,20 +1443,20 @@ fn handle_ipc_message(
                 match crate::passwords::keyring::store_credential(&key, password) {
                     Ok(()) => {
                         info!("Saved credential for {}", username);
-                        app_state.status_message = format!("Credential saved for {username}");
+                        app_state.ui.status_message = format!("Credential saved for {username}");
                     }
                     Err(e) => {
                         warn!("Failed to store credential: {}", e);
-                        app_state.status_message = format!("Credential save failed: {e}");
+                        app_state.ui.status_message = format!("Credential save failed: {e}");
                     }
                 }
             } else {
-                app_state.status_message = "No pending credentials to save".into();
+                app_state.ui.status_message = "No pending credentials to save".into();
             }
         }
         Some("scroll-fraction") => {
             if let Some(frac) = msg.get("frac").and_then(|v| v.as_f64())
-                && let Some(mark_char) = app_state.pending_mark_set.take()
+                && let Some(mark_char) = app_state.session.pending_mark_set.take()
             {
                 let frac = frac.clamp(0.0, 1.0);
                 app_state.store_mark_fraction(pane_id, mark_char, frac);
@@ -1471,9 +1474,9 @@ fn handle_ipc_message(
             }
         }
         Some("hint-clicked") => {
-            app_state.hint_mode = false;
-            app_state.hint_buffer.clear();
-            app_state.status_message.clear();
+            app_state.ui.hint_mode = false;
+            app_state.ui.hint_buffer.clear();
+            app_state.ui.status_message.clear();
         }
         Some("login-form-detected") => {
             if msg
@@ -1488,12 +1491,12 @@ fn handle_ipc_message(
                 if let Ok(items) = app_state.bitwarden.search_for_url(&url)
                     && !items.is_empty()
                 {
-                    app_state.autofill_available = true;
+                    app_state.autofill.available = true;
                     if let Some(uid) = msg.get("username_id").and_then(|v| v.as_str()) {
-                        app_state.autofill_username_id = uid.to_string();
+                        app_state.autofill.username_id = uid.to_string();
                     }
                     if let Some(pid) = msg.get("password_id").and_then(|v| v.as_str()) {
-                        app_state.autofill_password_id = pid.to_string();
+                        app_state.autofill.password_id = pid.to_string();
                     }
                     if let Ok(cred) = app_state.bitwarden.get_credential(&items[0].id) {
                         let domain = url::Url::parse(&url)
@@ -1501,18 +1504,18 @@ fn handle_ipc_message(
                             .and_then(|u| u.domain().map(String::from))
                             .unwrap_or_else(|| "unknown".into());
                         let js = app_state.bitwarden.autofill_by_id_js(
-                            &app_state.autofill_username_id,
-                            &app_state.autofill_password_id,
+                            &app_state.autofill.username_id,
+                            &app_state.autofill.password_id,
                             &cred,
                         );
-                        app_state.autofill_js = Some(js);
-                        app_state.autofill_status_msg =
+                        app_state.autofill.js = Some(js);
+                        app_state.autofill.status_msg =
                             format!("Auto-filled credentials for {domain}");
                     }
                 }
             } else {
-                app_state.autofill_available = false;
-                app_state.autofill_js = None;
+                app_state.autofill.available = false;
+                app_state.autofill.js = None;
             }
         }
         Some("get-newtab-data") => {
@@ -1628,13 +1631,13 @@ fn handle_ipc_message_offscreen(
     };
     match msg.get("t").and_then(|v| v.as_str()) {
         Some("get-config") => {
-            let config_json = if app_state.config_json_dirty {
-                app_state.config_json_cache =
+            let config_json = if app_state.cache.config_json_dirty {
+                app_state.cache.config_json_cache =
                     serde_json::to_string(&app_state.config).unwrap_or_default();
-                app_state.config_json_dirty = false;
-                app_state.config_json_cache.clone()
+                app_state.cache.config_json_dirty = false;
+                app_state.cache.config_json_cache.clone()
             } else {
-                app_state.config_json_cache.clone()
+                app_state.cache.config_json_cache.clone()
             };
             let js = format!(
                 "window._aileron_config = {config_json}; window._onConfigLoaded && window._onConfigLoaded(window._aileron_config);"
@@ -1746,7 +1749,8 @@ fn handle_ipc_message_offscreen(
                         }
                         Err(e) => {
                             warn!("Failed to store sync passphrase in keyring: {}", e);
-                            app_state.status_message = format!("Failed to store passphrase: {e}");
+                            app_state.ui.status_message =
+                                format!("Failed to store passphrase: {e}");
                         }
                     }
                 }
@@ -1766,8 +1770,8 @@ fn handle_ipc_message_offscreen(
                     pane.execute_js("window._onConfigSaved && window._onConfigSaved();");
                     pane.mark_dirty();
                 }
-                app_state.status_message = "Settings saved".into();
-                app_state.config_json_dirty = true;
+                app_state.ui.status_message = "Settings saved".into();
+                app_state.cache.config_json_dirty = true;
             }
         }
         Some("credential_save") => {
@@ -1780,20 +1784,20 @@ fn handle_ipc_message_offscreen(
                 match crate::passwords::keyring::store_credential(&key, password) {
                     Ok(()) => {
                         info!("Saved credential for {}", username);
-                        app_state.status_message = format!("Credential saved for {username}");
+                        app_state.ui.status_message = format!("Credential saved for {username}");
                     }
                     Err(e) => {
                         warn!("Failed to store credential: {}", e);
-                        app_state.status_message = format!("Credential save failed: {e}");
+                        app_state.ui.status_message = format!("Credential save failed: {e}");
                     }
                 }
             } else {
-                app_state.status_message = "No pending credentials to save".into();
+                app_state.ui.status_message = "No pending credentials to save".into();
             }
         }
         Some("scroll-fraction") => {
             if let Some(frac) = msg.get("frac").and_then(|v| v.as_f64())
-                && let Some(mark_char) = app_state.pending_mark_set.take()
+                && let Some(mark_char) = app_state.session.pending_mark_set.take()
             {
                 let frac = frac.clamp(0.0, 1.0);
                 app_state.store_mark_fraction(pane_id, mark_char, frac);
@@ -1811,9 +1815,9 @@ fn handle_ipc_message_offscreen(
             }
         }
         Some("hint-clicked") => {
-            app_state.hint_mode = false;
-            app_state.hint_buffer.clear();
-            app_state.status_message.clear();
+            app_state.ui.hint_mode = false;
+            app_state.ui.hint_buffer.clear();
+            app_state.ui.status_message.clear();
         }
         Some("get-newtab-data") => {
             let bookmarks: Vec<serde_json::Value> = if let Some(db) = app_state.db.as_ref() {
@@ -1868,12 +1872,12 @@ fn handle_ipc_message_offscreen(
                 if let Ok(items) = app_state.bitwarden.search_for_url(&url)
                     && !items.is_empty()
                 {
-                    app_state.autofill_available = true;
+                    app_state.autofill.available = true;
                     if let Some(uid) = msg.get("username_id").and_then(|v| v.as_str()) {
-                        app_state.autofill_username_id = uid.to_string();
+                        app_state.autofill.username_id = uid.to_string();
                     }
                     if let Some(pid) = msg.get("password_id").and_then(|v| v.as_str()) {
-                        app_state.autofill_password_id = pid.to_string();
+                        app_state.autofill.password_id = pid.to_string();
                     }
                     if let Ok(cred) = app_state.bitwarden.get_credential(&items[0].id) {
                         let domain = url::Url::parse(&url)
@@ -1881,18 +1885,18 @@ fn handle_ipc_message_offscreen(
                             .and_then(|u| u.domain().map(String::from))
                             .unwrap_or_else(|| "unknown".into());
                         let js = app_state.bitwarden.autofill_by_id_js(
-                            &app_state.autofill_username_id,
-                            &app_state.autofill_password_id,
+                            &app_state.autofill.username_id,
+                            &app_state.autofill.password_id,
                             &cred,
                         );
-                        app_state.autofill_js = Some(js);
-                        app_state.autofill_status_msg =
+                        app_state.autofill.js = Some(js);
+                        app_state.autofill.status_msg =
                             format!("Auto-filled credentials for {domain}");
                     }
                 }
             } else {
-                app_state.autofill_available = false;
-                app_state.autofill_js = None;
+                app_state.autofill.available = false;
+                app_state.autofill.js = None;
             }
         }
         Some("ext-send-message") => {
@@ -2071,20 +2075,20 @@ mod tests {
     fn auto_save_disabled_does_not_save() {
         let mut app_state = test_app_state();
         app_state.config.auto_save = false;
-        app_state.session_dirty = true;
-        app_state.last_auto_save = std::time::Instant::now()
+        app_state.session.session_dirty = true;
+        app_state.session.last_auto_save = std::time::Instant::now()
             - std::time::Duration::from_secs(app_state.config.auto_save_interval + 10);
         let wry_panes = WryPaneManager::new();
         auto_save_workspace(&mut app_state, &wry_panes);
-        assert!(app_state.session_dirty);
+        assert!(app_state.session.session_dirty);
     }
 
     #[test]
     fn auto_save_session_not_dirty_does_not_save() {
         let mut app_state = test_app_state();
         app_state.config.auto_save = true;
-        app_state.session_dirty = false;
-        app_state.last_auto_save = std::time::Instant::now()
+        app_state.session.session_dirty = false;
+        app_state.session.last_auto_save = std::time::Instant::now()
             - std::time::Duration::from_secs(app_state.config.auto_save_interval + 10);
         let wry_panes = WryPaneManager::new();
         auto_save_workspace(&mut app_state, &wry_panes);
@@ -2094,8 +2098,8 @@ mod tests {
     fn auto_save_interval_not_elapsed_does_not_save() {
         let mut app_state = test_app_state();
         app_state.config.auto_save = true;
-        app_state.session_dirty = true;
-        app_state.last_auto_save = std::time::Instant::now();
+        app_state.session.session_dirty = true;
+        app_state.session.last_auto_save = std::time::Instant::now();
         let wry_panes = WryPaneManager::new();
         auto_save_workspace(&mut app_state, &wry_panes);
     }
@@ -2186,7 +2190,7 @@ mod tests {
         app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
         let _ = tx.send(ArpCommand::TabCreate { url: None });
         process_arp_commands(&mut app_state);
-        assert!(app_state.session_dirty);
+        assert!(app_state.session.session_dirty);
     }
 
     #[test]
@@ -2275,7 +2279,7 @@ mod tests {
         let mut app_state = test_app_state();
         assert!(app_state.pending_import.is_none());
         handle_pending_import(&mut app_state);
-        assert!(app_state.status_message.is_empty());
+        assert!(app_state.ui.status_message.is_empty());
     }
 
     #[test]
@@ -2285,7 +2289,7 @@ mod tests {
         app_state.db = None;
         handle_pending_import(&mut app_state);
         assert!(app_state.pending_import.is_none());
-        assert!(app_state.status_message.contains("No database"));
+        assert!(app_state.ui.status_message.contains("No database"));
     }
 
     #[test]
@@ -2294,7 +2298,12 @@ mod tests {
         app_state.pending_import = Some("safari".into());
         handle_pending_import(&mut app_state);
         assert!(app_state.pending_import.is_none());
-        assert!(app_state.status_message.contains("Unknown import source"));
+        assert!(
+            app_state
+                .ui
+                .status_message
+                .contains("Unknown import source")
+        );
     }
 
     // ─── poll_terminal_output ───────────────────────────────────────────

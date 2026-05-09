@@ -4,7 +4,7 @@ use super::AppState;
 
 impl AppState {
     pub(crate) fn navigate_with_redirects(&mut self, mut url: url::Url) {
-        self.session_dirty = true;
+        self.session.session_dirty = true;
         if let Some(ref engine) = self.lua_engine {
             url = engine.apply_url_redirects(&url);
         }
@@ -32,7 +32,7 @@ impl AppState {
 
         match query {
             "q" | "quit" => {
-                self.should_quit = true;
+                self.session.should_quit = true;
                 return;
             }
             "vs" => {
@@ -51,7 +51,7 @@ impl AppState {
                     crate::servo::wry_engine::percent_encode_path(&path.to_string_lossy());
                 if let Ok(url) = url::Url::parse(&format!("aileron://files?path={encoded}")) {
                     self.navigate_with_redirects(url);
-                    self.status_message = format!("File browser: {}", path.display());
+                    self.ui.status_message = format!("File browser: {}", path.display());
                 }
                 return;
             }
@@ -61,7 +61,7 @@ impl AppState {
         if let Some(name) = query.strip_prefix("layout-save ") {
             let name = name.trim();
             if name.is_empty() {
-                self.status_message = "Usage: :layout-save <name>".into();
+                self.ui.status_message = "Usage: :layout-save <name>".into();
                 return;
             }
             self.pending_wry_actions
@@ -69,18 +69,18 @@ impl AppState {
                     name: name.to_string(),
                     pane_urls: std::collections::HashMap::new(),
                 });
-            self.status_message = format!("Saving layout: {name}...");
+            self.ui.status_message = format!("Saving layout: {name}...");
             return;
         }
 
         if let Some(name) = query.strip_prefix("layout-load ") {
             let name = name.trim();
             if name.is_empty() {
-                self.status_message = "Usage: :layout-load <name>".into();
+                self.ui.status_message = "Usage: :layout-load <name>".into();
                 return;
             }
             self.pending_workspace_restore = Some(name.to_string());
-            self.status_message = format!("Loading layout: {name}...");
+            self.ui.status_message = format!("Loading layout: {name}...");
             return;
         }
 
@@ -91,7 +91,7 @@ impl AppState {
         if let Some(path) = query.strip_prefix("pdf ") {
             let path = path.trim();
             if path.is_empty() {
-                self.status_message = "Usage: :pdf <path-or-url>".into();
+                self.ui.status_message = "Usage: :pdf <path-or-url>".into();
                 return;
             }
             let url = if path.starts_with("http://") || path.starts_with("https://") {
@@ -108,10 +108,10 @@ impl AppState {
             match url {
                 Some(u) => {
                     self.navigate_with_redirects(u);
-                    self.status_message = format!("Loading PDF: {path}");
+                    self.ui.status_message = format!("Loading PDF: {path}");
                 }
                 None => {
-                    self.status_message = format!("!Invalid path or URL: {path}");
+                    self.ui.status_message = format!("!Invalid path or URL: {path}");
                 }
             }
             return;
@@ -120,7 +120,7 @@ impl AppState {
         if let Some(host) = query.strip_prefix("ssh ") {
             let host = host.trim();
             if host.is_empty() {
-                self.status_message = "Usage: ssh <host>".into();
+                self.ui.status_message = "Usage: ssh <host>".into();
                 return;
             }
             self.pending_terminal_command = Some(format!("ssh {host}\n"));
@@ -150,20 +150,20 @@ impl AppState {
         if query == "settings" {
             if let Ok(url) = url::Url::parse("aileron://settings") {
                 self.navigate_with_redirects(url);
-                self.status_message = "Settings".into();
+                self.ui.status_message = "Settings".into();
             }
             return;
         }
 
         if query == "site-settings" {
-            self.site_settings_panel_open = !self.site_settings_panel_open;
-            if self.site_settings_panel_open {
-                self.site_settings_zoom = None;
-                self.site_settings_js = None;
-                self.site_settings_cookies = None;
-                self.site_settings_adblock = None;
-                self.site_settings_url_pattern = String::new();
-                self.status_message = "Site settings panel opened".into();
+            self.panels.site_settings_panel_open = !self.panels.site_settings_panel_open;
+            if self.panels.site_settings_panel_open {
+                self.panels.site_settings_zoom = None;
+                self.panels.site_settings_js = None;
+                self.panels.site_settings_cookies = None;
+                self.panels.site_settings_adblock = None;
+                self.panels.site_settings_url_pattern = String::new();
+                self.ui.status_message = "Site settings panel opened".into();
             }
             return;
         }
@@ -231,7 +231,7 @@ impl AppState {
             let total_panes = self.wm.panes().len();
             let web_count = total_panes - term_count;
             let estimated = crate::profiling::memory::estimate_pane_memory(web_count, term_count);
-            self.status_message = format!(
+            self.ui.status_message = format!(
                 "RSS: {} | WebViews: {}x~50MB | Terminals: {}x~3MB | Est pane: {}",
                 rss,
                 web_count,
@@ -243,7 +243,7 @@ impl AppState {
 
         if query == "stats" {
             let lat = &self.input_latency;
-            self.status_message = if lat.sample_count() == 0 {
+            self.ui.status_message = if lat.sample_count() == 0 {
                 "No latency samples yet. Press some keys.".into()
             } else {
                 format!(
@@ -259,7 +259,7 @@ impl AppState {
 
         if query == "adaptive-quality" || query == "adaptive_quality" {
             self.config.adaptive_quality = !self.config.adaptive_quality;
-            self.status_message = format!(
+            self.ui.status_message = format!(
                 "Adaptive quality: {}",
                 if self.config.adaptive_quality {
                     "on"
@@ -279,9 +279,9 @@ impl AppState {
         }
 
         if query == "tabs" {
-            self.tab_search_open = !self.tab_search_open;
-            self.tab_search_query.clear();
-            self.tab_search_selected = 0;
+            self.panels.tab_search_open = !self.panels.tab_search_open;
+            self.panels.tab_search_query.clear();
+            self.panels.tab_search_selected = 0;
             return;
         }
 
@@ -290,7 +290,7 @@ impl AppState {
         }
 
         if query == "help" || query == "?" {
-            self.help_panel_open = true;
+            self.panels.help_panel_open = true;
             return;
         }
 
@@ -303,15 +303,15 @@ impl AppState {
         }
 
         if query == "crash-reload" {
-            if let Some(url) = self.crashed_pane_url.take() {
-                self.webview_crash_detected = false;
+            if let Some(url) = self.crash.crashed_pane_url.take() {
+                self.crash.webview_crash_detected = false;
                 if let Ok(parsed) = url::Url::parse(&url) {
                     self.pending_wry_actions
                         .push_back(WryAction::Navigate(parsed));
-                    self.status_message = format!("Reloaded crashed pane: {url}");
+                    self.ui.status_message = format!("Reloaded crashed pane: {url}");
                 }
             } else {
-                self.status_message = "No crash to recover from".into();
+                self.ui.status_message = "No crash to recover from".into();
             }
             return;
         }
@@ -358,28 +358,28 @@ impl AppState {
                 } else {
                     "case-insensitive"
                 };
-                self.status_message =
+                self.ui.status_message =
                     format!("Replacing '{old_text}' with '{new_text}' ({mode_str})");
             } else {
-                self.status_message = "Usage: :replace <old> <new> [case]".into();
+                self.ui.status_message = "Usage: :replace <old> <new> [case]".into();
             }
             return;
         }
 
         if query == "import-firefox" {
             if let Some(db) = self.db.as_ref() {
-                self.status_message = super::cmd::import::import_firefox(db);
+                self.ui.status_message = super::cmd::import::import_firefox(db);
             } else {
-                self.status_message = "No database connection".into();
+                self.ui.status_message = "No database connection".into();
             }
             return;
         }
 
         if query == "import-chrome" {
             if let Some(db) = self.db.as_ref() {
-                self.status_message = super::cmd::import::import_chrome(db);
+                self.ui.status_message = super::cmd::import::import_chrome(db);
             } else {
-                self.status_message = "No database connection".into();
+                self.ui.status_message = "No database connection".into();
             }
             return;
         }
@@ -392,14 +392,14 @@ impl AppState {
                 unsafe {
                     std::env::remove_var("all_proxy")
                 };
-                self.status_message = "Proxy disabled".into();
+                self.ui.status_message = "Proxy disabled".into();
             } else {
                 self.config.proxy = Some(proxy_url.to_string());
                 #[allow(unused_unsafe)]
                 unsafe {
                     std::env::set_var("all_proxy", proxy_url)
                 };
-                self.status_message = format!("Proxy: {proxy_url}");
+                self.ui.status_message = format!("Proxy: {proxy_url}");
             }
             return;
         }
@@ -418,7 +418,7 @@ impl AppState {
         }
 
         if query == "engine" {
-            self.status_message = format!("Engine: {}", self.config.engine_selection);
+            self.ui.status_message = format!("Engine: {}", self.config.engine_selection);
             return;
         }
         if query == "engine auto" || query == "engine servo" || query == "engine webkit" {
@@ -426,10 +426,10 @@ impl AppState {
             match val.parse::<crate::servo::EngineSelection>() {
                 Ok(selection) => {
                     self.config.engine_selection = selection.to_string();
-                    self.status_message = format!("Engine: {selection}");
+                    self.ui.status_message = format!("Engine: {selection}");
                 }
                 Err(e) => {
-                    self.status_message = e;
+                    self.ui.status_message = e;
                 }
             }
             return;
@@ -448,7 +448,7 @@ impl AppState {
                             .map(|(k, v)| format!("{k}={v}"))
                             .collect();
                         if all.is_empty() {
-                            self.status_message = "No compat overrides".into();
+                            self.ui.status_message = "No compat overrides".into();
                         } else {
                             let display = all.join(", ");
                             let msg = if display.len() > 80 {
@@ -456,40 +456,41 @@ impl AppState {
                             } else {
                                 display
                             };
-                            self.status_message = format!("Compat overrides: {msg}");
+                            self.ui.status_message = format!("Compat overrides: {msg}");
                         }
                     }
                     "add" => {
                         if let (Some(domain), Some(engine)) = (parts.next(), parts.next()) {
                             let engine = engine.trim();
                             if engine != "webkit" && engine != "servo" {
-                                self.status_message =
+                                self.ui.status_message =
                                     "Usage: compat-override add <domain> webkit|servo".into();
                             } else {
                                 self.config
                                     .compat_overrides
                                     .insert(domain.to_string(), engine.to_string());
-                                self.status_message =
+                                self.ui.status_message =
                                     format!("Compat override: {domain} -> {engine}");
                             }
                         } else {
-                            self.status_message =
+                            self.ui.status_message =
                                 "Usage: compat-override add <domain> webkit|servo".into();
                         }
                     }
                     "remove" => {
                         if let Some(domain) = parts.next() {
                             if self.config.compat_overrides.remove(domain).is_some() {
-                                self.status_message = format!("Removed override for {domain}");
+                                self.ui.status_message = format!("Removed override for {domain}");
                             } else {
-                                self.status_message = format!("No override for {domain}");
+                                self.ui.status_message = format!("No override for {domain}");
                             }
                         } else {
-                            self.status_message = "Usage: compat-override remove <domain>".into();
+                            self.ui.status_message =
+                                "Usage: compat-override remove <domain>".into();
                         }
                     }
                     _ => {
-                        self.status_message = "Usage: compat-override list|add|remove".into();
+                        self.ui.status_message = "Usage: compat-override list|add|remove".into();
                     }
                 }
             }
@@ -507,18 +508,18 @@ impl AppState {
                     .find(|(_, url)| *url == current)
                     .map(|(name, _)| name.as_str())
                     .unwrap_or("default");
-                self.status_message = format!("Search engine: {name} ({current})");
+                self.ui.status_message = format!("Search engine: {name} ({current})");
             } else if engine_name == "default" {
                 self.config.search_engine = "https://duckduckgo.com/?q={query}".into();
-                self.status_message = "Search engine: default (DuckDuckGo)".into();
+                self.ui.status_message = "Search engine: default (DuckDuckGo)".into();
             } else if let Some(url) = self.config.search_engines.get(engine_name) {
                 self.config.search_engine = url.clone();
-                self.status_message = format!("Search engine: {engine_name} ({url})");
+                self.ui.status_message = format!("Search engine: {engine_name} ({url})");
             } else {
                 let available: Vec<&str> = std::iter::once("default")
                     .chain(self.config.search_engines.keys().map(|s| s.as_str()))
                     .collect();
-                self.status_message = format!(
+                self.ui.status_message = format!(
                     "Unknown engine: {}. Available: {}",
                     engine_name,
                     available.join(", ")
@@ -534,7 +535,7 @@ impl AppState {
         if let Some(url_str) = query.strip_prefix("open ") {
             let url_str = url_str.trim();
             if url_str.is_empty() {
-                self.status_message = "Usage: open <url>".into();
+                self.ui.status_message = "Usage: open <url>".into();
                 return;
             }
             let url = if url_str.contains("://") {
@@ -545,10 +546,10 @@ impl AppState {
             match url {
                 Ok(u) => {
                     self.navigate_with_redirects(u);
-                    self.status_message = format!("Opening: {url_str}");
+                    self.ui.status_message = format!("Opening: {url_str}");
                 }
                 Err(e) => {
-                    self.status_message = format!("Invalid URL: {e}");
+                    self.ui.status_message = format!("Invalid URL: {e}");
                 }
             }
             return;
@@ -556,7 +557,7 @@ impl AppState {
 
         if query == "private" || query.starts_with("private ") {
             let active_id = self.wm.active_pane_id();
-            self.private_pane_ids.insert(active_id);
+            self.tabs.private_pane_ids.insert(active_id);
             let target = query.strip_prefix("private ").unwrap_or("").trim();
             if !target.is_empty() {
                 let url_str = if target.contains("://") {
@@ -566,12 +567,12 @@ impl AppState {
                 };
                 if let Ok(url) = url::Url::parse(&url_str) {
                     self.navigate_with_redirects(url);
-                    self.status_message = format!("Private: {target}");
+                    self.ui.status_message = format!("Private: {target}");
                 } else {
-                    self.status_message = "Invalid URL".into();
+                    self.ui.status_message = "Invalid URL".into();
                 }
             } else {
-                self.status_message = "Private mode on (no history saved)".into();
+                self.ui.status_message = "Private mode on (no history saved)".into();
             }
             return;
         }
@@ -584,20 +585,20 @@ impl AppState {
                 let title = url.host_str().unwrap_or("untitled").to_string();
                 let copied = crate::platform::platform().clipboard_copy(&title);
                 if copied {
-                    self.status_message = format!("Copied title: {title}");
+                    self.ui.status_message = format!("Copied title: {title}");
                 } else {
-                    self.status_message = "Clipboard: no clipboard tool available".into();
+                    self.ui.status_message = "Clipboard: no clipboard tool available".into();
                 }
                 return;
             }
-            self.status_message = "No page to yank title from".into();
+            self.ui.status_message = "No page to yank title from".into();
             return;
         }
 
         if let Some(cmd) = query.strip_prefix("!") {
             let cmd = cmd.trim();
             if cmd.is_empty() {
-                self.status_message = "Usage: !<command>".into();
+                self.ui.status_message = "Usage: !<command>".into();
                 return;
             }
             let shell_cmd = crate::platform::platform().shell_command(cmd);
@@ -608,15 +609,15 @@ impl AppState {
                     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     let line = stdout.lines().next().unwrap_or("");
                     if line.len() > 80 {
-                        self.status_message = format!("{}...", &line[..77]);
+                        self.ui.status_message = format!("{}...", &line[..77]);
                     } else if line.is_empty() {
-                        self.status_message = format!("(exit {})", output.status);
+                        self.ui.status_message = format!("(exit {})", output.status);
                     } else {
-                        self.status_message = line.to_string();
+                        self.ui.status_message = line.to_string();
                     }
                 }
                 Err(e) => {
-                    self.status_message = format!("!{cmd}: {e}");
+                    self.ui.status_message = format!("!{cmd}: {e}");
                 }
             }
             return;
@@ -627,16 +628,16 @@ impl AppState {
             let mut parts = rest.splitn(2, ' ');
             if let Some(key) = parts.next() {
                 let value = parts.next().unwrap_or("");
-                self.status_message =
+                self.ui.status_message =
                     super::cmd::settings::apply_set_setting(&mut self.config, key, value);
-                self.config_json_dirty = true;
+                self.cache.config_json_dirty = true;
             }
             return;
         }
 
         if query == "popups" {
             self.config.popup_blocker_enabled = !self.config.popup_blocker_enabled;
-            self.status_message = format!(
+            self.ui.status_message = format!(
                 "Popup blocker: {}",
                 if self.config.popup_blocker_enabled {
                     "on"
@@ -650,7 +651,7 @@ impl AppState {
             let val = val.trim();
             self.config.popup_blocker_enabled =
                 !val.contains("off") && !val.contains("false") && !val.contains("0");
-            self.status_message = format!(
+            self.ui.status_message = format!(
                 "Popup blocker: {}",
                 if self.config.popup_blocker_enabled {
                     "on"
@@ -663,22 +664,22 @@ impl AppState {
 
         if query == "mute" {
             let active_id = self.wm.active_pane_id();
-            self.muted_pane_ids.insert(active_id);
+            self.tabs.muted_pane_ids.insert(active_id);
             self.pending_wry_actions.push_back(WryAction::RunJs(
                 "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = true; el.pause(); });"
                     .into(),
             ));
-            self.status_message = "Muted".into();
+            self.ui.status_message = "Muted".into();
             return;
         }
         if query == "unmute" {
             let active_id = self.wm.active_pane_id();
-            self.muted_pane_ids.remove(&active_id);
+            self.tabs.muted_pane_ids.remove(&active_id);
             self.pending_wry_actions.push_back(WryAction::RunJs(
                 "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = false; });"
                     .into(),
             ));
-            self.status_message = "Unmuted".into();
+            self.ui.status_message = "Unmuted".into();
             return;
         }
 
@@ -690,7 +691,7 @@ impl AppState {
                 let url_str = url.to_string();
                 let domain = url.domain().unwrap_or("unknown");
                 if !self.bitwarden.is_unlocked() {
-                    self.status_message =
+                    self.ui.status_message =
                         format!("No credentials found for {domain} (vault locked)");
                 } else {
                     match self.bitwarden.search_for_url(&url_str) {
@@ -698,50 +699,52 @@ impl AppState {
                             match self.bitwarden.get_credential(&items[0].id) {
                                 Ok(cred) => {
                                     let js = self.bitwarden.autofill_by_id_js(
-                                        &self.autofill_username_id,
-                                        &self.autofill_password_id,
+                                        &self.autofill.username_id,
+                                        &self.autofill.password_id,
                                         &cred,
                                     );
                                     self.pending_wry_actions.push_back(WryAction::RunJs(js));
-                                    self.status_message =
+                                    self.ui.status_message =
                                         format!("Auto-filled credentials for {domain}");
-                                    self.autofill_available = false;
-                                    self.autofill_js = None;
+                                    self.autofill.available = false;
+                                    self.autofill.js = None;
                                 }
-                                Err(e) => self.status_message = format!("Auto-fill failed: {e}"),
+                                Err(e) => self.ui.status_message = format!("Auto-fill failed: {e}"),
                             }
                         }
-                        Ok(_) => self.status_message = format!("No credentials found for {domain}"),
-                        Err(e) => self.status_message = format!("Auto-fill failed: {e}"),
+                        Ok(_) => {
+                            self.ui.status_message = format!("No credentials found for {domain}")
+                        }
+                        Err(e) => self.ui.status_message = format!("Auto-fill failed: {e}"),
                     }
                 }
             } else {
-                self.status_message = "No login form detected".into();
+                self.ui.status_message = "No login form detected".into();
             }
             return;
         }
 
         if query == "theme" {
-            self.status_message = format!("Theme: {}", self.config.theme);
+            self.ui.status_message = format!("Theme: {}", self.config.theme);
             return;
         }
         if query == "theme list" {
             let themes = self.config.available_themes();
-            self.status_message = format!("Themes: {}", themes.join(", "));
+            self.ui.status_message = format!("Themes: {}", themes.join(", "));
             return;
         }
         if let Some(name) = query.strip_prefix("theme ") {
             let name = name.trim();
             if name.is_empty() {
-                self.status_message = format!("Theme: {}", self.config.theme);
+                self.ui.status_message = format!("Theme: {}", self.config.theme);
                 return;
             }
             if self.config.themes.contains_key(name) {
                 self.config.theme = name.to_string();
-                self.status_message = format!("Theme: {name}");
+                self.ui.status_message = format!("Theme: {name}");
             } else {
                 let available = self.config.available_themes();
-                self.status_message = format!(
+                self.ui.status_message = format!(
                     "Unknown theme '{}'. Available: {}",
                     name,
                     available.join(", ")
@@ -754,10 +757,11 @@ impl AppState {
             let letter = query.as_bytes()[1] as char;
             let rest = query[2..].trim();
             if rest.is_empty() {
-                self.status_message = format!(
+                self.ui.status_message = format!(
                     "Quickmark {}: {}",
                     letter,
-                    self.quickmarks
+                    self.session
+                        .quickmarks
                         .get(&letter.to_string())
                         .map(|s| s.as_str())
                         .unwrap_or("(not set)")
@@ -765,28 +769,30 @@ impl AppState {
                 return;
             }
             let key = letter.to_string();
-            self.quickmarks.insert(key.clone(), rest.to_string());
+            self.session
+                .quickmarks
+                .insert(key.clone(), rest.to_string());
             if let Some(ref conn) = self.db
                 && let Err(e) = crate::db::quickmarks::set_quickmark(conn, &key, rest)
             {
                 tracing::warn!("Failed to persist quickmark {}: {}", key, e);
             }
-            self.status_message = format!("Quickmark {letter} set");
+            self.ui.status_message = format!("Quickmark {letter} set");
             return;
         }
 
         if query.starts_with('g') && query.len() == 2 && query.as_bytes()[1].is_ascii_alphabetic() {
             let letter = query.as_bytes()[1] as char;
             let key = letter.to_string();
-            match self.quickmarks.get(&key) {
+            match self.session.quickmarks.get(&key) {
                 Some(url_str) => {
                     if let Ok(url) = url::Url::parse(url_str) {
                         self.navigate_with_redirects(url);
-                        self.status_message = format!("Quickmark {letter}");
+                        self.ui.status_message = format!("Quickmark {letter}");
                     }
                 }
                 None => {
-                    self.status_message = format!("Quickmark {letter} not set");
+                    self.ui.status_message = format!("Quickmark {letter} not set");
                 }
             }
             return;
@@ -805,28 +811,28 @@ impl AppState {
                     self.execute_action(&crate::input::Action::SplitHorizontal);
                     return;
                 } else {
-                    self.status_message = "Invalid URL".into();
+                    self.ui.status_message = "Invalid URL".into();
                 }
             }
             return;
         }
 
         if query == "sync" {
-            self.status_message = super::cmd::sync::execute_sync_push(
+            self.ui.status_message = super::cmd::sync::execute_sync_push(
                 &self.config.sync_target,
                 self.config.sync_encrypted,
             );
             return;
         }
         if query == "sync --pull" {
-            self.status_message = super::cmd::sync::execute_sync_pull(
+            self.ui.status_message = super::cmd::sync::execute_sync_pull(
                 &self.config.sync_target,
                 self.config.sync_encrypted,
             );
             return;
         }
         if query == "sync --both" {
-            self.status_message = super::cmd::sync::execute_sync_push(
+            self.ui.status_message = super::cmd::sync::execute_sync_push(
                 &self.config.sync_target,
                 self.config.sync_encrypted,
             );
@@ -834,11 +840,11 @@ impl AppState {
                 &self.config.sync_target,
                 self.config.sync_encrypted,
             );
-            self.status_message = format!("{} | {}", self.status_message, pull_msg);
+            self.ui.status_message = format!("{} | {}", self.ui.status_message, pull_msg);
             return;
         }
         if query == "sync --status" {
-            self.status_message = super::cmd::sync::execute_sync_status(
+            self.ui.status_message = super::cmd::sync::execute_sync_status(
                 &self.config.sync_target,
                 self.config.sync_encrypted,
                 self.sync_watcher.is_running(),
@@ -847,29 +853,29 @@ impl AppState {
         }
         if query == "sync-watch" {
             if let Err(e) = super::cmd::sync::execute_sync_watch(&self.config.sync_target) {
-                self.status_message = e;
+                self.ui.status_message = e;
             } else {
                 let config_dir = crate::config::Config::config_dir();
                 match self.sync_watcher.start(&config_dir) {
-                    Ok(()) => self.status_message = "Sync watcher started".into(),
-                    Err(e) => self.status_message = format!("Failed to start watcher: {e}"),
+                    Ok(()) => self.ui.status_message = "Sync watcher started".into(),
+                    Err(e) => self.ui.status_message = format!("Failed to start watcher: {e}"),
                 }
             }
             return;
         }
         if query == "sync-stop" {
             self.sync_watcher.stop();
-            self.status_message = "Sync watcher stopped".into();
+            self.ui.status_message = "Sync watcher stopped".into();
             return;
         }
         if let Some(target) = query.strip_prefix("sync-target ") {
             let target = target.trim();
             if target.is_empty() {
-                self.status_message = "Usage: :sync-target <target>".into();
+                self.ui.status_message = "Usage: :sync-target <target>".into();
                 return;
             }
             self.config.sync_target = target.to_string();
-            self.status_message = format!("Sync target: {target}");
+            self.ui.status_message = format!("Sync target: {target}");
             return;
         }
 
@@ -879,12 +885,12 @@ impl AppState {
             } else if let Ok(u) = url::Url::parse(&format!("https://{query}")) {
                 u
             } else {
-                self.status_message = format!("Invalid URL: {query}");
+                self.ui.status_message = format!("Invalid URL: {query}");
                 return;
             };
 
             self.navigate_with_redirects(url);
-            self.status_message = format!("Navigating to {query}");
+            self.ui.status_message = format!("Navigating to {query}");
         } else {
             let known_commands = [
                 "q",
@@ -1006,12 +1012,12 @@ impl AppState {
                 .filter(|c| c.contains(cmd) || cmd.contains(*c))
                 .min_by_key(|c| super::cmd::util::levenshtein_distance(cmd, c));
             if let Some(sug) = suggestion {
-                self.status_message = format!("Unknown command: {cmd} (did you mean :{sug}?)");
+                self.ui.status_message = format!("Unknown command: {cmd} (did you mean :{sug}?)");
             } else if let Some(url) = self.config.search_url(query) {
                 self.navigate_with_redirects(url);
-                self.status_message = format!("Searching: {query}");
+                self.ui.status_message = format!("Searching: {query}");
             } else {
-                self.status_message = format!("Search failed for: {query}");
+                self.ui.status_message = format!("Search failed for: {query}");
             }
         }
     }
@@ -1055,14 +1061,14 @@ mod tests {
     fn test_quit_command() {
         let mut state = make_state();
         state.handle_raw_command("quit");
-        assert!(state.should_quit);
+        assert!(state.session.should_quit);
     }
 
     #[test]
     fn test_q_alias() {
         let mut state = make_state();
         state.handle_raw_command("q");
-        assert!(state.should_quit);
+        assert!(state.session.should_quit);
     }
 
     #[test]
@@ -1070,7 +1076,7 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("set adblock off");
         assert!(!state.config.adblock_enabled);
-        assert!(state.status_message.contains("adblock"));
+        assert!(state.ui.status_message.contains("adblock"));
     }
 
     #[test]
@@ -1129,7 +1135,7 @@ mod tests {
     fn test_unknown_command_suggests() {
         let mut state = make_state();
         state.handle_raw_command("quitt");
-        assert!(state.status_message.contains("did you mean"));
+        assert!(state.ui.status_message.contains("did you mean"));
     }
 
     #[test]
@@ -1142,7 +1148,7 @@ mod tests {
                 .iter()
                 .any(|a| matches!(a, WryAction::Navigate(_)))
         );
-        assert!(state.status_message.contains("Navigating"));
+        assert!(state.ui.status_message.contains("Navigating"));
     }
 
     #[test]
@@ -1173,14 +1179,16 @@ mod tests {
     fn test_open_command_invalid() {
         let mut state = make_state();
         state.handle_raw_command("open :::invalid");
-        assert!(state.status_message.contains("Invalid URL"));
+        assert!(state.ui.status_message.contains("Invalid URL"));
     }
 
     #[test]
     fn test_shell_command() {
         let mut state = make_state();
         state.handle_raw_command("!echo hello");
-        assert!(state.status_message.contains("hello") || state.status_message.contains("echo"));
+        assert!(
+            state.ui.status_message.contains("hello") || state.ui.status_message.contains("echo")
+        );
     }
 
     #[test]
@@ -1193,23 +1201,23 @@ mod tests {
                 .iter()
                 .any(|a| matches!(a, WryAction::Print))
         );
-        assert!(state.status_message.contains("Printing"));
+        assert!(state.ui.status_message.contains("Printing"));
     }
 
     #[test]
     fn test_theme_command() {
         let mut state = make_state();
         state.handle_raw_command("theme");
-        assert!(state.status_message.contains("Theme:"));
+        assert!(state.ui.status_message.contains("Theme:"));
     }
 
     #[test]
     fn test_mute_unmute() {
         let mut state = make_state();
         state.handle_raw_command("mute");
-        assert!(!state.muted_pane_ids.is_empty());
+        assert!(!state.tabs.muted_pane_ids.is_empty());
         state.handle_raw_command("unmute");
-        assert!(state.muted_pane_ids.is_empty());
+        assert!(state.tabs.muted_pane_ids.is_empty());
     }
 
     #[test]
@@ -1228,9 +1236,9 @@ mod tests {
     fn test_privacy_command() {
         let mut state = make_state();
         state.handle_raw_command("privacy");
-        assert!(state.status_message.contains("HTTPS upgrade"));
-        assert!(state.status_message.contains("Tracking protection"));
-        assert!(state.status_message.contains("Adblock"));
+        assert!(state.ui.status_message.contains("HTTPS upgrade"));
+        assert!(state.ui.status_message.contains("Tracking protection"));
+        assert!(state.ui.status_message.contains("Adblock"));
     }
 
     #[test]
@@ -1246,7 +1254,7 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("proxy none");
         assert!(state.config.proxy.is_none());
-        assert!(state.status_message.contains("disabled"));
+        assert!(state.ui.status_message.contains("disabled"));
     }
 
     #[test]
@@ -1254,8 +1262,8 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("extensions");
         assert!(
-            state.status_message.contains("No extensions")
-                || state.status_message.contains("Extensions:")
+            state.ui.status_message.contains("No extensions")
+                || state.ui.status_message.contains("Extensions:")
         );
     }
 
@@ -1263,46 +1271,46 @@ mod tests {
     fn test_cookies_clear() {
         let mut state = make_state();
         state.handle_raw_command("cookies-clear");
-        assert!(state.status_message.contains("Cookies cleared"));
+        assert!(state.ui.status_message.contains("Cookies cleared"));
     }
 
     #[test]
     fn test_keyring_test() {
         let mut state = make_state();
         state.handle_raw_command("keyring-test");
-        assert!(state.status_message.contains("keyring"));
+        assert!(state.ui.status_message.contains("keyring"));
     }
 
     #[test]
     fn test_memory_command() {
         let mut state = make_state();
         state.handle_raw_command("memory");
-        assert!(state.status_message.contains("RSS"));
+        assert!(state.ui.status_message.contains("RSS"));
     }
 
     #[test]
     fn test_history_toggle() {
         let mut state = make_state();
         state.handle_raw_command("history");
-        assert!(state.history_panel_open);
+        assert!(state.panels.history_panel_open);
         state.handle_raw_command("history");
-        assert!(!state.history_panel_open);
+        assert!(!state.panels.history_panel_open);
     }
 
     #[test]
     fn test_history_clear() {
         let mut state = make_state();
         state.handle_raw_command("history-clear");
-        assert!(!state.status_message.is_empty());
+        assert!(!state.ui.status_message.is_empty());
     }
 
     #[test]
     fn test_tabs_toggle() {
         let mut state = make_state();
         state.handle_raw_command("tabs");
-        assert!(state.tab_search_open);
+        assert!(state.panels.tab_search_open);
         state.handle_raw_command("tabs");
-        assert!(!state.tab_search_open);
+        assert!(!state.panels.tab_search_open);
     }
 
     #[test]
@@ -1310,9 +1318,9 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("autofill");
         assert!(
-            state.status_message.contains("vault locked")
-                || state.status_message.contains("credentials")
-                || state.status_message.contains("login form")
+            state.ui.status_message.contains("vault locked")
+                || state.ui.status_message.contains("credentials")
+                || state.ui.status_message.contains("login form")
         );
     }
 
@@ -1327,21 +1335,21 @@ mod tests {
                 .any(|a| matches!(a, WryAction::Navigate(_))),
             "pdf command should queue a Navigate action"
         );
-        assert!(state.status_message.contains("Loading PDF"));
+        assert!(state.ui.status_message.contains("Loading PDF"));
     }
 
     #[test]
     fn test_pdf_command_empty_path() {
         let mut state = make_state();
         state.handle_raw_command("pdf ");
-        assert!(state.status_message.contains("Usage"));
+        assert!(state.ui.status_message.contains("Usage"));
     }
 
     #[test]
     fn test_pdf_command_usage() {
         let mut state = make_state();
         state.handle_raw_command("pdf  ");
-        assert!(state.status_message.contains("Usage"));
+        assert!(state.ui.status_message.contains("Usage"));
     }
 
     #[test]
@@ -1362,8 +1370,8 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("extension-list");
         assert!(
-            state.status_message.contains("No extensions")
-                || state.status_message.contains("Extensions (")
+            state.ui.status_message.contains("No extensions")
+                || state.ui.status_message.contains("Extensions (")
         );
     }
 
@@ -1372,20 +1380,20 @@ mod tests {
         let mut state = make_state();
         state.extension_manager.write().register_builtin_adblock();
         state.handle_raw_command("extension-enable aileron-adblock@builtin");
-        assert!(state.status_message.contains("already enabled"));
+        assert!(state.ui.status_message.contains("already enabled"));
     }
 
     #[test]
     fn test_extension_enable_not_found() {
         let mut state = make_state();
         state.handle_raw_command("extension-enable nonexistent@example.com");
-        assert!(state.status_message.contains("Failed to enable"));
+        assert!(state.ui.status_message.contains("Failed to enable"));
     }
 
     #[test]
     fn test_extension_enable_usage() {
         let mut state = make_state();
         state.handle_raw_command("extension-enable ");
-        assert!(state.status_message.contains("Usage"));
+        assert!(state.ui.status_message.contains("Usage"));
     }
 }

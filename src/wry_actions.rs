@@ -180,14 +180,14 @@ pub fn process_wry_action(
                     if let Err(e) = crate::db::bookmarks::remove_bookmark(conn, &url_str) {
                         tracing::warn!("Failed to remove bookmark: {}", e);
                     }
-                    app_state.status_message = format!("Bookmark removed: {display_title}");
+                    app_state.ui.status_message = format!("Bookmark removed: {display_title}");
                 } else {
                     if let Err(e) =
                         crate::db::bookmarks::add_bookmark(conn, &url_str, display_title)
                     {
                         tracing::warn!("Failed to add bookmark: {}", e);
                     }
-                    app_state.status_message = format!("Bookmarked: {display_title}");
+                    app_state.ui.status_message = format!("Bookmarked: {display_title}");
                 }
             }
         }
@@ -477,7 +477,7 @@ pub fn process_wry_action(
             if let Some(app_state) = app_state {
                 match app_state.save_workspace_with_urls(&name, &pane_urls) {
                     Ok(()) => {
-                        app_state.status_message = format!("Workspace saved: {name}");
+                        app_state.ui.status_message = format!("Workspace saved: {name}");
                         info!("Workspace saved: {} ({} panes)", name, pane_urls.len());
                     }
                     Err(e) => {
@@ -527,7 +527,7 @@ pub fn process_wry_action(
                 }
             );
             if let Some(app_state) = app_state {
-                app_state.status_message = msg;
+                app_state.ui.status_message = msg;
             }
         }
         crate::app::WryAction::GetNetworkLog => {
@@ -537,10 +537,10 @@ pub fn process_wry_action(
                 });
             if let Some(msg) = json.as_ref().and_then(|j| format_network_log(j)) {
                 if let Some(app_state) = app_state {
-                    app_state.status_message = msg;
+                    app_state.ui.status_message = msg;
                 }
             } else if let Some(app_state) = app_state {
-                app_state.status_message = "Network log: empty or no active pane".into();
+                app_state.ui.status_message = "Network log: empty or no active pane".into();
             }
         }
         crate::app::WryAction::ClearNetworkLog => {
@@ -550,7 +550,7 @@ pub fn process_wry_action(
                 pane.execute_js(crate::servo::NETWORK_CLEAR_JS);
             }
             if let Some(app_state) = app_state {
-                app_state.status_message = "Network log cleared".into();
+                app_state.ui.status_message = "Network log cleared".into();
             }
         }
         crate::app::WryAction::GetConsoleLog => {
@@ -560,10 +560,10 @@ pub fn process_wry_action(
                 });
             if let Some(msg) = json.as_ref().and_then(|j| format_console_log(j)) {
                 if let Some(app_state) = app_state {
-                    app_state.status_message = msg;
+                    app_state.ui.status_message = msg;
                 }
             } else if let Some(app_state) = app_state {
-                app_state.status_message = "Console log: empty or no active pane".into();
+                app_state.ui.status_message = "Console log: empty or no active pane".into();
             }
         }
         crate::app::WryAction::ClearConsoleLog => {
@@ -573,7 +573,7 @@ pub fn process_wry_action(
                 pane.execute_js(crate::servo::CONSOLE_CLEAR_JS);
             }
             if let Some(app_state) = app_state {
-                app_state.status_message = "Console log cleared".into();
+                app_state.ui.status_message = "Console log cleared".into();
             }
         }
         crate::app::WryAction::SaveConfig => {
@@ -582,10 +582,10 @@ pub fn process_wry_action(
             };
             match crate::config::Config::save(&app_state.config) {
                 Ok(()) => {
-                    app_state.status_message = "Config saved".into();
+                    app_state.ui.status_message = "Config saved".into();
                 }
                 Err(e) => {
-                    app_state.status_message = format!("Save failed: {e}");
+                    app_state.ui.status_message = format!("Save failed: {e}");
                 }
             }
         }
@@ -595,20 +595,20 @@ pub fn process_wry_action(
             } else if wry_panes.get(&active_id).is_some() {
                 info!("Print requested for native pane (not supported)");
                 if let Some(app_state) = app_state {
-                    app_state.status_message = "Print: use :print in offscreen mode".into();
+                    app_state.ui.status_message = "Print: use :print in offscreen mode".into();
                 }
             } else if let Some(app_state) = app_state {
-                app_state.status_message = "No active pane to print".into();
+                app_state.ui.status_message = "No active pane to print".into();
             }
         }
         crate::app::WryAction::ToggleMute => {
             let js = if let Some(app_state) = app_state {
                 let active_id = app_state.wm.active_pane_id();
-                if app_state.muted_pane_ids.contains(&active_id) {
-                    app_state.muted_pane_ids.remove(&active_id);
+                if app_state.tabs.muted_pane_ids.contains(&active_id) {
+                    app_state.tabs.muted_pane_ids.remove(&active_id);
                     "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = false; });"
                 } else {
-                    app_state.muted_pane_ids.insert(active_id);
+                    app_state.tabs.muted_pane_ids.insert(active_id);
                     "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = true; el.pause(); });"
                 }
             } else {
@@ -628,7 +628,7 @@ pub fn process_wry_action(
             if let Some(app_state) = app_state
                 && copied
             {
-                app_state.status_message = "Clipboard updated (via ARP)".into();
+                app_state.ui.status_message = "Clipboard updated (via ARP)".into();
             }
         }
     }

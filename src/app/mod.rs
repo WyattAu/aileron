@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -7,9 +7,14 @@ use tracing::{info, warn};
 pub mod cmd;
 pub mod commands;
 pub mod dispatch;
+pub mod event_handler;
 pub mod events;
+pub mod instance;
 pub mod omnibox;
 pub mod palette;
+pub mod panes;
+pub mod popup;
+pub mod render;
 
 use crate::config::Config;
 use crate::db::bookmarks;
@@ -22,6 +27,7 @@ use crate::ui::palette::CommandPalette;
 use crate::ui::search::SearchCategory;
 use crate::ui::search::SearchItem;
 use crate::wm::{BspTree, Rect};
+use uuid::Uuid;
 
 /// Actions to be executed on wry panes by main.rs.
 /// Used as a bridge since AppState doesn't own WryPaneManager.
@@ -98,40 +104,148 @@ pub struct TabDisplayInfo {
     pub truncated_url: String,
 }
 
+#[derive(Default)]
+pub struct CrashRecoveryState {
+    pub webview_crash_detected: bool,
+    pub crashed_pane_url: Option<String>,
+    pub crashed_pane_id: Option<Uuid>,
+}
+
+#[derive(Default)]
+pub struct AutofillState {
+    pub available: bool,
+    pub username_id: String,
+    pub password_id: String,
+    pub js: Option<String>,
+    pub status_msg: String,
+}
+
+#[derive(Default)]
+pub struct PanelState {
+    pub history_panel_open: bool,
+    pub history_entries: Vec<crate::db::history::HistoryEntry>,
+    pub history_selected: usize,
+    pub tab_search_open: bool,
+    pub tab_search_query: String,
+    pub tab_search_selected: usize,
+    pub bookmarks_panel_open: bool,
+    pub bookmarks_entries: Vec<crate::db::bookmarks::Bookmark>,
+    pub bookmarks_selected: usize,
+    pub help_panel_open: bool,
+    pub workspace_panel_open: bool,
+    pub workspace_entries: Vec<crate::db::workspaces::Workspace>,
+    pub workspace_selected: usize,
+    pub site_settings_panel_open: bool,
+    pub site_settings_zoom: Option<f64>,
+    pub site_settings_js: Option<bool>,
+    pub site_settings_cookies: Option<bool>,
+    pub site_settings_adblock: Option<bool>,
+    pub site_settings_url_pattern: String,
+}
+
+pub struct SessionState {
+    pub should_quit: bool,
+    pub session_dirty: bool,
+    pub last_auto_save: std::time::Instant,
+    marks: HashMap<Uuid, HashMap<char, f64>>,
+    pending_mark_action: Option<char>,
+    pub pending_mark_set: Option<char>,
+    pub pending_mark_jump: Option<f64>,
+    pub quickmarks: HashMap<String, String>,
+}
+
+pub struct TabState {
+    pub closed_tab_stack: VecDeque<(String, String)>,
+    pub tab_names: HashMap<String, String>,
+    pub muted_pane_ids: HashSet<Uuid>,
+    pub pinned_pane_ids: HashSet<Uuid>,
+    pub private_pane_ids: HashSet<Uuid>,
+    pub reader_mode_panes: HashSet<Uuid>,
+    pub minimal_mode_panes: HashSet<Uuid>,
+    pub last_active_pane_id: Option<Uuid>,
+    pub tab_display_cache: HashMap<Uuid, TabDisplayInfo>,
+    pub tab_display_dirty: bool,
+}
+
+#[derive(Default)]
+pub struct UiState {
+    pub url_bar_focused: bool,
+    pub url_bar_input: String,
+    pub command_palette_input: String,
+    pub find_bar_open: bool,
+    pub find_query: String,
+    pub hint_mode: bool,
+    pub hint_new_tab: bool,
+    pub hint_buffer: String,
+    pub omnibox_results: Vec<SearchItem>,
+    pub omnibox_selected: usize,
+    pub last_omnibox_query: String,
+    pub status_message: String,
+    pub accessibility_text: String,
+}
+
+pub struct CacheState {
+    pub cached_pane_count: usize,
+    pub pane_count_dirty: bool,
+    pub config_json_cache: String,
+    pub config_json_dirty: bool,
+    pub https_safe_list_cache: Option<HashSet<String>>,
+    https_safe_list_debug_flag: bool,
+}
+
+impl Default for SessionState {
+    fn default() -> Self {
+        Self {
+            should_quit: false,
+            session_dirty: false,
+            last_auto_save: std::time::Instant::now(),
+            marks: HashMap::new(),
+            pending_mark_action: None,
+            pending_mark_set: None,
+            pending_mark_jump: None,
+            quickmarks: HashMap::new(),
+        }
+    }
+}
+
+impl Default for TabState {
+    fn default() -> Self {
+        Self {
+            closed_tab_stack: VecDeque::new(),
+            tab_names: HashMap::new(),
+            muted_pane_ids: HashSet::new(),
+            pinned_pane_ids: HashSet::new(),
+            private_pane_ids: HashSet::new(),
+            reader_mode_panes: HashSet::new(),
+            minimal_mode_panes: HashSet::new(),
+            last_active_pane_id: None,
+            tab_display_cache: HashMap::new(),
+            tab_display_dirty: true,
+        }
+    }
+}
+
+impl Default for CacheState {
+    fn default() -> Self {
+        Self {
+            cached_pane_count: 0,
+            pane_count_dirty: true,
+            config_json_cache: String::new(),
+            config_json_dirty: true,
+            https_safe_list_cache: None,
+            https_safe_list_debug_flag: false,
+        }
+    }
+}
+
 pub struct AppState {
     pub wm: BspTree,
     pub mode: Mode,
     pub keybindings: KeybindingRegistry,
-    pub should_quit: bool,
-    pub command_palette_input: String,
-    /// Find-in-page bar state.
-    pub find_bar_open: bool,
-    pub find_query: String,
-    /// URL bar editing state.
-    pub url_bar_focused: bool,
-    pub url_bar_input: String,
-    /// Omnibox dropdown results (shown when URL bar is focused and has input).
-    pub omnibox_results: Vec<crate::ui::SearchItem>,
-    /// Index of the selected omnibox result (for keyboard navigation).
-    pub omnibox_selected: usize,
-    /// Last query used for omnibox update (to avoid redundant recomputation).
-    pub last_omnibox_query: String,
-    /// Whether link hint mode is active (digits are captured to follow links).
-    pub hint_mode: bool,
-    /// Whether hints should open links in new tabs (F key) vs navigate (f key).
-    pub hint_new_tab: bool,
-    /// Buffer for accumulating hint digits while in link hint mode.
-    pub hint_buffer: String,
     pub db: Option<rusqlite::Connection>,
-    pub status_message: String,
 
     /// Web engine manager — one engine instance per pane.
     pub engines: PaneStateManager,
-
-    /// Per-pane mode: which panes are in reader mode.
-    pub reader_mode_panes: std::collections::HashSet<uuid::Uuid>,
-    /// Per-pane mode: which panes are in minimal mode.
-    pub minimal_mode_panes: std::collections::HashSet<uuid::Uuid>,
 
     /// Command palette state.
     pub palette: CommandPalette,
@@ -158,7 +272,7 @@ pub struct AppState {
     /// Set of pane IDs that should be terminal panes (not web panes).
     /// main.rs checks this when creating wry panes and uses the terminal
     /// custom protocol + IPC handler instead of regular web navigation.
-    pub terminal_pane_ids: std::collections::HashSet<uuid::Uuid>,
+    pub terminal_pane_ids: HashSet<Uuid>,
 
     /// Bitwarden password manager client.
     pub bitwarden: BitwardenClient,
@@ -168,7 +282,7 @@ pub struct AppState {
 
     /// Pane ID pending close from tab sidebar click.
     /// Consumed by main.rs in about_to_wait.
-    pub pending_tab_close: Option<uuid::Uuid>,
+    pub pending_tab_close: Option<Uuid>,
 
     /// When true, the next about_to_wait iteration requests a new popup window.
     pub pending_new_window: bool,
@@ -176,50 +290,12 @@ pub struct AppState {
     /// URL to navigate a popup window to after creation (from pane detach).
     pub pending_detach_url: Option<url::Url>,
 
-    /// Quickmarks — bookmarks mapping to URLs (single-char or short string keys).
-    pub(crate) quickmarks: std::collections::HashMap<String, String>,
-
-    /// Per-pane scroll marks. Maps pane_id → letter → scroll fraction (0.0-1.0).
-    marks: std::collections::HashMap<uuid::Uuid, std::collections::HashMap<char, f64>>,
-
-    /// Pending mark action: Some('s') means "waiting for mark letter to set",
-    /// Some('g') means "waiting for mark letter to go to".
-    pending_mark_action: Option<char>,
-
-    /// Pending mark-set letter. Set when user presses `m` then a letter.
-    /// The JS callback will store the actual scroll fraction once received.
-    pub pending_mark_set: Option<char>,
-
-    /// Pending scroll-to-mark fraction. Set when user jumps to a mark.
-    /// The render loop consumes this to scroll the webview.
-    pub pending_mark_jump: Option<f64>,
-
-    /// ID of the previously active pane, for tab-swap.
-    pub(crate) last_active_pane_id: Option<uuid::Uuid>,
-
     /// Per-pane last-focus timestamp for LRU tab unloading.
     /// Updated each time a pane becomes active.
-    pane_last_focus: std::collections::HashMap<uuid::Uuid, std::time::Instant>,
-
-    /// Timestamp of last auto-save. Used for debouncing.
-    pub last_auto_save: std::time::Instant,
-
-    /// Whether the user has interacted with this session.
-    /// Prevents auto-saving a fresh session (just the homepage).
-    pub session_dirty: bool,
+    pane_last_focus: HashMap<Uuid, std::time::Instant>,
 
     /// Tracks key-to-frame latency for profiling.
     pub input_latency: crate::profiling::InputLatencyTracker,
-
-    /// Set of pane IDs that are muted (media paused + muted).
-    pub muted_pane_ids: std::collections::HashSet<uuid::Uuid>,
-
-    /// Set of pane IDs that are pinned (cannot be closed).
-    pub pinned_pane_ids: std::collections::HashSet<uuid::Uuid>,
-    /// Set of pane IDs in private/incognito mode (no history saved).
-    pub private_pane_ids: std::collections::HashSet<uuid::Uuid>,
-    /// Custom tab names keyed by pane ID string.
-    pub tab_names: std::collections::HashMap<String, String>,
 
     /// Adblock blocked request count (updated by main.rs each frame).
     pub adblock_blocked_count: u64,
@@ -243,120 +319,24 @@ pub struct AppState {
     pub arp_cmd_receiver:
         Option<std::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<crate::arp::ArpCommand>>>,
 
-    /// Whether the history panel overlay is open.
-    pub history_panel_open: bool,
-
-    /// Cached history entries for the history panel.
-    pub history_entries: Vec<crate::db::history::HistoryEntry>,
-
-    /// Selected index in the history panel (for j/k navigation).
-    pub history_selected: usize,
-
-    /// Whether the tab search panel overlay is open.
-    pub tab_search_open: bool,
-
-    /// Filter query for the tab search panel.
-    pub tab_search_query: String,
-
-    /// Selected index in the tab search panel (for j/k navigation).
-    pub tab_search_selected: usize,
-
-    /// Stack of recently closed tabs for :tab-restore.
-    /// Each entry is (url, title).
-    pub closed_tab_stack: std::collections::VecDeque<(String, String)>,
-
-    /// Whether the bookmarks panel overlay is open.
-    pub bookmarks_panel_open: bool,
-
-    /// Cached bookmarks for the bookmarks panel.
-    pub bookmarks_entries: Vec<crate::db::bookmarks::Bookmark>,
-
-    /// Selected index in the bookmarks panel (for j/k navigation).
-    pub bookmarks_selected: usize,
-
-    /// Whether the help panel overlay is open.
-    pub help_panel_open: bool,
-
-    /// Whether the workspace panel overlay is open.
-    pub workspace_panel_open: bool,
-
-    /// Cached workspace entries for the workspace panel.
-    pub workspace_entries: Vec<crate::db::workspaces::Workspace>,
-
-    /// Selected index in the workspace panel (for j/k navigation).
-    pub workspace_selected: usize,
-
-    /// Whether the per-site settings panel is open.
-    pub site_settings_panel_open: bool,
-
-    /// Current per-site settings values (loaded from DB when panel opens).
-    pub site_settings_zoom: Option<f64>,
-    pub site_settings_js: Option<bool>,
-    pub site_settings_cookies: Option<bool>,
-    pub site_settings_adblock: Option<bool>,
-    pub site_settings_url_pattern: String,
-
-    /// Whether a webview crash was detected this frame (for recovery UI).
-    pub webview_crash_detected: bool,
-
-    /// URL of the pane that crashed (for reload recovery).
-    pub crashed_pane_url: Option<String>,
-
     /// Pending bookmark import: "firefox" or "chrome".
     pub pending_import: Option<String>,
-
-    /// ID of the pane that crashed.
-    pub crashed_pane_id: Option<uuid::Uuid>,
 
     /// Pending URL to open in a new tab (set by `:g <url>` command).
     pub pending_new_tab_url: Option<url::Url>,
 
-    /// Whether auto-fill is available for the current page.
-    /// Set to true when a login form is detected and Bitwarden has credentials.
-    pub autofill_available: bool,
-
-    /// Username field ID detected on the current page (for getElementById fill).
-    pub autofill_username_id: String,
-
-    /// Password field ID detected on the current page (for getElementById fill).
-    pub autofill_password_id: String,
-
-    /// Pre-computed JS to inject when user triggers auto-fill.
-    /// Generated when autofill_available is set to avoid blocking the UI.
-    pub autofill_js: Option<String>,
-
-    /// Status message to display after auto-fill is triggered.
-    pub autofill_status_msg: String,
-
     /// Per-pane tracking of already-injected content script IDs.
     /// Keys are pane IDs, values are sets of "extension_id:script_id" strings.
     /// Cleared on each LoadStarted to allow re-injection on new navigations.
-    pub injected_content_script_ids:
-        std::collections::HashMap<uuid::Uuid, std::collections::HashSet<String>>,
+    pub injected_content_script_ids: HashMap<Uuid, HashSet<String>>,
 
-    /// Cached tab display info to avoid per-frame title/url string allocations.
-    pub tab_display_cache: std::collections::HashMap<uuid::Uuid, TabDisplayInfo>,
-    /// Whether the tab display cache needs recomputation.
-    pub tab_display_dirty: bool,
-
-    /// Cached config JSON for get-config IPC (avoids per-message serialization).
-    pub config_json_cache: String,
-    /// Whether the config JSON cache needs recomputation.
-    pub config_json_dirty: bool,
-
-    /// Cached pane leaf count for status bar (avoids per-frame tree traversal).
-    pub cached_pane_count: usize,
-    /// Whether the cached pane count needs recomputation.
-    pub pane_count_dirty: bool,
-
-    /// Cached HTTPS safe list (avoids re-reading from disk on every pane creation).
-    pub https_safe_list_cache: Option<std::collections::HashSet<String>>,
-    /// Tracks whether AILERON_DEBUG was set when the cache was populated.
-    https_safe_list_debug_flag: bool,
-
-    /// Accessibility live-region text summarizing current state for screen readers.
-    /// Updated on important state changes (mode, URL, pane close, navigation, error).
-    pub accessibility_text: String,
+    pub ui: UiState,
+    pub panels: PanelState,
+    pub tabs: TabState,
+    pub session: SessionState,
+    pub crash: CrashRecoveryState,
+    pub autofill: AutofillState,
+    pub cache: CacheState,
 }
 
 impl AppState {
@@ -375,15 +355,6 @@ impl AppState {
                 info!("Applied {} custom keybinding(s)", applied);
             }
         }
-        let should_quit = false;
-        let command_palette_input = String::new();
-        let find_bar_open = false;
-        let find_query = String::new();
-        let url_bar_focused = false;
-        let url_bar_input = String::new();
-        let hint_mode = false;
-        let hint_new_tab = false;
-        let hint_buffer = String::new();
 
         let db_path = Self::db_path()?;
         let db = match std::fs::create_dir_all(db_path.parent().unwrap()) {
@@ -482,7 +453,7 @@ impl AppState {
         let mut quickmarks = if let Some(ref conn) = db {
             crate::db::quickmarks::load_quickmarks(conn).unwrap_or_default()
         } else {
-            std::collections::HashMap::new()
+            HashMap::new()
         };
 
         // Seed default quickmarks if none exist
@@ -508,7 +479,7 @@ impl AppState {
         let tab_names = if let Some(ref conn) = db {
             crate::db::tab_names::load_tab_names(conn).unwrap_or_default()
         } else {
-            std::collections::HashMap::new()
+            HashMap::new()
         };
 
         // Create extension manager and inject into Lua engine
@@ -519,53 +490,36 @@ impl AppState {
             engine.set_extension_manager(extension_manager.clone());
         }
 
+        let session = SessionState {
+            quickmarks,
+            ..Default::default()
+        };
+
+        let tabs = TabState {
+            tab_names,
+            ..Default::default()
+        };
+
         Ok(Self {
             wm,
             mode,
             keybindings,
-            should_quit,
-            command_palette_input,
-            find_bar_open,
-            find_query,
-            url_bar_focused,
-            url_bar_input,
-            omnibox_results: Vec::new(),
-            omnibox_selected: 0,
-            last_omnibox_query: String::new(),
-            hint_mode,
-            hint_new_tab,
-            hint_buffer,
             db,
-            status_message: String::new(),
             engines,
-            reader_mode_panes: std::collections::HashSet::new(),
-            minimal_mode_panes: std::collections::HashSet::new(),
             palette,
             lua_engine,
             config,
             pending_wry_actions: VecDeque::new(),
             pending_workspace_restore: None,
             current_workspace_name: "default".into(),
-            terminal_pane_ids: std::collections::HashSet::new(),
+            terminal_pane_ids: HashSet::new(),
             bitwarden: BitwardenClient::new(),
             pending_terminal_command: None,
             pending_tab_close: None,
             pending_new_window: false,
             pending_detach_url: None,
-            quickmarks,
-            marks: std::collections::HashMap::new(),
-            pending_mark_action: None,
-            pending_mark_set: None,
-            pending_mark_jump: None,
-            last_active_pane_id: None,
-            pane_last_focus: std::collections::HashMap::new(),
-            last_auto_save: std::time::Instant::now(),
-            session_dirty: false,
+            pane_last_focus: HashMap::new(),
             input_latency: crate::profiling::InputLatencyTracker::new(),
-            muted_pane_ids: std::collections::HashSet::new(),
-            pinned_pane_ids: std::collections::HashSet::new(),
-            private_pane_ids: std::collections::HashSet::new(),
-            tab_names,
             adblock_blocked_count: 0,
             extension_manager: extension_manager.clone(),
             sync_watcher: crate::sync::watcher::SyncWatcher::new(),
@@ -576,65 +530,37 @@ impl AppState {
             ),
             arp_server: None,
             arp_cmd_receiver: None,
-            history_panel_open: false,
-            history_entries: Vec::new(),
-            history_selected: 0,
-            tab_search_open: false,
-            tab_search_query: String::new(),
-            tab_search_selected: 0,
-            closed_tab_stack: std::collections::VecDeque::new(),
-            bookmarks_panel_open: false,
-            bookmarks_entries: Vec::new(),
-            bookmarks_selected: 0,
-            help_panel_open: false,
-            workspace_panel_open: false,
-            workspace_entries: Vec::new(),
-            workspace_selected: 0,
-            site_settings_panel_open: false,
-            site_settings_zoom: None,
-            site_settings_js: None,
-            site_settings_cookies: None,
-            site_settings_adblock: None,
-            site_settings_url_pattern: String::new(),
-            webview_crash_detected: false,
-            crashed_pane_url: None,
             pending_import: None,
-            crashed_pane_id: None,
             pending_new_tab_url: None,
-            autofill_available: false,
-            autofill_username_id: String::new(),
-            autofill_password_id: String::new(),
-            autofill_js: None,
-            autofill_status_msg: String::new(),
-            injected_content_script_ids: std::collections::HashMap::new(),
-            tab_display_cache: std::collections::HashMap::new(),
-            tab_display_dirty: true,
-            config_json_cache: String::new(),
-            config_json_dirty: true,
-            cached_pane_count: 0,
-            pane_count_dirty: true,
-            https_safe_list_cache: None,
-            https_safe_list_debug_flag: false,
-            accessibility_text: String::new(),
+            injected_content_script_ids: HashMap::new(),
+            ui: UiState::default(),
+            panels: PanelState::default(),
+            tabs,
+            session,
+            crash: CrashRecoveryState::default(),
+            autofill: AutofillState::default(),
+            cache: CacheState::default(),
         })
     }
 
-    pub fn get_cached_https_safe_list(&mut self) -> std::collections::HashSet<String> {
+    pub fn get_cached_https_safe_list(&mut self) -> HashSet<String> {
         let current_debug = std::env::var("AILERON_DEBUG").is_ok();
-        if self.https_safe_list_cache.is_some() && self.https_safe_list_debug_flag == current_debug
+        if self.cache.https_safe_list_cache.is_some()
+            && self.cache.https_safe_list_debug_flag == current_debug
         {
-            return self.https_safe_list_cache.clone().unwrap();
+            return self.cache.https_safe_list_cache.clone().unwrap();
         }
         let list = crate::net::privacy::load_https_safe_list();
-        self.https_safe_list_debug_flag = current_debug;
-        self.https_safe_list_cache = Some(list.clone());
+        self.cache.https_safe_list_debug_flag = current_debug;
+        self.cache.https_safe_list_cache = Some(list.clone());
         list
     }
 
     /// Store a scroll mark fraction for a pane. Called from the IPC handler
     /// when the webview reports its scroll position back to Rust.
     pub fn store_mark_fraction(&mut self, pane_id: uuid::Uuid, mark: char, fraction: f64) {
-        self.marks
+        self.session
+            .marks
             .entry(pane_id)
             .or_default()
             .insert(mark, fraction);
@@ -699,9 +625,9 @@ impl AppState {
     /// Clean up per-pane state when a pane is closed. Prevents memory leaks.
     pub fn cleanup_pane_state(&mut self, pane_id: &uuid::Uuid) {
         self.pane_last_focus.remove(pane_id);
-        self.marks.remove(pane_id);
-        self.tab_names.remove(&pane_id.to_string());
-        self.private_pane_ids.remove(pane_id);
+        self.session.marks.remove(pane_id);
+        self.tabs.tab_names.remove(&pane_id.to_string());
+        self.tabs.private_pane_ids.remove(pane_id);
     }
 
     /// Execute a command string (URL, keybind, etc.) from the command palette.
@@ -712,14 +638,15 @@ impl AppState {
 
     /// Look up a quickmark URL by its key string.
     pub fn quickmarks_get(&self, key: &str) -> Option<url::Url> {
-        self.quickmarks
+        self.session
+            .quickmarks
             .get(key)
             .and_then(|s| url::Url::parse(s).ok())
     }
 
-    /// Get all quickmarks as (key, url) pairs.
     pub fn quickmarks_list(&self) -> Vec<(String, String)> {
-        self.quickmarks
+        self.session
+            .quickmarks
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
@@ -732,7 +659,11 @@ impl AppState {
             && let Ok(db_marks) = crate::db::scroll_marks::load_scroll_marks_for_url(conn, url)
             && !db_marks.is_empty()
         {
-            self.marks.entry(pane_id).or_default().extend(db_marks);
+            self.session
+                .marks
+                .entry(pane_id)
+                .or_default()
+                .extend(db_marks);
         }
     }
 
@@ -838,7 +769,7 @@ mod tests {
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
         let mut state = AppState::new(viewport, Config::default()).unwrap();
         state.execute_command("quit && open example.com");
-        assert!(state.should_quit);
+        assert!(state.session.should_quit);
     }
 
     #[test]
@@ -847,7 +778,7 @@ mod tests {
         let mut state = AppState::new(viewport, Config::default()).unwrap();
         state.handle_raw_command("vs && sp && swap");
         // vs and sp should have created splits; swap should show "No previous pane"
-        assert_eq!(state.status_message, "No previous pane");
+        assert_eq!(state.ui.status_message, "No previous pane");
     }
 
     #[test]
@@ -863,7 +794,7 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert_eq!(state.pending_mark_action, Some('s'));
+        assert_eq!(state.session.pending_mark_action, Some('s'));
 
         // Press 'a' to set mark a
         state.process_key_event(KeyEvent {
@@ -871,12 +802,12 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert!(state.pending_mark_action.is_none());
-        assert_eq!(state.status_message, "Mark a set");
+        assert!(state.session.pending_mark_action.is_none());
+        assert_eq!(state.ui.status_message, "Mark a set");
 
         // The mark is stored asynchronously via IPC. Verify the pending state
         // and that a CaptureScrollFraction action was queued.
-        assert_eq!(state.pending_mark_set, Some('a'));
+        assert_eq!(state.session.pending_mark_set, Some('a'));
         assert!(
             state
                 .pending_wry_actions
@@ -898,7 +829,7 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert_eq!(state.pending_mark_action, Some('g'));
+        assert_eq!(state.session.pending_mark_action, Some('g'));
 
         // Press 'z' (not set)
         state.process_key_event(KeyEvent {
@@ -906,7 +837,7 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert_eq!(state.status_message, "Mark z not set");
+        assert_eq!(state.ui.status_message, "Mark z not set");
     }
 
     #[test]
@@ -922,7 +853,7 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert_eq!(state.pending_mark_action, Some('s'));
+        assert_eq!(state.session.pending_mark_action, Some('s'));
 
         // Press Escape to cancel
         state.process_key_event(KeyEvent {
@@ -930,7 +861,7 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert!(state.pending_mark_action.is_none());
+        assert!(state.session.pending_mark_action.is_none());
     }
 
     #[test]
@@ -938,6 +869,6 @@ mod tests {
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
         let mut state = AppState::new(viewport, Config::default()).unwrap();
         state.execute_command("swap");
-        assert_eq!(state.status_message, "No previous pane");
+        assert_eq!(state.ui.status_message, "No previous pane");
     }
 }

@@ -10,27 +10,30 @@ use super::dispatch::ActionEffect;
 impl AppState {
     pub fn process_key_event(&mut self, event: KeyEvent) {
         // History panel: j/k and arrow navigation
-        if self.history_panel_open {
+        if self.panels.history_panel_open {
             match &event.key {
                 Key::Character('j') | Key::Down => {
-                    if !self.history_entries.is_empty() {
-                        self.history_selected =
-                            (self.history_selected + 1).min(self.history_entries.len() - 1);
+                    if !self.panels.history_entries.is_empty() {
+                        self.panels.history_selected = (self.panels.history_selected + 1)
+                            .min(self.panels.history_entries.len() - 1);
                     }
                     return;
                 }
                 Key::Character('k') | Key::Up => {
-                    self.history_selected = self.history_selected.saturating_sub(1);
+                    self.panels.history_selected = self.panels.history_selected.saturating_sub(1);
                     return;
                 }
                 Key::Enter => {
-                    if let Some(entry) = self.history_entries.get(self.history_selected)
+                    if let Some(entry) = self
+                        .panels
+                        .history_entries
+                        .get(self.panels.history_selected)
                         && let Ok(url) = url::Url::parse(&entry.url)
                     {
                         self.pending_wry_actions.push_back(WryAction::Navigate(url));
                     }
-                    self.history_panel_open = false;
-                    self.history_entries.clear();
+                    self.panels.history_panel_open = false;
+                    self.panels.history_entries.clear();
                     return;
                 }
                 // Escape handled in main.rs
@@ -39,23 +42,25 @@ impl AppState {
         }
 
         // Tab search panel: j/k navigation (only when TextEdit not focused)
-        if self.tab_search_open {
+        if self.panels.tab_search_open {
             match &event.key {
                 Key::Down => {
-                    self.tab_search_selected = self.tab_search_selected.saturating_sub(1);
+                    self.panels.tab_search_selected =
+                        self.panels.tab_search_selected.saturating_sub(1);
                     return;
                 }
                 Key::Up => {
-                    self.tab_search_selected = self.tab_search_selected.saturating_sub(1);
+                    self.panels.tab_search_selected =
+                        self.panels.tab_search_selected.saturating_sub(1);
                     return;
                 }
                 Key::Enter => {
                     let panes = self.wm.panes();
                     let ids: Vec<_> = panes.iter().map(|(id, _)| *id).collect();
-                    if let Some(id) = ids.get(self.tab_search_selected) {
+                    if let Some(id) = ids.get(self.panels.tab_search_selected) {
                         self.wm.set_active_pane(*id);
                     }
-                    self.tab_search_open = false;
+                    self.panels.tab_search_open = false;
                     return;
                 }
                 // Escape handled in main.rs
@@ -64,42 +69,50 @@ impl AppState {
         }
 
         // Bookmarks panel: j/k navigation
-        if self.bookmarks_panel_open {
+        if self.panels.bookmarks_panel_open {
             match &event.key {
                 Key::Character('j') | Key::Down => {
-                    if !self.bookmarks_entries.is_empty() {
-                        self.bookmarks_selected =
-                            (self.bookmarks_selected + 1).min(self.bookmarks_entries.len() - 1);
+                    if !self.panels.bookmarks_entries.is_empty() {
+                        self.panels.bookmarks_selected = (self.panels.bookmarks_selected + 1)
+                            .min(self.panels.bookmarks_entries.len() - 1);
                     }
                     return;
                 }
                 Key::Character('k') | Key::Up => {
-                    self.bookmarks_selected = self.bookmarks_selected.saturating_sub(1);
+                    self.panels.bookmarks_selected =
+                        self.panels.bookmarks_selected.saturating_sub(1);
                     return;
                 }
                 Key::Enter => {
-                    if let Some(bm) = self.bookmarks_entries.get(self.bookmarks_selected)
+                    if let Some(bm) = self
+                        .panels
+                        .bookmarks_entries
+                        .get(self.panels.bookmarks_selected)
                         && let Ok(url) = url::Url::parse(&bm.url)
                     {
                         self.pending_wry_actions.push_back(WryAction::Navigate(url));
                     }
-                    self.bookmarks_panel_open = false;
-                    self.bookmarks_entries.clear();
+                    self.panels.bookmarks_panel_open = false;
+                    self.panels.bookmarks_entries.clear();
                     return;
                 }
                 Key::Character('d') => {
                     // d to delete selected bookmark
-                    if let Some(bm) = self.bookmarks_entries.get(self.bookmarks_selected) {
+                    if let Some(bm) = self
+                        .panels
+                        .bookmarks_entries
+                        .get(self.panels.bookmarks_selected)
+                    {
                         if let Some(db) = self.db.as_ref()
                             && let Err(e) = crate::db::bookmarks::remove_bookmark_by_id(db, bm.id)
                         {
                             tracing::warn!("Failed to remove bookmark by id: {}", e);
                         }
                         let removed_id = bm.id;
-                        self.bookmarks_entries.retain(|b| b.id != removed_id);
-                        if self.bookmarks_selected >= self.bookmarks_entries.len() {
-                            self.bookmarks_selected =
-                                self.bookmarks_entries.len().saturating_sub(1);
+                        self.panels.bookmarks_entries.retain(|b| b.id != removed_id);
+                        if self.panels.bookmarks_selected >= self.panels.bookmarks_entries.len() {
+                            self.panels.bookmarks_selected =
+                                self.panels.bookmarks_entries.len().saturating_sub(1);
                         }
                     }
                     return;
@@ -125,20 +138,20 @@ impl AppState {
                 match action {
                     PaletteAction::ItemSelected(item) => {
                         self.palette.close();
-                        self.command_palette_input.clear();
+                        self.ui.command_palette_input.clear();
                         self.execute_palette_selection(&item);
                     }
                     PaletteAction::Closed => {
                         self.palette.close();
-                        self.command_palette_input.clear();
+                        self.ui.command_palette_input.clear();
                     }
                     PaletteAction::QuerySubmit(query) => {
                         self.palette.close();
-                        self.command_palette_input.clear();
+                        self.ui.command_palette_input.clear();
                         self.handle_raw_command(&query);
                     }
                     PaletteAction::Consumed => {
-                        self.command_palette_input = self.palette.query.clone();
+                        self.ui.command_palette_input = self.palette.query.clone();
                     }
                 }
             }
@@ -146,7 +159,7 @@ impl AppState {
         }
 
         // Handle pending mark actions (m or ' prefix)
-        if let Some(action) = self.pending_mark_action.take()
+        if let Some(action) = self.session.pending_mark_action.take()
             && let Key::Character(c) = &event.key
             && c.is_ascii_lowercase()
         {
@@ -155,18 +168,24 @@ impl AppState {
                 's' => {
                     // Store the pending mark letter; JS will send the actual
                     // scroll fraction via IPC, which is handled in frame_tasks.rs.
-                    self.pending_mark_set = Some(*c);
+                    self.session.pending_mark_set = Some(*c);
                     self.pending_wry_actions
                         .push_back(WryAction::CaptureScrollFraction);
-                    self.status_message = format!("Mark {c} set");
+                    self.ui.status_message = format!("Mark {c} set");
                 }
                 'g' => {
-                    if let Some(frac) = self.marks.get(&active_id).and_then(|m| m.get(c)).copied() {
+                    if let Some(frac) = self
+                        .session
+                        .marks
+                        .get(&active_id)
+                        .and_then(|m| m.get(c))
+                        .copied()
+                    {
                         // Set a pending scroll target; the main loop will apply it.
-                        self.pending_mark_jump = Some(frac);
-                        self.status_message = format!("Mark {c} jumped");
+                        self.session.pending_mark_jump = Some(frac);
+                        self.ui.status_message = format!("Mark {c} jumped");
                     } else {
-                        self.status_message = format!("Mark {c} not set");
+                        self.ui.status_message = format!("Mark {c} not set");
                     }
                 }
                 _ => {}
@@ -187,12 +206,12 @@ impl AppState {
         // Mark prefix keys in Normal mode
         if self.mode == Mode::Normal {
             if let Key::Character('m') = &event.key {
-                self.pending_mark_action = Some('s');
-                self.status_message = "Set mark (press a-z)".into();
+                self.session.pending_mark_action = Some('s');
+                self.ui.status_message = "Set mark (press a-z)".into();
                 return;
             } else if let Key::Character('\'') = &event.key {
-                self.pending_mark_action = Some('g');
-                self.status_message = "Go to mark (press a-z)".into();
+                self.session.pending_mark_action = Some('g');
+                self.ui.status_message = "Go to mark (press a-z)".into();
                 return;
             }
         }
@@ -218,14 +237,14 @@ impl AppState {
             }
             EventDestination::CommandPalette => {
                 if let Key::Character(c) = &event.key {
-                    self.command_palette_input.push(*c);
+                    self.ui.command_palette_input.push(*c);
                 } else if event.key == Key::Backspace {
-                    self.command_palette_input.pop();
+                    self.ui.command_palette_input.pop();
                 } else if event.key == Key::Enter {
-                    let input = self.command_palette_input.clone();
+                    let input = self.ui.command_palette_input.clone();
                     self.execute_command(&input);
                     self.palette.close();
-                    self.command_palette_input.clear();
+                    self.ui.command_palette_input.clear();
                 }
             }
             EventDestination::Egui => {}
@@ -234,7 +253,7 @@ impl AppState {
     }
 
     pub(crate) fn execute_action(&mut self, action: &crate::input::Action) {
-        self.session_dirty = true;
+        self.session.session_dirty = true;
         use ActionEffect;
 
         let effects = super::dispatch::dispatch_action(action);
@@ -245,7 +264,7 @@ impl AppState {
                     self.pending_wry_actions.push_back(wry_action.clone());
                 }
                 ActionEffect::Status(msg) => {
-                    self.status_message = msg.clone();
+                    self.ui.status_message = msg.clone();
                 }
                 ActionEffect::SetMode(mode) => {
                     self.mode = *mode;
@@ -256,14 +275,14 @@ impl AppState {
                 }
                 ActionEffect::Quit => {
                     info!("Quit requested");
-                    self.should_quit = true;
+                    self.session.should_quit = true;
                 }
                 ActionEffect::OpenPalette => {
                     // Refresh items before opening so recent history/bookmarks are current
                     self.refresh_palette_items();
                     self.palette.open();
-                    self.command_palette_input.clear();
-                    self.status_message = "Command palette".into();
+                    self.ui.command_palette_input.clear();
+                    self.ui.status_message = "Command palette".into();
                 }
                 ActionEffect::RequestSplit(direction) => {
                     let active = self.wm.active_pane_id();
@@ -271,17 +290,17 @@ impl AppState {
                         .pending_new_tab_url
                         .take()
                         .unwrap_or_else(|| url::Url::parse("aileron://new").unwrap());
-                    let is_private = self.private_pane_ids.contains(&active);
+                    let is_private = self.tabs.private_pane_ids.contains(&active);
                     match self.wm.split(active, *direction, 0.5) {
                         Ok(new_id) => {
                             self.engines.create_pane(new_id, new_url, None);
                             // Propagate private mode to new pane
                             if is_private {
-                                self.private_pane_ids.insert(new_id);
+                                self.tabs.private_pane_ids.insert(new_id);
                             }
-                            self.status_message = "Split vertical".into();
+                            self.ui.status_message = "Split vertical".into();
                         }
-                        Err(e) => self.status_message = format!("Split failed: {e}"),
+                        Err(e) => self.ui.status_message = format!("Split failed: {e}"),
                     }
                 }
                 ActionEffect::OpenTerminal => {
@@ -294,33 +313,34 @@ impl AppState {
                         Ok(new_id) => {
                             self.engines.create_pane(new_id, term_url.clone(), None);
                             self.terminal_pane_ids.insert(new_id);
-                            self.status_message = "Terminal opened".into();
+                            self.ui.status_message = "Terminal opened".into();
                         }
-                        Err(e) => self.status_message = format!("Terminal failed: {e}"),
+                        Err(e) => self.ui.status_message = format!("Terminal failed: {e}"),
                     }
                 }
                 ActionEffect::RequestClosePane => {
                     let active = self.wm.active_pane_id();
-                    if self.pinned_pane_ids.contains(&active) {
-                        self.status_message = "Cannot close pinned pane (use :pin to unpin)".into();
+                    if self.tabs.pinned_pane_ids.contains(&active) {
+                        self.ui.status_message =
+                            "Cannot close pinned pane (use :pin to unpin)".into();
                         return;
                     }
                     if let Ok(()) = self.wm.close(active) {
                         self.engines.remove_pane(&active);
-                        self.status_message = "Pane closed".into();
+                        self.ui.status_message = "Pane closed".into();
                     }
                 }
                 ActionEffect::RequestNavigatePane(direction) => {
                     let current = self.wm.active_pane_id();
                     if let Some(id) = self.wm.navigate(*direction) {
-                        self.last_active_pane_id = Some(current);
+                        self.tabs.last_active_pane_id = Some(current);
                         self.wm.set_active_pane(id);
                         self.update_status();
-                        self.autofill_available = false;
-                        self.autofill_js = None;
-                        self.autofill_username_id.clear();
-                        self.autofill_password_id.clear();
-                        self.autofill_status_msg.clear();
+                        self.autofill.available = false;
+                        self.autofill.js = None;
+                        self.autofill.username_id.clear();
+                        self.autofill.password_id.clear();
+                        self.autofill.status_msg.clear();
                     }
                 }
                 ActionEffect::RequestExternalBrowser => {
@@ -330,22 +350,22 @@ impl AppState {
                     {
                         match crate::servo::open_in_system_browser(url) {
                             Ok(()) => {
-                                self.status_message = "Opened in system browser".into();
+                                self.ui.status_message = "Opened in system browser".into();
                             }
                             Err(e) => {
-                                self.status_message = format!("Failed: {e}");
+                                self.ui.status_message = format!("Failed: {e}");
                             }
                         }
                     }
                 }
                 ActionEffect::OpenFindBar => {
-                    self.find_bar_open = true;
-                    self.find_query.clear();
-                    self.status_message = "Find: ".into();
+                    self.ui.find_bar_open = true;
+                    self.ui.find_query.clear();
+                    self.ui.status_message = "Find: ".into();
                 }
                 ActionEffect::CloseFindBar => {
-                    self.find_bar_open = false;
-                    self.find_query.clear();
+                    self.ui.find_bar_open = false;
+                    self.ui.find_query.clear();
                     // Clear highlights in the page
                     self.pending_wry_actions.push_back(WryAction::RunJs(
                         "window.getSelection().removeAllRanges()".into(),
@@ -361,23 +381,24 @@ impl AppState {
                     }
                 }
                 ActionEffect::ToggleLinkHints => {
-                    self.hint_mode = !self.hint_mode;
-                    self.hint_new_tab = false;
-                    if self.hint_mode {
-                        self.status_message = "Link hints: type letters, Escape to cancel".into();
+                    self.ui.hint_mode = !self.ui.hint_mode;
+                    self.ui.hint_new_tab = false;
+                    if self.ui.hint_mode {
+                        self.ui.status_message =
+                            "Link hints: type letters, Escape to cancel".into();
                     } else {
-                        self.status_message.clear();
+                        self.ui.status_message.clear();
                     }
                     // Wry(RunJs) effect is also dispatched to inject/remove the CSS
                 }
                 ActionEffect::FollowLinkNewTab => {
-                    self.hint_mode = !self.hint_mode;
-                    self.hint_new_tab = self.hint_mode;
-                    if self.hint_mode {
-                        self.status_message =
+                    self.ui.hint_mode = !self.ui.hint_mode;
+                    self.ui.hint_new_tab = self.ui.hint_mode;
+                    if self.ui.hint_mode {
+                        self.ui.status_message =
                             "Link hints (new tab): type letters, Escape to cancel".into();
                     } else {
-                        self.status_message.clear();
+                        self.ui.status_message.clear();
                     }
                 }
                 ActionEffect::SaveWorkspace => {
@@ -390,7 +411,7 @@ impl AppState {
                             name: name.clone(),
                             pane_urls: std::collections::HashMap::new(),
                         });
-                    self.status_message = format!("Saving workspace: {name}...");
+                    self.ui.status_message = format!("Saving workspace: {name}...");
                 }
                 ActionEffect::CopyUrl => {
                     let active_id = self.wm.active_pane_id();
@@ -405,9 +426,10 @@ impl AppState {
                             } else {
                                 url_str
                             };
-                            self.status_message = format!("Copied: {display}");
+                            self.ui.status_message = format!("Copied: {display}");
                         } else {
-                            self.status_message = "Clipboard: no clipboard tool available".into();
+                            self.ui.status_message =
+                                "Clipboard: no clipboard tool available".into();
                         }
                     }
                 }
@@ -418,41 +440,41 @@ impl AppState {
                         crate::wm::Direction::Right | crate::wm::Direction::Down => 0.05,
                     };
                     match self.wm.resize_pane(active, amount) {
-                        Ok(()) => self.status_message = "Pane resized".into(),
-                        Err(e) => self.status_message = format!("Resize failed: {e}"),
+                        Ok(()) => self.ui.status_message = "Pane resized".into(),
+                        Err(e) => self.ui.status_message = format!("Resize failed: {e}"),
                     }
                 }
                 ActionEffect::NewWindow => {
                     self.pending_new_window = true;
-                    self.status_message = "Opening new window...".into();
+                    self.ui.status_message = "Opening new window...".into();
                 }
                 ActionEffect::EnterReaderMode => {
                     let active_id = self.wm.active_pane_id();
-                    if self.reader_mode_panes.contains(&active_id) {
-                        self.reader_mode_panes.remove(&active_id);
+                    if self.tabs.reader_mode_panes.contains(&active_id) {
+                        self.tabs.reader_mode_panes.remove(&active_id);
                         self.pending_wry_actions
                             .push_back(WryAction::ExitReaderMode);
-                        self.status_message = "Reader mode off".into();
+                        self.ui.status_message = "Reader mode off".into();
                     } else {
-                        self.reader_mode_panes.insert(active_id);
+                        self.tabs.reader_mode_panes.insert(active_id);
                         self.pending_wry_actions
                             .push_back(WryAction::EnterReaderMode);
-                        self.status_message = "Reader mode on".into();
+                        self.ui.status_message = "Reader mode on".into();
                     }
                 }
                 ActionEffect::ExitReaderMode => {}
                 ActionEffect::EnterMinimalMode => {
                     let active_id = self.wm.active_pane_id();
-                    if self.minimal_mode_panes.contains(&active_id) {
-                        self.minimal_mode_panes.remove(&active_id);
+                    if self.tabs.minimal_mode_panes.contains(&active_id) {
+                        self.tabs.minimal_mode_panes.remove(&active_id);
                         self.pending_wry_actions
                             .push_back(WryAction::ExitMinimalMode);
-                        self.status_message = "Minimal mode off".into();
+                        self.ui.status_message = "Minimal mode off".into();
                     } else {
-                        self.minimal_mode_panes.insert(active_id);
+                        self.tabs.minimal_mode_panes.insert(active_id);
                         self.pending_wry_actions
                             .push_back(WryAction::EnterMinimalMode);
-                        self.status_message = "Minimal mode on".into();
+                        self.ui.status_message = "Minimal mode on".into();
                     }
                 }
                 ActionEffect::ExitMinimalMode => {}
@@ -477,14 +499,14 @@ impl AppState {
                                 self.terminal_pane_ids.remove(&active_id);
                                 self.pending_new_window = true;
                                 self.pending_detach_url = Some(url);
-                                self.status_message = "Detaching pane to popup...".into();
+                                self.ui.status_message = "Detaching pane to popup...".into();
                             }
                             Err(_) => {
-                                self.status_message = "Cannot detach the only pane".into();
+                                self.ui.status_message = "Cannot detach the only pane".into();
                             }
                         }
                     } else {
-                        self.status_message = "No URL to detach".into();
+                        self.ui.status_message = "No URL to detach".into();
                     }
                 }
                 ActionEffect::CloseOtherPanes => {
@@ -500,24 +522,25 @@ impl AppState {
                         self.terminal_pane_ids.remove(id);
                     }
                     if let Err(e) = self.wm.retain_only(active_id) {
-                        self.status_message = format!("Failed: {e}");
+                        self.ui.status_message = format!("Failed: {e}");
                     } else {
-                        self.status_message = format!("Closed {} other pane(s)", other_ids.len());
+                        self.ui.status_message =
+                            format!("Closed {} other pane(s)", other_ids.len());
                     }
                 }
                 ActionEffect::Print => {
                     self.pending_wry_actions.push_back(WryAction::Print);
-                    self.status_message = "Printing...".into();
+                    self.ui.status_message = "Printing...".into();
                 }
                 ActionEffect::PinPane => {
                     let active_id = self.wm.active_pane_id();
-                    if self.pinned_pane_ids.contains(&active_id) {
-                        self.pinned_pane_ids.remove(&active_id);
-                        self.status_message =
+                    if self.tabs.pinned_pane_ids.contains(&active_id) {
+                        self.tabs.pinned_pane_ids.remove(&active_id);
+                        self.ui.status_message =
                             crate::i18n::tr(crate::i18n::TrKey("status_unpinned")).into();
                     } else {
-                        self.pinned_pane_ids.insert(active_id);
-                        self.status_message =
+                        self.tabs.pinned_pane_ids.insert(active_id);
+                        self.ui.status_message =
                             crate::i18n::tr(crate::i18n::TrKey("status_pinned")).into();
                     }
                 }
@@ -527,15 +550,15 @@ impl AppState {
 
     pub fn update_status(&mut self) {
         let mode_str = self.mode.as_str().to_string();
-        self.status_message = format!("-- {mode_str} --");
-        self.accessibility_text = format!("Mode: {mode_str}");
+        self.ui.status_message = format!("-- {mode_str} --");
+        self.ui.accessibility_text = format!("Mode: {mode_str}");
     }
 
     /// Update the accessibility live-region text with a status summary.
     /// Call this when important state changes occur (navigation, error, etc.).
     pub fn update_a11y(&mut self, msg: &str) {
-        self.status_message = msg.to_string();
-        self.accessibility_text = msg.to_string();
+        self.ui.status_message = msg.to_string();
+        self.ui.accessibility_text = msg.to_string();
     }
 }
 
@@ -556,8 +579,8 @@ mod tests {
         let mut state = make_state();
         state.mode = Mode::Normal;
         state.update_status();
-        assert_eq!(state.status_message, "-- NORMAL --");
-        assert_eq!(state.accessibility_text, "Mode: NORMAL");
+        assert_eq!(state.ui.status_message, "-- NORMAL --");
+        assert_eq!(state.ui.accessibility_text, "Mode: NORMAL");
     }
 
     #[test]
@@ -565,8 +588,8 @@ mod tests {
         let mut state = make_state();
         state.mode = Mode::Insert;
         state.update_status();
-        assert_eq!(state.status_message, "-- INSERT --");
-        assert_eq!(state.accessibility_text, "Mode: INSERT");
+        assert_eq!(state.ui.status_message, "-- INSERT --");
+        assert_eq!(state.ui.accessibility_text, "Mode: INSERT");
     }
 
     #[test]
@@ -574,16 +597,16 @@ mod tests {
         let mut state = make_state();
         state.mode = Mode::Command;
         state.update_status();
-        assert_eq!(state.status_message, "-- COMMAND --");
-        assert_eq!(state.accessibility_text, "Mode: COMMAND");
+        assert_eq!(state.ui.status_message, "-- COMMAND --");
+        assert_eq!(state.ui.accessibility_text, "Mode: COMMAND");
     }
 
     #[test]
     fn test_update_a11y() {
         let mut state = make_state();
         state.update_a11y("Navigation complete");
-        assert_eq!(state.status_message, "Navigation complete");
-        assert_eq!(state.accessibility_text, "Navigation complete");
+        assert_eq!(state.ui.status_message, "Navigation complete");
+        assert_eq!(state.ui.accessibility_text, "Navigation complete");
     }
 
     #[test]
@@ -591,10 +614,10 @@ mod tests {
         let mut state = make_state();
         state.mode = Mode::Normal;
         state.update_status();
-        assert_eq!(state.status_message, "-- NORMAL --");
+        assert_eq!(state.ui.status_message, "-- NORMAL --");
         state.update_a11y("Error: page crashed");
-        assert_eq!(state.status_message, "Error: page crashed");
-        assert_eq!(state.accessibility_text, "Error: page crashed");
+        assert_eq!(state.ui.status_message, "Error: page crashed");
+        assert_eq!(state.ui.accessibility_text, "Error: page crashed");
     }
 
     #[test]
@@ -603,7 +626,7 @@ mod tests {
         state.update_a11y("some message");
         state.mode = Mode::Insert;
         state.update_status();
-        assert_eq!(state.status_message, "-- INSERT --");
-        assert_eq!(state.accessibility_text, "Mode: INSERT");
+        assert_eq!(state.ui.status_message, "-- INSERT --");
+        assert_eq!(state.ui.accessibility_text, "Mode: INSERT");
     }
 }

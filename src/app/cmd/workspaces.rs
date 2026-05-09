@@ -26,7 +26,7 @@ pub fn list_workspaces(state: &AppState) -> Vec<crate::db::workspaces::Workspace
 }
 
 pub fn swap_panes(state: &mut AppState) {
-    if let Some(last_id) = state.last_active_pane_id {
+    if let Some(last_id) = state.tabs.last_active_pane_id {
         let active_id = state.wm.active_pane_id();
         if last_id != active_id && state.wm.panes().iter().any(|(id, _)| *id == last_id) {
             let active_url = state
@@ -44,13 +44,13 @@ pub fn swap_panes(state: &mut AppState) {
                 if let Some(engine) = state.engines.get_mut(&last_id) {
                     engine.navigate(&a_url);
                 }
-                state.status_message = "Panes swapped".into();
+                state.ui.status_message = "Panes swapped".into();
             }
         } else {
-            state.status_message = "No previous pane to swap with".into();
+            state.ui.status_message = "No previous pane to swap with".into();
         }
     } else {
-        state.status_message = "No previous pane".into();
+        state.ui.status_message = "No previous pane".into();
     }
 }
 
@@ -58,7 +58,7 @@ pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()
     if let Some(name) = query.strip_prefix("ws-save ") {
         let name = name.trim();
         if name.is_empty() {
-            state.status_message = "Usage: ws-save <name>".into();
+            state.ui.status_message = "Usage: ws-save <name>".into();
             return Some(());
         }
         state
@@ -67,7 +67,7 @@ pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()
                 name: name.to_string(),
                 pane_urls: std::collections::HashMap::new(),
             });
-        state.status_message = format!("Saving workspace: {name}...");
+        state.ui.status_message = format!("Saving workspace: {name}...");
         state.current_workspace_name = name.to_string();
         return Some(());
     }
@@ -75,14 +75,14 @@ pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()
     if query == "ws-list" {
         let workspaces = list_workspaces(state);
         if workspaces.is_empty() {
-            state.status_message = "No saved workspaces.".into();
+            state.ui.status_message = "No saved workspaces.".into();
         } else {
             let names: Vec<&str> = workspaces
                 .iter()
                 .filter(|w| w.name != "_autosave")
                 .map(|w| w.name.as_str())
                 .collect();
-            state.status_message = format!("Workspaces: {}", names.join(", "));
+            state.ui.status_message = format!("Workspaces: {}", names.join(", "));
         }
         return Some(());
     }
@@ -90,51 +90,51 @@ pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()
     if let Some(name) = query.strip_prefix("ws-load ") {
         let name = name.trim();
         if name.is_empty() {
-            state.status_message = "Usage: ws-load <name>".into();
+            state.ui.status_message = "Usage: ws-load <name>".into();
             return Some(());
         }
         state.pending_workspace_restore = Some(name.to_string());
         state.current_workspace_name = name.to_string();
-        state.status_message = format!("Restoring workspace: {name}...");
+        state.ui.status_message = format!("Restoring workspace: {name}...");
         return Some(());
     }
 
     if let Some(name) = query.strip_prefix("ws-delete ") {
         let name = name.trim();
         if name.is_empty() {
-            state.status_message = "Usage: ws-delete <name>".into();
+            state.ui.status_message = "Usage: ws-delete <name>".into();
             return Some(());
         }
         if let Some(db) = state.db.as_ref() {
             match crate::db::workspaces::delete_workspace(db, name) {
                 Ok(true) => {
-                    state.status_message = format!("Workspace deleted: {name}");
+                    state.ui.status_message = format!("Workspace deleted: {name}");
                     if name == state.current_workspace_name {
                         state.current_workspace_name = "default".into();
                     }
                 }
                 Ok(false) => {
-                    state.status_message = format!("Workspace not found: {name}");
+                    state.ui.status_message = format!("Workspace not found: {name}");
                 }
                 Err(e) => {
-                    state.status_message = format!("Delete failed: {e}");
+                    state.ui.status_message = format!("Delete failed: {e}");
                 }
             }
         } else {
-            state.status_message = "No database connection".into();
+            state.ui.status_message = "No database connection".into();
         }
         return Some(());
     }
 
     if query == "ws-panel" || query == "workspaces" {
-        if state.workspace_panel_open {
-            state.workspace_panel_open = false;
-            state.workspace_entries.clear();
+        if state.panels.workspace_panel_open {
+            state.panels.workspace_panel_open = false;
+            state.panels.workspace_entries.clear();
         } else {
             let workspaces = list_workspaces(state);
-            state.workspace_entries = workspaces;
-            state.workspace_selected = 0;
-            state.workspace_panel_open = true;
+            state.panels.workspace_entries = workspaces;
+            state.panels.workspace_selected = 0;
+            state.panels.workspace_panel_open = true;
         }
         return Some(());
     }
@@ -146,7 +146,7 @@ pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()
             .map(|w| w.name)
             .collect();
         if workspaces.is_empty() {
-            state.status_message = "No saved workspaces.".into();
+            state.ui.status_message = "No saved workspaces.".into();
             return Some(());
         }
         let current_idx = workspaces
@@ -167,7 +167,7 @@ pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()
             }
             _ => workspaces.first().cloned().unwrap_or_default(),
         };
-        state.status_message = format!("Switching to workspace: {target}...");
+        state.ui.status_message = format!("Switching to workspace: {target}...");
         state.current_workspace_name = target.clone();
         state.pending_workspace_restore = Some(target);
         return Some(());

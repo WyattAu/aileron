@@ -419,7 +419,7 @@ impl AileronApp {
             Err(e) => {
                 warn!("Failed to create WryPane: {}", e);
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.status_message = format!("Pane creation failed: {e}");
+                    app_state.ui.status_message = format!("Pane creation failed: {e}");
                 }
             }
         }
@@ -531,7 +531,7 @@ impl AileronApp {
             Err(e) => {
                 warn!("Failed to create OffscreenWebView: {}", e);
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.status_message = format!("Pane creation failed: {e}");
+                    app_state.ui.status_message = format!("Pane creation failed: {e}");
                 }
             }
         }
@@ -1010,7 +1010,7 @@ impl ApplicationHandler for AileronApp {
                     info!("Auto-restoring workspace: {}", workspace.name);
                     app_state.pending_workspace_restore = Some(workspace.name.clone());
                     app_state.current_workspace_name = workspace.name;
-                    app_state.session_dirty = true;
+                    app_state.session.session_dirty = true;
                 }
             }
         }
@@ -1178,12 +1178,12 @@ impl ApplicationHandler for AileronApp {
 
                 if let Some(app_state) = &mut self.app_state {
                     // ─── Hint mode: intercept letter keys to follow hinted links ───
-                    if app_state.hint_mode {
+                    if app_state.ui.hint_mode {
                         match &key {
                             aileron::input::Key::Character(c) if c.is_ascii_lowercase() => {
-                                app_state.hint_buffer.push(*c);
-                                let hint_buf = app_state.hint_buffer.clone();
-                                let new_tab = app_state.hint_new_tab;
+                                app_state.ui.hint_buffer.push(*c);
+                                let hint_buf = app_state.ui.hint_buffer.clone();
+                                let new_tab = app_state.ui.hint_new_tab;
                                 // Use IPC to get click feedback for auto-exit
                                 let js = if new_tab {
                                     format!(
@@ -1227,10 +1227,10 @@ impl ApplicationHandler for AileronApp {
                             _ => {
                                 // Any non-letter key exits hint mode
                                 let active_id = app_state.wm.active_pane_id();
-                                app_state.hint_mode = false;
-                                app_state.hint_new_tab = false;
-                                app_state.hint_buffer.clear();
-                                app_state.status_message.clear();
+                                app_state.ui.hint_mode = false;
+                                app_state.ui.hint_new_tab = false;
+                                app_state.ui.hint_buffer.clear();
+                                app_state.ui.status_message.clear();
                                 let clear_js = r#"
                                     (function() {
                                         var style = document.getElementById('__aileron_hints');
@@ -1253,36 +1253,36 @@ impl ApplicationHandler for AileronApp {
                     }
 
                     // Escape closes find bar first, then URL bar, then history panel
-                    if app_state.find_bar_open && key == aileron::input::Key::Escape {
-                        app_state.find_bar_open = false;
-                        app_state.find_query.clear();
+                    if app_state.ui.find_bar_open && key == aileron::input::Key::Escape {
+                        app_state.ui.find_bar_open = false;
+                        app_state.ui.find_query.clear();
                         let active_id = app_state.wm.active_pane_id();
                         if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                             wry_pane.execute_js("window.getSelection().removeAllRanges()");
                         }
                         return;
                     }
-                    if app_state.url_bar_focused && key == aileron::input::Key::Escape {
-                        app_state.url_bar_focused = false;
-                        app_state.url_bar_input.clear();
+                    if app_state.ui.url_bar_focused && key == aileron::input::Key::Escape {
+                        app_state.ui.url_bar_focused = false;
+                        app_state.ui.url_bar_input.clear();
                         return;
                     }
-                    if app_state.history_panel_open && key == aileron::input::Key::Escape {
-                        app_state.history_panel_open = false;
-                        app_state.history_entries.clear();
+                    if app_state.panels.history_panel_open && key == aileron::input::Key::Escape {
+                        app_state.panels.history_panel_open = false;
+                        app_state.panels.history_entries.clear();
                         return;
                     }
-                    if app_state.tab_search_open && key == aileron::input::Key::Escape {
-                        app_state.tab_search_open = false;
+                    if app_state.panels.tab_search_open && key == aileron::input::Key::Escape {
+                        app_state.panels.tab_search_open = false;
                         return;
                     }
-                    if app_state.bookmarks_panel_open && key == aileron::input::Key::Escape {
-                        app_state.bookmarks_panel_open = false;
-                        app_state.bookmarks_entries.clear();
+                    if app_state.panels.bookmarks_panel_open && key == aileron::input::Key::Escape {
+                        app_state.panels.bookmarks_panel_open = false;
+                        app_state.panels.bookmarks_entries.clear();
                         return;
                     }
-                    if app_state.help_panel_open && key == aileron::input::Key::Escape {
-                        app_state.help_panel_open = false;
+                    if app_state.panels.help_panel_open && key == aileron::input::Key::Escape {
+                        app_state.panels.help_panel_open = false;
                         return;
                     }
                     // Track pane count before processing key
@@ -1334,10 +1334,10 @@ impl ApplicationHandler for AileronApp {
                         if !url.is_empty()
                             && let Some(app_state) = &mut self.app_state
                         {
-                            app_state.closed_tab_stack.push_back((url, title));
+                            app_state.tabs.closed_tab_stack.push_back((url, title));
                             // Limit stack to 50 entries
-                            while app_state.closed_tab_stack.len() > 50 {
-                                app_state.closed_tab_stack.pop_front();
+                            while app_state.tabs.closed_tab_stack.len() > 50 {
+                                app_state.tabs.closed_tab_stack.pop_front();
                             }
                         }
                         self.remove_wry_pane_for(pid);
@@ -1772,11 +1772,11 @@ impl ApplicationHandler for AileronApp {
                                     let query = app_state.palette.query.trim().to_string();
                                     app_state.execute_command_pub(&query);
                                     app_state.palette.close();
-                                    app_state.command_palette_input.clear();
+                                    app_state.ui.command_palette_input.clear();
                                 } else if c == '\x1b' {
                                     // Escape: close palette
                                     app_state.palette.close();
-                                    app_state.command_palette_input.clear();
+                                    app_state.ui.command_palette_input.clear();
                                 }
                                 // For regular characters, let egui's TextEdit
                                 // handle them — no action needed here.
@@ -1818,11 +1818,11 @@ impl ApplicationHandler for AileronApp {
                         }
                         winit::event::Ime::Preedit(text, _cursor) => {
                             if text.is_empty() {
-                                if app_state.status_message.starts_with("composing: ") {
-                                    app_state.status_message.clear();
+                                if app_state.ui.status_message.starts_with("composing: ") {
+                                    app_state.ui.status_message.clear();
                                 }
                             } else {
-                                app_state.status_message = format!("composing: {text}");
+                                app_state.ui.status_message = format!("composing: {text}");
                             }
                         }
                         _ => {}
@@ -1835,7 +1835,7 @@ impl ApplicationHandler for AileronApp {
 
         // Check if app wants to quit
         if let Some(app_state) = &self.app_state
-            && app_state.should_quit
+            && app_state.session.should_quit
         {
             event_loop.exit();
         }
@@ -1900,7 +1900,7 @@ impl ApplicationHandler for AileronApp {
             {
                 frame_tasks::load_default_adblock_rules(&mut self.adblocker);
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.status_message = "Filter lists updated".into();
+                    app_state.ui.status_message = "Filter lists updated".into();
                 }
             }
         }
@@ -1976,7 +1976,7 @@ impl ApplicationHandler for AileronApp {
                 }
                 None => {
                     if let Some(app_state) = &mut self.app_state {
-                        app_state.status_message = "Restore failed: no window".into();
+                        app_state.ui.status_message = "Restore failed: no window".into();
                     }
                     return;
                 }
@@ -2017,7 +2017,7 @@ impl ApplicationHandler for AileronApp {
                         }
                     }
                     if let Some(s) = self.app_state.as_mut() {
-                        s.status_message = format!(
+                        s.ui.status_message = format!(
                             "Workspace restored: {} ({} panes)",
                             ws_name, result.pane_count
                         );
@@ -2025,17 +2025,17 @@ impl ApplicationHandler for AileronApp {
                 }
                 aileron::workspace_restore::RestoreOutcome::NotFound => {
                     if let Some(s) = self.app_state.as_mut() {
-                        s.status_message = format!("Workspace '{ws_name}' not found");
+                        s.ui.status_message = format!("Workspace '{ws_name}' not found");
                     }
                 }
                 aileron::workspace_restore::RestoreOutcome::NoDatabase => {
                     if let Some(s) = self.app_state.as_mut() {
-                        s.status_message = "Restore failed: no database".into();
+                        s.ui.status_message = "Restore failed: no database".into();
                     }
                 }
                 aileron::workspace_restore::RestoreOutcome::TreeError(e) => {
                     if let Some(s) = self.app_state.as_mut() {
-                        s.status_message = format!("Restore failed (tree): {e}");
+                        s.ui.status_message = format!("Restore failed (tree): {e}");
                     }
                 }
             }
@@ -2077,7 +2077,7 @@ impl ApplicationHandler for AileronApp {
 
         // Handle pending mark jumps (scroll to stored position).
         if let Some(app_state) = &mut self.app_state
-            && let Some(frac) = app_state.pending_mark_jump.take()
+            && let Some(frac) = app_state.session.pending_mark_jump.take()
         {
             let active_id = app_state.wm.active_pane_id();
             if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {

@@ -10,16 +10,16 @@ pub fn cmd_bitwarden(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(rest) = query.strip_prefix("bw-unlock ") {
         let password = rest.trim();
         if password.is_empty() {
-            state.status_message = "Usage: bw-unlock <password>".into();
+            state.ui.status_message = "Usage: bw-unlock <password>".into();
             return Some(());
         }
         match state.bitwarden.unlock(password) {
             Ok(_) => {
-                state.status_message = "Vault unlocked".into();
+                state.ui.status_message = "Vault unlocked".into();
                 info!("Bitwarden vault unlocked");
             }
             Err(e) => {
-                state.status_message = format!("Unlock failed: {e}");
+                state.ui.status_message = format!("Unlock failed: {e}");
                 warn!("Bitwarden unlock failed: {}", e);
             }
         }
@@ -29,17 +29,17 @@ pub fn cmd_bitwarden(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(search_query) = query.strip_prefix("bw-search ") {
         let search_query = search_query.trim();
         if search_query.is_empty() {
-            state.status_message = "Usage: bw-search <query>".into();
+            state.ui.status_message = "Usage: bw-search <query>".into();
             return Some(());
         }
         if !state.bitwarden.is_unlocked() {
-            state.status_message = "Vault is locked. Use bw-unlock <password> first.".into();
+            state.ui.status_message = "Vault is locked. Use bw-unlock <password> first.".into();
             return Some(());
         }
         match state.bitwarden.search(search_query) {
             Ok(items) => {
                 if items.is_empty() {
-                    state.status_message = format!("No vault items matching '{search_query}'");
+                    state.ui.status_message = format!("No vault items matching '{search_query}'");
                 } else {
                     let credential_items: Vec<SearchItem> = items
                         .iter()
@@ -51,18 +51,18 @@ pub fn cmd_bitwarden(state: &mut AppState, query: &str) -> Option<()> {
                         })
                         .collect();
                     state.palette.add_items(credential_items);
-                    state.status_message = format!(
+                    state.ui.status_message = format!(
                         "Found {} vault items for '{}'. Open palette to select.",
                         items.len(),
                         search_query
                     );
                     state.palette.open();
-                    state.command_palette_input.clear();
+                    state.ui.command_palette_input.clear();
                     state.palette.update_query("");
                 }
             }
             Err(e) => {
-                state.status_message = format!("Vault search failed: {e}");
+                state.ui.status_message = format!("Vault search failed: {e}");
                 warn!("Bitwarden search failed: {}", e);
             }
         }
@@ -71,7 +71,7 @@ pub fn cmd_bitwarden(state: &mut AppState, query: &str) -> Option<()> {
 
     if query == "bw-lock" {
         state.bitwarden.lock();
-        state.status_message = "Vault locked".into();
+        state.ui.status_message = "Vault locked".into();
         state.palette.set_items(
             state
                 .palette
@@ -91,7 +91,7 @@ pub fn cmd_bitwarden(state: &mut AppState, query: &str) -> Option<()> {
         {
             let url_str = url.to_string();
             if !state.bitwarden.is_unlocked() {
-                state.status_message = "Vault locked. Use :bw-unlock <password>".into();
+                state.ui.status_message = "Vault locked. Use :bw-unlock <password>".into();
             } else {
                 match state.bitwarden.search_for_url(&url_str) {
                     Ok(items) if items.len() == 1 => {
@@ -99,21 +99,21 @@ pub fn cmd_bitwarden(state: &mut AppState, query: &str) -> Option<()> {
                             Ok(cred) => {
                                 let js = state.bitwarden.autofill_js(&cred);
                                 state.pending_wry_actions.push_back(WryAction::RunJs(js));
-                                state.status_message = format!("Auto-filled: {}", items[0].name);
+                                state.ui.status_message = format!("Auto-filled: {}", items[0].name);
                             }
-                            Err(e) => state.status_message = format!("!{e}"),
+                            Err(e) => state.ui.status_message = format!("!{e}"),
                         }
                     }
                     Ok(items) if items.is_empty() => {
-                        state.status_message = "No credentials found for this site".into();
+                        state.ui.status_message = "No credentials found for this site".into();
                     }
                     Ok(items) => {
-                        state.status_message = format!(
+                        state.ui.status_message = format!(
                             "Multiple matches ({}). Use :bw-search <query> to pick.",
                             items.len()
                         );
                     }
-                    Err(e) => state.status_message = format!("!{e}"),
+                    Err(e) => state.ui.status_message = format!("!{e}"),
                 }
             }
         }
@@ -124,15 +124,15 @@ pub fn cmd_bitwarden(state: &mut AppState, query: &str) -> Option<()> {
         state.pending_wry_actions.push_back(WryAction::RunJs(
             BitwardenClient::detect_login_forms_js().into(),
         ));
-        state.status_message = "Detecting login forms...".into();
+        state.ui.status_message = "Detecting login forms...".into();
         return Some(());
     }
 
     if query == "keyring-test" {
         if crate::passwords::keyring::is_available() {
-            state.status_message = "System keyring: available".into();
+            state.ui.status_message = "System keyring: available".into();
         } else {
-            state.status_message = "System keyring: not available".into();
+            state.ui.status_message = "System keyring: not available".into();
         }
         return Some(());
     }
@@ -151,7 +151,7 @@ pub fn cmd_bitwarden(state: &mut AppState, query: &str) -> Option<()> {
                 })();
                 "#.into(),
         ));
-        state.status_message = "Checking for credentials to save...".into();
+        state.ui.status_message = "Checking for credentials to save...".into();
         return Some(());
     }
 

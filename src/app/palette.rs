@@ -79,7 +79,7 @@ impl AppState {
                     let active_id = self.wm.active_pane_id();
                     if let Some(engine) = self.engines.get_mut(&active_id) {
                         engine.navigate(&url);
-                        self.status_message = format!("Navigating to {}", item.label);
+                        self.ui.status_message = format!("Navigating to {}", item.label);
                     }
                 }
             }
@@ -91,7 +91,7 @@ impl AppState {
                     let active_id = self.wm.active_pane_id();
                     if let Some(engine) = self.engines.get_mut(&active_id) {
                         engine.navigate(&url);
-                        self.status_message = format!("Opening bookmark: {}", item.label);
+                        self.ui.status_message = format!("Opening bookmark: {}", item.label);
                     }
                 }
             }
@@ -99,7 +99,7 @@ impl AppState {
                 // Extract item ID from "credential:<id>"
                 if let Some(item_id) = item.id.strip_prefix("credential:") {
                     if !self.bitwarden.is_unlocked() {
-                        self.status_message =
+                        self.ui.status_message =
                             "Vault is locked. Use bw-unlock <password> first.".into();
                         return;
                     }
@@ -109,10 +109,10 @@ impl AppState {
                             info!("Auto-filling credential for: {}", credential.name);
                             self.pending_wry_actions
                                 .push_back(crate::app::WryAction::Autofill { js });
-                            self.status_message = format!("Auto-filled: {}", credential.name);
+                            self.ui.status_message = format!("Auto-filled: {}", credential.name);
                         }
                         Err(e) => {
-                            self.status_message = format!("Failed to get credential: {e}");
+                            self.ui.status_message = format!("Failed to get credential: {e}");
                             warn!("Bitwarden get_credential failed: {}", e);
                         }
                     }
@@ -124,10 +124,10 @@ impl AppState {
                     match self.call_lua_command(name) {
                         Ok(result) => {
                             info!("Lua command '{}' executed: {}", name, result);
-                            self.status_message = format!("✓ {name}");
+                            self.ui.status_message = format!("✓ {name}");
                         }
                         Err(e) => {
-                            self.status_message = format!("Command '{name}' failed: {e}");
+                            self.ui.status_message = format!("Command '{name}' failed: {e}");
                             warn!("Lua command '{}' failed: {}", name, e);
                         }
                     }
@@ -140,7 +140,7 @@ impl AppState {
                 {
                     let old_active = self.wm.active_pane_id();
                     if old_active != pane_id {
-                        self.last_active_pane_id = Some(old_active);
+                        self.tabs.last_active_pane_id = Some(old_active);
                     }
                     self.wm.set_active_pane(pane_id);
                     let url = self
@@ -154,11 +154,11 @@ impl AppState {
                     } else {
                         url
                     };
-                    self.status_message = format!("Switched to: {display}");
+                    self.ui.status_message = format!("Switched to: {display}");
                 }
             }
             _ => {
-                self.status_message = format!("Selected: {}", item.label);
+                self.ui.status_message = format!("Selected: {}", item.label);
             }
         }
     }

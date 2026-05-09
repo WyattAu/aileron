@@ -1,3 +1,4 @@
+pub mod key_conversion;
 pub mod keybindings;
 pub mod keymap;
 pub mod mode;

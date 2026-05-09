@@ -52,10 +52,10 @@ pub fn build_ui(
     // Otherwise egui retains focus on the last TextEdit and consumes ALL
     // character key events, preventing our keybind system from receiving them.
     let needs_text_edit_focus = app_state.palette.open
-        || app_state.url_bar_focused
+        || app_state.ui.url_bar_focused
         || app_state.mode == crate::input::Mode::Insert
-        || app_state.find_bar_open
-        || app_state.tab_search_open;
+        || app_state.ui.find_bar_open
+        || app_state.panels.tab_search_open;
     if !needs_text_edit_focus {
         ctx.memory_mut(|mem| {
             if let Some(focused_id) = mem.focused() {
@@ -93,8 +93,8 @@ pub fn build_ui(
                 // keyboard focus from egui's keybind system every frame, blocking
                 // all keyboard input. The WidgetInfo metadata is sufficient for
                 // screen readers; a transparent label never needs keyboard focus.
-                if !app_state.accessibility_text.is_empty() {
-                    let a11y_text = app_state.accessibility_text.clone();
+                if !app_state.ui.accessibility_text.is_empty() {
+                    let a11y_text = app_state.ui.accessibility_text.clone();
                     ui.allocate_ui_with_layout(
                         egui::vec2(0.0, 0.0),
                         egui::Layout::left_to_right(egui::Align::Center),
@@ -118,23 +118,23 @@ pub fn build_ui(
                 let mut mode_str = app_state.mode.as_str().to_string();
 
                 // Show sub-mode indicators
-                if app_state.hint_mode {
-                    mode_str = format!("{} HINT[{}]", mode_str, &app_state.hint_buffer);
-                } else if app_state.hint_new_tab {
-                    mode_str = format!("{} HINT-TAB[{}]", mode_str, &app_state.hint_buffer);
-                } else if app_state.find_bar_open {
+                if app_state.ui.hint_mode {
+                    mode_str = format!("{} HINT[{}]", mode_str, &app_state.ui.hint_buffer);
+                } else if app_state.ui.hint_new_tab {
+                    mode_str = format!("{} HINT-TAB[{}]", mode_str, &app_state.ui.hint_buffer);
+                } else if app_state.ui.find_bar_open {
                     mode_str = format!("{mode_str} FIND");
-                } else if app_state.url_bar_focused {
+                } else if app_state.ui.url_bar_focused {
                     mode_str = format!("{mode_str} URL");
-                } else if app_state.tab_search_open {
+                } else if app_state.panels.tab_search_open {
                     mode_str = format!("{mode_str} TABS");
-                } else if app_state.history_panel_open {
+                } else if app_state.panels.history_panel_open {
                     mode_str = format!("{mode_str} HIST");
-                } else if app_state.bookmarks_panel_open {
+                } else if app_state.panels.bookmarks_panel_open {
                     mode_str = format!("{mode_str} BM");
-                } else if app_state.help_panel_open {
+                } else if app_state.panels.help_panel_open {
                     mode_str = format!("{mode_str} HELP");
-                } else if app_state.workspace_panel_open {
+                } else if app_state.panels.workspace_panel_open {
                     mode_str = format!("{mode_str} WS");
                 }
 
@@ -145,19 +145,21 @@ pub fn build_ui(
                 ui.separator();
 
                 let current_count = app_state.wm.leaf_count();
-                let pane_count =
-                    if app_state.pane_count_dirty || current_count != app_state.cached_pane_count {
-                        app_state.cached_pane_count = current_count;
-                        app_state.pane_count_dirty = false;
-                        current_count
-                    } else {
-                        app_state.cached_pane_count
-                    };
+                let pane_count = if app_state.cache.pane_count_dirty
+                    || current_count != app_state.cache.cached_pane_count
+                {
+                    app_state.cache.cached_pane_count = current_count;
+                    app_state.cache.pane_count_dirty = false;
+                    current_count
+                } else {
+                    app_state.cache.cached_pane_count
+                };
                 ui.label(format!("panes: {pane_count}"))
                     .widget_info(|| a11y_info(WidgetType::Label, format!("Panes: {pane_count}")));
 
                 // Private mode indicator
                 if app_state
+                    .tabs
                     .private_pane_ids
                     .contains(&app_state.wm.active_pane_id())
                 {
@@ -230,8 +232,8 @@ pub fn build_ui(
                         a11y_info(WidgetType::Label, format!("Current URL: {full_url}"))
                     });
                     if url_resp.clicked() {
-                        app_state.url_bar_focused = true;
-                        app_state.url_bar_input = full_url;
+                        app_state.ui.url_bar_focused = true;
+                        app_state.ui.url_bar_input = full_url;
                     }
                 } else if let Some(pane) = offscreen_panes.get(&active_id) {
                     let url_str = pane.url().as_str();
@@ -242,15 +244,15 @@ pub fn build_ui(
                         a11y_info(WidgetType::Label, format!("Current URL: {full_url}"))
                     });
                     if url_resp.clicked() {
-                        app_state.url_bar_focused = true;
-                        app_state.url_bar_input = full_url;
+                        app_state.ui.url_bar_focused = true;
+                        app_state.ui.url_bar_input = full_url;
                     }
                 }
 
                 ui.separator();
 
                 // Show zoom level if non-default
-                if let Some(zoom) = app_state.site_settings_zoom
+                if let Some(zoom) = app_state.panels.site_settings_zoom
                     && (zoom - 1.0).abs() > 0.01
                 {
                     let pct = (zoom * 100.0).round() as u32;
@@ -286,7 +288,7 @@ pub fn build_ui(
                     ui.separator();
                 }
 
-                if app_state.autofill_available {
+                if app_state.autofill.available {
                     ui.separator();
                     let autofill_resp = ui.colored_label(
                         egui::Color32::from_rgb(100, 200, 255),
@@ -299,22 +301,22 @@ pub fn build_ui(
                         )
                     });
                     if autofill_resp.clicked()
-                        && let Some(js) = app_state.autofill_js.take()
+                        && let Some(js) = app_state.autofill.js.take()
                     {
                         app_state
                             .pending_wry_actions
                             .push_back(WryAction::RunJs(js));
-                        app_state.status_message = app_state.autofill_status_msg.clone();
-                        app_state.autofill_available = false;
+                        app_state.ui.status_message = app_state.autofill.status_msg.clone();
+                        app_state.autofill.available = false;
                     }
                 }
 
-                if app_state.hint_mode {
-                    let hint_text = format!("hint: {}", app_state.hint_buffer);
+                if app_state.ui.hint_mode {
+                    let hint_text = format!("hint: {}", app_state.ui.hint_buffer);
                     ui.colored_label(accent, hint_text.clone())
                         .widget_info(|| a11y_info(WidgetType::Label, hint_text.clone()));
-                } else if !app_state.status_message.is_empty() {
-                    let msg = app_state.status_message.clone();
+                } else if !app_state.ui.status_message.is_empty() {
+                    let msg = app_state.ui.status_message.clone();
                     ui.label(&msg)
                         .widget_info(|| a11y_info(WidgetType::Label, format!("Status: {msg}")));
                 }
@@ -340,28 +342,29 @@ pub fn build_ui(
                 // command_palette_input (the keybind-handler string) so both
                 // paths stay in sync, and update search results.
                 let query_snapshot = app_state.palette.query.clone();
-                app_state.command_palette_input = query_snapshot.clone();
+                app_state.ui.command_palette_input = query_snapshot.clone();
                 app_state.palette.update_query(&query_snapshot);
-            } else if app_state.url_bar_focused {
+            } else if app_state.ui.url_bar_focused {
                 ui.colored_label(accent, "URL>").widget_info(|| {
                     a11y_info(WidgetType::Label, "URL bar mode indicator: editing")
                 });
                 let response = ui.add(
-                    egui::TextEdit::singleline(&mut app_state.url_bar_input)
+                    egui::TextEdit::singleline(&mut app_state.ui.url_bar_input)
                         .desired_width(f32::INFINITY)
                         .hint_text("Search or enter URL..."),
                 );
                 response.widget_info(|| a11y_info(WidgetType::TextEdit, "URL bar"));
                 response.request_focus();
 
-                let query_snapshot = app_state.url_bar_input.clone();
-                if query_snapshot != app_state.last_omnibox_query {
+                let query_snapshot = app_state.ui.url_bar_input.clone();
+                if query_snapshot != app_state.ui.last_omnibox_query {
                     app_state.update_omnibox(&query_snapshot);
                 }
 
-                if !app_state.omnibox_results.is_empty() {
+                if !app_state.ui.omnibox_results.is_empty() {
                     let popup_id = egui::Id::new("omnibox_popup");
-                    let popup_height = (app_state.omnibox_results.len() as f32 * 24.0).min(200.0);
+                    let popup_height =
+                        (app_state.ui.omnibox_results.len() as f32 * 24.0).min(200.0);
 
                     let bar_rect = ui.clip_rect();
                     egui::Area::new(popup_id)
@@ -374,8 +377,8 @@ pub fn build_ui(
                             egui::Frame::popup(ui.style()).show(ui, |ui| {
                                 ui.set_width(ui.available_width().max(400.0));
                                 let mut clicked_index: Option<usize> = None;
-                                for (i, item) in app_state.omnibox_results.iter().enumerate() {
-                                    let selected = i == app_state.omnibox_selected;
+                                for (i, item) in app_state.ui.omnibox_results.iter().enumerate() {
+                                    let selected = i == app_state.ui.omnibox_selected;
                                     let category_prefix = match item.category {
                                         SearchCategory::Bookmark => "\u{2606}",
                                         SearchCategory::History => "\u{25CE}",
@@ -394,16 +397,16 @@ pub fn build_ui(
                                 }
                                 if let Some(idx) = clicked_index {
                                     app_state.handle_omnibox_select(idx);
-                                    app_state.url_bar_focused = false;
-                                    app_state.omnibox_results.clear();
-                                    app_state.last_omnibox_query.clear();
+                                    app_state.ui.url_bar_focused = false;
+                                    app_state.ui.omnibox_results.clear();
+                                    app_state.ui.last_omnibox_query.clear();
                                 }
                             });
                         });
                 }
 
                 // Help panel overlay
-                if app_state.help_panel_open {
+                if app_state.panels.help_panel_open {
                     let help_sections: &[(&str, &[(&str, &str)])] = &[
                         (
                             "Navigation",
@@ -534,20 +537,20 @@ pub fn build_ui(
                 }
 
                 if ui.input(|i| i.key_pressed(egui::Key::ArrowDown))
-                    && app_state.omnibox_selected
-                        < app_state.omnibox_results.len().saturating_sub(1)
+                    && app_state.ui.omnibox_selected
+                        < app_state.ui.omnibox_results.len().saturating_sub(1)
                 {
-                    app_state.omnibox_selected += 1;
+                    app_state.ui.omnibox_selected += 1;
                 }
                 if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-                    app_state.omnibox_selected = app_state.omnibox_selected.saturating_sub(1);
+                    app_state.ui.omnibox_selected = app_state.ui.omnibox_selected.saturating_sub(1);
                 }
 
                 if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    if !app_state.omnibox_results.is_empty() {
-                        app_state.handle_omnibox_select(app_state.omnibox_selected);
+                    if !app_state.ui.omnibox_results.is_empty() {
+                        app_state.handle_omnibox_select(app_state.ui.omnibox_selected);
                     } else {
-                        let input = app_state.url_bar_input.trim().to_string();
+                        let input = app_state.ui.url_bar_input.trim().to_string();
                         if !input.is_empty() {
                             // Check for go/<name> quickmark navigation
                             if let Some(name) = input.strip_prefix("go/") {
@@ -557,9 +560,9 @@ pub fn build_ui(
                                         app_state
                                             .pending_wry_actions
                                             .push_back(WryAction::Navigate(url));
-                                        app_state.status_message = format!("Quickmark: {name}");
+                                        app_state.ui.status_message = format!("Quickmark: {name}");
                                     } else {
-                                        app_state.status_message =
+                                        app_state.ui.status_message =
                                             format!("Quickmark '{name}' not found");
                                     }
                                 }
@@ -574,21 +577,21 @@ pub fn build_ui(
                                     app_state
                                         .pending_wry_actions
                                         .push_back(WryAction::Navigate(url));
-                                    app_state.status_message = format!("Navigating to {input}");
+                                    app_state.ui.status_message = format!("Navigating to {input}");
                                 }
                             }
                         }
                     }
-                    app_state.url_bar_focused = false;
-                    app_state.omnibox_results.clear();
-                    app_state.last_omnibox_query.clear();
+                    app_state.ui.url_bar_focused = false;
+                    app_state.ui.omnibox_results.clear();
+                    app_state.ui.last_omnibox_query.clear();
                 }
 
                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    app_state.url_bar_focused = false;
-                    app_state.url_bar_input.clear();
-                    app_state.omnibox_results.clear();
-                    app_state.last_omnibox_query.clear();
+                    app_state.ui.url_bar_focused = false;
+                    app_state.ui.url_bar_input.clear();
+                    app_state.ui.omnibox_results.clear();
+                    app_state.ui.last_omnibox_query.clear();
                 }
             } else {
                 let (mode_label, mode_color) = match app_state.mode {
@@ -613,14 +616,14 @@ pub fn build_ui(
                 url_label.widget_info(|| a11y_info(WidgetType::Label, format!("URL: {url_clone}")));
 
                 if url_label.clicked() {
-                    app_state.url_bar_focused = true;
-                    app_state.url_bar_input = url_str.clone();
+                    app_state.ui.url_bar_focused = true;
+                    app_state.ui.url_bar_input = url_str.clone();
                 }
             }
         });
     });
 
-    if app_state.find_bar_open {
+    if app_state.ui.find_bar_open {
         let area = egui::Area::new(egui::Id::new("find-bar"))
             .anchor(
                 egui::Align2::LEFT_BOTTOM,
@@ -639,7 +642,7 @@ pub fn build_ui(
                     ui.horizontal(|ui| {
                         ui.colored_label(accent, "Find:");
                         let response = ui.add(
-                            egui::TextEdit::singleline(&mut app_state.find_query)
+                            egui::TextEdit::singleline(&mut app_state.ui.find_query)
                                 .desired_width(300.0)
                                 .hint_text("Search in page..."),
                         );
@@ -649,7 +652,7 @@ pub fn build_ui(
                         if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                             let active_id = app_state.wm.active_pane_id();
                             if let Some(wry_pane) = wry_panes.get(&active_id) {
-                                let q = app_state.find_query.replace('\'', "\\'");
+                                let q = app_state.ui.find_query.replace('\'', "\\'");
                                 // Store query in JS for FindNext/FindPrev reuse
                                 wry_pane.execute_js(&format!("window._aileronFindQuery='{q}'"));
                                 wry_pane.execute_js(&format!(
@@ -678,8 +681,8 @@ pub fn build_ui(
                         let find_close = ui.button("\u{2715}");
                         find_close.widget_info(|| a11y_info(WidgetType::Button, "Close find bar"));
                         if find_close.clicked() {
-                            app_state.find_bar_open = false;
-                            app_state.find_query.clear();
+                            app_state.ui.find_bar_open = false;
+                            app_state.ui.find_query.clear();
                             let active_id = app_state.wm.active_pane_id();
                             if let Some(wry_pane) = wry_panes.get(&active_id) {
                                 wry_pane.execute_js("window.getSelection().removeAllRanges()");
@@ -740,7 +743,7 @@ pub fn build_ui(
                                     if response.clicked() {
                                         let selected = item.clone();
                                         app_state.palette.close();
-                                        app_state.command_palette_input.clear();
+                                        app_state.ui.command_palette_input.clear();
                                         app_state.execute_palette_selection(&selected);
                                     }
 
@@ -753,7 +756,7 @@ pub fn build_ui(
     }
 
     // ─── History Panel ───
-    if app_state.history_panel_open {
+    if app_state.panels.history_panel_open {
         let bg = egui::Color32::from_rgb(0x19, 0x19, 0x20);
         let accent = egui::Color32::from_rgb(0x4d, 0xb4, 0xff);
         let text = egui::Color32::from_rgb(0xd4, 0xd4, 0xd4);
@@ -785,8 +788,8 @@ pub fn build_ui(
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("✕").clicked() {
-                            app_state.history_panel_open = false;
-                            app_state.history_entries.clear();
+                            app_state.panels.history_panel_open = false;
+                            app_state.panels.history_entries.clear();
                         }
                     });
                 });
@@ -797,15 +800,15 @@ pub fn build_ui(
                 egui::ScrollArea::vertical()
                     .max_height(430.0)
                     .show(ui, |ui| {
-                        if app_state.history_entries.is_empty() {
+                        if app_state.panels.history_entries.is_empty() {
                             ui.label(
                                 egui::RichText::new("No history entries")
                                     .color(egui::Color32::GRAY),
                             );
                         }
                         let mut navigate_to: Option<url::Url> = None;
-                        for (i, entry) in app_state.history_entries.iter().enumerate() {
-                            let is_selected = i == app_state.history_selected;
+                        for (i, entry) in app_state.panels.history_entries.iter().enumerate() {
+                            let is_selected = i == app_state.panels.history_selected;
                             let response =
                                 ui.selectable_label(
                                     is_selected,
@@ -818,7 +821,7 @@ pub fn build_ui(
                                 );
                             if response.clicked() {
                                 navigate_to = url::Url::parse(&entry.url).ok();
-                                app_state.history_selected = i;
+                                app_state.panels.history_selected = i;
                             }
                             // Scroll selected item into view
                             if is_selected {
@@ -834,15 +837,15 @@ pub fn build_ui(
                             app_state
                                 .pending_wry_actions
                                 .push_back(crate::app::WryAction::Navigate(url));
-                            app_state.history_panel_open = false;
-                            app_state.history_entries.clear();
+                            app_state.panels.history_panel_open = false;
+                            app_state.panels.history_entries.clear();
                         }
                     });
             });
     }
 
     // ─── Tab Search Panel ───
-    if app_state.tab_search_open {
+    if app_state.panels.tab_search_open {
         let bg = egui::Color32::from_rgb(0x19, 0x19, 0x20);
         let accent = egui::Color32::from_rgb(0x4d, 0xb4, 0xff);
         let text = egui::Color32::from_rgb(0xd4, 0xd4, 0xd4);
@@ -876,14 +879,14 @@ pub fn build_ui(
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("✕").clicked() {
-                            app_state.tab_search_open = false;
+                            app_state.panels.tab_search_open = false;
                         }
                     });
                 });
 
                 // Search filter
                 let search_response = ui.add(
-                    egui::TextEdit::singleline(&mut app_state.tab_search_query)
+                    egui::TextEdit::singleline(&mut app_state.panels.tab_search_query)
                         .hint_text("Filter tabs...")
                         .desired_width(f32::INFINITY)
                         .text_color(text),
@@ -895,7 +898,7 @@ pub fn build_ui(
                 ui.add_space(4.0);
 
                 // Tab list with fuzzy filter
-                let query = app_state.tab_search_query.to_lowercase();
+                let query = app_state.panels.tab_search_query.to_lowercase();
                 let pane_ids = app_state.wm.pane_ids();
                 let active_id = app_state.wm.active_pane_id();
 
@@ -927,7 +930,7 @@ pub fn build_ui(
                             }
 
                             let is_active = *id == active_id;
-                            let is_selected = visible_index == app_state.tab_search_selected;
+                            let is_selected = visible_index == app_state.panels.tab_search_selected;
                             let is_terminal = app_state.terminal_pane_ids.contains(id);
                             let prefix = if is_terminal { "[term] " } else { "" };
                             let marker = if is_active { " ●" } else { "" };
@@ -946,7 +949,7 @@ pub fn build_ui(
                                 );
                                 if response.clicked() {
                                     switch_to = Some(*id);
-                                    app_state.tab_search_selected = visible_index;
+                                    app_state.panels.tab_search_selected = visible_index;
                                 }
                                 if is_selected {
                                     response.scroll_to_me(Some(egui::Align::Center));
@@ -960,8 +963,10 @@ pub fn build_ui(
                         }
 
                         // Clamp selection to visible count
-                        if visible_index > 0 && app_state.tab_search_selected >= visible_index {
-                            app_state.tab_search_selected = visible_index - 1;
+                        if visible_index > 0
+                            && app_state.panels.tab_search_selected >= visible_index
+                        {
+                            app_state.panels.tab_search_selected = visible_index - 1;
                         }
 
                         if pane_ids.is_empty() {
@@ -974,13 +979,13 @@ pub fn build_ui(
                 }
                 if let Some(id) = close_tab {
                     let _ = app_state.wm.close(id);
-                    app_state.session_dirty = true;
+                    app_state.session.session_dirty = true;
                 }
             });
     }
 
     // ─── Bookmarks Panel ───
-    if app_state.bookmarks_panel_open {
+    if app_state.panels.bookmarks_panel_open {
         let bg = egui::Color32::from_rgb(0x19, 0x19, 0x20);
         let accent = egui::Color32::from_rgb(0x4d, 0xb4, 0xff);
         let text = egui::Color32::from_rgb(0xd4, 0xd4, 0xd4);
@@ -1013,16 +1018,16 @@ pub fn build_ui(
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.small_button("Import Chrome").clicked() {
                             app_state.pending_import = Some("chrome".into());
-                            app_state.status_message = "Importing Chrome bookmarks...".into();
+                            app_state.ui.status_message = "Importing Chrome bookmarks...".into();
                         }
                         if ui.small_button("Import Firefox").clicked() {
                             app_state.pending_import = Some("firefox".into());
-                            app_state.status_message = "Importing Firefox bookmarks...".into();
+                            app_state.ui.status_message = "Importing Firefox bookmarks...".into();
                         }
                         ui.add_space(8.0);
                         if ui.button("✕").clicked() {
-                            app_state.bookmarks_panel_open = false;
-                            app_state.bookmarks_entries.clear();
+                            app_state.panels.bookmarks_panel_open = false;
+                            app_state.panels.bookmarks_entries.clear();
                         }
                     });
                 });
@@ -1033,7 +1038,7 @@ pub fn build_ui(
                 egui::ScrollArea::vertical()
                     .max_height(380.0)
                     .show(ui, |ui| {
-                        if app_state.bookmarks_entries.is_empty() {
+                        if app_state.panels.bookmarks_entries.is_empty() {
                             ui.label(
                                 egui::RichText::new("No bookmarks").color(egui::Color32::GRAY),
                             );
@@ -1043,7 +1048,7 @@ pub fn build_ui(
 
                         // Group bookmarks by folder for display
                         let mut last_folder = String::new();
-                        for (i, bm) in app_state.bookmarks_entries.iter().enumerate() {
+                        for (i, bm) in app_state.panels.bookmarks_entries.iter().enumerate() {
                             // Show folder header when folder changes
                             if last_folder != bm.folder {
                                 last_folder.clone_from(&bm.folder);
@@ -1061,7 +1066,7 @@ pub fn build_ui(
                                 ui.add_space(2.0);
                             }
 
-                            let is_selected = i == app_state.bookmarks_selected;
+                            let is_selected = i == app_state.panels.bookmarks_selected;
                             ui.horizontal(|ui| {
                                 let label = format!("{}  {}", bm.title, bm.url);
                                 let response =
@@ -1073,7 +1078,7 @@ pub fn build_ui(
                                     );
                                 if response.clicked() {
                                     navigate_to = url::Url::parse(&bm.url).ok();
-                                    app_state.bookmarks_selected = i;
+                                    app_state.panels.bookmarks_selected = i;
                                 }
                                 if is_selected {
                                     response.scroll_to_me(Some(egui::Align::Center));
@@ -1097,8 +1102,8 @@ pub fn build_ui(
                             app_state
                                 .pending_wry_actions
                                 .push_back(crate::app::WryAction::Navigate(url));
-                            app_state.bookmarks_panel_open = false;
-                            app_state.bookmarks_entries.clear();
+                            app_state.panels.bookmarks_panel_open = false;
+                            app_state.panels.bookmarks_entries.clear();
                         }
                         if let Some(id) = delete_id
                             && let Some(db) = app_state.db.as_ref()
@@ -1106,10 +1111,12 @@ pub fn build_ui(
                             if let Err(e) = crate::db::bookmarks::remove_bookmark_by_id(db, id) {
                                 tracing::warn!("Failed to remove bookmark by id: {}", e);
                             }
-                            app_state.bookmarks_entries.retain(|b| b.id != id);
-                            if app_state.bookmarks_selected >= app_state.bookmarks_entries.len() {
-                                app_state.bookmarks_selected =
-                                    app_state.bookmarks_entries.len().saturating_sub(1);
+                            app_state.panels.bookmarks_entries.retain(|b| b.id != id);
+                            if app_state.panels.bookmarks_selected
+                                >= app_state.panels.bookmarks_entries.len()
+                            {
+                                app_state.panels.bookmarks_selected =
+                                    app_state.panels.bookmarks_entries.len().saturating_sub(1);
                             }
                         }
                     });
@@ -1117,7 +1124,7 @@ pub fn build_ui(
     }
 
     // ─── Workspace Panel ───
-    if app_state.workspace_panel_open {
+    if app_state.panels.workspace_panel_open {
         let bg = egui::Color32::from_rgb(0x19, 0x19, 0x20);
         let accent = egui::Color32::from_rgb(0x4d, 0xb4, 0xff);
         let text = egui::Color32::from_rgb(0xd4, 0xd4, 0xd4);
@@ -1162,7 +1169,7 @@ pub fn build_ui(
                                     pane_urls: std::collections::HashMap::new(),
                                 });
                             app_state.current_workspace_name = name.clone();
-                            app_state.status_message = format!("Saving workspace: {name}...");
+                            app_state.ui.status_message = format!("Saving workspace: {name}...");
                         }
                         if ui.button("New Tab").clicked() {
                             let active = app_state.wm.active_pane_id();
@@ -1171,12 +1178,12 @@ pub fn build_ui(
                                 crate::wm::SplitDirection::Vertical,
                                 0.5,
                             );
-                            app_state.session_dirty = true;
+                            app_state.session.session_dirty = true;
                         }
                         ui.add_space(8.0);
                         if ui.button("X").clicked() {
-                            app_state.workspace_panel_open = false;
-                            app_state.workspace_entries.clear();
+                            app_state.panels.workspace_panel_open = false;
+                            app_state.panels.workspace_entries.clear();
                         }
                     });
                 });
@@ -1187,7 +1194,7 @@ pub fn build_ui(
                 egui::ScrollArea::vertical()
                     .max_height(300.0)
                     .show(ui, |ui| {
-                        if app_state.workspace_entries.is_empty() {
+                        if app_state.panels.workspace_entries.is_empty() {
                             ui.label(
                                 egui::RichText::new("No saved workspaces")
                                     .color(egui::Color32::GRAY),
@@ -1196,12 +1203,12 @@ pub fn build_ui(
                         let mut switch_to: Option<String> = None;
                         let mut delete_name: Option<String> = None;
 
-                        for (i, ws) in app_state.workspace_entries.iter().enumerate() {
+                        for (i, ws) in app_state.panels.workspace_entries.iter().enumerate() {
                             if ws.name == "_autosave" {
                                 continue;
                             }
                             let is_current = ws.name == app_state.current_workspace_name;
-                            let is_selected = i == app_state.workspace_selected;
+                            let is_selected = i == app_state.panels.workspace_selected;
 
                             ui.horizontal(|ui| {
                                 let marker = if is_current { " * " } else { "   " };
@@ -1217,7 +1224,7 @@ pub fn build_ui(
                                 );
                                 if response.clicked() {
                                     switch_to = Some(ws.name.clone());
-                                    app_state.workspace_selected = i;
+                                    app_state.panels.workspace_selected = i;
                                 }
                                 if is_selected {
                                     response.scroll_to_me(Some(egui::Align::Center));
@@ -1240,26 +1247,29 @@ pub fn build_ui(
                         if let Some(name) = switch_to {
                             app_state.pending_workspace_restore = Some(name.clone());
                             app_state.current_workspace_name = name.clone();
-                            app_state.status_message = format!("Restoring workspace: {name}...");
-                            app_state.workspace_panel_open = false;
-                            app_state.workspace_entries.clear();
+                            app_state.ui.status_message = format!("Restoring workspace: {name}...");
+                            app_state.panels.workspace_panel_open = false;
+                            app_state.panels.workspace_entries.clear();
                         }
                         if let Some(name) = delete_name
                             && let Some(db) = app_state.db.as_ref()
                             && let Ok(true) = crate::db::workspaces::delete_workspace(db, &name)
                         {
-                            app_state.workspace_entries.retain(|w| w.name != name);
+                            app_state
+                                .panels
+                                .workspace_entries
+                                .retain(|w| w.name != name);
                             if name == app_state.current_workspace_name {
                                 app_state.current_workspace_name = "default".into();
                             }
-                            app_state.status_message = format!("Workspace deleted: {name}");
+                            app_state.ui.status_message = format!("Workspace deleted: {name}");
                         }
                     });
             });
     }
 
     // Per-site settings panel
-    if app_state.site_settings_panel_open {
+    if app_state.panels.site_settings_panel_open {
         egui::Window::new("site-settings")
             .title_bar(true)
             .resizable(true)
@@ -1269,24 +1279,24 @@ pub fn build_ui(
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("URL Pattern:");
-                    let mut pat = app_state.site_settings_url_pattern.clone();
+                    let mut pat = app_state.panels.site_settings_url_pattern.clone();
                     ui.text_edit_singleline(&mut pat);
-                    app_state.site_settings_url_pattern = pat;
+                    app_state.panels.site_settings_url_pattern = pat;
                 });
                 ui.add_space(4.0);
 
                 // Zoom level
                 ui.horizontal(|ui| {
                     ui.label("Zoom:");
-                    let mut zoom = app_state.site_settings_zoom.unwrap_or(100.0);
+                    let mut zoom = app_state.panels.site_settings_zoom.unwrap_or(100.0);
                     if ui
                         .add(egui::Slider::new(&mut zoom, 25.0..=300.0).suffix("%"))
                         .changed()
                     {
-                        app_state.site_settings_zoom = Some(zoom);
+                        app_state.panels.site_settings_zoom = Some(zoom);
                     }
                     if ui.small_button("reset").clicked() {
-                        app_state.site_settings_zoom = None;
+                        app_state.panels.site_settings_zoom = None;
                     }
                 });
 
@@ -1297,23 +1307,23 @@ pub fn build_ui(
                     .spacing([8.0, 4.0])
                     .show(ui, |ui| {
                         ui.label("JavaScript:");
-                        let mut js = app_state.site_settings_js.unwrap_or(true);
+                        let mut js = app_state.panels.site_settings_js.unwrap_or(true);
                         if ui.checkbox(&mut js, "").changed() {
-                            app_state.site_settings_js = Some(js);
+                            app_state.panels.site_settings_js = Some(js);
                         }
                         ui.end_row();
 
                         ui.label("Cookies:");
-                        let mut cookies = app_state.site_settings_cookies.unwrap_or(true);
+                        let mut cookies = app_state.panels.site_settings_cookies.unwrap_or(true);
                         if ui.checkbox(&mut cookies, "").changed() {
-                            app_state.site_settings_cookies = Some(cookies);
+                            app_state.panels.site_settings_cookies = Some(cookies);
                         }
                         ui.end_row();
 
                         ui.label("AdBlock:");
-                        let mut adblock = app_state.site_settings_adblock.unwrap_or(true);
+                        let mut adblock = app_state.panels.site_settings_adblock.unwrap_or(true);
                         if ui.checkbox(&mut adblock, "").changed() {
-                            app_state.site_settings_adblock = Some(adblock);
+                            app_state.panels.site_settings_adblock = Some(adblock);
                         }
                         ui.end_row();
                     });
@@ -1321,7 +1331,7 @@ pub fn build_ui(
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui.button("Save").clicked() {
-                        let pattern = if app_state.site_settings_url_pattern.is_empty() {
+                        let pattern = if app_state.panels.site_settings_url_pattern.is_empty() {
                             // Use current active pane URL as wildcard pattern
                             let active_id = app_state.wm.active_pane_id();
                             wry_panes
@@ -1335,7 +1345,7 @@ pub fn build_ui(
                                 })
                                 .unwrap_or_else(|| "*".into())
                         } else {
-                            app_state.site_settings_url_pattern.clone()
+                            app_state.panels.site_settings_url_pattern.clone()
                         };
                         if let Some(db) = app_state.db.as_ref() {
                             macro_rules! save_field {
@@ -1354,34 +1364,41 @@ pub fn build_ui(
                             save_field!(
                                 "zoom",
                                 app_state
+                                    .panels
                                     .site_settings_zoom
                                     .map(|z| z.to_string())
                                     .as_deref()
                             );
                             save_field!(
                                 "adblock",
-                                app_state
-                                    .site_settings_adblock
-                                    .map(|v| if v { "1" } else { "0" })
+                                app_state.panels.site_settings_adblock.map(|v| if v {
+                                    "1"
+                                } else {
+                                    "0"
+                                })
                             );
                             save_field!(
                                 "javascript",
-                                app_state
-                                    .site_settings_js
-                                    .map(|v| if v { "1" } else { "0" })
+                                app_state.panels.site_settings_js.map(|v| if v {
+                                    "1"
+                                } else {
+                                    "0"
+                                })
                             );
                             save_field!(
                                 "cookies",
-                                app_state
-                                    .site_settings_cookies
-                                    .map(|v| if v { "1" } else { "0" })
+                                app_state.panels.site_settings_cookies.map(|v| if v {
+                                    "1"
+                                } else {
+                                    "0"
+                                })
                             );
-                            app_state.status_message =
+                            app_state.ui.status_message =
                                 format!("Saved site settings for: {pattern}");
                         }
                     }
                     if ui.button("Close").clicked() {
-                        app_state.site_settings_panel_open = false;
+                        app_state.panels.site_settings_panel_open = false;
                     }
                 });
             });
@@ -1629,8 +1646,8 @@ pub fn build_tab_list(
     let border_color = cached.border;
 
     // Populate tab display cache when dirty
-    if app_state.tab_display_dirty {
-        app_state.tab_display_dirty = false;
+    if app_state.tabs.tab_display_dirty {
+        app_state.tabs.tab_display_dirty = false;
         let mut fresh = std::collections::HashMap::new();
         for (pane_id, _) in &panes {
             let (title, url) = wry_panes
@@ -1659,7 +1676,7 @@ pub fn build_tab_list(
                 },
             );
         }
-        app_state.tab_display_cache = fresh;
+        app_state.tabs.tab_display_cache = fresh;
     }
 
     if horizontal {
@@ -1670,6 +1687,7 @@ pub fn build_tab_list(
                 let is_terminal = app_state.terminal_pane_ids.contains(pane_id);
 
                 let info = app_state
+                    .tabs
                     .tab_display_cache
                     .get(pane_id)
                     .cloned()
@@ -1683,7 +1701,7 @@ pub fn build_tab_list(
 
                 // Use custom tab name if set
                 let display_title = {
-                    let custom = app_state.tab_names.get(&pane_id.to_string()).cloned();
+                    let custom = app_state.tabs.tab_names.get(&pane_id.to_string()).cloned();
                     match custom {
                         Some(name) => truncate_str(&name, 21),
                         None => info.truncated_title_horizontal.clone(),
@@ -1703,25 +1721,25 @@ pub fn build_tab_list(
                         let icon = if is_terminal { "\u{2328} " } else { "  " };
                         ui.label(icon);
 
-                        let muted_prefix = if app_state.muted_pane_ids.contains(pane_id) {
+                        let muted_prefix = if app_state.tabs.muted_pane_ids.contains(pane_id) {
                             "\u{1f507} "
                         } else {
                             ""
                         };
-                        let pinned_prefix = if app_state.pinned_pane_ids.contains(pane_id) {
+                        let pinned_prefix = if app_state.tabs.pinned_pane_ids.contains(pane_id) {
                             "\u{1f4cc} "
                         } else {
                             ""
                         };
-                        let private_prefix = if app_state.private_pane_ids.contains(pane_id) {
+                        let private_prefix = if app_state.tabs.private_pane_ids.contains(pane_id) {
                             "\u{1f512} "
                         } else {
                             ""
                         };
 
-                        let is_pinned = app_state.pinned_pane_ids.contains(pane_id);
-                        let is_muted = app_state.muted_pane_ids.contains(pane_id);
-                        let is_private = app_state.private_pane_ids.contains(pane_id);
+                        let is_pinned = app_state.tabs.pinned_pane_ids.contains(pane_id);
+                        let is_muted = app_state.tabs.muted_pane_ids.contains(pane_id);
+                        let is_private = app_state.tabs.private_pane_ids.contains(pane_id);
 
                         let response = ui.selectable_label(
                             is_active,
@@ -1766,6 +1784,7 @@ pub fn build_tab_list(
                 let is_terminal = app_state.terminal_pane_ids.contains(pane_id);
 
                 let info = app_state
+                    .tabs
                     .tab_display_cache
                     .get(pane_id)
                     .cloned()
@@ -1779,7 +1798,7 @@ pub fn build_tab_list(
 
                 // Use custom tab name if set
                 let display_title = {
-                    let custom = app_state.tab_names.get(&pane_id.to_string()).cloned();
+                    let custom = app_state.tabs.tab_names.get(&pane_id.to_string()).cloned();
                     match custom {
                         Some(name) => truncate_str(&name, 17),
                         None => info.truncated_title_sidebar.clone(),
@@ -1797,25 +1816,25 @@ pub fn build_tab_list(
                         let icon = if is_terminal { "\u{2328}" } else { "\u{1f310}" };
                         ui.label(icon);
 
-                        let muted_prefix = if app_state.muted_pane_ids.contains(pane_id) {
+                        let muted_prefix = if app_state.tabs.muted_pane_ids.contains(pane_id) {
                             "\u{1f507} "
                         } else {
                             ""
                         };
-                        let pinned_prefix = if app_state.pinned_pane_ids.contains(pane_id) {
+                        let pinned_prefix = if app_state.tabs.pinned_pane_ids.contains(pane_id) {
                             "\u{1f4cc} "
                         } else {
                             ""
                         };
-                        let private_prefix = if app_state.private_pane_ids.contains(pane_id) {
+                        let private_prefix = if app_state.tabs.private_pane_ids.contains(pane_id) {
                             "\u{1f512} "
                         } else {
                             ""
                         };
 
-                        let is_pinned = app_state.pinned_pane_ids.contains(pane_id);
-                        let is_muted = app_state.muted_pane_ids.contains(pane_id);
-                        let is_private = app_state.private_pane_ids.contains(pane_id);
+                        let is_pinned = app_state.tabs.pinned_pane_ids.contains(pane_id);
+                        let is_muted = app_state.tabs.muted_pane_ids.contains(pane_id);
+                        let is_private = app_state.tabs.private_pane_ids.contains(pane_id);
 
                         let response = ui.selectable_label(
                             is_active,

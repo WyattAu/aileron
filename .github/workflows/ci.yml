@@ -75,6 +75,12 @@ jobs:
       - name: Build release
         run: cargo build --release
 
+      - name: Run release-mode tests
+        run: AILERON_TESTING=1 cargo test --lib --release -- --test-threads=4
+
+      - name: Run doc tests
+        run: AILERON_TESTING=1 cargo test --doc
+
   build-macos:
     name: macOS build check
     runs-on: macos-latest

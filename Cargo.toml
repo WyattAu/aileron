@@ -148,3 +148,12 @@ lto = "thin"
 strip = true
 codegen-units = 1
 panic = "abort"
+
+[features]
+default = ["mcp", "arp", "sync", "terminal", "passwords", "extensions"]
+mcp = []
+arp = []
+sync = []
+terminal = []
+passwords = []
+extensions = []

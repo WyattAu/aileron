@@ -245,7 +245,7 @@ fn test_app_state_keybinding_routing_does_not_fire_in_insert_mode() {
 fn test_app_state_command_palette_quit() {
     let viewport = test_viewport();
     let mut state = AppState::new(viewport, Config::default()).unwrap();
-    assert!(!state.should_quit);
+    assert!(!state.session.should_quit);
 
     // Open the command palette via Ctrl+P
     state.process_key_event(KeyEvent {
@@ -270,7 +270,7 @@ fn test_app_state_command_palette_quit() {
     });
 
     assert!(
-        state.should_quit,
+        state.session.should_quit,
         "typing ':q' then Enter in the command palette should set should_quit"
     );
 }
