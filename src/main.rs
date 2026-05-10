@@ -10,6 +10,7 @@ use aileron::config::Config;
 use aileron::frame_tasks;
 use aileron::gfx::GfxState;
 use aileron::input::{KeyEvent as AileronKeyEvent, Modifiers};
+#[cfg(feature = "mcp")]
 use aileron::mcp::McpBridge;
 use aileron::net::adblock::AdBlocker;
 use aileron::offscreen_webview::OffscreenWebViewManager;
@@ -83,6 +84,7 @@ struct AileronApp {
     adblocker: AdBlocker,
 
     /// Bridge between MCP background thread and main thread.
+    #[cfg(feature = "mcp")]
     mcp_bridge: McpBridge,
 
     /// Terminal manager for embedded terminal panes.
@@ -164,6 +166,7 @@ impl AileronApp {
             info!("Proxy configured: {}", proxy);
         }
 
+        #[cfg(feature = "mcp")]
         let mcp_bridge = McpBridge::new();
         let mut adaptive_quality = AdaptiveQuality::new();
         adaptive_quality.set_enabled(config.adaptive_quality);
@@ -176,6 +179,7 @@ impl AileronApp {
             config,
             wry_panes: WryPaneManager::new(),
             adblocker: AdBlocker::new(),
+            #[cfg(feature = "mcp")]
             mcp_bridge,
             terminal_manager: NativeTerminalManager::new(),
             content_scripts: aileron::scripts::ContentScriptManager::new(),
@@ -623,7 +627,10 @@ impl AileronApp {
         };
 
         if let Some(idx) = to_create {
-            let (pid, url) = self.pending_pane_creates.remove(idx).unwrap();
+            let (pid, url) = self
+                .pending_pane_creates
+                .remove(idx)
+                .expect("pending pane must exist at index from position()");
             self.create_wry_pane_for(pid, &url);
         }
 
@@ -1017,6 +1024,7 @@ impl ApplicationHandler for AileronApp {
 
         frame_tasks::load_default_adblock_rules(&mut self.adblocker);
 
+        #[cfg(feature = "mcp")]
         frame_tasks::spawn_mcp_server(&self.mcp_bridge);
 
         if let Some(w) = &self.window {
@@ -1874,7 +1882,9 @@ impl ApplicationHandler for AileronApp {
         if let Some(app_state) = &mut self.app_state {
             app_state.adblock_blocked_count = self.adblocker.blocked_count();
             frame_tasks::auto_save_workspace(app_state, &self.wry_panes);
+            #[cfg(feature = "arp")]
             frame_tasks::push_tabs_to_arp(app_state, &self.wry_panes);
+            #[cfg(feature = "arp")]
             frame_tasks::process_arp_commands(app_state);
         }
 
@@ -1919,6 +1929,7 @@ impl ApplicationHandler for AileronApp {
                 app_state,
                 &mut self.wry_panes,
                 &self.content_scripts,
+                #[cfg(feature = "mcp")]
                 &mut self.mcp_bridge,
                 &self.adblocker,
                 &interceptor_registry,
@@ -1944,6 +1955,7 @@ impl ApplicationHandler for AileronApp {
                 app_state,
                 &mut self.offscreen_panes,
                 &self.content_scripts,
+                #[cfg(feature = "mcp")]
                 &mut self.mcp_bridge,
                 &self.adblocker,
                 &interceptor_registry,
@@ -2047,6 +2059,7 @@ impl ApplicationHandler for AileronApp {
             .map(|s| s.wm.active_pane_id())
             .unwrap_or_default();
         if let Some(app_state) = self.app_state.as_mut() {
+            #[cfg(feature = "mcp")]
             frame_tasks::process_mcp_commands(
                 &self.mcp_bridge,
                 &mut self.wry_panes,

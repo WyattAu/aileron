@@ -1,4 +1,6 @@
+#[cfg(feature = "arp")]
 pub mod arp_cmd;
+#[cfg(feature = "passwords")]
 pub mod bitwarden;
 pub mod bookmarks;
 pub mod downloads;
@@ -8,6 +10,7 @@ pub mod import;
 pub mod privacy;
 pub mod settings;
 pub mod site_settings;
+#[cfg(feature = "sync")]
 pub mod sync;
 pub mod tabs;
 pub mod tools;

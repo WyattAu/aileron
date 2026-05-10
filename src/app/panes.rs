@@ -287,7 +287,10 @@ impl AileronApp {
         };
 
         if let Some(idx) = to_create {
-            let (pid, url) = self.pending_pane_creates.remove(idx).unwrap();
+            let (pid, url) = self
+                .pending_pane_creates
+                .remove(idx)
+                .expect("pending pane must exist at index from position()");
             self.create_wry_pane_for(pid, &url);
         }
 

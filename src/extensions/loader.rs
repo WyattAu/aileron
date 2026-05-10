@@ -337,7 +337,10 @@ impl ExtensionManager {
 
         self.extensions.insert(id.clone(), api);
 
-        let loaded_api = self.extensions.get(&id).unwrap();
+        let loaded_api = self
+            .extensions
+            .get(&id)
+            .expect("extension just inserted above");
         self.interceptor_registry
             .register(loaded_api.web_request_interceptor());
         loaded_api.fire_installed(InstalledDetails {

@@ -329,7 +329,9 @@ async fn handle_connection(
         }
     });
     write
-        .send(Message::text(serde_json::to_string(&hello).unwrap()))
+        .send(Message::text(serde_json::to_string(&hello).expect(
+            "serialization of hardcoded json-rpc hello should not fail",
+        )))
         .await?;
 
     // Register session for broadcast notifications

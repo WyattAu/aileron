@@ -3,13 +3,16 @@ use std::sync::Arc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+#[cfg(feature = "mcp")]
 use image::ImageEncoder;
 
 use crate::app::{AppState, WryAction};
+#[cfg(feature = "arp")]
 use crate::arp::ArpCommand;
 use crate::extensions::web_request::WebRequestInterceptorRegistry;
 use crate::extensions::{ExtensionId, MessageBus};
 use crate::git::GitStatus;
+#[cfg(feature = "mcp")]
 use crate::mcp::{McpBridge, McpCommand};
 use crate::offscreen_webview::OffscreenWebViewManager;
 use crate::scripts::{ContentScriptManager, RunAt};
@@ -100,6 +103,7 @@ pub fn auto_save_workspace(app_state: &mut AppState, wry_panes: &WryPaneManager)
 
 /// Push current tab state to the ARP server (if running).
 /// Called every frame but only serializes when the server is active.
+#[cfg(feature = "arp")]
 pub fn push_tabs_to_arp(app_state: &AppState, wry_panes: &WryPaneManager) {
     let server = match &app_state.arp_server {
         Some(s) if s.is_running() => s,
@@ -146,6 +150,7 @@ pub fn push_tabs_to_arp(app_state: &AppState, wry_panes: &WryPaneManager) {
 
 /// Process pending ARP commands from mobile clients.
 /// Dispatches mutations (tab create, navigate, close, etc.) to AppState/WryActions.
+#[cfg(feature = "arp")]
 pub fn process_arp_commands(app_state: &mut AppState) {
     let receiver = match &app_state.arp_cmd_receiver {
         Some(r) => r,
@@ -241,11 +246,10 @@ pub fn process_arp_commands(app_state: &mut AppState) {
     }
 }
 
-pub fn process_wry_events(
+fn process_wry_events_inner(
     app_state: &mut AppState,
     wry_panes: &mut WryPaneManager,
     content_scripts: &ContentScriptManager,
-    mcp_bridge: &mut McpBridge,
     adblocker: &crate::net::adblock::AdBlocker,
     interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
 ) {
@@ -360,6 +364,7 @@ pub fn process_wry_events(
                     if let Some(wry_pane) = wry_panes.get_mut(&pane_id) {
                         wry_pane.execute_js(crate::servo::NETWORK_MONITOR_JS);
                         wry_pane.execute_js(crate::servo::CONSOLE_CAPTURE_JS);
+                        #[cfg(feature = "passwords")]
                         wry_pane.execute_js(
                             crate::passwords::bitwarden::BitwardenClient::form_submit_observer_js(),
                         );
@@ -370,6 +375,7 @@ pub fn process_wry_events(
                                 } \
                             }, 100);"
                         );
+                        #[cfg(feature = "passwords")]
                         wry_pane.execute_js(&format!(
                             "setTimeout(function() {{ {} }}, 500);",
                             crate::passwords::bitwarden::BitwardenClient::form_detect_report_js()
@@ -547,18 +553,51 @@ pub fn process_wry_events(
             }
         }
     }
+}
 
+#[cfg(feature = "mcp")]
+pub fn process_wry_events(
+    app_state: &mut AppState,
+    wry_panes: &mut WryPaneManager,
+    content_scripts: &ContentScriptManager,
+    mcp_bridge: &mut McpBridge,
+    adblocker: &crate::net::adblock::AdBlocker,
+    interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
+) {
+    process_wry_events_inner(
+        app_state,
+        wry_panes,
+        content_scripts,
+        adblocker,
+        interceptor_registry,
+    );
     let active_id = app_state.wm.active_pane_id();
     if let Some(wry_pane) = wry_panes.get(&active_id) {
         mcp_bridge.update_state(wry_pane.url().as_str(), wry_pane.title());
     }
 }
 
-pub fn process_offscreen_events(
+#[cfg(not(feature = "mcp"))]
+pub fn process_wry_events(
+    app_state: &mut AppState,
+    wry_panes: &mut WryPaneManager,
+    content_scripts: &ContentScriptManager,
+    adblocker: &crate::net::adblock::AdBlocker,
+    interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
+) {
+    process_wry_events_inner(
+        app_state,
+        wry_panes,
+        content_scripts,
+        adblocker,
+        interceptor_registry,
+    );
+}
+
+fn process_offscreen_events_inner(
     app_state: &mut AppState,
     offscreen_panes: &mut OffscreenWebViewManager,
     content_scripts: &ContentScriptManager,
-    _mcp_bridge: &mut McpBridge,
     adblocker: &crate::net::adblock::AdBlocker,
     interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
 ) {
@@ -681,6 +720,7 @@ pub fn process_offscreen_events(
                     if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                         pane.execute_js(crate::servo::NETWORK_MONITOR_JS);
                         pane.execute_js(crate::servo::CONSOLE_CAPTURE_JS);
+                        #[cfg(feature = "passwords")]
                         pane.execute_js(
                             crate::passwords::bitwarden::BitwardenClient::form_submit_observer_js(),
                         );
@@ -692,6 +732,7 @@ pub fn process_offscreen_events(
                                 } \
                             }, 100);"
                         );
+                        #[cfg(feature = "passwords")]
                         pane.execute_js(&format!(
                             "setTimeout(function() {{ {} }}, 500);",
                             crate::passwords::bitwarden::BitwardenClient::form_detect_report_js()
@@ -880,6 +921,41 @@ pub fn process_offscreen_events(
     }
 }
 
+#[cfg(feature = "mcp")]
+pub fn process_offscreen_events(
+    app_state: &mut AppState,
+    offscreen_panes: &mut OffscreenWebViewManager,
+    content_scripts: &ContentScriptManager,
+    _mcp_bridge: &mut McpBridge,
+    adblocker: &crate::net::adblock::AdBlocker,
+    interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
+) {
+    process_offscreen_events_inner(
+        app_state,
+        offscreen_panes,
+        content_scripts,
+        adblocker,
+        interceptor_registry,
+    );
+}
+
+#[cfg(not(feature = "mcp"))]
+pub fn process_offscreen_events(
+    app_state: &mut AppState,
+    offscreen_panes: &mut OffscreenWebViewManager,
+    content_scripts: &ContentScriptManager,
+    adblocker: &crate::net::adblock::AdBlocker,
+    interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
+) {
+    process_offscreen_events_inner(
+        app_state,
+        offscreen_panes,
+        content_scripts,
+        adblocker,
+        interceptor_registry,
+    );
+}
+
 /// Check all offscreen panes for crash detection.
 /// A pane is considered crashed if it has been loading for >15 seconds
 /// with no activity (no events, no frame updates).
@@ -939,6 +1015,7 @@ pub fn process_pending_wry_actions(
     }
 }
 
+#[cfg(feature = "mcp")]
 pub fn process_mcp_commands(
     mcp_bridge: &McpBridge,
     wry_panes: &mut WryPaneManager,
@@ -1230,6 +1307,7 @@ pub fn load_default_adblock_rules(adblocker: &mut crate::net::adblock::AdBlocker
     }
 }
 
+#[cfg(feature = "mcp")]
 pub fn spawn_mcp_server(mcp_bridge: &McpBridge) {
     use crate::mcp::tools;
     let mcp_state = mcp_bridge.state.clone();
@@ -1397,6 +1475,7 @@ fn handle_ipc_message(
                     app_state.config.sync_encrypted = v;
                 }
                 // sync_passphrase is stored in keyring, not config — handled below
+                #[cfg(feature = "passwords")]
                 if let Some(v) = config_obj
                     .get("sync_passphrase")
                     .and_then(|v| v.as_str())
@@ -1433,6 +1512,7 @@ fn handle_ipc_message(
                 app_state.cache.config_json_dirty = true;
             }
         }
+        #[cfg(feature = "passwords")]
         Some("credential_save") => {
             if let (Some(username), Some(password), Some(url)) = (
                 msg.get("username").and_then(|v| v.as_str()),
@@ -1478,6 +1558,7 @@ fn handle_ipc_message(
             app_state.ui.hint_buffer.clear();
             app_state.ui.status_message.clear();
         }
+        #[cfg(feature = "passwords")]
         Some("login-form-detected") => {
             if msg
                 .get("has_login")
@@ -1737,6 +1818,7 @@ fn handle_ipc_message_offscreen(
                     app_state.config.sync_encrypted = v;
                 }
                 // sync_passphrase is stored in keyring, not config — handled below
+                #[cfg(feature = "passwords")]
                 if let Some(v) = config_obj
                     .get("sync_passphrase")
                     .and_then(|v| v.as_str())
@@ -1774,6 +1856,7 @@ fn handle_ipc_message_offscreen(
                 app_state.cache.config_json_dirty = true;
             }
         }
+        #[cfg(feature = "passwords")]
         Some("credential_save") => {
             if let (Some(username), Some(password), Some(url)) = (
                 msg.get("username").and_then(|v| v.as_str()),
@@ -1859,6 +1942,7 @@ fn handle_ipc_message_offscreen(
                 pane.mark_dirty();
             }
         }
+        #[cfg(feature = "passwords")]
         Some("login-form-detected") => {
             if msg
                 .get("has_login")
@@ -1866,7 +1950,7 @@ fn handle_ipc_message_offscreen(
                 .unwrap_or(false)
                 && pane_id == app_state.wm.active_pane_id()
                 && app_state.bitwarden.is_unlocked()
-                && let Some(pane) = offscreen_panes.get(&pane_id)
+                && let Some(pane) = offscreen_panes.get_mut(&pane_id)
             {
                 let url = pane.url().to_string();
                 if let Ok(items) = app_state.bitwarden.search_for_url(&url)
@@ -2106,6 +2190,7 @@ mod tests {
 
     // ─── push_tabs_to_arp ───────────────────────────────────────────────
 
+    #[cfg(feature = "arp")]
     #[test]
     fn push_tabs_to_arp_no_server_does_nothing() {
         let app_state = test_app_state();
@@ -2114,6 +2199,7 @@ mod tests {
         push_tabs_to_arp(&app_state, &wry_panes);
     }
 
+    #[cfg(feature = "arp")]
     #[test]
     fn push_tabs_to_arp_stopped_server_does_nothing() {
         let mut app_state = test_app_state();
@@ -2129,6 +2215,7 @@ mod tests {
 
     // ─── process_arp_commands ───────────────────────────────────────────
 
+    #[cfg(feature = "arp")]
     #[test]
     fn process_arp_commands_no_receiver_does_nothing() {
         let mut app_state = test_app_state();
@@ -2136,6 +2223,7 @@ mod tests {
         process_arp_commands(&mut app_state);
     }
 
+    #[cfg(feature = "arp")]
     #[test]
     fn process_arp_commands_tab_navigate_pushes_action() {
         let mut app_state = test_app_state();
@@ -2149,6 +2237,7 @@ mod tests {
         assert!(!app_state.pending_wry_actions.is_empty());
     }
 
+    #[cfg(feature = "arp")]
     #[test]
     fn process_arp_commands_clipboard_set_pushes_action() {
         let mut app_state = test_app_state();
@@ -2161,6 +2250,7 @@ mod tests {
         assert!(!app_state.pending_wry_actions.is_empty());
     }
 
+    #[cfg(feature = "arp")]
     #[test]
     fn process_arp_commands_quickmark_open_no_match_does_nothing() {
         let mut app_state = test_app_state();
@@ -2173,6 +2263,7 @@ mod tests {
         assert!(app_state.pending_wry_actions.is_empty());
     }
 
+    #[cfg(feature = "arp")]
     #[test]
     fn process_arp_commands_quickmark_open_with_default_quickmark_pushes_navigate() {
         let mut app_state = test_app_state();
@@ -2183,6 +2274,7 @@ mod tests {
         assert_eq!(app_state.pending_wry_actions.len(), 1);
     }
 
+    #[cfg(feature = "arp")]
     #[test]
     fn process_arp_commands_tab_create_with_no_url() {
         let mut app_state = test_app_state();
@@ -2193,6 +2285,7 @@ mod tests {
         assert!(app_state.session.session_dirty);
     }
 
+    #[cfg(feature = "arp")]
     #[test]
     fn process_arp_commands_tab_close_with_none_target() {
         let mut app_state = test_app_state();
@@ -2202,6 +2295,7 @@ mod tests {
         process_arp_commands(&mut app_state);
     }
 
+    #[cfg(feature = "arp")]
     #[test]
     fn process_arp_commands_tab_activate() {
         let mut app_state = test_app_state();
@@ -2213,6 +2307,7 @@ mod tests {
         assert_eq!(app_state.wm.active_pane_id(), active_id);
     }
 
+    #[cfg(feature = "arp")]
     #[test]
     fn process_arp_commands_tab_go_back() {
         let mut app_state = test_app_state();
@@ -2223,6 +2318,7 @@ mod tests {
         assert_eq!(app_state.pending_wry_actions.len(), 1);
     }
 
+    #[cfg(feature = "arp")]
     #[test]
     fn process_arp_commands_tab_go_forward() {
         let mut app_state = test_app_state();
@@ -2233,6 +2329,7 @@ mod tests {
         assert_eq!(app_state.pending_wry_actions.len(), 1);
     }
 
+    #[cfg(feature = "arp")]
     #[test]
     fn process_arp_commands_tab_reload() {
         let mut app_state = test_app_state();
@@ -2243,6 +2340,7 @@ mod tests {
         assert_eq!(app_state.pending_wry_actions.len(), 1);
     }
 
+    #[cfg(feature = "arp")]
     #[test]
     fn process_arp_commands_clipboard_get() {
         let mut app_state = test_app_state();

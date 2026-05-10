@@ -37,6 +37,19 @@ pub struct CosmeticFilter {
     pub domains: Option<Vec<String>>,
 }
 
+/// A parsed ad-blocking filter list containing network and cosmetic filters.
+///
+/// Parses filter rules in EasyList/Adblock Plus format.
+///
+/// # Example
+///
+/// ```
+/// use aileron::net::filter_list::FilterList;
+///
+/// let list = FilterList::parse("||ads.example.com^\n##div.ad-banner");
+/// assert_eq!(list.network_filters.len(), 1);
+/// assert_eq!(list.cosmetic_filters.len(), 1);
+/// ```
 pub struct FilterList {
     pub network_filters: Vec<NetworkFilter>,
     pub cosmetic_filters: Vec<CosmeticFilter>,

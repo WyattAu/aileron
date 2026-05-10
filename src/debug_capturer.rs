@@ -333,7 +333,9 @@ fn write_event(event_type: &str, message: &str, location: &str, thread: &str, ex
     });
 
     if !extra.is_null() {
-        let obj = event.as_object_mut().unwrap();
+        let obj = event
+            .as_object_mut()
+            .expect("event is always constructed as json object");
         if let Value::Object(extra_obj) = extra {
             for (k, v) in extra_obj {
                 obj.insert(k.clone(), v);

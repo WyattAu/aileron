@@ -5,6 +5,20 @@ use url::Url;
 
 use crate::net::filter_list::{CosmeticFilter, FilterList, NetworkFilter, ResourceType};
 
+/// Blocks ads, trackers, and annoyances.
+///
+/// Loads filter lists in EasyList format and matches URLs against domain blocks,
+/// URL patterns (with wildcard support via Aho-Corasick), and cosmetic CSS rules.
+///
+/// # Example
+///
+/// ```
+/// use aileron::net::adblock::AdBlocker;
+///
+/// let mut blocker = AdBlocker::new();
+/// blocker.load_filter_list("||ads.example.com^\n||tracker.evil.net^").unwrap();
+/// assert_eq!(blocker.rule_count(), 2);
+/// ```
 pub struct AdBlocker {
     blocked_domains: HashSet<String>,
     blocked_patterns: Vec<String>,
@@ -432,7 +446,9 @@ impl AdBlocker {
         let pattern = &filter.pattern;
 
         if pattern.starts_with("||") {
-            let domain = pattern.strip_prefix("||").unwrap();
+            let domain = pattern
+                .strip_prefix("||")
+                .expect("guarded by starts_with check");
             let domain = domain.trim_end_matches('^');
             let domain = domain.split('/').next().unwrap_or(domain);
 
@@ -663,7 +679,7 @@ impl AdBlocker {
             let domain = filter
                 .pattern
                 .strip_prefix("||")
-                .unwrap()
+                .expect("guarded by starts_with check")
                 .trim_end_matches('^')
                 .split('/')
                 .next()

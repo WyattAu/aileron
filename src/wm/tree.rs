@@ -37,6 +37,26 @@ pub enum TileError {
 }
 
 /// The BSP tree managing tiled panes.
+///
+/// Each leaf node holds a pane (webview), and internal nodes represent
+/// horizontal or vertical splits with a ratio controlling relative sizes.
+///
+/// # Example
+///
+/// ```
+/// use aileron::wm::{BspTree, Rect, SplitDirection};
+///
+/// let mut tree = BspTree::new(
+///     Rect::new(0.0, 0.0, 1920.0, 1080.0),
+///     url::Url::parse("https://example.com").unwrap(),
+/// );
+/// assert_eq!(tree.leaf_count(), 1);
+///
+/// let first = tree.active_pane_id();
+/// tree.split(first, SplitDirection::Vertical, 0.5).unwrap();
+/// assert_eq!(tree.leaf_count(), 2);
+/// assert!(tree.verify_coverage());
+/// ```
 #[derive(Debug, Clone)]
 pub struct BspTree {
     root: Option<BspNode>,

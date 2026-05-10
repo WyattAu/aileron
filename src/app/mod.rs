@@ -21,6 +21,7 @@ use crate::db::bookmarks;
 use crate::extensions::ExtensionManager;
 use crate::input::{KeybindingRegistry, Mode};
 use crate::lua::LuaEngine;
+#[cfg(feature = "passwords")]
 use crate::passwords::BitwardenClient;
 use crate::servo::PaneStateManager;
 use crate::ui::palette::CommandPalette;
@@ -275,6 +276,7 @@ pub struct AppState {
     pub terminal_pane_ids: HashSet<Uuid>,
 
     /// Bitwarden password manager client.
+    #[cfg(feature = "passwords")]
     pub bitwarden: BitwardenClient,
 
     /// Command to auto-type into the next terminal pane that gets created.
@@ -305,6 +307,7 @@ pub struct AppState {
     pub extension_manager: Arc<parking_lot::RwLock<ExtensionManager>>,
 
     /// Sync filesystem watcher (started/stopped by sync commands).
+    #[cfg(feature = "sync")]
     pub sync_watcher: crate::sync::watcher::SyncWatcher,
 
     /// Download manager — handles file downloads with progress tracking.
@@ -312,10 +315,12 @@ pub struct AppState {
 
     /// ARP server — Aileron Remote Protocol for mobile clients.
     /// Created on demand via `:arp-start` command.
+    #[cfg(feature = "arp")]
     pub arp_server: Option<crate::arp::ArpServer>,
 
     /// ARP command receiver — polled each frame to process mobile mutations.
     /// Stored separately because it must not be dropped while the server runs.
+    #[cfg(feature = "arp")]
     pub arp_cmd_receiver:
         Option<std::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<crate::arp::ArpCommand>>>,
 
@@ -357,7 +362,11 @@ impl AppState {
         }
 
         let db_path = Self::db_path()?;
-        let db = match std::fs::create_dir_all(db_path.parent().unwrap()) {
+        let db = match std::fs::create_dir_all(
+            db_path
+                .parent()
+                .expect("db_path must have a parent directory"),
+        ) {
             Ok(_) => match crate::db::open_database(&db_path) {
                 Ok(conn) => Some(conn),
                 Err(e) => {
@@ -513,6 +522,7 @@ impl AppState {
             pending_workspace_restore: None,
             current_workspace_name: "default".into(),
             terminal_pane_ids: HashSet::new(),
+            #[cfg(feature = "passwords")]
             bitwarden: BitwardenClient::new(),
             pending_terminal_command: None,
             pending_tab_close: None,
@@ -522,13 +532,16 @@ impl AppState {
             input_latency: crate::profiling::InputLatencyTracker::new(),
             adblock_blocked_count: 0,
             extension_manager: extension_manager.clone(),
+            #[cfg(feature = "sync")]
             sync_watcher: crate::sync::watcher::SyncWatcher::new(),
             download_manager: crate::downloads::DownloadManager::new(
                 directories::UserDirs::new()
                     .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
                     .unwrap_or_else(|| std::path::PathBuf::from("./Downloads")),
             ),
+            #[cfg(feature = "arp")]
             arp_server: None,
+            #[cfg(feature = "arp")]
             arp_cmd_receiver: None,
             pending_import: None,
             pending_new_tab_url: None,
@@ -548,7 +561,11 @@ impl AppState {
         if self.cache.https_safe_list_cache.is_some()
             && self.cache.https_safe_list_debug_flag == current_debug
         {
-            return self.cache.https_safe_list_cache.clone().unwrap();
+            return self
+                .cache
+                .https_safe_list_cache
+                .clone()
+                .expect("https safe list cache populated above");
         }
         let list = crate::net::privacy::load_https_safe_list();
         self.cache.https_safe_list_debug_flag = current_debug;

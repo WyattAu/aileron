@@ -6,6 +6,7 @@ use crate::app::AppState;
 use crate::config::Config;
 use crate::gfx::GfxState;
 use crate::input::Modifiers;
+#[cfg(feature = "mcp")]
 use crate::mcp::McpBridge;
 use crate::net::adblock::AdBlocker;
 use crate::offscreen_webview::OffscreenWebViewManager;
@@ -30,6 +31,7 @@ pub struct AileronApp {
 
     pub(crate) adblocker: AdBlocker,
 
+    #[cfg(feature = "mcp")]
     pub(crate) mcp_bridge: McpBridge,
 
     pub(crate) terminal_manager: NativeTerminalManager,
@@ -82,6 +84,7 @@ impl AileronApp {
             info!("Proxy configured: {}", proxy);
         }
 
+        #[cfg(feature = "mcp")]
         let mcp_bridge = McpBridge::new();
         let mut adaptive_quality = AdaptiveQuality::new();
         adaptive_quality.set_enabled(config.adaptive_quality);
@@ -94,6 +97,7 @@ impl AileronApp {
             config,
             wry_panes: WryPaneManager::new(),
             adblocker: AdBlocker::new(),
+            #[cfg(feature = "mcp")]
             mcp_bridge,
             terminal_manager: NativeTerminalManager::new(),
             content_scripts: crate::scripts::ContentScriptManager::new(),

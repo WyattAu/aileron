@@ -95,6 +95,7 @@ impl AppState {
                     }
                 }
             }
+            #[cfg(feature = "passwords")]
             SearchCategory::Credential => {
                 // Extract item ID from "credential:<id>"
                 if let Some(item_id) = item.id.strip_prefix("credential:") {

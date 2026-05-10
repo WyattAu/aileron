@@ -1,0 +1,17 @@
+[package]
+name = "aileron-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+aileron = { path = ".." }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "adblock_parser"
+path = "adblock_parser.rs"
+
+[[bin]]
+name = "url_parser"
+path = "url_parser.rs"

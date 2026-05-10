@@ -12,6 +12,16 @@ use tracing::{info, warn};
 ///
 /// All fields have sensible defaults. Missing fields in config.toml
 /// fall back to the Default impl.
+///
+/// # Example
+///
+/// ```
+/// use aileron::config::Config;
+///
+/// let config = Config::default();
+/// assert_eq!(config.homepage, "aileron://welcome");
+/// assert!(config.adblock_enabled);
+/// ```
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
@@ -670,7 +680,9 @@ wiki = "https://en.wikipedia.org/w/index.php?search={query}"
             *self.cached_theme.borrow_mut() =
                 Some(CachedThemeColors::from_theme(&self.theme, &theme_colors));
         }
-        std::cell::Ref::map(self.cached_theme.borrow(), |o| o.as_ref().unwrap())
+        std::cell::Ref::map(self.cached_theme.borrow(), |o| {
+            o.as_ref().expect("cached_theme initialized above")
+        })
     }
 
     /// List available theme names (built-in + custom).

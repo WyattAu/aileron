@@ -94,6 +94,7 @@ impl ApplicationHandler for AileronApp {
 
         frame_tasks::load_default_adblock_rules(&mut self.adblocker);
 
+        #[cfg(feature = "mcp")]
         frame_tasks::spawn_mcp_server(&self.mcp_bridge);
 
         if let Some(w) = &self.window {
@@ -876,7 +877,9 @@ impl ApplicationHandler for AileronApp {
         if let Some(app_state) = &mut self.app_state {
             app_state.adblock_blocked_count = self.adblocker.blocked_count();
             frame_tasks::auto_save_workspace(app_state, &self.wry_panes);
+            #[cfg(feature = "arp")]
             frame_tasks::push_tabs_to_arp(app_state, &self.wry_panes);
+            #[cfg(feature = "arp")]
             frame_tasks::process_arp_commands(app_state);
         }
 
@@ -919,6 +922,7 @@ impl ApplicationHandler for AileronApp {
                 app_state,
                 &mut self.wry_panes,
                 &self.content_scripts,
+                #[cfg(feature = "mcp")]
                 &mut self.mcp_bridge,
                 &self.adblocker,
                 &interceptor_registry,
@@ -944,6 +948,7 @@ impl ApplicationHandler for AileronApp {
                 app_state,
                 &mut self.offscreen_panes,
                 &self.content_scripts,
+                #[cfg(feature = "mcp")]
                 &mut self.mcp_bridge,
                 &self.adblocker,
                 &interceptor_registry,
@@ -1040,19 +1045,22 @@ impl ApplicationHandler for AileronApp {
             }
         }
 
-        let active_id = self
-            .app_state
-            .as_ref()
-            .map(|s| s.wm.active_pane_id())
-            .unwrap_or_default();
-        if let Some(app_state) = self.app_state.as_mut() {
-            frame_tasks::process_mcp_commands(
-                &self.mcp_bridge,
-                &mut self.wry_panes,
-                active_id,
-                app_state,
-                &mut self.offscreen_panes,
-            );
+        #[cfg(feature = "mcp")]
+        {
+            let active_id = self
+                .app_state
+                .as_ref()
+                .map(|s| s.wm.active_pane_id())
+                .unwrap_or_default();
+            if let Some(app_state) = self.app_state.as_mut() {
+                frame_tasks::process_mcp_commands(
+                    &self.mcp_bridge,
+                    &mut self.wry_panes,
+                    active_id,
+                    app_state,
+                    &mut self.offscreen_panes,
+                );
+            }
         }
 
         if let Some(close_id) = self

@@ -1,4 +1,5 @@
 pub mod app;
+#[cfg(feature = "arp")]
 pub mod arp;
 pub mod config;
 pub mod db;
@@ -11,15 +12,18 @@ pub mod git;
 pub mod i18n;
 pub mod input;
 pub mod lua;
+#[cfg(feature = "mcp")]
 pub mod mcp;
 pub mod net;
 pub mod offscreen_webview;
+#[cfg(feature = "passwords")]
 pub mod passwords;
 pub mod platform;
 pub mod popup;
 pub mod profiling;
 pub mod scripts;
 pub mod servo;
+#[cfg(feature = "sync")]
 pub mod sync;
 pub mod terminal;
 pub mod ui;

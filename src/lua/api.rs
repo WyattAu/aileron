@@ -548,7 +548,11 @@ impl LuaEngine {
 
         let key = match key_part {
             // Single character keys
-            s if s.len() == 1 => Key::Character(s.chars().next().unwrap()),
+            s if s.len() == 1 => Key::Character(
+                s.chars()
+                    .next()
+                    .expect("single-char string must yield one char"),
+            ),
             // Special keys
             "enter" | "return" => Key::Enter,
             "escape" | "esc" => Key::Escape,

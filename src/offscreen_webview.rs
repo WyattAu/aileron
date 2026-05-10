@@ -221,7 +221,7 @@ a {{ color: #4db4ff; }}
                     wry::http::Response::builder()
                         .header("Content-Type", "text/html")
                         .body(html.into_bytes().into())
-                        .unwrap()
+                        .expect("valid http response builder with known header and body")
                 }
             })
             .with_ipc_handler({

@@ -84,6 +84,7 @@ impl AppState {
             return;
         }
 
+        #[cfg(feature = "passwords")]
         if super::cmd::bitwarden::cmd_bitwarden(self, query).is_some() {
             return;
         }
@@ -212,6 +213,7 @@ impl AppState {
             return;
         }
 
+        #[cfg(feature = "arp")]
         if super::cmd::arp_cmd::cmd_arp(self, query).is_some() {
             return;
         }
@@ -683,6 +685,7 @@ impl AppState {
             return;
         }
 
+        #[cfg(feature = "passwords")]
         if query == "autofill" {
             let active_id = self.wm.active_pane_id();
             if let Some(engine) = self.engines.get(&active_id)
@@ -817,6 +820,7 @@ impl AppState {
             return;
         }
 
+        #[cfg(feature = "sync")]
         if query == "sync" {
             self.ui.status_message = super::cmd::sync::execute_sync_push(
                 &self.config.sync_target,
@@ -824,6 +828,7 @@ impl AppState {
             );
             return;
         }
+        #[cfg(feature = "sync")]
         if query == "sync --pull" {
             self.ui.status_message = super::cmd::sync::execute_sync_pull(
                 &self.config.sync_target,
@@ -831,6 +836,7 @@ impl AppState {
             );
             return;
         }
+        #[cfg(feature = "sync")]
         if query == "sync --both" {
             self.ui.status_message = super::cmd::sync::execute_sync_push(
                 &self.config.sync_target,
@@ -843,6 +849,7 @@ impl AppState {
             self.ui.status_message = format!("{} | {}", self.ui.status_message, pull_msg);
             return;
         }
+        #[cfg(feature = "sync")]
         if query == "sync --status" {
             self.ui.status_message = super::cmd::sync::execute_sync_status(
                 &self.config.sync_target,
@@ -851,6 +858,7 @@ impl AppState {
             );
             return;
         }
+        #[cfg(feature = "sync")]
         if query == "sync-watch" {
             if let Err(e) = super::cmd::sync::execute_sync_watch(&self.config.sync_target) {
                 self.ui.status_message = e;
@@ -863,6 +871,7 @@ impl AppState {
             }
             return;
         }
+        #[cfg(feature = "sync")]
         if query == "sync-stop" {
             self.sync_watcher.stop();
             self.ui.status_message = "Sync watcher stopped".into();

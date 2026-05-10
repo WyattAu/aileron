@@ -15,7 +15,7 @@ pub enum SyncTarget {
 impl SyncTarget {
     pub fn parse(s: &str) -> Result<Self> {
         if s.contains('@') && s.contains(':') {
-            let colon = s.find(':').unwrap();
+            let colon = s.find(':').expect("guarded by contains(':') check");
             Ok(SyncTarget::Ssh {
                 user_host: s[..colon].to_string(),
                 remote_path: s[colon + 1..].to_string(),
