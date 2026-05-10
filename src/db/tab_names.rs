@@ -3,6 +3,7 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 
 /// Save or update a tab name for a pane.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn set_tab_name(conn: &Connection, pane_id: &str, name: &str) -> Result<()> {
     conn.execute(
         "INSERT INTO tab_names (pane_id, name, updated_at) VALUES (?1, ?2, datetime('now'))
@@ -13,6 +14,7 @@ pub fn set_tab_name(conn: &Connection, pane_id: &str, name: &str) -> Result<()> 
 }
 
 /// Remove a tab name by pane ID.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn remove_tab_name(conn: &Connection, pane_id: &str) -> Result<bool> {
     let rows = conn.execute(
         "DELETE FROM tab_names WHERE pane_id = ?1",
@@ -22,6 +24,7 @@ pub fn remove_tab_name(conn: &Connection, pane_id: &str) -> Result<bool> {
 }
 
 /// Load all tab names from the database.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn load_tab_names(conn: &Connection) -> Result<HashMap<String, String>> {
     let mut stmt = conn.prepare("SELECT pane_id, name FROM tab_names")?;
     let rows = stmt.query_map([], |row| {
@@ -39,6 +42,7 @@ pub fn load_tab_names(conn: &Connection) -> Result<HashMap<String, String>> {
 }
 
 /// Clear all tab names (for session reset).
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn clear_all_tab_names(conn: &Connection) -> Result<usize> {
     let rows = conn.execute("DELETE FROM tab_names", [])?;
     Ok(rows)

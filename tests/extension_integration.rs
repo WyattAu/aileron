@@ -684,7 +684,7 @@ fn test_lifecycle_load_unload_reload() {
     let ext_id = loaded[0].clone();
 
     // Unload
-    manager.unload(&ext_id);
+    let _ = manager.unload(&ext_id);
     assert_eq!(manager.count(), 0);
 
     // Reload via load_all
@@ -734,7 +734,7 @@ fn test_lifecycle_multiple_extensions_independent_state() {
     }
 
     // Unloading one doesn't affect others
-    manager.unload(&loaded[1]);
+    let _ = manager.unload(&loaded[1]);
     assert_eq!(manager.count(), 2);
     assert!(manager.get(&loaded[0]).is_some());
     assert!(manager.get(&loaded[1]).is_none());

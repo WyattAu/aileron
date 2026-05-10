@@ -334,6 +334,7 @@ impl NativeTerminalPane {
     }
 
     /// Get the terminal title (if set by the child process).
+    #[must_use]
     pub fn title(&self) -> Option<String> {
         self.title.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
@@ -388,6 +389,7 @@ impl NativeTerminalPane {
         self.selecting = false;
     }
 
+    #[must_use]
     pub fn selection_text(&self) -> Option<String> {
         if !self.selection.active {
             return None;
@@ -531,11 +533,13 @@ impl NativeTerminalManager {
     }
 
     /// Get a terminal pane by ID.
+    #[must_use]
     pub fn get(&self, pane_id: &Uuid) -> Option<&NativeTerminalPane> {
         self.panes.get(pane_id)
     }
 
     /// Get a terminal pane by ID (mutable).
+    #[must_use]
     pub fn get_mut(&mut self, pane_id: &Uuid) -> Option<&mut NativeTerminalPane> {
         self.panes.get_mut(pane_id)
     }

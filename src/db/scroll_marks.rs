@@ -3,6 +3,7 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 
 /// Save or update a scroll mark (url + letter → fraction).
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn set_scroll_mark(conn: &Connection, url: &str, letter: char, fraction: f64) -> Result<()> {
     conn.execute(
         "INSERT INTO scroll_marks (url, letter, fraction) VALUES (?1, ?2, ?3)
@@ -13,6 +14,7 @@ pub fn set_scroll_mark(conn: &Connection, url: &str, letter: char, fraction: f64
 }
 
 /// Remove a scroll mark by URL and letter.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn remove_scroll_mark(conn: &Connection, url: &str, letter: char) -> Result<bool> {
     let rows = conn.execute(
         "DELETE FROM scroll_marks WHERE url = ?1 AND letter = ?2",
@@ -22,6 +24,7 @@ pub fn remove_scroll_mark(conn: &Connection, url: &str, letter: char) -> Result<
 }
 
 /// Load all scroll marks for a given URL.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn load_scroll_marks_for_url(conn: &Connection, url: &str) -> Result<HashMap<char, f64>> {
     let mut stmt = conn.prepare("SELECT letter, fraction FROM scroll_marks WHERE url = ?1")?;
     let rows = stmt.query_map(rusqlite::params![url], |row| {
@@ -41,6 +44,7 @@ pub fn load_scroll_marks_for_url(conn: &Connection, url: &str) -> Result<HashMap
 }
 
 /// Remove all scroll marks for a URL.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn clear_scroll_marks_for_url(conn: &Connection, url: &str) -> Result<usize> {
     let rows = conn.execute(
         "DELETE FROM scroll_marks WHERE url = ?1",

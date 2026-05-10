@@ -117,6 +117,7 @@ pub fn os_name() -> &'static str {
     super::platform().os_name()
 }
 
+#[must_use]
 pub fn desktop_environment() -> Option<String> {
     super::platform().desktop_environment()
 }

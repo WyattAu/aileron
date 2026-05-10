@@ -90,6 +90,7 @@ impl CommandPalette {
     }
 
     /// Get the currently selected item, if any.
+    #[must_use]
     pub fn selected_item(&self) -> Option<&SearchItem> {
         self.results.get(self.selected_index)
     }
@@ -112,6 +113,7 @@ impl CommandPalette {
 
     /// Select the current item and return it (consumed).
     /// Returns None if no item is selected.
+    #[must_use]
     pub fn confirm_selection(&mut self) -> Option<SearchItem> {
         if self.results.is_empty() {
             return None;

@@ -8,6 +8,7 @@ use anyhow::Result;
 const SERVICE_NAME: &str = "com.aileron.browser";
 
 /// Store a credential in the system keyring.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn store_credential(username: &str, password: &str) -> Result<()> {
     let entry = keyring::Entry::new(SERVICE_NAME, username)?;
     entry.set_password(password)?;
@@ -15,6 +16,7 @@ pub fn store_credential(username: &str, password: &str) -> Result<()> {
 }
 
 /// Retrieve a credential from the system keyring.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn get_credential(username: &str) -> Result<Option<String>> {
     let entry = keyring::Entry::new(SERVICE_NAME, username)?;
     match entry.get_password() {
@@ -25,6 +27,7 @@ pub fn get_credential(username: &str) -> Result<Option<String>> {
 }
 
 /// Delete a credential from the system keyring.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn delete_credential(username: &str) -> Result<()> {
     let entry = keyring::Entry::new(SERVICE_NAME, username)?;
     entry.delete_credential()?;

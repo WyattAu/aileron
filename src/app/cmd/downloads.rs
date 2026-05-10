@@ -4,6 +4,7 @@ use open::that as open_that;
 
 use super::super::AppState;
 
+#[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
     if query == "downloads" {
         let progress = state.download_manager.progress_all();

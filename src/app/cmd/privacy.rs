@@ -1,5 +1,6 @@
 use super::super::AppState;
 
+#[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn cmd_clear_privacy(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(subcmd) = query.strip_prefix("clear ") {
         let subcmd = subcmd.trim();

@@ -18,11 +18,13 @@ pub struct Bookmark {
 
 /// Add a bookmark. Returns the new bookmark's ID.
 /// If the URL is already bookmarked, updates the title and folder.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn add_bookmark(conn: &Connection, url: &str, title: &str) -> Result<i64> {
     add_bookmark_with_folder(conn, url, title, "")
 }
 
 /// Add a bookmark with an optional folder.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn add_bookmark_with_folder(
     conn: &Connection,
     url: &str,
@@ -38,6 +40,7 @@ pub fn add_bookmark_with_folder(
 }
 
 /// Set the folder for a bookmark by ID.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn set_bookmark_folder(conn: &Connection, id: i64, folder: &str) -> Result<bool> {
     let rows = conn.execute(
         "UPDATE bookmarks SET folder = ?1 WHERE id = ?2",
@@ -47,6 +50,7 @@ pub fn set_bookmark_folder(conn: &Connection, id: i64, folder: &str) -> Result<b
 }
 
 /// Get all distinct folder names.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn list_folders(conn: &Connection) -> Result<Vec<String>> {
     let mut stmt =
         conn.prepare("SELECT DISTINCT folder FROM bookmarks WHERE folder != '' ORDER BY folder")?;
@@ -58,12 +62,14 @@ pub fn list_folders(conn: &Connection) -> Result<Vec<String>> {
 }
 
 /// Remove a bookmark by URL.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn remove_bookmark(conn: &Connection, url: &str) -> Result<bool> {
     let rows = conn.execute("DELETE FROM bookmarks WHERE url = ?1", params![url])?;
     Ok(rows > 0)
 }
 
 /// Remove a bookmark by ID.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn remove_bookmark_by_id(conn: &Connection, id: i64) -> Result<bool> {
     let rows = conn.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
     Ok(rows > 0)
@@ -81,6 +87,7 @@ pub fn is_bookmarked(conn: &Connection, url: &str) -> bool {
 }
 
 /// Get all bookmarks, ordered by creation date (newest first).
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn all_bookmarks(conn: &Connection) -> Result<Vec<Bookmark>> {
     let mut stmt = conn.prepare(
         "SELECT id, url, title, folder, created_at FROM bookmarks ORDER BY folder, created_at DESC",
@@ -106,6 +113,7 @@ pub fn all_bookmarks(conn: &Connection) -> Result<Vec<Bookmark>> {
 }
 
 /// Search bookmarks by query string (matches URL or title).
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn search_bookmarks(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Bookmark>> {
     let pattern = format!("%{query}%");
     let mut stmt = conn.prepare(
@@ -130,6 +138,7 @@ pub fn search_bookmarks(conn: &Connection, query: &str, limit: usize) -> Result<
 }
 
 /// Clear all bookmarks. Returns the number of entries deleted.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn clear_bookmarks(conn: &Connection) -> Result<usize> {
     let count = conn.execute("DELETE FROM bookmarks", [])?;
     Ok(count)
@@ -137,6 +146,7 @@ pub fn clear_bookmarks(conn: &Connection) -> Result<usize> {
 
 /// Add a bookmark only if the URL doesn't already exist.
 /// Returns true if inserted, false if duplicate.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn import_bookmark(conn: &Connection, url: &str, title: &str) -> Result<bool> {
     if is_bookmarked(conn, url) {
         return Ok(false);

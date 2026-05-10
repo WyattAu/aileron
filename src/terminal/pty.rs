@@ -32,6 +32,7 @@ pub struct PtyHandle {
 
 impl PtyHandle {
     /// Spawn a new PTY with the given grid size.
+    #[must_use = "ignoring this value may lead to unexpected behavior"]
     pub fn new(cols: u16, rows: u16) -> Result<Self> {
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {

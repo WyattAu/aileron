@@ -391,6 +391,7 @@ fn rotate_if_needed(handle: &mut Option<std::fs::File>) {
     }
 }
 
+#[must_use]
 pub fn read_memory_rss_kb() -> Option<u64> {
     let content = read_file_line("/proc/self/status")?;
     let line = content.lines().find(|l| l.starts_with("VmRSS:"))?;

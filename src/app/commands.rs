@@ -47,8 +47,7 @@ impl AppState {
                 let path =
                     crate::git::repo_root(std::env::current_dir().unwrap_or_default().as_path())
                         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-                let encoded =
-                    crate::servo::wry_engine::percent_encode_path(&path.to_string_lossy());
+                let encoded = crate::servo::wry_pages::percent_encode_path(&path.to_string_lossy());
                 if let Ok(url) = url::Url::parse(&format!("aileron://files?path={encoded}")) {
                     self.navigate_with_redirects(url);
                     self.ui.status_message = format!("File browser: {}", path.display());

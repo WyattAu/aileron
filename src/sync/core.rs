@@ -30,11 +30,13 @@ impl SyncManifest {
         Self::default()
     }
 
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn load(path: &Path) -> Result<Self, anyhow::Error> {
         let data = std::fs::read_to_string(path)?;
         Ok(serde_json::from_str(&data)?)
     }
 
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn save(&self, path: &Path) -> Result<(), anyhow::Error> {
         let data = serde_json::to_string_pretty(self)?;
         std::fs::write(path, data)?;
@@ -73,6 +75,7 @@ impl SyncManager {
         &self.local_dir
     }
 
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn create_db_snapshots(&self) -> Result<HashMap<String, PathBuf>, anyhow::Error> {
         let mut snapshots = HashMap::new();
         let staging = self.state_dir.join("staging");
@@ -98,6 +101,7 @@ impl SyncManager {
         Ok(snapshots)
     }
 
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn compute_manifest(&self) -> Result<SyncManifest, anyhow::Error> {
         let mut manifest = SyncManifest::new();
         manifest.version = 1;
@@ -206,6 +210,7 @@ impl SyncManager {
         *current = manifest;
     }
 
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn save_manifest(&self) -> Result<(), anyhow::Error> {
         let manifest = self.manifest.read().unwrap_or_else(|e| e.into_inner());
         let path = self.state_dir.join("manifest.json");

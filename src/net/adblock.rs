@@ -539,6 +539,7 @@ impl AdBlocker {
         css
     }
 
+    #[must_use]
     pub fn cosmetic_js_injection(&mut self, domain: &str) -> Option<String> {
         let css = self.cosmetic_css_for_domain(domain);
         if css.is_empty() {
@@ -566,6 +567,7 @@ impl AdBlocker {
         "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///wAAACH5BAEKAAEALAAAAAABAAEAAAIBRAA7";
 
     /// Get the redirect URL for a matched filter rule.
+    #[must_use]
     pub fn get_redirect_url(&self, url: &Url) -> Option<String> {
         if !self.enabled {
             return None;

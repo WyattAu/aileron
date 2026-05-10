@@ -128,6 +128,7 @@ impl AileronExtensionApi {
     }
 
     /// Check if an API call is allowed based on manifest permissions.
+    #[must_use = "ignoring this value may lead to unexpected behavior"]
     pub fn check_api_permission(&self, api: &str, method: &str) -> Result<()> {
         if permissions::check_permission(&self.granted_permissions, api, method) {
             Ok(())
@@ -175,6 +176,7 @@ impl AileronExtensionApi {
     }
 
     /// Get the loaded background script, if any.
+    #[must_use]
     pub fn background_script(&self) -> Option<&crate::extensions::types::BackgroundScript> {
         self.background_script.as_ref()
     }

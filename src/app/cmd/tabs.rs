@@ -1,5 +1,6 @@
 use super::super::AppState;
 
+#[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
     if query == "tab-restore" {
         if let Some((url, _title)) = state.tabs.closed_tab_stack.pop_back() {

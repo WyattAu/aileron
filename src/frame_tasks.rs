@@ -1185,7 +1185,7 @@ pub fn process_mcp_commands(
             McpCommand::Screenshot { response_tx } => {
                 let result = if let Some(pane) = offscreen_panes.get_mut(&active_id) {
                     let dims = pane.frame().map(|f| (f.width, f.height));
-                    pane.capture_frame();
+                    let _ = pane.capture_frame();
                     let rgba = pane.frame_rgba().map(|r| r.to_vec());
                     let dims = dims.or_else(|| pane.frame().map(|f| (f.width, f.height)));
                     match (dims, rgba) {

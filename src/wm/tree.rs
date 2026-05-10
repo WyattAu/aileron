@@ -181,6 +181,7 @@ impl BspTree {
     }
 
     /// Close a pane. The sibling expands to fill the parent's space.
+    #[must_use = "ignoring this value may lead to unexpected behavior"]
     pub fn close(&mut self, pane_id: Uuid) -> Result<(), TileError> {
         let root = self.root.take().ok_or(TileError::EmptyTree)?;
 
@@ -254,6 +255,7 @@ impl BspTree {
     }
 
     /// Get the rectangle for a specific pane.
+    #[must_use]
     pub fn get_rect(&self, pane_id: Uuid) -> Option<Rect> {
         self.root
             .as_ref()
@@ -448,6 +450,7 @@ impl BspTree {
     }
 
     /// Navigate to an adjacent pane in the given direction.
+    #[must_use]
     pub fn navigate(&self, direction: Direction) -> Option<Uuid> {
         let current_rect = self.get_rect(self.active_pane_id)?;
         let panes = self.panes();
@@ -508,6 +511,7 @@ impl BspTree {
     /// Resize a pane by adjusting the ratio of its parent split.
     /// `amount` is positive (grow) or negative (shrink).
     /// The ratio is clamped to [0.1, 0.9].
+    #[must_use = "ignoring this value may lead to unexpected behavior"]
     pub fn resize_pane(&mut self, pane_id: Uuid, amount: f64) -> Result<(), TileError> {
         let root = self.root.take().ok_or(TileError::EmptyTree)?;
         let viewport = match &root {
@@ -609,6 +613,7 @@ impl BspTree {
     }
 
     /// Remove all panes except the specified one, keeping it as the root.
+    #[must_use = "ignoring this value may lead to unexpected behavior"]
     pub fn retain_only(&mut self, pane_id: Uuid) -> Result<(), String> {
         let viewport = match &self.root {
             Some(BspNode::Leaf { rect, .. }) => *rect,

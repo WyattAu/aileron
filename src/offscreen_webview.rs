@@ -17,9 +17,10 @@ use uuid::Uuid;
 use wry::WebViewBuilderExtUnix;
 use wry::{PageLoadEvent, WebViewBuilder};
 
-use crate::servo::wry_engine::{
-    WryEvent, aileron_new_tab_page, aileron_reader_page, aileron_settings_page,
-    aileron_welcome_page, file_browser_page, html_escape, percent_decode,
+use crate::servo::wry_engine::WryEvent;
+use crate::servo::wry_pages::{
+    ERROR_MONITOR_JS, aileron_new_tab_page, aileron_reader_page, aileron_settings_page,
+    aileron_welcome_page, file_browser_page, html_escape, is_pdf_url, percent_decode,
 };
 
 #[cfg(target_os = "linux")]
@@ -168,7 +169,7 @@ impl OffscreenWebView {
                 )),
             })
             .with_initialization_script(&privacy_script)
-            .with_initialization_script(crate::servo::wry_engine::ERROR_MONITOR_JS)
+            .with_initialization_script(ERROR_MONITOR_JS)
             .with_custom_protocol("aileron".into(), {
                 let open_tx = event_tx.clone();
                 move |_webview_id, req| {
@@ -484,6 +485,7 @@ a {{ color: #4db4ff; }}
     /// Falls back to pixbuf for internal `aileron://` pages (which don't need
     /// snapshot since they're rendered by GTK directly).
     #[cfg(target_os = "linux")]
+    #[must_use]
     pub fn capture_frame(&mut self) -> Option<&FrameData> {
         // Pump a few GTK events so pending renders can start, but don't
         // block the main thread. WebKitGTK layout/compositing can queue
@@ -728,6 +730,7 @@ a {{ color: #4db4ff; }}
     }
 
     /// Get the last captured frame without re-capturing.
+    #[must_use]
     pub fn frame(&self) -> Option<&FrameData> {
         self.frame.as_ref()
     }
@@ -736,6 +739,7 @@ a {{ color: #4db4ff; }}
     ///
     /// Reuses an internal buffer across calls to avoid repeated allocation.
     /// Only reallocates when the frame dimensions change.
+    #[must_use]
     pub fn frame_rgba(&mut self) -> Option<&[u8]> {
         self.frame.as_ref().map(|f| {
             let needed = (f.width as usize) * (f.height as usize) * 4;
@@ -917,14 +921,6 @@ pub fn modifiers_js(ctrl: bool, alt: bool, shift: bool, meta: bool) -> String {
     }
 }
 
-/// Check if a URL points to a PDF resource (by file extension in path).
-/// Used to prevent downloading PDFs so WebKitGTK renders them inline.
-pub fn is_pdf_url(url: &str) -> bool {
-    url::Url::parse(url)
-        .map(|u| u.path().to_lowercase().ends_with(".pdf"))
-        .unwrap_or(false)
-}
-
 #[cfg(test)]
 fn bgra_to_rgba(bgra: &[u8], width: usize, height: usize, rowstride: u32) -> Vec<u8> {
     let mut rgba = Vec::with_capacity(width * height * 4);
@@ -1043,11 +1039,13 @@ impl OffscreenWebViewManager {
     }
 
     /// Get a mutable reference to a pane.
+    #[must_use]
     pub fn get_mut(&mut self, pane_id: &Uuid) -> Option<&mut OffscreenWebView> {
         self.panes.get_mut(pane_id)
     }
 
     /// Get an immutable reference to a pane.
+    #[must_use]
     pub fn get(&self, pane_id: &Uuid) -> Option<&OffscreenWebView> {
         self.panes.get(pane_id)
     }
@@ -1067,7 +1065,7 @@ impl OffscreenWebViewManager {
     pub fn capture_dirty_frames(&mut self) {
         for pane in self.panes.values_mut() {
             if pane.is_dirty() {
-                pane.capture_frame();
+                let _ = pane.capture_frame();
             }
         }
     }
@@ -1348,13 +1346,13 @@ mod tests {
 
     #[test]
     fn test_is_pdf_url() {
-        assert!(super::is_pdf_url("https://example.com/doc.pdf"));
-        assert!(super::is_pdf_url("https://example.com/path/to/FILE.PDF"));
-        assert!(super::is_pdf_url("http://example.com/document.pdf?query=1"));
-        assert!(!super::is_pdf_url("https://example.com/page.html"));
-        assert!(!super::is_pdf_url("https://example.com/"));
-        assert!(!super::is_pdf_url("not a url"));
-        assert!(!super::is_pdf_url("https://example.com/pdfhandler"));
+        assert!(is_pdf_url("https://example.com/doc.pdf"));
+        assert!(is_pdf_url("https://example.com/path/to/FILE.PDF"));
+        assert!(is_pdf_url("http://example.com/document.pdf?query=1"));
+        assert!(!is_pdf_url("https://example.com/page.html"));
+        assert!(!is_pdf_url("https://example.com/"));
+        assert!(!is_pdf_url("not a url"));
+        assert!(!is_pdf_url("https://example.com/pdfhandler"));
     }
 
     #[test]

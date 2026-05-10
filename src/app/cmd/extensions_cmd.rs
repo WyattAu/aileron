@@ -3,6 +3,7 @@ use crate::extensions::builtin_adblock_id;
 
 use super::super::AppState;
 
+#[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> {
     if query == "extensions" {
         let mgr = state.extension_manager.read();

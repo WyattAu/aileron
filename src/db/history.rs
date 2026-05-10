@@ -12,11 +12,13 @@ pub struct HistoryEntry {
 }
 
 impl HistoryEntry {
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn url(&self) -> Result<Url> {
         Url::parse(&self.url).map_err(Into::into)
     }
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn record_visit(conn: &Connection, url: &Url, title: &str) -> Result<()> {
     let url_str = url.as_str();
     conn.execute(
@@ -27,6 +29,7 @@ pub fn record_visit(conn: &Connection, url: &Url, title: &str) -> Result<()> {
     Ok(())
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn recent_entries(conn: &Connection, limit: usize) -> Result<Vec<HistoryEntry>> {
     let mut stmt = conn.prepare(
         "SELECT id, url, title, visited_at, visit_count FROM history ORDER BY id DESC LIMIT ?1",
@@ -45,6 +48,7 @@ pub fn recent_entries(conn: &Connection, limit: usize) -> Result<Vec<HistoryEntr
     Ok(entries)
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<HistoryEntry>> {
     let pattern = format!("%{query}%");
     let mut stmt = conn.prepare(
@@ -115,6 +119,7 @@ pub fn search_frecency(
     Ok(scored)
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn prune_old(conn: &Connection, days: u32) -> Result<usize> {
     let deleted = conn.execute(
         "DELETE FROM history WHERE visited_at < datetime('now', ?1)",
@@ -123,6 +128,7 @@ pub fn prune_old(conn: &Connection, days: u32) -> Result<usize> {
     Ok(deleted)
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn clear_history(conn: &Connection) -> Result<usize> {
     let count = conn.execute("DELETE FROM history", [])?;
     Ok(count)
@@ -131,6 +137,7 @@ pub fn clear_history(conn: &Connection) -> Result<usize> {
 /// Insert a history entry only if the URL doesn't already exist.
 /// Used for importing from other browsers (skip duplicates).
 /// Returns true if inserted, false if duplicate.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn import_visit(conn: &Connection, url: &str, title: &str, visited_at: &str) -> Result<bool> {
     let affected = conn.execute(
         "INSERT OR IGNORE INTO history (url, title, visited_at) VALUES (?1, ?2, ?3)",

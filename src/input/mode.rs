@@ -26,6 +26,7 @@ impl fmt::Display for Mode {
 
 /// Apply a key event to determine if a mode transition should occur.
 /// Returns Some(new_mode) if a transition happens, None otherwise.
+#[must_use]
 pub fn transition(mode: Mode, event: &KeyEvent) -> Option<Mode> {
     match (mode, &event.key) {
         // Enter Insert mode

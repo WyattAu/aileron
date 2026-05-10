@@ -2,6 +2,7 @@ use tracing::warn;
 
 use super::super::AppState;
 
+#[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn cmd_history(state: &mut AppState, query: &str) -> Option<()> {
     match query {
         "history" => {

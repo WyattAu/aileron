@@ -524,6 +524,7 @@ impl LuaEngine {
 
     /// Parse a key string like "ctrl+a", "shift+H", "a" into a KeyCombo.
     /// Returns None if the string can't be parsed.
+    #[must_use]
     pub fn parse_key_string(mode_str: &str, key_str: &str) -> Option<KeyCombo> {
         let mode = match mode_str.to_lowercase().as_str() {
             "normal" => Mode::Normal,
@@ -575,6 +576,7 @@ impl LuaEngine {
 
     /// Resolve an action string into an Action enum.
     /// Returns None for unknown actions.
+    #[must_use]
     pub fn resolve_action(action_str: &str) -> Option<Action> {
         match action_str {
             "quit" => Some(Action::Quit),

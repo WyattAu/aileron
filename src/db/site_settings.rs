@@ -147,6 +147,7 @@ pub fn set_site_field(
 
 /// Get all site settings that match a given URL.
 /// Matches exact patterns first, then wildcard (*.example.com), then regex.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn get_site_settings_for_url(conn: &Connection, url: &str) -> Result<Vec<SiteSettings>> {
     let host = extract_host(url);
     let mut results = Vec::new();
@@ -239,6 +240,7 @@ pub fn get_site_settings_for_url(conn: &Connection, url: &str) -> Result<Vec<Sit
 }
 
 /// Delete a site setting by ID.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn delete_site_setting(conn: &Connection, id: i64) -> Result<bool> {
     invalidate_regex_cache();
     let rows = conn.execute("DELETE FROM site_settings WHERE id = ?1", params![id])?;
@@ -246,6 +248,7 @@ pub fn delete_site_setting(conn: &Connection, id: i64) -> Result<bool> {
 }
 
 /// Delete all site settings matching a pattern (by domain).
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn delete_site_settings_for_domain(conn: &Connection, domain: &str) -> Result<usize> {
     invalidate_regex_cache();
     let rows = conn.execute(
@@ -256,6 +259,7 @@ pub fn delete_site_settings_for_domain(conn: &Connection, domain: &str) -> Resul
 }
 
 /// List all site settings.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn list_site_settings(conn: &Connection) -> Result<Vec<SiteSettings>> {
     let mut stmt = conn.prepare(
         "SELECT id, pattern, pattern_type, zoom_level, adblock_enabled, javascript_enabled, cookies_enabled, autoplay_enabled, created_at

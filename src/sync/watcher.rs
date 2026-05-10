@@ -21,6 +21,7 @@ impl SyncWatcher {
         }
     }
 
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn start(&mut self, dir: &Path) -> Result<(), anyhow::Error> {
         if self.is_running() {
             self.stop();

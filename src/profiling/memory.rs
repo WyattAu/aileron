@@ -2,6 +2,7 @@
 
 /// Get current process RSS (Resident Set Size) in bytes.
 #[cfg(target_os = "linux")]
+#[must_use]
 pub fn process_rss_bytes() -> Option<u64> {
     std::fs::read_to_string("/proc/self/status")
         .ok()
@@ -21,6 +22,7 @@ pub fn process_rss_bytes() -> Option<u64> {
 }
 
 #[cfg(not(target_os = "linux"))]
+#[must_use]
 pub fn process_rss_bytes() -> Option<u64> {
     None
 }

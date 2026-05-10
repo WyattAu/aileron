@@ -344,6 +344,7 @@ impl DownloadManager {
     }
 
     /// Get progress for a single download.
+    #[must_use]
     pub fn progress(&self, id: u64) -> Option<DownloadProgress> {
         let downloads = self.downloads.read();
         downloads.get(&id)?;

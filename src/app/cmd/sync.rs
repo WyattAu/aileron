@@ -95,6 +95,7 @@ pub fn execute_sync_status(
 }
 
 /// Start the sync file watcher.
+#[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn execute_sync_watch(sync_target: &str) -> Result<(), String> {
     if sync_target.is_empty() {
         return Err("No sync target set. Use :sync-target <target>".into());

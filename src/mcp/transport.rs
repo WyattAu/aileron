@@ -16,6 +16,7 @@ impl McpTransport {
     }
 
     /// Process a single JSON-RPC message and return the response.
+    #[must_use]
     pub fn handle_message(&self, message: &str) -> Option<String> {
         let trimmed = message.trim();
         if trimmed.is_empty() {

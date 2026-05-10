@@ -13,6 +13,7 @@ pub enum SyncTarget {
 }
 
 impl SyncTarget {
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn parse(s: &str) -> Result<Self> {
         if s.contains('@') && s.contains(':') {
             let colon = s.find(':').expect("guarded by contains(':') check");

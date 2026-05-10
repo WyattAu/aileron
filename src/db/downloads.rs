@@ -63,6 +63,7 @@ pub fn update_download_progress(
     Ok(())
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn mark_completed(conn: &Connection, url: &str) -> Result<()> {
     let id: Option<i64> = conn.query_row(
         "SELECT id FROM downloads WHERE url = ?1 AND status = 'started' ORDER BY id DESC LIMIT 1",
@@ -78,6 +79,7 @@ pub fn mark_completed(conn: &Connection, url: &str) -> Result<()> {
     Ok(())
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn recent_downloads(conn: &Connection, limit: usize) -> Result<Vec<DownloadEntry>> {
     let mut stmt = conn.prepare(
         "SELECT id, url, filename, dest_path, started_at, status, progress_percent, total_bytes, received_bytes, mime_type FROM downloads ORDER BY id DESC LIMIT ?1",
@@ -102,6 +104,7 @@ pub fn recent_downloads(conn: &Connection, limit: usize) -> Result<Vec<DownloadE
     Ok(entries)
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn get_latest_download_id(conn: &Connection) -> Result<i64> {
     let id: i64 = conn.query_row(
         "SELECT id FROM downloads ORDER BY id DESC LIMIT 1",
@@ -111,6 +114,7 @@ pub fn get_latest_download_id(conn: &Connection) -> Result<i64> {
     Ok(id)
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn get_download_dest_path(conn: &Connection, id: i64) -> Result<String> {
     let dest: String = conn.query_row(
         "SELECT dest_path FROM downloads WHERE id = ?1",
@@ -120,6 +124,7 @@ pub fn get_download_dest_path(conn: &Connection, id: i64) -> Result<String> {
     Ok(dest)
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn clear_downloads(conn: &Connection) -> Result<usize> {
     let count = conn.execute("DELETE FROM downloads", [])?;
     Ok(count)

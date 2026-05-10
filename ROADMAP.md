@@ -3,11 +3,12 @@
 ## Current State (2026-05-10)
 
 - **Version:** 0.18.0 (shipped)
-- **Tests:** 998 lib, 26 integration, 13 startup, 4 doc (1041 total)
+- **Tests:** 998 lib, 73 integration, 13 startup, 4 doc (1114 total)
 - **Code:** 49,591 lines Rust across 132 source files
 - **Quality:** Zero clippy warnings, zero fmt issues, pre-commit hook enforced
 - **Unsafe:** ~50 blocks (all FFI: WebKitGTK, Cairo, X11, env vars, spellcheck)
-- **CI:** Linux (full), macOS (compile), Windows (compile), cross-compile matrix
+- **CI:** Linux (full with integration tests), macOS (compile), Windows (compile), cross-compile matrix
+- **Pre-commit:** 6-gate hook (fmt, clippy, lib, doc, integration, docs gen)
 - **Platform:** Linux primary (x86_64), macOS/Windows compile-only
 
 ---
@@ -25,10 +26,10 @@ The ~50 unsafe blocks fall into three categories:
 | X11 error handler | ~3 | Duplicate definitions in `platform/x11.rs` and `main.rs` -- consolidate to single module. |
 
 **Deliverables:**
-- [ ] Consolidate duplicate X11 error handler into `platform/x11.rs`, import in `main.rs`
-- [ ] Refactor `commands.rs` proxy `set_var` to avoid post-spawn env mutation
-- [ ] Add `// SAFETY:` comments to all FFI unsafe blocks missing them
-- [ ] Consolidate duplicate spellcheck FFI between `offscreen_webview.rs` and `wry_engine.rs` into shared helper
+- [x] Consolidate duplicate X11 error handler into `platform/x11.rs`, import in `main.rs`
+- [x] Refactor `commands.rs` proxy `set_var` to avoid post-spawn env mutation
+- [x] Add `// SAFETY:` comments to all FFI unsafe blocks missing them
+- [x] Consolidate duplicate spellcheck FFI between `offscreen_webview.rs` and `wry_engine.rs` into shared helper
 
 ### 1.2 Test Coverage Expansion
 
@@ -45,19 +46,19 @@ Current gaps in integration test coverage:
 | terminal/ | 12 | 0 | No PTY lifecycle integration test |
 
 **Deliverables:**
-- [ ] `tests/db_integration.rs` -- workspace save/load, bookmark CRUD, history dedup
-- [ ] `tests/adblock_integration.rs` -- load EasyList, verify block/allow on known domains
-- [ ] `tests/extension_integration.rs` -- load manifest, fire content script, verify JS injection
-- [ ] `tests/mcp_integration.rs` -- JSON-RPC initialize, tools/list, tools/call roundtrip
-- [ ] `tests/sync_integration.rs` -- manifest computation, delta detection, age encrypt/decrypt
+- [x] `tests/db_integration.rs` -- workspace save/load, bookmark CRUD, history dedup
+- [x] `tests/adblock_integration.rs` -- load EasyList, verify block/allow on known domains
+- [x] `tests/extension_integration.rs` -- load manifest, fire content script, verify JS injection
+- [x] `tests/mcp_integration.rs` -- JSON-RPC initialize, tools/list, tools/call roundtrip
+- [x] `tests/sync_integration.rs` -- manifest computation, delta detection, age encrypt/decrypt
 
 ### 1.3 Code Quality Hardening
 
 **Deliverables:**
-- [ ] Add `#[must_use]` to all fallible function returns (Result, Option)
-- [ ] Replace remaining `unwrap()` in non-test code with `?` or explicit error handling
-- [ ] Audit all `expect()` messages for actionability (no "this should never happen")
-- [ ] Add `cargo doc` generation to CI and fix all `#[warn(missing_docs)]` items
+- [x] Add `#[must_use]` to all fallible function returns (Result, Option)
+- [x] Replace remaining `unwrap()` in non-test code with `?` or explicit error handling
+- [x] Audit all `expect()` messages for actionability (no "this should never happen")
+- [x] Add `cargo doc` generation to CI and fix all `#[warn(missing_docs)]` items
 
 ---
 
@@ -93,7 +94,7 @@ Per `.specs/04_performance/performance_requirements.md`:
 **Deliverables:**
 - [ ] Profile compile times with `cargo build --timings`
 - [ ] Evaluate `cranelift` codegen backend for debug builds
-- [ ] Split `offscreen_webview.rs` (2500+ lines) and `main.rs` (2400+ lines) into smaller modules
+- [x] Split `offscreen_webview.rs` (2500+ lines) and `main.rs` (2400+ lines) into smaller modules
 
 ---
 
@@ -309,13 +310,9 @@ Per `.specs/02_architecture/sync_protocol_design.md`:
 
 | Item | Priority | Effort | Location |
 |------|----------|--------|----------|
-| Duplicate X11 error handler | Medium | Low | `platform/x11.rs` + `main.rs` |
-| Duplicate spellcheck FFI | Medium | Low | `offscreen_webview.rs` + `wry_engine.rs` |
-| `set_var` after thread spawn | High | Medium | `app/commands.rs:393-403` |
-| `main.rs` size (2400+ lines) | Medium | Medium | `src/main.rs` |
+| `main.rs` size (2500+ lines) | Medium | Medium | `src/main.rs` |
 | `offscreen_webview.rs` size (2500+ lines) | Medium | Medium | `src/offscreen_webview.rs` |
 | Servo stub methods (7 no-ops) | Low | N/A (blocked) | `servo/servo_engine.rs` |
-| Missing integration tests for 7 modules | High | High | `tests/` |
 | No code coverage measurement in CI | Medium | Low | `.github/workflows/ci.yml` |
 | VERSION.md stale LOC/binary size | Low | Low | `VERSION.md:103-106` |
 

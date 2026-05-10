@@ -1,5 +1,6 @@
 use super::super::AppState;
 
+#[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
     if query == "site-settings" {
         let active_id = state.wm.active_pane_id();

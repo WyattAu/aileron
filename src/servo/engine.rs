@@ -95,6 +95,7 @@ impl PaneState {
     }
 
     /// Get the current URL.
+    #[must_use]
     pub fn current_url(&self) -> Option<&Url> {
         Some(&self.url)
     }
@@ -149,11 +150,13 @@ impl PaneStateManager {
     }
 
     /// Get a mutable reference to the pane state.
+    #[must_use]
     pub fn get_mut(&mut self, pane_id: &Uuid) -> Option<&mut PaneState> {
         self.panes.get_mut(pane_id)
     }
 
     /// Get an immutable reference to the pane state.
+    #[must_use]
     pub fn get(&self, pane_id: &Uuid) -> Option<&PaneState> {
         self.panes.get(pane_id)
     }

@@ -9,7 +9,7 @@
 - **Zero clippy warnings** (all-targets -D warnings)
 - **Zero vulnerabilities** (cargo audit)
 - **~50 unsafe blocks** (FFI: env vars, WebKitGTK, Cairo, X11)
-- **~49,500 lines of Rust** across 132 source files
+- **~49,500 lines of Rust** across 135 source files
 - **Release profile:** LTO thin + strip + panic=abort + codegen-units=1
 
 ## Quality Audit Summary (2026-05-10)
@@ -24,6 +24,9 @@
 - **Test count:** 998 lib, 73 integration, 13 startup, 26 smoke, 4 doc = 1114 total
 - **Duplicate code:** X11 error handler consolidated, spellcheck FFI deduplicated
 - **Data race fix:** proxy set_var removed from post-spawn command handler
+- **#[must_use]:** 122 attributes added across 57 files (all public Result/Option returns)
+- **unwrap() audit:** 0 risky unwrap() in production code (all on compile-time constants)
+- **File splits:** wry_engine.rs 2550->1153 lines (extracted wry_pages.rs), main.rs 2529->2418 lines (extracted event_handlers.rs)
 
 ## Implementation Phases
 

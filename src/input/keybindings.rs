@@ -325,6 +325,7 @@ impl KeybindingRegistry {
     }
 
     /// Look up the action for a key combo in the given mode.
+    #[must_use]
     pub fn lookup(&self, mode: Mode, modifiers: Modifiers, key: Key) -> Option<&Action> {
         let combo = KeyCombo::new(mode, modifiers, key);
         self.bindings.get(&combo)
@@ -482,6 +483,7 @@ impl KeybindingRegistry {
     }
 
     /// Parse a mode string ("normal", "insert", "command") into a Mode.
+    #[must_use]
     pub fn parse_mode(s: &str) -> Option<Mode> {
         match s.trim().to_lowercase().as_str() {
             "normal" | "n" => Some(Mode::Normal),

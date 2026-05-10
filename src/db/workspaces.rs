@@ -54,12 +54,14 @@ pub enum SplitDir {
 
 impl WorkspaceData {
     /// Serialize this workspace data to JSON.
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string(self)
             .map_err(|e| anyhow::anyhow!("Failed to serialize workspace: {e}"))
     }
 
     /// Deserialize workspace data from JSON.
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn from_json(json: &str) -> Result<Self> {
         serde_json::from_str(json)
             .map_err(|e| anyhow::anyhow!("Failed to deserialize workspace: {e}"))
@@ -67,6 +69,7 @@ impl WorkspaceData {
 }
 
 /// Save a workspace. If a workspace with the same name exists, it is updated.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn save_workspace(conn: &Connection, name: &str, data: &WorkspaceData) -> Result<i64> {
     let json = data.to_json()?;
     conn.execute(
@@ -78,6 +81,7 @@ pub fn save_workspace(conn: &Connection, name: &str, data: &WorkspaceData) -> Re
 }
 
 /// Load a workspace by name. Returns None if not found.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn load_workspace(conn: &Connection, name: &str) -> Result<Option<(Workspace, WorkspaceData)>> {
     let mut stmt = conn
         .prepare("SELECT id, name, data, created_at, updated_at FROM workspaces WHERE name = ?1")?;
@@ -103,6 +107,7 @@ pub fn load_workspace(conn: &Connection, name: &str) -> Result<Option<(Workspace
 }
 
 /// List all workspaces, ordered by last updated (newest first).
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn list_workspaces(conn: &Connection) -> Result<Vec<Workspace>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, data, created_at, updated_at FROM workspaces ORDER BY updated_at DESC",
@@ -128,6 +133,7 @@ pub fn list_workspaces(conn: &Connection) -> Result<Vec<Workspace>> {
 }
 
 /// Delete a workspace by name. Returns true if it existed.
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn delete_workspace(conn: &Connection, name: &str) -> Result<bool> {
     let rows = conn.execute("DELETE FROM workspaces WHERE name = ?1", params![name])?;
     Ok(rows > 0)

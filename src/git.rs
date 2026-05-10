@@ -108,6 +108,7 @@ impl GitPoller {
 
     /// Poll for new git status. Non-blocking — returns the latest status
     /// if available, or None if no update yet.
+    #[must_use]
     pub fn try_poll(&self) -> Option<GitStatus> {
         self.receiver.try_recv().ok()
     }
@@ -121,6 +122,7 @@ impl Drop for GitPoller {
 
 /// Find the git repository root for the given directory.
 /// Returns None if not inside a git repo.
+#[must_use]
 pub fn repo_root(dir: &Path) -> Option<PathBuf> {
     let output = Command::new("git")
         .args(["-C", &dir.to_string_lossy(), "rev-parse", "--show-toplevel"])

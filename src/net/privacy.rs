@@ -213,6 +213,7 @@ pub fn is_https_safe(domain: &str, safe_list: &HashSet<String>) -> bool {
     false
 }
 
+#[must_use]
 pub fn should_upgrade_to_https(url: &str, safe_list: &HashSet<String>) -> Option<String> {
     if let Ok(parsed) = url::Url::parse(url)
         && parsed.scheme() == "http"

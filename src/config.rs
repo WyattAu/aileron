@@ -487,6 +487,7 @@ impl Config {
     }
 
     /// Load configuration from a specific file path.
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn load_from_file(path: &Path) -> Result<Self> {
         let contents = std::fs::read_to_string(path)?;
         let config: Config = toml::from_str(&contents)?;
@@ -563,6 +564,7 @@ impl Config {
     }
 
     /// Save config to the default config path.
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn save(config: &Config) -> Result<()> {
         let config_path = Self::config_path();
         if let Some(parent) = config_path.parent() {
@@ -646,6 +648,7 @@ wiki = "https://en.wikipedia.org/w/index.php?search={query}"
     }
 
     /// Build a search URL from a query string.
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn search_url(&self, query: &str) -> Option<url::Url> {
         let encoded = query.replace(' ', "+");
         let url_str = self.search_engine.replace("{query}", &encoded);

@@ -32,6 +32,7 @@ impl Locale {
         }
     }
 
+    #[must_use]
     pub fn from_code(code: &str) -> Option<Locale> {
         match code {
             "en" => Some(Locale::English),

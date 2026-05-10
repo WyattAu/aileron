@@ -65,6 +65,7 @@ impl TextureShareHandle {
     }
 
     /// Update pixel data (CPU readback mode only).
+    #[must_use = "ignoring this value may lead to unexpected behavior"]
     pub fn update_pixels(&mut self, rgba_data: Vec<u8>) -> Result<(), TextureShareError> {
         if self.texture.strategy != ShareStrategy::CpuReadback {
             return Err(TextureShareError::InvalidStrategy);

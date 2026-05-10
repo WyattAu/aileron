@@ -37,6 +37,7 @@ pub fn decrypt_file(
     Ok(())
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn encrypt_data(data: &[u8], passphrase: &str) -> Result<String, anyhow::Error> {
     let secret = age::secrecy::SecretString::from(passphrase.to_string());
     let recipient = age::scrypt::Recipient::new(secret);
@@ -57,6 +58,7 @@ pub fn encrypt_data(data: &[u8], passphrase: &str) -> Result<String, anyhow::Err
     String::from_utf8(output).map_err(|e| anyhow::anyhow!("armor utf8: {e}"))
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn decrypt_data(armored: &str, passphrase: &str) -> Result<Vec<u8>, anyhow::Error> {
     let secret = age::secrecy::SecretString::from(passphrase.to_string());
     let identity = age::scrypt::Identity::new(secret);

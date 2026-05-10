@@ -29,6 +29,7 @@ pub const BLOCKED_GLOBALS: &[&str] = &[
 /// Validate that a Lua script does not attempt to access blocked APIs.
 /// This is a best-effort check; the actual sandboxing is done by
 /// not loading the dangerous stdlib modules into the Lua VM.
+#[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn validate_script(script: &str) -> Result<(), SandboxViolation> {
     // Check for obvious attempts to access blocked modules
     for blocked in BLOCKED_MODULES {

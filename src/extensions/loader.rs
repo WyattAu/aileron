@@ -254,6 +254,7 @@ impl ExtensionManager {
         Ok(id)
     }
 
+    #[must_use]
     pub fn get(&self, id: &ExtensionId) -> Option<&AileronExtensionApi> {
         self.extensions.get(id)
     }
@@ -277,6 +278,7 @@ impl ExtensionManager {
 
     /// Unload (disable) a specific extension by ID.
     /// Returns the removed extension's info, or None if not found.
+    #[must_use]
     pub fn unload(&mut self, id: &ExtensionId) -> Option<String> {
         // Get the interceptor Arc before removing so we can unregister it
         let interceptor: Option<Arc<dyn crate::extensions::web_request::WebRequestInterceptor>> =
@@ -367,7 +369,7 @@ impl ExtensionManager {
         if enabled && !self.extensions.contains_key(&id) {
             self.register_builtin_adblock();
         } else if !enabled && self.extensions.contains_key(&id) {
-            self.unload(&id);
+            let _ = self.unload(&id);
             tracing::info!(
                 target: "extensions",
                 "Disabled built-in adblock extension"
@@ -937,7 +939,7 @@ mod tests {
         );
 
         let count_before = manager.interceptor_registry.has_interceptors() as usize;
-        manager.unload(&builtin_adblock_id());
+        let _ = manager.unload(&builtin_adblock_id());
         let count_after = manager.interceptor_registry.has_interceptors() as usize;
         assert_eq!(
             count_before - count_after,

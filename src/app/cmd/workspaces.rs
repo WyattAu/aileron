@@ -54,6 +54,7 @@ pub fn swap_panes(state: &mut AppState) {
     }
 }
 
+#[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(name) = query.strip_prefix("ws-save ") {
         let name = name.trim();

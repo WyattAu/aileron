@@ -345,6 +345,7 @@ pub struct AppState {
 }
 
 impl AppState {
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn new(viewport: Rect, config: Config) -> Result<Self> {
         // Use homepage from config
         let initial_url = url::Url::parse(&config.homepage)
@@ -628,6 +629,7 @@ impl AppState {
 
     /// Find the least-recently-focused pane (excluding the active pane).
     /// Returns None if there is only one pane.
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn find_lru_pane(&self) -> Option<uuid::Uuid> {
         let active_id = self.wm.active_pane_id();
         let mut best: Option<(uuid::Uuid, std::time::Instant)> = None;
@@ -654,6 +656,7 @@ impl AppState {
     }
 
     /// Look up a quickmark URL by its key string.
+    #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn quickmarks_get(&self, key: &str) -> Option<url::Url> {
         self.session
             .quickmarks

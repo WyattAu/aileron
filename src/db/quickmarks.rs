@@ -2,6 +2,7 @@ use anyhow::Result;
 use rusqlite::Connection;
 use std::collections::HashMap;
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn set_quickmark(conn: &Connection, key: &str, url: &str) -> Result<()> {
     conn.execute(
         "INSERT INTO quickmarks (letter, url, created_at) VALUES (?1, ?2, datetime('now'))
@@ -11,6 +12,7 @@ pub fn set_quickmark(conn: &Connection, key: &str, url: &str) -> Result<()> {
     Ok(())
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn remove_quickmark(conn: &Connection, key: &str) -> Result<bool> {
     let rows = conn.execute(
         "DELETE FROM quickmarks WHERE letter = ?1",
@@ -19,6 +21,7 @@ pub fn remove_quickmark(conn: &Connection, key: &str) -> Result<bool> {
     Ok(rows > 0)
 }
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn load_quickmarks(conn: &Connection) -> Result<HashMap<String, String>> {
     let mut stmt = conn.prepare("SELECT letter, url FROM quickmarks")?;
     let rows = stmt.query_map([], |row| {

@@ -1,5 +1,6 @@
 use super::super::AppState;
 
+#[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn cmd_bookmarks(state: &mut AppState, query: &str) -> Option<()> {
     match query {
         "bookmarks" => {
@@ -72,6 +73,7 @@ pub fn cmd_bookmarks(state: &mut AppState, query: &str) -> Option<()> {
     }
 }
 
+#[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn handle_quickmark_commands(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(name) = query.strip_prefix("quickmark-add ") {
         let name = name.trim();

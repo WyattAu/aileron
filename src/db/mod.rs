@@ -11,6 +11,7 @@ use anyhow::Result;
 use rusqlite::Connection;
 use std::path::Path;
 
+#[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn open_database(db_path: &Path) -> Result<Connection> {
     let conn = Connection::open(db_path)?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
