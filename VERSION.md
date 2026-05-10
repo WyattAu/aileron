@@ -2,24 +2,26 @@
 
 ## Current State
 - **Phase:** v7 Ship, Extend, Dominate
-- **Version:** 0.18.0-pre (shipping imminently)
-- **Status:** Full quality audit passed, all critical items resolved
-- **Last Updated:** 2026-04-29
-- **Test Count:** 851 lib tests
+- **Version:** 0.18.0
+- **Status:** Shipped
+- **Last Updated:** 2026-05-10
+- **Test Count:** 998 lib tests, 13 integration, 4 doc
 - **Zero clippy warnings** (all-targets -D warnings)
 - **Zero vulnerabilities** (cargo audit)
-- **21 unsafe blocks** (17 PASS, 4 WARN, 0 FAIL)
-- **41K lines of Rust** across 26 modules
+- **~50 unsafe blocks** (FFI: env vars, WebKitGTK, Cairo, X11)
+- **~49,500 lines of Rust** across 132 source files
 - **Release profile:** LTO thin + strip + panic=abort + codegen-units=1
 
-## Quality Audit Summary (2026-04-29)
-- **Unsafe:** 17 PASS, 4 WARN, 0 FAIL
+## Quality Audit Summary (2026-05-10)
+- **Unsafe:** ~50 blocks (FFI: env vars, WebKitGTK, Cairo, X11, spellcheck)
 - **Panics:** 0 CRITICAL in production, 10 MODERATE (startup fail-fast), 6 LOW
 - **Concurrency:** 18 PASS, 12 WARN, 0 FAIL, 0 deadlocks
 - **Performance:** 5 hot-path fixes verified, 16 MODERATE items documented
 - **Determinism:** BTreeMap for sync manifest, cached pane lists
-- **Error handling:** 11 silent swallows → tracing::warn
+- **Error handling:** 11 silent swallows converted to tracing::warn
 - **Cross-file consistency:** 0 orphaned imports, 0 version mismatches
+- **Feature flags:** `terminal` and `extensions` removed (always-on core modules)
+- **Test count:** 998 lib tests, 13 integration tests, 4 doc tests
 
 ## Implementation Phases
 

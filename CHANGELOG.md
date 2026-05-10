@@ -482,7 +482,7 @@ Phase K is now 100% complete (42/42 tasks). This is the final planned developmen
 - **Smooth scrolling** — keyboard scrolls (j/k, Ctrl+D/U, gg/G) now use CSS smooth behavior; mouse wheel remains instant
 
 ### Tab Management
-- **Tab pinning** — `Ctrl+Shift+P` or `:pin` to pin/unpin panes; pinned panes cannot be accidentally closed; 📌 indicator in sidebar
+- **Tab pinning** — `Ctrl+Shift+P` or `:pin` to pin/unpin panes; pinned panes cannot be accidentally closed; pin indicator in sidebar
 
 ### Terminal
 - **Visual bell** — terminal bell triggers a 200ms white flash overlay instead of audio

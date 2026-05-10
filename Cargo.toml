@@ -150,10 +150,8 @@ codegen-units = 1
 panic = "abort"
 
 [features]
-default = ["mcp", "arp", "sync", "terminal", "passwords", "extensions"]
+default = ["mcp", "arp", "sync", "passwords"]
 mcp = []
 arp = []
 sync = []
-terminal = []
 passwords = []
-extensions = []

@@ -247,8 +247,13 @@ mod tests {
     }
 
     #[test]
-    fn test_linux_file_open_dialog_no_panic() {
-        let _ = LinuxPlatform.file_open_dialog("Open", &[]);
+    fn test_linux_file_open_dialog_skipped_in_ci() {
+        // file_open_dialog launches zenity/kdialog which blocks indefinitely
+        // without a display. AILERON_TESTING=1 causes file_open_dialog() to
+        // return None early, so we assert that behaviour here.
+        if std::env::var("AILERON_TESTING").is_ok() {
+            assert!(LinuxPlatform.file_open_dialog("Open", &[]).is_none());
+        }
     }
 
     #[test]
