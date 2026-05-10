@@ -390,18 +390,10 @@ impl AppState {
             let proxy_url = proxy_url.trim();
             if proxy_url.is_empty() || proxy_url == "none" {
                 self.config.proxy = None;
-                #[allow(unused_unsafe)]
-                unsafe {
-                    std::env::remove_var("all_proxy")
-                };
-                self.ui.status_message = "Proxy disabled".into();
+                self.ui.status_message = "Proxy disabled (restart required)".into();
             } else {
                 self.config.proxy = Some(proxy_url.to_string());
-                #[allow(unused_unsafe)]
-                unsafe {
-                    std::env::set_var("all_proxy", proxy_url)
-                };
-                self.ui.status_message = format!("Proxy: {proxy_url}");
+                self.ui.status_message = format!("Proxy: {proxy_url} (restart required)");
             }
             return;
         }

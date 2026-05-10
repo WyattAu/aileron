@@ -18,8 +18,6 @@
 #[cfg(target_os = "linux")]
 use glib_sys;
 #[cfg(target_os = "linux")]
-use gtk::glib::translate::ToGlibPtr;
-#[cfg(target_os = "linux")]
 use gtk::prelude::{ContainerExt, GtkWindowExt, WidgetExt};
 use std::collections::HashMap;
 use std::sync::{Arc, mpsc};
@@ -250,31 +248,7 @@ impl WryPane {
         let webview = builder.build_gtk(&fixed)?;
 
         #[cfg(target_os = "linux")]
-        {
-            let enabled = std::env::var("AILERON_SPELLCHECK")
-                .map(|v| v != "0" && v != "false")
-                .unwrap_or(true);
-            if enabled {
-                let context = webkit2gtk::WebContext::default();
-                // SAFETY: FFI call with valid pointer obtained from WebContext::default().to_glib_none().
-                // CString pointers are null-terminated and outlive the call (borrowed by lang_ptrs Vec).
-                unsafe {
-                    webkit2gtk::ffi::webkit_web_context_set_spell_checking_enabled(
-                        context.to_glib_none().0,
-                        1,
-                    );
-                    // Null-terminated array required by WebKitGTK FFI
-                    let c_en_us = std::ffi::CString::new("en_US").unwrap();
-                    let c_en_gb = std::ffi::CString::new("en_GB").unwrap();
-                    let lang_ptrs: Vec<*const i8> =
-                        vec![c_en_us.as_ptr(), c_en_gb.as_ptr(), std::ptr::null()];
-                    webkit2gtk::ffi::webkit_web_context_set_spell_checking_languages(
-                        context.to_glib_none().0,
-                        lang_ptrs.as_ptr(),
-                    );
-                }
-            }
-        }
+        crate::platform::spellcheck::configure_webkit_spellcheck();
 
         gtk_window.show();
 

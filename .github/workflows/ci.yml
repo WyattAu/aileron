@@ -60,8 +60,14 @@ jobs:
       - name: Run integration smoke test
         run: AILERON_TESTING=1 cargo test --test integration_smoke -- --test-threads=4
 
+      - name: Run integration tests
+        run: AILERON_TESTING=1 cargo test --test db_integration --test adblock_integration --test mcp_integration --test sync_integration --test extension_integration -- --test-threads=4
+
       - name: Run startup test
         run: AILERON_TESTING=1 cargo test --test startup_test -- --test-threads=4
+
+      - name: Generate documentation
+        run: cargo doc --no-deps --all-features 2>&1 | tee doc-output.txt
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
