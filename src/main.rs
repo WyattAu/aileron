@@ -15,7 +15,7 @@ use aileron::mcp::McpBridge;
 use aileron::net::adblock::AdBlocker;
 use aileron::offscreen_webview::OffscreenWebViewManager;
 use aileron::popup::PopupManager;
-use aileron::profiling::AdaptiveQuality;
+use aileron::profiling::{AdaptiveQuality, Profiler};
 use aileron::servo::{WryPaneManager, bsp_rect_to_wry_rect, init_gtk};
 use aileron::terminal::NativeTerminalManager;
 use aileron::ui::panels;
@@ -110,6 +110,9 @@ struct AileronApp {
     /// Reduces texture capture rate when frames are slow.
     adaptive_quality: AdaptiveQuality,
 
+    /// Frame timing profiler — collects per-phase duration samples.
+    profiler: Profiler,
+
     /// Last time adblock filter lists were updated (for periodic refresh).
     last_filter_update: std::time::Instant,
 
@@ -166,6 +169,11 @@ impl AileronApp {
             pending_pane_creates: std::collections::VecDeque::new(),
             adblock_reload_pending: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             adaptive_quality,
+            profiler: {
+                let mut p = Profiler::new();
+                p.enable();
+                p
+            },
             resize_pending: false,
             last_filter_update: std::time::Instant::now(),
             ime_just_committed: false,
@@ -269,6 +277,10 @@ impl AileronApp {
         self.gfx = Some(gfx);
         self.app_state = Some(app_state);
         self.window = Some(window);
+        info!(
+            "init_graphics() completed in {:?}",
+            self.startup_start.elapsed()
+        );
     }
 
     /// Create a wry webview for a BSP pane.
@@ -676,6 +688,8 @@ impl AileronApp {
 
     /// Run one frame of egui UI + wgpu rendering.
     fn render(&mut self) {
+        self.profiler.start_frame();
+
         let window = match &self.window {
             Some(w) => w,
             None => return,
@@ -800,6 +814,8 @@ impl AileronApp {
 
         // 11. Present
         output.present();
+
+        self.profiler.end_frame("render");
     }
 
     /// Capture dirty offscreen frames and update egui textures.
@@ -992,6 +1008,11 @@ impl ApplicationHandler for AileronApp {
 
         #[cfg(feature = "mcp")]
         frame_tasks::spawn_mcp_server(&self.mcp_bridge);
+
+        info!(
+            "Window + initial pane created in {:?}",
+            self.startup_start.elapsed()
+        );
 
         if let Some(w) = &self.window {
             w.request_redraw();
@@ -1825,6 +1846,8 @@ impl ApplicationHandler for AileronApp {
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        self.profiler.start_frame();
+
         // Handle deferred resize (pane repositioning).
         // Doing this inside the Resized event can crash GTK/WebKitGTK.
         if self.resize_pending {
@@ -2094,6 +2117,8 @@ impl ApplicationHandler for AileronApp {
                 window.request_redraw();
             }
         }
+
+        self.profiler.end_frame("about_to_wait");
     }
 
     fn new_events(&mut self, event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
@@ -2180,7 +2205,9 @@ fn main() -> anyhow::Result<()> {
 
     // Phase 1: Load config
     info!("── Phase 1: Loading config ──");
+    let phase_0 = std::time::Instant::now();
     let config = Config::load();
+    info!("Config loaded in {:?}", phase_0.elapsed());
     info!(
         "Config loaded: render_mode={}, tab_layout={}, theme={}",
         config.render_mode, config.tab_layout, config.theme
@@ -2263,8 +2290,9 @@ fn main() -> anyhow::Result<()> {
     // GTK's X11 event filter must be installed AFTER winit's X11
     // connection, otherwise GTK intercepts all keyboard/mouse events.
     info!("── Phase 2: Initializing GTK (deferred) ──");
+    let phase_gtk = std::time::Instant::now();
     init_gtk();
-    info!("GTK initialized successfully");
+    info!("GTK initialized in {:?}", phase_gtk.elapsed());
 
     // Phase 4: Create app and run
     info!("── Phase 4: Creating application ──");

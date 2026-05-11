@@ -13,6 +13,10 @@ criterion_group!(
     bench_content_script_matching,
     bench_adblock_domain_check,
     bench_dispatch_with_selection,
+    bench_mode_transition,
+    bench_keybinding_lookup,
+    bench_fuzzy_search_10k,
+    bench_adblock_100_domains,
 );
 
 fn bench_bsp_tree_operations(c: &mut Criterion) {
@@ -242,5 +246,71 @@ fn bench_dispatch_with_selection(c: &mut Criterion) {
 
     c.bench_function("dispatch_print_action", |b| {
         b.iter(|| aileron::app::dispatch::dispatch_action(&Action::Print));
+    });
+}
+
+fn bench_mode_transition(c: &mut Criterion) {
+    use aileron::input::mode::{Key, KeyEvent, Mode, Modifiers};
+    let esc_event = KeyEvent {
+        key: Key::Escape,
+        modifiers: Modifiers::none(),
+        physical_key: None,
+    };
+    let i_event = KeyEvent {
+        key: Key::Character('i'),
+        modifiers: Modifiers::none(),
+        physical_key: None,
+    };
+
+    c.bench_function("mode_transition_insert_to_normal", |b| {
+        b.iter(|| aileron::input::mode::transition(Mode::Insert, &esc_event))
+    });
+    c.bench_function("mode_transition_normal_to_insert", |b| {
+        b.iter(|| aileron::input::mode::transition(Mode::Normal, &i_event))
+    });
+}
+
+fn bench_keybinding_lookup(c: &mut Criterion) {
+    use aileron::input::keybindings::KeybindingRegistry;
+    use aileron::input::mode::{Key, Mode, Modifiers};
+
+    let registry = KeybindingRegistry::default();
+    c.bench_function("lookup_bound_key", |b| {
+        b.iter(|| registry.lookup(Mode::Normal, Modifiers::none(), Key::Character('j')))
+    });
+    c.bench_function("lookup_unbound_key", |b| {
+        b.iter(|| registry.lookup(Mode::Normal, Modifiers::none(), Key::Character('z')))
+    });
+}
+
+fn bench_fuzzy_search_10k(c: &mut Criterion) {
+    let mut engine = aileron::ui::FuzzySearch::new();
+
+    for i in 0..10000 {
+        engine.upsert(aileron::ui::SearchItem {
+            id: format!("item-{i:05}"),
+            label: format!("item-{i:05}"),
+            description: format!("Description for item {i}"),
+            category: aileron::ui::SearchCategory::History,
+        });
+    }
+
+    c.bench_function("fuzzy_search_10k_exact", |b| {
+        b.iter(|| engine.search("item-00420", 20))
+    });
+    c.bench_function("fuzzy_search_10k_prefix", |b| {
+        b.iter(|| engine.search("item-", 20))
+    });
+}
+
+fn bench_adblock_100_domains(c: &mut Criterion) {
+    use aileron::net::AdBlocker;
+    let mut blocker = AdBlocker::new();
+    for i in 0..100 {
+        blocker.block_domain(&format!("ad{i}.example.com"));
+    }
+    let url = url::Url::parse("https://safe.example.com/page").unwrap();
+    c.bench_function("adblock_check_with_100_blocked", |b| {
+        b.iter(|| blocker.should_block(&url, None, None))
     });
 }
