@@ -356,7 +356,7 @@ accent = "#4db4ff"
 aileron.keymap.set("normal", "Ctrl+Shift+R", "reload")
 
 aileron.cmd.create("open-rust", "Open Rust documentation", function()
-    aileron.log("Navigating (use keybind or URL bar for navigation)")
+    aileron.navigate("https://doc.rust-lang.org")
 end)
 
 aileron.url.add_redirect("github.com", "ghproxy.com")

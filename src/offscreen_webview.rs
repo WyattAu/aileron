@@ -419,7 +419,9 @@ a {{ color: #4db4ff; }}
                     if let Ok(https_url) = Url::parse(to) {
                         self.url = https_url;
                         self.dirty = true;
-                        let _ = self.webview.load_url(to);
+                        if let Err(e) = self.webview.load_url(to) {
+                            warn!(%e, "HTTPS upgrade redirect failed");
+                        }
                     }
                     self.last_activity_time = std::time::Instant::now();
                 }
@@ -795,22 +797,30 @@ a {{ color: #4db4ff; }}
 
     /// Navigate back in history.
     pub fn back(&self) {
-        let _ = self.webview.evaluate_script("window.history.back()");
+        if let Err(e) = self.webview.evaluate_script("window.history.back()") {
+            warn!(%e, "History back navigation failed");
+        }
     }
 
     /// Navigate forward in history.
     pub fn forward(&self) {
-        let _ = self.webview.evaluate_script("window.history.forward()");
+        if let Err(e) = self.webview.evaluate_script("window.history.forward()") {
+            warn!(%e, "History forward navigation failed");
+        }
     }
 
     /// Reload the current page.
     pub fn reload(&self) {
-        let _ = self.webview.evaluate_script("window.location.reload()");
+        if let Err(e) = self.webview.evaluate_script("window.location.reload()") {
+            warn!(%e, "Page reload failed");
+        }
     }
 
     /// Print the current page using window.print().
     pub fn print(&self) {
-        let _ = self.webview.evaluate_script("window.print()");
+        if let Err(e) = self.webview.evaluate_script("window.print()") {
+            warn!(%e, "Page print failed");
+        }
     }
 
     /// Whether the content has changed since last capture.
@@ -1068,8 +1078,8 @@ impl OffscreenWebViewManager {
     #[cfg(target_os = "linux")]
     pub fn capture_dirty_frames(&mut self) {
         for pane in self.panes.values_mut() {
-            if pane.is_dirty() {
-                let _ = pane.capture_frame();
+            if pane.is_dirty() && pane.capture_frame().is_none() {
+                warn!("Frame capture returned no data");
             }
         }
     }

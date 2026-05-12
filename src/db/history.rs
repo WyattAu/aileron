@@ -73,6 +73,7 @@ pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Histor
 /// Search history with frecency ranking.
 /// Score = visit_count / log2(age_in_hours + 2).
 /// Returns entries sorted by frecency score (highest first).
+#[must_use = "database operation may have failed silently"]
 pub fn search_frecency(
     conn: &Connection,
     query: &str,

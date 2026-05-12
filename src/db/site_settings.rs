@@ -52,6 +52,7 @@ pub struct SiteSettings {
 /// Insert or update a site setting. If a setting with the same pattern and
 /// pattern_type already exists, the given fields are merged (NULL fields are
 /// left unchanged).
+#[must_use = "database operation may have failed silently"]
 #[allow(clippy::too_many_arguments)]
 pub fn upsert_site_setting(
     conn: &Connection,
@@ -87,6 +88,7 @@ pub fn upsert_site_setting(
 }
 
 /// Set a single field for a site setting. Creates the row if it doesn't exist.
+#[must_use = "database operation may have failed silently"]
 pub fn set_site_field(
     conn: &Connection,
     pattern: &str,

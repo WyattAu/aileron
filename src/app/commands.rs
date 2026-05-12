@@ -15,6 +15,7 @@ impl AppState {
         if let Some(ref engine) = self.lua_engine {
             engine.call_hooks("navigate", &[url.as_str()]);
         }
+        self.drain_lua_navigations();
         self.pending_wry_actions.push_back(WryAction::Navigate(url));
     }
 

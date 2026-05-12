@@ -1,4 +1,5 @@
 use super::super::AppState;
+use tracing::warn;
 
 #[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn cmd_bookmarks(state: &mut AppState, query: &str) -> Option<()> {
@@ -111,8 +112,10 @@ pub fn handle_quickmark_commands(state: &mut AppState, query: &str) -> Option<()
             return Some(());
         }
         if state.session.quickmarks.remove(name).is_some() {
-            if let Some(ref conn) = state.db {
-                let _ = crate::db::quickmarks::remove_quickmark(conn, name);
+            if let Some(ref conn) = state.db
+                && let Err(e) = crate::db::quickmarks::remove_quickmark(conn, name)
+            {
+                warn!(%e, "Failed to remove quickmark");
             }
             state.ui.status_message = format!("Quickmark '{name}' deleted");
         } else {

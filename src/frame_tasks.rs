@@ -989,6 +989,10 @@ pub fn process_pending_wry_actions(
     offscreen_panes: &mut OffscreenWebViewManager,
     content_scripts: &ContentScriptManager,
 ) {
+    // Drain any navigations queued by the Lua engine (aileron.navigate from hooks/init.lua)
+    if let Some(state) = app_state {
+        state.drain_lua_navigations();
+    }
     let (pending_actions, active_id) = {
         let app_state = match app_state {
             Some(s) => s,
@@ -1185,7 +1189,9 @@ pub fn process_mcp_commands(
             McpCommand::Screenshot { response_tx } => {
                 let result = if let Some(pane) = offscreen_panes.get_mut(&active_id) {
                     let dims = pane.frame().map(|f| (f.width, f.height));
-                    let _ = pane.capture_frame();
+                    if pane.capture_frame().is_none() {
+                        warn!("Screenshot frame capture returned no data");
+                    }
                     let rgba = pane.frame_rgba().map(|r| r.to_vec());
                     let dims = dims.or_else(|| pane.frame().map(|f| (f.width, f.height)));
                     match (dims, rgba) {
@@ -1227,7 +1233,9 @@ pub fn process_mcp_commands(
                 let result = if let Some(&close_id) = pane_ids.get(index) {
                     let active_before = app_state.wm.active_pane_id();
                     app_state.wm.set_active_pane(close_id);
-                    let _ = app_state.wm.close(close_id);
+                    if let Err(e) = app_state.wm.close(close_id) {
+                        warn!(%e, "Failed to close tab via MCP");
+                    }
                     app_state.engines.remove_pane(&close_id);
                     app_state.terminal_pane_ids.remove(&close_id);
                     if active_before == close_id
@@ -1252,7 +1260,9 @@ pub fn process_mcp_commands(
 
 pub fn handle_pending_tab_close(app_state: &mut AppState, close_id: Uuid) {
     app_state.wm.set_active_pane(close_id);
-    let _ = app_state.wm.close(close_id);
+    if let Err(e) = app_state.wm.close(close_id) {
+        warn!(%e, "Failed to close pending tab");
+    }
     app_state.engines.remove_pane(&close_id);
     app_state.terminal_pane_ids.remove(&close_id);
     app_state.update_a11y("Pane closed");
@@ -1303,7 +1313,9 @@ pub fn load_default_adblock_rules(adblocker: &mut crate::net::adblock::AdBlocker
         "##.ad-container",
     ];
     for filter in &default_filters {
-        let _ = adblocker.load_filter_list(filter);
+        if let Err(e) = adblocker.load_filter_list(filter) {
+            warn!(%e, "Failed to load adblock filter");
+        }
     }
 }
 

@@ -1,6 +1,8 @@
 //! Sync command implementations.
 //! Free functions that return status messages, keeping commands.rs focused on dispatch.
 
+use tracing::warn;
+
 /// Execute a sync push to the configured target.
 pub fn execute_sync_push(sync_target: &str, sync_encrypted: bool) -> String {
     if sync_target.is_empty() {
@@ -28,7 +30,9 @@ pub fn execute_sync_push(sync_target: &str, sync_encrypted: bool) -> String {
     let prefix = if sync_encrypted { "(encrypted) " } else { "" };
     match crate::sync::transport::push(sm.local_dir(), &staging, &target, sync_encrypted) {
         Ok(n) => {
-            let _ = sm.save_manifest();
+            if let Err(e) = sm.save_manifest() {
+                warn!(%e, "Failed to save sync manifest");
+            }
             format!("Synced {} {}files to {}", n, prefix, target.display())
         }
         Err(e) => {

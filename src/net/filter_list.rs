@@ -333,6 +333,7 @@ pub fn load_filter_lists_from_disk() -> Vec<FilterList> {
     lists
 }
 
+#[must_use = "filter list save failure is silently lost"]
 pub fn save_filter_list(name: &str, content: &str) -> std::io::Result<PathBuf> {
     let dir = ensure_filter_list_dir();
     let path = dir.join(format!("{name}.txt"));
@@ -340,6 +341,7 @@ pub fn save_filter_list(name: &str, content: &str) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
+#[must_use = "download failure is silently lost"]
 pub fn download_filter_list(url: &str) -> anyhow::Result<String> {
     let response = attohttpc::get(url)
         .header("User-Agent", "Aileron/0.8.1")

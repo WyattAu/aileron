@@ -7,6 +7,7 @@ use crate::terminal::grid::CellMetrics;
 use crate::terminal::render::render_terminal;
 use crate::ui::search::SearchCategory;
 use egui::{WidgetInfo, WidgetType};
+use tracing::warn;
 
 fn a11y_info(typ: WidgetType, label: impl Into<String>) -> WidgetInfo {
     WidgetInfo {
@@ -978,7 +979,9 @@ pub fn build_ui(
                     app_state.wm.set_active_pane(id);
                 }
                 if let Some(id) = close_tab {
-                    let _ = app_state.wm.close(id);
+                    if let Err(e) = app_state.wm.close(id) {
+                        warn!(%e, "Failed to close pane");
+                    }
                     app_state.session.session_dirty = true;
                 }
             });
@@ -1173,11 +1176,13 @@ pub fn build_ui(
                         }
                         if ui.button("New Tab").clicked() {
                             let active = app_state.wm.active_pane_id();
-                            let _ = app_state.wm.split(
-                                active,
-                                crate::wm::SplitDirection::Vertical,
-                                0.5,
-                            );
+                            if let Err(e) =
+                                app_state
+                                    .wm
+                                    .split(active, crate::wm::SplitDirection::Vertical, 0.5)
+                            {
+                                warn!(%e, "Failed to split pane");
+                            }
                             app_state.session.session_dirty = true;
                         }
                         ui.add_space(8.0);
@@ -1549,7 +1554,9 @@ pub fn build_ui(
                                 (amount as f64) / viewport.h.max(1.0)
                             }
                         };
-                        let _ = app_state.wm.resize_pane(*pane_a_id, resize_amount as f64);
+                        if let Err(e) = app_state.wm.resize_pane(*pane_a_id, resize_amount as f64) {
+                            warn!(%e, "Failed to resize pane");
+                        }
                     }
                 }
 

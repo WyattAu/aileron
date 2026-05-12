@@ -81,6 +81,7 @@ pub fn load_https_safe_list() -> HashSet<String> {
     list
 }
 
+#[must_use = "privacy list download failure is silently lost"]
 pub fn download_https_safe_list() -> anyhow::Result<()> {
     let path = https_safe_list_path();
     if let Some(parent) = path.parent() {
@@ -138,6 +139,7 @@ pub fn load_tracking_domains() -> Vec<String> {
     domains.into_iter().collect()
 }
 
+#[must_use = "privacy list download failure is silently lost"]
 pub fn download_tracking_domains() -> anyhow::Result<()> {
     let path = tracking_domains_path();
     if let Some(parent) = path.parent() {

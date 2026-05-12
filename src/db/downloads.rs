@@ -15,6 +15,7 @@ pub struct DownloadEntry {
     pub mime_type: String,
 }
 
+#[must_use = "database operation may have failed silently"]
 pub fn record_download(
     conn: &Connection,
     url: &str,
@@ -28,6 +29,7 @@ pub fn record_download(
     Ok(())
 }
 
+#[must_use = "database operation may have failed silently"]
 pub fn record_download_with_metadata(
     conn: &Connection,
     url: &str,
@@ -43,6 +45,7 @@ pub fn record_download_with_metadata(
     Ok(())
 }
 
+#[must_use = "database operation may have failed silently"]
 pub fn update_download_progress(
     conn: &Connection,
     url: &str,

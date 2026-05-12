@@ -84,6 +84,7 @@ impl BspTree {
     }
 
     /// Split a pane into two sub-panes.
+    #[must_use = "tree operation failure is silently lost"]
     pub fn split(
         &mut self,
         pane_id: Uuid,
@@ -753,6 +754,7 @@ impl BspTree {
     /// Rebuild the BSP tree from workspace data and a viewport rectangle.
     /// Returns a new BspTree with the workspace's layout structure.
     /// Pane UUIDs are freshly generated (old UUIDs are not persisted).
+    #[must_use = "tree restoration failure is silently lost"]
     pub fn from_workspace_data(data: &WorkspaceData, viewport: Rect) -> anyhow::Result<Self> {
         let (root, _active_url) = Self::workspace_to_bsp(&data.tree, None)?;
         let mut tree = Self {

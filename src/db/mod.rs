@@ -10,6 +10,7 @@ pub mod workspaces;
 use anyhow::Result;
 use rusqlite::Connection;
 use std::path::Path;
+use tracing::warn;
 
 #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
 pub fn open_database(db_path: &Path) -> Result<Connection> {
@@ -23,7 +24,9 @@ pub fn open_database(db_path: &Path) -> Result<Connection> {
         if let Ok(metadata) = std::fs::metadata(db_path) {
             let mut perms = metadata.permissions();
             perms.set_mode(0o600);
-            let _ = std::fs::set_permissions(db_path, perms);
+            if let Err(e) = std::fs::set_permissions(db_path, perms) {
+                warn!(%e, "Failed to set database file permissions");
+            }
         }
     }
     Ok(conn)

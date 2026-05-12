@@ -49,6 +49,16 @@ aileron.keymap.set("normal", "H", "navigate_back")
 aileron.keymap.set("normal", "L", "navigate_forward")
 ```
 
+### `aileron.navigate(url)`
+
+Navigate the active pane to a URL. Can be called from `init.lua` at startup, from custom commands, or from hook callbacks.
+
+```lua
+aileron.navigate("https://github.com")
+```
+
+Startup navigation: URLs pushed during `init.lua` execution are processed after initialization completes. Hook navigation: URLs pushed within a `navigate` event hook are processed during the same frame.
+
 ### `aileron.cmd.create(name, description, callback)`
 
 Register a custom command. Appears in the command palette as `:cmd <name>`.
@@ -160,21 +170,21 @@ aileron.keymap.set("normal", "r", "reload")
 aileron.keymap.set("normal", "p", "pin_pane")
 ```
 
-### Example 2: Custom Commands
+### Example 2: Custom Commands with Navigation
 
-Create custom ex-commands. Note: URL navigation from Lua is not yet implemented; the examples below use `aileron.log()` as a stub for future navigation support:
+Create custom ex-commands that navigate to frequently used sites:
 
 ```lua
 aileron.cmd.create("gh", "Open GitHub", function()
-    aileron.log("Navigate to github.com (pending: aileron.navigate support)")
+    aileron.navigate("https://github.com")
 end)
 
-aileron.cmd.create("news", "Open Hacker News", function()
-    aileron.log("Navigate to news.ycombinator.com (pending: aileron.navigate support)")
+aileron.cmd.create("hn", "Open Hacker News", function()
+    aileron.navigate("https://news.ycombinator.com")
 end)
 
-aileron.cmd.create("rc", "Reload current page", function()
-    aileron.log("Reload triggered (pending: reload dispatch support)")
+aileron.cmd.create("rd", "Open Reddit", function()
+    aileron.navigate("https://old.reddit.com")
 end)
 ```
 

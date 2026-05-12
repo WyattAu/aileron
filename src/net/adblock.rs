@@ -170,6 +170,7 @@ impl AdBlocker {
         self.blocked_domains_cache = None;
     }
 
+    #[must_use = "filter list loading failure is silently lost"]
     pub fn load_filter_list(&mut self, content: &str) -> anyhow::Result<usize> {
         let mut rules_loaded = 0;
 
@@ -241,6 +242,7 @@ impl AdBlocker {
         Ok(rules_loaded)
     }
 
+    #[must_use = "filter list loading failure is silently lost"]
     pub fn load_filter_list_file(&mut self, path: &std::path::Path) -> anyhow::Result<usize> {
         let content = std::fs::read_to_string(path)?;
         self.load_filter_list(&content)

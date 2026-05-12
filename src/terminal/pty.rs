@@ -141,7 +141,9 @@ impl PtyHandle {
 impl Drop for PtyHandle {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Relaxed);
-        let _ = self.child.kill();
+        if let Err(e) = self.child.kill() {
+            warn!(%e, "Failed to kill PTY child process");
+        }
         // read_thread is auto-joined via Option<JoinHandle> drop... actually no.
         // We need to join it. Let's fix this.
     }

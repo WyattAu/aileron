@@ -100,6 +100,7 @@ pub enum IconValue {
 
 impl ExtensionManifest {
     /// Parse a manifest from a JSON string (manifest.json V3 format).
+    #[must_use = "manifest parsing failure is silently lost"]
     pub fn from_json(json: &str) -> crate::extensions::Result<Self> {
         serde_json::from_str(json)
             .map_err(|e| crate::extensions::ExtensionError::Serialization(e.to_string()))

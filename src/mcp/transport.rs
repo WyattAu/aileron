@@ -47,6 +47,7 @@ impl McpTransport {
 
     /// Run the MCP server on stdin/stdout (blocking).
     /// Call this from a background thread.
+    #[must_use = "MCP server failure is silently lost"]
     pub fn run_stdio(&self) -> anyhow::Result<()> {
         info!(target: "mcp", "MCP server starting on stdio");
 

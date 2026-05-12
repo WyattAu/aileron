@@ -369,7 +369,9 @@ impl ExtensionManager {
         if enabled && !self.extensions.contains_key(&id) {
             self.register_builtin_adblock();
         } else if !enabled && self.extensions.contains_key(&id) {
-            let _ = self.unload(&id);
+            if let Some(e) = self.unload(&id) {
+                tracing::warn!(%e, "Failed to unload extension");
+            }
             tracing::info!(
                 target: "extensions",
                 "Disabled built-in adblock extension"

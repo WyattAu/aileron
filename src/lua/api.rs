@@ -29,6 +29,8 @@ pub struct LuaEngine {
     url_redirects: Rc<RefCell<Vec<UrlRedirect>>>,
     /// Pending keybindings from aileron.keymap.set calls during init.
     pending_keybinds: Rc<RefCell<Vec<PendingKeybind>>>,
+    /// Pending navigations from aileron.navigate(url) calls (init.lua + hooks).
+    pending_navigations: Rc<RefCell<Vec<String>>>,
     /// Extension manager — injected after construction via set_extension_manager().
     /// Rc<RefCell<Option<...>>> because the Lua VM is created before the extension manager,
     /// and mlua closures require Fn (not FnMut).
@@ -56,6 +58,7 @@ pub struct UrlRedirect {
 
 impl LuaEngine {
     /// Create a new Lua engine with sandboxed stdlib.
+    #[must_use = "script loading failure is silently lost"]
     pub fn new() -> mlua::Result<Self> {
         // Create Lua with limited stdlib (sandbox per TASK-020)
         let lua = Lua::new_with(
@@ -64,6 +67,7 @@ impl LuaEngine {
         )?;
 
         let pending_keybinds: Rc<RefCell<Vec<PendingKeybind>>> = Rc::new(RefCell::new(Vec::new()));
+        let pending_navigations: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
         let custom_commands: Rc<RefCell<Vec<CustomCommand>>> = Rc::new(RefCell::new(Vec::new()));
         let url_redirects: Rc<RefCell<Vec<UrlRedirect>>> = Rc::new(RefCell::new(Vec::new()));
         let extension_manager: Rc<RefCell<Option<Arc<parking_lot::RwLock<ExtensionManager>>>>> =
@@ -74,11 +78,13 @@ impl LuaEngine {
             custom_commands: custom_commands.clone(),
             url_redirects: url_redirects.clone(),
             pending_keybinds: pending_keybinds.clone(),
+            pending_navigations: pending_navigations.clone(),
             extension_manager: extension_manager.clone(),
         };
 
         engine.register_api(
             pending_keybinds,
+            pending_navigations,
             custom_commands,
             url_redirects,
             extension_manager,
@@ -90,6 +96,7 @@ impl LuaEngine {
     fn register_api(
         &mut self,
         pending_keybinds: Rc<RefCell<Vec<PendingKeybind>>>,
+        pending_navigations: Rc<RefCell<Vec<String>>>,
         custom_commands: Rc<RefCell<Vec<CustomCommand>>>,
         url_redirects: Rc<RefCell<Vec<UrlRedirect>>>,
         extension_manager: Rc<RefCell<Option<Arc<parking_lot::RwLock<ExtensionManager>>>>>,
@@ -250,6 +257,20 @@ impl LuaEngine {
         })?;
         aileron.set("warn", warn_fn)?;
 
+        // aileron.navigate(url)
+        // Pushes a URL into the pending navigations queue. The application
+        // processes these during init (for init.lua startup) and after
+        // hook callbacks (for runtime navigation from hooks).
+        let navigate_fn = {
+            let navs = pending_navigations.clone();
+            lua.create_function(move |_, url: String| {
+                info!(target: "lua", "navigate({})", url);
+                navs.borrow_mut().push(url);
+                Ok(())
+            })?
+        };
+        aileron.set("navigate", navigate_fn)?;
+
         // === aileron.extensions ===
         // Lua control plane for managing WebExtensions.
         // Functions gracefully return nil/error if the extension manager
@@ -377,6 +398,7 @@ impl LuaEngine {
     }
 
     /// Load and execute a Lua script.
+    #[must_use = "script loading failure is silently lost"]
     pub fn load_script(&self, script: &str) -> mlua::Result<()> {
         info!(target: "lua", "Loading script ({} bytes)", script.len());
         self.lua.load(script).exec()?;
@@ -385,6 +407,7 @@ impl LuaEngine {
     }
 
     /// Load a Lua script from a file path.
+    #[must_use = "script loading failure is silently lost"]
     pub fn load_file(&self, path: &std::path::Path) -> anyhow::Result<()> {
         let contents = std::fs::read_to_string(path)?;
         self.load_script(&contents)
@@ -393,6 +416,7 @@ impl LuaEngine {
     }
 
     /// Execute a Lua expression and return the result as a string.
+    #[must_use = "script loading failure is silently lost"]
     pub fn eval(&self, expr: &str) -> anyhow::Result<String> {
         let result: Value = self
             .lua
@@ -403,6 +427,7 @@ impl LuaEngine {
     }
 
     /// Call a registered custom command by name.
+    #[must_use = "script loading failure is silently lost"]
     pub fn call_command(&self, name: &str, args: &[String]) -> anyhow::Result<String> {
         let globals = self.lua.globals();
         let aileron: Value = globals
@@ -482,6 +507,12 @@ impl LuaEngine {
         self.pending_keybinds.borrow_mut().drain(..).collect()
     }
 
+    /// Take all pending navigations from aileron.navigate() calls.
+    /// Returns them and clears the internal buffer.
+    pub fn take_pending_navigations(&self) -> Vec<String> {
+        self.pending_navigations.borrow_mut().drain(..).collect()
+    }
+
     /// Call all registered hooks for a given event.
     /// Args are passed as Lua string values. Errors are silently logged.
     pub fn call_hooks(&self, event: &str, args: &[&str]) {
@@ -517,7 +548,9 @@ impl LuaEngine {
                     .iter()
                     .filter_map(|a| self.lua.create_string(a).ok().map(Value::String))
                     .collect();
-                let _ = func.call::<Value>(lua_args);
+                if let Err(e) = func.call::<Value>(lua_args) {
+                    warn!(%e, "Lua event hook callback failed");
+                }
             }
         }
     }

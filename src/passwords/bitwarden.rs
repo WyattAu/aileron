@@ -56,6 +56,7 @@ impl BitwardenClient {
     /// drop. Callers that pass it to `std::env::set_var` accept that it will
     /// persist in process memory until exit. The internally stored copy in
     /// `self.session_key` IS zeroized on drop/lock.
+    #[must_use = "credential retrieval failure is silently lost"]
     pub fn unlock(&mut self, master_password: &str) -> anyhow::Result<String> {
         let output = Command::new(&self.bw_path)
             .arg("unlock")
@@ -96,6 +97,7 @@ impl BitwardenClient {
 
     /// Search the vault for items matching a query.
     /// Returns a list of vault items with IDs (needed for get_credential).
+    #[must_use = "credential retrieval failure is silently lost"]
     pub fn search(&self, query: &str) -> anyhow::Result<Vec<VaultItem>> {
         let mut cmd = Command::new(&self.bw_path);
         cmd.arg("list").arg("items").arg("--search").arg(query);
@@ -136,6 +138,7 @@ impl BitwardenClient {
 
     /// Get a credential from the vault by item ID.
     /// The returned Credential has zeroizing Drop, so secrets are cleared on drop.
+    #[must_use = "credential retrieval failure is silently lost"]
     pub fn get_credential(&self, item_id: &str) -> anyhow::Result<Credential> {
         let mut cmd = Command::new(&self.bw_path);
         cmd.arg("get").arg("item").arg(item_id);
@@ -348,6 +351,7 @@ impl BitwardenClient {
     }
 
     /// Search for credentials matching a URL's domain.
+    #[must_use = "credential retrieval failure is silently lost"]
     pub fn search_for_url(&self, url: &str) -> anyhow::Result<Vec<VaultItem>> {
         let parsed = match url::Url::parse(url) {
             Ok(u) => u,

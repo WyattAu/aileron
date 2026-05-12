@@ -632,7 +632,9 @@ a {{ color: #4db4ff; }}
                 WryEvent::HttpsUpgraded { to, .. } => {
                     if let Ok(https_url) = Url::parse(to) {
                         self.url = https_url;
-                        let _ = self.webview.load_url(to);
+                        if let Err(e) = self.webview.load_url(to) {
+                            warn!(%e, "HTTPS upgrade redirect failed");
+                        }
                     }
                 }
                 _ => {}
@@ -644,16 +646,22 @@ a {{ color: #4db4ff; }}
 
     /// Navigate back in history (uses JS workaround — wry has no back() API).
     pub fn back(&self) {
-        let _ = self
+        if let Err(e) = self
             .webview
-            .evaluate_script("if (window.history.length > 1) window.history.back()");
+            .evaluate_script("if (window.history.length > 1) window.history.back()")
+        {
+            warn!(%e, "History back navigation failed");
+        }
     }
 
     /// Navigate forward in history (uses JS workaround — wry has no forward() API).
     pub fn forward(&self) {
-        let _ = self
+        if let Err(e) = self
             .webview
-            .evaluate_script("if (window.history.length > 1) window.history.forward()");
+            .evaluate_script("if (window.history.length > 1) window.history.forward()")
+        {
+            warn!(%e, "History forward navigation failed");
+        }
     }
 
     /// Reload the current page.

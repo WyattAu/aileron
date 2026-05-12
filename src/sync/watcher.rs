@@ -78,8 +78,10 @@ impl SyncWatcher {
     pub fn stop(&mut self) {
         self.running.store(false, Ordering::Release);
         self.rx = None;
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        if let Some(thread) = self.thread.take()
+            && let Err(e) = thread.join()
+        {
+            warn!("Failed to join watcher thread: {:?}", e);
         }
         info!("Stopped filesystem watcher");
     }

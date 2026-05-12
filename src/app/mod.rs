@@ -479,7 +479,9 @@ impl AppState {
             ];
             if let Some(ref conn) = db {
                 for &(key, url) in defaults {
-                    let _ = crate::db::quickmarks::set_quickmark(conn, key, url);
+                    if let Err(e) = crate::db::quickmarks::set_quickmark(conn, key, url) {
+                        warn!(%e, "Failed to set default quickmark");
+                    }
                     quickmarks.insert(key.to_string(), url.to_string());
                 }
             } else {
@@ -564,6 +566,25 @@ impl AppState {
             autofill: AutofillState::default(),
             cache: CacheState::default(),
         })
+    }
+
+    /// Drain pending navigations from the Lua engine and push them as WryAction::Navigate.
+    /// Call this after hook callbacks or during frame processing to ensure Lua-initiated
+    /// navigations are processed.
+    pub fn drain_lua_navigations(&mut self) {
+        if let Some(ref engine) = self.lua_engine {
+            let navs = engine.take_pending_navigations();
+            for url_str in navs {
+                match url::Url::parse(&url_str) {
+                    Ok(url) => {
+                        self.pending_wry_actions.push_back(WryAction::Navigate(url));
+                    }
+                    Err(e) => {
+                        warn!("Lua navigate: invalid URL '{}': {}", url_str, e);
+                    }
+                }
+            }
+        }
     }
 
     pub fn get_cached_https_safe_list(&mut self) -> HashSet<String> {

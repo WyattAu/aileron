@@ -195,6 +195,7 @@ pub struct NativeTerminalPane {
 
 impl NativeTerminalPane {
     /// Create a new terminal pane with the given grid size.
+    #[must_use = "terminal creation failure is silently lost"]
     pub fn new(cols: u16, rows: u16) -> anyhow::Result<Self> {
         let history_size = 10_000;
         let pty = PtyHandle::new(cols, rows)?;
@@ -261,8 +262,10 @@ impl NativeTerminalPane {
                     .unwrap_or_else(|e| e.into_inner());
                 std::mem::take(&mut *buf)
             };
-            if !pty_write.is_empty() {
-                let _ = self.pty.write_bytes(&pty_write);
+            if !pty_write.is_empty()
+                && let Err(e) = self.pty.write_bytes(&pty_write)
+            {
+                warn!(%e, "Failed to write bytes to PTY");
             }
             return false;
         }
@@ -282,8 +285,10 @@ impl NativeTerminalPane {
                 .unwrap_or_else(|e| e.into_inner());
             std::mem::take(&mut *buf)
         };
-        if !pty_write.is_empty() {
-            let _ = self.pty.write_bytes(&pty_write);
+        if !pty_write.is_empty()
+            && let Err(e) = self.pty.write_bytes(&pty_write)
+        {
+            warn!(%e, "Failed to write bytes to PTY");
         }
 
         self.dirty.store(true, Ordering::Relaxed);
@@ -489,6 +494,7 @@ impl NativeTerminalManager {
     }
 
     /// Create a new native terminal pane.
+    #[must_use = "terminal creation failure is silently lost"]
     pub fn create_terminal(
         &mut self,
         pane_id: Uuid,

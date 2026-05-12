@@ -1,6 +1,7 @@
 use std::io::{Read, Write};
 use std::path::Path;
 
+#[must_use = "encryption result must be checked"]
 pub fn encrypt_file(
     input_path: &Path,
     output_path: &Path,
@@ -19,6 +20,7 @@ pub fn encrypt_file(
     Ok(())
 }
 
+#[must_use = "decryption result must be checked"]
 pub fn decrypt_file(
     input_path: &Path,
     output_path: &Path,
