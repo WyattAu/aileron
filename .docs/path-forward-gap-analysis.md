@@ -166,9 +166,11 @@
 
 - [x] SAFETY comments on all FFI blocks (5 remaining, now 0)
 - [x] Flaky test elimination
-- [ ] Input integration tests
-- [ ] Lua integration tests
-- [ ] Frame_tasks integration tests
+- [x] Input integration tests (34 tests)
+- [x] Lua integration tests (51 tests)
+- [x] Frame_tasks integration tests (20 tests)
+- [x] Key conversion unit tests (14 tests, previously zero coverage)
+- [ ] Audit remaining ~15 WebKitGTK/Cairo FFI for SAFETY comment completeness
 
 ### Phase 2: Core Gaps (v0.20.0)
 

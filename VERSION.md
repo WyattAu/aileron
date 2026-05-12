@@ -1,11 +1,11 @@
 # Aileron — Version & State Tracking
 
 ## Current State
-- **Phase:** v7 Ship, Extend, Dominate
+- **Phase:** v0.19.0 Hardening
 - **Version:** 0.18.0
 - **Status:** Shipped
 - **Last Updated:** 2026-05-12
-- **Test Count:** 999 lib tests, 73 integration, 13 startup, 26 smoke, 4 doc
+- **Test Count:** 1013 lib tests, 124 integration, 4 doc = 1239 total (was 1115)
 - **Zero clippy warnings** (all-targets -D warnings)
 - **Zero vulnerabilities** (cargo audit)
 - **~50 unsafe blocks** (FFI: env vars, WebKitGTK, Cairo, X11)
@@ -21,13 +21,14 @@
 - **Error handling:** 11 silent swallows converted to tracing::warn
 - **Cross-file consistency:** 0 orphaned imports, 0 version mismatches
 - **Feature flags:** `terminal` and `extensions` removed (always-on core modules)
-- **Test count:** 999 lib, 73 integration, 13 startup, 26 smoke, 4 doc = 1115 total
+- **Test count:** 1013 lib, 124 integration, 4 doc = 1239 total (+124 from Phase 1 hardening)
 - **Duplicate code:** X11 error handler consolidated, spellcheck FFI deduplicated
 - **Data race fix:** proxy set_var removed from post-spawn command handler
 - **#[must_use]:** 122 attributes added across 57 files (all public Result/Option returns)
 - **unwrap() audit:** 0 risky unwrap() in production code (all on compile-time constants)
 - **File splits:** wry_engine.rs 2550->1153 lines (extracted wry_pages.rs), main.rs 2529->2418 lines (extracted event_handlers.rs)
 - **i18n test fix:** Eliminated flaky env var race in locale detection tests (pure parse_lang_env function)
+- **New integration tests:** input routing (34), lua scripting (51), frame_tasks (20), key_conversion unit (14)
 
 ## Implementation Phases
 
