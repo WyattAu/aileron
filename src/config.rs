@@ -166,6 +166,11 @@ pub struct Config {
 
     /// Enable spell checking in WebKitGTK (Linux only).
     pub spellcheck_enabled: bool,
+
+    /// Memory limit in MB. When process RSS exceeds this, the least-recently
+    /// active background tab is evicted (webview destroyed, tree node kept).
+    /// Zero or None means no limit.
+    pub memory_limit_mb: u64,
 }
 
 /// Color overrides for a custom theme.
@@ -445,6 +450,7 @@ impl Default for Config {
             arp_token: None,
             keybindings: std::collections::HashMap::new(),
             spellcheck_enabled: true,
+            memory_limit_mb: 0,
         }
     }
 }

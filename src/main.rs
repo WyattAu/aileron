@@ -15,7 +15,7 @@ use aileron::mcp::McpBridge;
 use aileron::net::adblock::AdBlocker;
 use aileron::offscreen_webview::OffscreenWebViewManager;
 use aileron::popup::PopupManager;
-use aileron::profiling::{AdaptiveQuality, Profiler};
+use aileron::profiling::AdaptiveQuality;
 use aileron::servo::{WryPaneManager, bsp_rect_to_wry_rect, init_gtk};
 use aileron::terminal::NativeTerminalManager;
 use aileron::ui::panels;
@@ -110,9 +110,6 @@ struct AileronApp {
     /// Reduces texture capture rate when frames are slow.
     adaptive_quality: AdaptiveQuality,
 
-    /// Frame timing profiler — collects per-phase duration samples.
-    profiler: Profiler,
-
     /// Last time adblock filter lists were updated (for periodic refresh).
     last_filter_update: std::time::Instant,
 
@@ -169,11 +166,6 @@ impl AileronApp {
             pending_pane_creates: std::collections::VecDeque::new(),
             adblock_reload_pending: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             adaptive_quality,
-            profiler: {
-                let mut p = Profiler::new();
-                p.enable();
-                p
-            },
             resize_pending: false,
             last_filter_update: std::time::Instant::now(),
             ime_just_committed: false,
@@ -688,7 +680,9 @@ impl AileronApp {
 
     /// Run one frame of egui UI + wgpu rendering.
     fn render(&mut self) {
-        self.profiler.start_frame();
+        if let Some(app_state) = &mut self.app_state {
+            app_state.profiler.start_frame();
+        }
 
         let window = match &self.window {
             Some(w) => w,
@@ -815,7 +809,9 @@ impl AileronApp {
         // 11. Present
         output.present();
 
-        self.profiler.end_frame("render");
+        if let Some(app_state) = &mut self.app_state {
+            app_state.profiler.end_frame("render");
+        }
     }
 
     /// Capture dirty offscreen frames and update egui textures.
@@ -1846,14 +1842,13 @@ impl ApplicationHandler for AileronApp {
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        self.profiler.start_frame();
-
-        // Handle deferred resize (pane repositioning).
-        // Doing this inside the Resized event can crash GTK/WebKitGTK.
-        if self.resize_pending {
-            self.resize_pending = false;
-            self.reposition_all_panes();
+        if let Some(app_state) = &mut self.app_state {
+            app_state.profiler.start_frame();
         }
+
+        // Defer pane repositioning to end-of-frame (single call).
+        let mut layout_dirty = self.resize_pending;
+        self.resize_pending = false;
 
         if self.first_frame {
             self.first_frame = false;
@@ -1904,16 +1899,21 @@ impl ApplicationHandler for AileronApp {
             }
         }
 
+        // Clone interceptor_registry once; share reference with both call sites.
+        let interceptor_registry = self
+            .app_state
+            .as_ref()
+            .map(|s| s.extension_manager.read().interceptor_registry.clone());
+
         {
             let app_state = match &mut self.app_state {
                 Some(s) => s,
                 None => return,
             };
-            let interceptor_registry = app_state
-                .extension_manager
-                .read()
-                .interceptor_registry
-                .clone();
+            let registry = match &interceptor_registry {
+                Some(r) => r,
+                None => return,
+            };
             frame_tasks::process_wry_events(
                 app_state,
                 &mut self.wry_panes,
@@ -1921,7 +1921,7 @@ impl ApplicationHandler for AileronApp {
                 #[cfg(feature = "mcp")]
                 &mut self.mcp_bridge,
                 &self.adblocker,
-                &interceptor_registry,
+                registry,
             );
         }
 
@@ -1934,12 +1934,8 @@ impl ApplicationHandler for AileronApp {
 
         if self.config.is_offscreen()
             && let Some(app_state) = &mut self.app_state
+            && let Some(registry) = &interceptor_registry
         {
-            let interceptor_registry = app_state
-                .extension_manager
-                .read()
-                .interceptor_registry
-                .clone();
             frame_tasks::process_offscreen_events(
                 app_state,
                 &mut self.offscreen_panes,
@@ -1947,7 +1943,7 @@ impl ApplicationHandler for AileronApp {
                 #[cfg(feature = "mcp")]
                 &mut self.mcp_bridge,
                 &self.adblocker,
-                &interceptor_registry,
+                registry,
             );
             // Check for webview crashes (stalled loading panes)
             frame_tasks::check_offscreen_crashes(app_state, &mut self.offscreen_panes);
@@ -2067,7 +2063,7 @@ impl ApplicationHandler for AileronApp {
                 frame_tasks::handle_pending_tab_close(app_state, close_id);
             }
             self.remove_wry_pane_for(&close_id);
-            self.reposition_all_panes();
+            layout_dirty = true;
         }
 
         frame_tasks::poll_terminal_output(&mut self.terminal_manager);
@@ -2090,7 +2086,61 @@ impl ApplicationHandler for AileronApp {
             }
         }
 
-        self.reposition_all_panes();
+        // Memory limit enforcement: evict least-recently active background tab
+        // when process RSS exceeds the configured limit. Runs once per ~60 frames
+        // to avoid per-frame syscall overhead.
+        if self.config.memory_limit_mb > 0
+            && self.frame_count.is_multiple_of(60)
+            && let Some(rss_bytes) = aileron::profiling::memory::process_rss_bytes()
+        {
+            let limit_bytes = self.config.memory_limit_mb * 1024 * 1024;
+            if rss_bytes > limit_bytes {
+                // Collect eviction info without holding mutable borrow.
+                let evict_info = self.app_state.as_ref().and_then(|app_state| {
+                    let active_id = app_state.wm.active_pane_id();
+                    let panes = app_state.wm.panes();
+                    panes
+                        .iter()
+                        .filter(|(pid, _)| *pid != active_id)
+                        .map(|(pid, _)| {
+                            let url = self
+                                .wry_panes
+                                .get(pid)
+                                .map(|p| p.url().to_string())
+                                .unwrap_or_default();
+                            (*pid, url)
+                        })
+                        .next()
+                });
+                if let Some((evict_id, url)) = evict_info {
+                    info!(
+                        "Memory limit exceeded (RSS {} > {} MB): evicting tab {}",
+                        aileron::profiling::memory::format_human_bytes(rss_bytes),
+                        self.config.memory_limit_mb,
+                        evict_id
+                    );
+                    self.remove_wry_pane_for(&evict_id);
+                    if let Some(app_state) = &mut self.app_state {
+                        app_state
+                            .pending_wry_actions
+                            .push_back(aileron::app::WryAction::Navigate(
+                                url::Url::parse(&url)
+                                    .unwrap_or_else(|_| url::Url::parse("aileron://new").unwrap()),
+                            ));
+                        app_state.ui.status_message = format!(
+                            "Memory limit reached — evicted background tab ({})",
+                            aileron::profiling::memory::format_human_bytes(rss_bytes)
+                        );
+                    }
+                    layout_dirty = true;
+                }
+            }
+        }
+
+        // Single reposition_all_panes() call per frame (was up to 3x).
+        if layout_dirty {
+            self.reposition_all_panes();
+        }
         frame_tasks::pump_gtk_loop();
 
         // TASK-K27: create at most one deferred offscreen pane per frame.
@@ -2102,6 +2152,7 @@ impl ApplicationHandler for AileronApp {
         // Record frame end for input latency measurement.
         if let Some(app_state) = &mut self.app_state {
             app_state.input_latency.record_frame_end();
+            app_state.profiler.end_frame("about_to_wait");
         }
 
         // Request redraw if:
@@ -2117,8 +2168,6 @@ impl ApplicationHandler for AileronApp {
                 window.request_redraw();
             }
         }
-
-        self.profiler.end_frame("about_to_wait");
     }
 
     fn new_events(&mut self, event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {

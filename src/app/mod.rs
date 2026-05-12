@@ -299,6 +299,10 @@ pub struct AppState {
     /// Tracks key-to-frame latency for profiling.
     pub input_latency: crate::profiling::InputLatencyTracker,
 
+    /// Frame timing profiler — collects per-phase duration samples.
+    /// Exposed on AppState so `:stats` command can read stats.
+    pub profiler: crate::profiling::Profiler,
+
     /// Adblock blocked request count (updated by main.rs each frame).
     pub adblock_blocked_count: u64,
 
@@ -531,6 +535,11 @@ impl AppState {
             pending_detach_url: None,
             pane_last_focus: HashMap::new(),
             input_latency: crate::profiling::InputLatencyTracker::new(),
+            profiler: {
+                let mut p = crate::profiling::Profiler::new();
+                p.enable();
+                p
+            },
             adblock_blocked_count: 0,
             extension_manager: extension_manager.clone(),
             #[cfg(feature = "sync")]

@@ -76,11 +76,11 @@ pub fn build_ui(
             .resizable(true)
             .frame(egui::Frame::new().fill(tab_bg))
             .show(ctx, |ui| {
-                build_tab_list(ui, app_state, wry_panes, false, &tc.clone());
+                build_tab_list(ui, app_state, wry_panes, false, &tc);
             });
     } else if tab_layout == "topbar" {
         egui::TopBottomPanel::top("tab-bar").show(ctx, |ui| {
-            build_tab_list(ui, app_state, wry_panes, true, &tc.clone());
+            build_tab_list(ui, app_state, wry_panes, true, &tc);
         });
     }
 
@@ -1686,25 +1686,32 @@ pub fn build_tab_list(
                 let is_active = *pane_id == active_id;
                 let is_terminal = app_state.terminal_pane_ids.contains(pane_id);
 
-                let info = app_state
+                // Extract needed strings before mutable borrow of app_state.
+                let (trunc_h, info_title, info_url) = app_state
                     .tabs
                     .tab_display_cache
                     .get(pane_id)
-                    .cloned()
-                    .unwrap_or_else(|| crate::app::TabDisplayInfo {
-                        title: "New Tab".into(),
-                        url: "aileron://new".into(),
-                        truncated_title_horizontal: truncate_str("New Tab", 21),
-                        truncated_title_sidebar: truncate_str("New Tab", 17),
-                        truncated_url: truncate_str("aileron://new", 19),
-                    });
+                    .map(|i| {
+                        (
+                            i.truncated_title_horizontal.clone(),
+                            i.title.clone(),
+                            i.url.clone(),
+                        )
+                    })
+                    .unwrap_or_else(|| (String::new(), String::new(), String::new()));
 
                 // Use custom tab name if set
                 let display_title = {
                     let custom = app_state.tabs.tab_names.get(&pane_id.to_string()).cloned();
                     match custom {
                         Some(name) => truncate_str(&name, 21),
-                        None => info.truncated_title_horizontal.clone(),
+                        None => {
+                            if trunc_h.is_empty() {
+                                "New Tab".into()
+                            } else {
+                                trunc_h
+                            }
+                        }
                     }
                 };
 
@@ -1714,6 +1721,7 @@ pub fn build_tab_list(
                     tab_bar_bg
                 };
 
+                let display_title_clone = display_title.clone();
                 egui::Frame::new().fill(frame_color).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.add_space(8.0);
@@ -1746,7 +1754,11 @@ pub fn build_tab_list(
                             format!("{pinned_prefix}{muted_prefix}{private_prefix}{display_title}"),
                         );
                         response.widget_info(|| {
-                            let mut label = format!("Tab: {} - {}", info.title, info.url);
+                            let mut label = if info_title.is_empty() {
+                                "Tab: New Tab".into()
+                            } else {
+                                format!("Tab: {} - {}", info_title, info_url)
+                            };
                             if is_pinned {
                                 label.push_str(" (Pinned)");
                             }
@@ -1763,10 +1775,12 @@ pub fn build_tab_list(
                             app_state.update_status();
                         }
 
-                        let close_title = display_title.clone();
                         let close_btn = ui.small_button("\u{00d7}");
                         close_btn.widget_info(|| {
-                            a11y_info(WidgetType::Button, format!("Close tab: {close_title}"))
+                            a11y_info(
+                                WidgetType::Button,
+                                format!("Close tab: {display_title_clone}"),
+                            )
                         });
                         if close_btn.clicked() {
                             app_state.pending_tab_close = Some(*pane_id);
@@ -1783,17 +1797,21 @@ pub fn build_tab_list(
                 let is_active = *pane_id == active_id;
                 let is_terminal = app_state.terminal_pane_ids.contains(pane_id);
 
-                let info = app_state
+                // Extract needed strings before mutable borrow of app_state.
+                let (trunc_s, trunc_u, info_title, info_url) = app_state
                     .tabs
                     .tab_display_cache
                     .get(pane_id)
-                    .cloned()
-                    .unwrap_or_else(|| crate::app::TabDisplayInfo {
-                        title: "New Tab".into(),
-                        url: "aileron://new".into(),
-                        truncated_title_horizontal: truncate_str("New Tab", 21),
-                        truncated_title_sidebar: truncate_str("New Tab", 17),
-                        truncated_url: truncate_str("aileron://new", 19),
+                    .map(|i| {
+                        (
+                            i.truncated_title_sidebar.clone(),
+                            i.truncated_url.clone(),
+                            i.title.clone(),
+                            i.url.clone(),
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        (String::new(), String::new(), String::new(), String::new())
                     });
 
                 // Use custom tab name if set
@@ -1801,7 +1819,13 @@ pub fn build_tab_list(
                     let custom = app_state.tabs.tab_names.get(&pane_id.to_string()).cloned();
                     match custom {
                         Some(name) => truncate_str(&name, 17),
-                        None => info.truncated_title_sidebar.clone(),
+                        None => {
+                            if trunc_s.is_empty() {
+                                "New Tab".into()
+                            } else {
+                                trunc_s
+                            }
+                        }
                     }
                 };
 
@@ -1811,6 +1835,7 @@ pub fn build_tab_list(
                     tab_bar_bg
                 };
 
+                let display_title_clone = display_title.clone();
                 egui::Frame::new().fill(frame_color).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let icon = if is_terminal { "\u{2328}" } else { "\u{1f310}" };
@@ -1841,7 +1866,11 @@ pub fn build_tab_list(
                             format!("{pinned_prefix}{muted_prefix}{private_prefix}{display_title}"),
                         );
                         response.widget_info(|| {
-                            let mut label = format!("Tab: {} - {}", info.title, info.url);
+                            let mut label = if info_title.is_empty() {
+                                "Tab: New Tab".into()
+                            } else {
+                                format!("Tab: {} - {}", info_title, info_url)
+                            };
                             if is_pinned {
                                 label.push_str(" (Pinned)");
                             }
@@ -1858,10 +1887,12 @@ pub fn build_tab_list(
                             app_state.update_status();
                         }
 
-                        let close_title = display_title.clone();
                         let close_btn = ui.small_button("\u{00d7}");
                         close_btn.widget_info(|| {
-                            a11y_info(WidgetType::Button, format!("Close tab: {close_title}"))
+                            a11y_info(
+                                WidgetType::Button,
+                                format!("Close tab: {display_title_clone}"),
+                            )
                         });
                         if close_btn.clicked() {
                             app_state.pending_tab_close = Some(*pane_id);
@@ -1870,9 +1901,13 @@ pub fn build_tab_list(
 
                     if !is_terminal {
                         ui.label(
-                            egui::RichText::new(&info.truncated_url)
-                                .small()
-                                .color(border_color),
+                            egui::RichText::new(if trunc_u.is_empty() {
+                                "aileron://new".into()
+                            } else {
+                                trunc_u
+                            })
+                            .small()
+                            .color(border_color),
                         );
                     } else {
                         ui.label(egui::RichText::new("Terminal").small().color(border_color));

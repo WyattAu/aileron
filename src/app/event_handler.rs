@@ -856,10 +856,15 @@ impl ApplicationHandler for AileronApp {
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        if self.resize_pending {
-            self.resize_pending = false;
-            self.reposition_all_panes();
+        if let Some(app_state) = &mut self.app_state {
+            app_state.profiler.start_frame();
         }
+
+        // Defer pane repositioning to end-of-frame (single call).
+        // Individual events set resize_pending; the actual reposition
+        // happens once below after all state mutations are complete.
+        let mut layout_dirty = self.resize_pending;
+        self.resize_pending = false;
 
         if self.first_frame {
             self.first_frame = false;
@@ -908,16 +913,21 @@ impl ApplicationHandler for AileronApp {
             }
         }
 
+        // Clone interceptor_registry once; share reference with both call sites.
+        let interceptor_registry = self
+            .app_state
+            .as_ref()
+            .map(|s| s.extension_manager.read().interceptor_registry.clone());
+
         {
             let app_state = match &mut self.app_state {
                 Some(s) => s,
                 None => return,
             };
-            let interceptor_registry = app_state
-                .extension_manager
-                .read()
-                .interceptor_registry
-                .clone();
+            let registry = match &interceptor_registry {
+                Some(r) => r,
+                None => return,
+            };
             frame_tasks::process_wry_events(
                 app_state,
                 &mut self.wry_panes,
@@ -925,7 +935,7 @@ impl ApplicationHandler for AileronApp {
                 #[cfg(feature = "mcp")]
                 &mut self.mcp_bridge,
                 &self.adblocker,
-                &interceptor_registry,
+                registry,
             );
         }
 
@@ -938,12 +948,8 @@ impl ApplicationHandler for AileronApp {
 
         if self.config.is_offscreen()
             && let Some(app_state) = &mut self.app_state
+            && let Some(registry) = &interceptor_registry
         {
-            let interceptor_registry = app_state
-                .extension_manager
-                .read()
-                .interceptor_registry
-                .clone();
             frame_tasks::process_offscreen_events(
                 app_state,
                 &mut self.offscreen_panes,
@@ -951,7 +957,7 @@ impl ApplicationHandler for AileronApp {
                 #[cfg(feature = "mcp")]
                 &mut self.mcp_bridge,
                 &self.adblocker,
-                &interceptor_registry,
+                registry,
             );
             frame_tasks::check_offscreen_crashes(app_state, &mut self.offscreen_panes);
         }
@@ -1072,7 +1078,7 @@ impl ApplicationHandler for AileronApp {
                 frame_tasks::handle_pending_tab_close(app_state, close_id);
             }
             self.remove_wry_pane_for(&close_id);
-            self.reposition_all_panes();
+            layout_dirty = true;
         }
 
         frame_tasks::poll_terminal_output(&mut self.terminal_manager);
@@ -1093,7 +1099,61 @@ impl ApplicationHandler for AileronApp {
             }
         }
 
-        self.reposition_all_panes();
+        // Memory limit enforcement: evict least-recently active background tab
+        // when process RSS exceeds the configured limit. Runs once per ~60 frames
+        // to avoid per-frame syscall overhead.
+        if self.config.memory_limit_mb > 0
+            && self.frame_count.is_multiple_of(60)
+            && let Some(rss_bytes) = crate::profiling::memory::process_rss_bytes()
+        {
+            let limit_bytes = self.config.memory_limit_mb * 1024 * 1024;
+            if rss_bytes > limit_bytes {
+                // Collect eviction info without holding mutable borrow.
+                let evict_info = self.app_state.as_ref().and_then(|app_state| {
+                    let active_id = app_state.wm.active_pane_id();
+                    let panes = app_state.wm.panes();
+                    // Pick the first non-active pane (simplistic LRU proxy).
+                    let evict_id = panes
+                        .iter()
+                        .find(|(pid, _)| *pid != active_id)
+                        .map(|(pid, _)| *pid)?;
+                    let url = self
+                        .wry_panes
+                        .get(&evict_id)
+                        .map(|p| p.url().to_string())
+                        .unwrap_or_default();
+                    Some((evict_id, url))
+                });
+
+                if let Some((evict_id, url)) = evict_info {
+                    info!(
+                        "Memory limit exceeded (RSS {} > {} MB): evicting tab {}",
+                        crate::profiling::memory::format_human_bytes(rss_bytes),
+                        self.config.memory_limit_mb,
+                        evict_id
+                    );
+                    self.remove_wry_pane_for(&evict_id);
+                    if let Some(app_state) = &mut self.app_state {
+                        app_state
+                            .pending_wry_actions
+                            .push_back(crate::app::WryAction::Navigate(
+                                url::Url::parse(&url)
+                                    .unwrap_or_else(|_| url::Url::parse("aileron://new").unwrap()),
+                            ));
+                        app_state.ui.status_message = format!(
+                            "Memory limit reached — evicted background tab ({})",
+                            crate::profiling::memory::format_human_bytes(rss_bytes)
+                        );
+                    }
+                    layout_dirty = true;
+                }
+            }
+        }
+
+        // Single reposition_all_panes() call per frame (was up to 3x).
+        if layout_dirty {
+            self.reposition_all_panes();
+        }
         frame_tasks::pump_gtk_loop();
 
         self.drain_pending_pane_creates();
@@ -1102,6 +1162,7 @@ impl ApplicationHandler for AileronApp {
 
         if let Some(app_state) = &mut self.app_state {
             app_state.input_latency.record_frame_end();
+            app_state.profiler.end_frame("about_to_wait");
         }
 
         if let Some(winit_state) = &self.egui_winit {
