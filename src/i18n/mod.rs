@@ -67,22 +67,29 @@ pub fn clear_locale_override() {
     }
 }
 
+/// Parse a LANG-style environment string into a Locale.
+/// Pure function -- no env var access, safe for concurrent tests.
+fn parse_lang_env(lang: &str) -> Locale {
+    let lang = lang.to_lowercase();
+    match lang.as_str() {
+        l if l.starts_with("zh") => Locale::Chinese,
+        l if l.starts_with("ja") => Locale::Japanese,
+        l if l.starts_with("ko") => Locale::Korean,
+        l if l.starts_with("de") => Locale::German,
+        l if l.starts_with("fr") => Locale::French,
+        l if l.starts_with("es") => Locale::Spanish,
+        l if l.starts_with("pt") => Locale::Portuguese,
+        l if l.starts_with("ru") => Locale::Russian,
+        l if l.starts_with("en") => Locale::English,
+        _ => Locale::English,
+    }
+}
+
 pub fn detect_locale() -> Locale {
     if let Some(locale) = get_locale_override() {
         return locale;
     }
-    match std::env::var("LANG").unwrap_or_default().to_lowercase() {
-        lang if lang.starts_with("zh") => Locale::Chinese,
-        lang if lang.starts_with("ja") => Locale::Japanese,
-        lang if lang.starts_with("ko") => Locale::Korean,
-        lang if lang.starts_with("de") => Locale::German,
-        lang if lang.starts_with("fr") => Locale::French,
-        lang if lang.starts_with("es") => Locale::Spanish,
-        lang if lang.starts_with("pt") => Locale::Portuguese,
-        lang if lang.starts_with("ru") => Locale::Russian,
-        lang if lang.starts_with("en") => Locale::English,
-        _ => Locale::English,
-    }
+    parse_lang_env(&std::env::var("LANG").unwrap_or_default())
 }
 
 pub fn available_locales() -> Vec<(Locale, &'static str)> {
@@ -224,113 +231,78 @@ pub fn tr_locale(key: TrKey, locale: Locale) -> &'static str {
 mod tests {
     use super::*;
 
+    // --- Pure locale parsing tests (no env var mutation, safe for parallelism) ---
+
     #[test]
-    fn test_detect_locale_english() {
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "en_US.UTF-8");
-        }
-        assert_eq!(detect_locale(), Locale::English);
+    fn test_parse_lang_env_english() {
+        assert_eq!(parse_lang_env("en_US.UTF-8"), Locale::English);
     }
 
     #[test]
-    fn test_detect_locale_fallback() {
-        clear_locale_override();
-        unsafe {
-            std::env::remove_var("LANG");
-        }
-        assert_eq!(detect_locale(), Locale::English);
+    fn test_parse_lang_env_fallback() {
+        assert_eq!(parse_lang_env(""), Locale::English);
+        assert_eq!(parse_lang_env("C"), Locale::English);
+        assert_eq!(parse_lang_env("POSIX"), Locale::English);
     }
 
     #[test]
-    fn test_detect_locale_chinese() {
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "zh_CN.UTF-8");
-        }
-        assert_eq!(detect_locale(), Locale::Chinese);
+    fn test_parse_lang_env_chinese() {
+        assert_eq!(parse_lang_env("zh_CN.UTF-8"), Locale::Chinese);
     }
 
     #[test]
-    fn test_detect_locale_japanese() {
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "ja_JP.UTF-8");
-        }
-        assert_eq!(detect_locale(), Locale::Japanese);
+    fn test_parse_lang_env_japanese() {
+        assert_eq!(parse_lang_env("ja_JP.UTF-8"), Locale::Japanese);
     }
 
     #[test]
-    fn test_detect_locale_korean() {
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "ko_KR.UTF-8");
-        }
-        assert_eq!(detect_locale(), Locale::Korean);
+    fn test_parse_lang_env_korean() {
+        assert_eq!(parse_lang_env("ko_KR.UTF-8"), Locale::Korean);
     }
 
     #[test]
-    fn test_detect_locale_german() {
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "de_DE.UTF-8");
-        }
-        assert_eq!(detect_locale(), Locale::German);
+    fn test_parse_lang_env_german() {
+        assert_eq!(parse_lang_env("de_DE.UTF-8"), Locale::German);
     }
 
     #[test]
-    fn test_detect_locale_french() {
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "fr_FR.UTF-8");
-        }
-        assert_eq!(detect_locale(), Locale::French);
+    fn test_parse_lang_env_french() {
+        assert_eq!(parse_lang_env("fr_FR.UTF-8"), Locale::French);
     }
 
     #[test]
-    fn test_detect_locale_spanish() {
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "es_ES.UTF-8");
-        }
-        assert_eq!(detect_locale(), Locale::Spanish);
+    fn test_parse_lang_env_spanish() {
+        assert_eq!(parse_lang_env("es_ES.UTF-8"), Locale::Spanish);
     }
 
     #[test]
-    fn test_detect_locale_portuguese() {
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "pt_BR.UTF-8");
-        }
-        assert_eq!(detect_locale(), Locale::Portuguese);
+    fn test_parse_lang_env_portuguese() {
+        assert_eq!(parse_lang_env("pt_BR.UTF-8"), Locale::Portuguese);
     }
 
     #[test]
-    fn test_detect_locale_russian() {
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "ru_RU.UTF-8");
-        }
-        assert_eq!(detect_locale(), Locale::Russian);
+    fn test_parse_lang_env_russian() {
+        assert_eq!(parse_lang_env("ru_RU.UTF-8"), Locale::Russian);
     }
+
+    #[test]
+    fn test_parse_lang_env_case_insensitive() {
+        assert_eq!(parse_lang_env("JA_JP.UTF-8"), Locale::Japanese);
+        assert_eq!(parse_lang_env("Zh_CN.utf-8"), Locale::Chinese);
+    }
+
+    // --- Locale override tests (use LOCALE_OVERRIDE, not env vars) ---
 
     #[test]
     fn test_set_locale_override() {
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "en_US.UTF-8");
-        }
         set_locale(Locale::Chinese);
+        // Override takes precedence regardless of what detect_locale would read from env.
         assert_eq!(detect_locale(), Locale::Chinese);
         clear_locale_override();
     }
 
     #[test]
     fn test_set_locale_override_takes_precedence() {
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "zh_CN.UTF-8");
-        }
         set_locale(Locale::German);
         assert_eq!(detect_locale(), Locale::German);
         clear_locale_override();
@@ -408,21 +380,17 @@ mod tests {
     #[test]
     fn test_tr_fallback() {
         init();
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "en_US.UTF-8");
-        }
+        set_locale(Locale::English);
         assert_eq!(tr(TrKey("unknown_key")), "unknown_key");
+        clear_locale_override();
     }
 
     #[test]
     fn test_tr_known_key() {
         init();
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "en_US.UTF-8");
-        }
+        set_locale(Locale::English);
         assert_eq!(tr(TrKey("mode_normal")), "NORMAL");
+        clear_locale_override();
     }
 
     #[test]
@@ -434,84 +402,68 @@ mod tests {
     #[test]
     fn test_tr_status_pinned() {
         init();
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "en_US.UTF-8");
-        }
+        set_locale(Locale::English);
         assert_eq!(tr(TrKey("status_pinned")), "Pane pinned");
+        clear_locale_override();
     }
 
     #[test]
     fn test_tr_status_unpinned() {
         init();
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "en_US.UTF-8");
-        }
+        set_locale(Locale::English);
         assert_eq!(tr(TrKey("status_unpinned")), "Pane unpinned");
+        clear_locale_override();
     }
 
     #[test]
     fn test_tr_cmd_quit() {
         init();
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "en_US.UTF-8");
-        }
+        set_locale(Locale::English);
         assert_eq!(tr(TrKey("cmd_quit")), "Quit Aileron");
+        clear_locale_override();
     }
 
     #[test]
     fn test_tr_cmd_new_tab() {
         init();
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "en_US.UTF-8");
-        }
+        set_locale(Locale::English);
         assert_eq!(tr(TrKey("cmd_new_tab")), "New tab");
+        clear_locale_override();
     }
 
     #[test]
     fn test_tr_err_vault_locked() {
         init();
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "en_US.UTF-8");
-        }
+        set_locale(Locale::English);
         assert_eq!(
             tr(TrKey("err_vault_locked")),
             "Vault locked. Use :bw-unlock"
         );
+        clear_locale_override();
     }
 
     #[test]
     fn test_tr_status_blocked() {
         init();
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "en_US.UTF-8");
-        }
+        set_locale(Locale::English);
         assert_eq!(tr(TrKey("status_blocked")), "Blocked by ad blocker");
+        clear_locale_override();
     }
 
     #[test]
     fn test_tr_status_credential_saved() {
         init();
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "en_US.UTF-8");
-        }
+        set_locale(Locale::English);
         assert_eq!(tr(TrKey("status_credential_saved")), "Credential saved");
+        clear_locale_override();
     }
 
     #[test]
     fn test_tr_status_vault_locked() {
         init();
-        clear_locale_override();
-        unsafe {
-            std::env::set_var("LANG", "en_US.UTF-8");
-        }
+        set_locale(Locale::English);
         assert_eq!(tr(TrKey("status_vault_locked")), "Vault locked");
+        clear_locale_override();
     }
 
     #[test]
