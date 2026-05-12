@@ -3,8 +3,8 @@
 ## Current State (2026-05-10)
 
 - **Version:** 0.18.0 (shipped)
-- **Tests:** 1038 lib, 217 integration, 4 doc (1259 total)
-- **Code:** 50,766 lines Rust across 135 source files
+- **Tests:** 1038 lib, 218 integration, 4 doc (1264 total)
+- **Code:** 50,800 lines Rust across 135 source files
 - **Quality:** Zero clippy warnings, zero fmt issues, pre-commit hook enforced
 - **Unsafe:** ~50 blocks (all FFI: WebKitGTK, Cairo, X11, env vars, spellcheck)
 - **CI:** Linux (full with integration tests), macOS (compile), Windows (compile), cross-compile matrix

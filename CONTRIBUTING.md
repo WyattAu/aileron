@@ -32,13 +32,12 @@ cargo test --lib -- --test-threads=4
 # Integration tests
 cargo test --test integration_smoke
 
-# Clippy (must be zero warnings)
-cargo clippy --lib -- -D warnings
+# Clippy (must be zero warnings, all targets)
+cargo clippy --all-targets -- -D warnings
 ```
-
 ### Code Style
 
-- **Clippy must pass with zero warnings** — CI enforces `cargo clippy --lib -- -D warnings`
+- **Clippy must pass with zero warnings** — CI enforces `cargo clippy --all-targets -- -D warnings`
 - Follow existing code patterns (pure dispatch, WryAction queue, etc.)
 - All new public functions need tests
 - Use `tracing` for logging (not `println!`)
@@ -73,7 +72,7 @@ Key modules:
 1. Fork the repo
 2. Create a feature branch: `git checkout -b feature/my-feature`
 3. Make your changes with tests
-4. Verify: `cargo clippy --lib -- -D warnings && cargo test --lib`
+4. Verify: `cargo clippy --all-targets -- -D warnings && cargo test --all-targets`
 5. Open a PR with a clear description
 
 ## Reporting Issues

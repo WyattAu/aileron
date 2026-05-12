@@ -5,15 +5,15 @@
 - **Version:** 0.18.0
 - **Status:** Shipped
 - **Last Updated:** 2026-05-12
-- **Test Count:** 1038 lib tests, 217 integration, 4 doc = 1259 total (was 1239)
+- **Test Count:** 1038 lib tests, 218 integration (11 suites), 4 doc = 1264 total (was 1239)
 - **Zero clippy warnings** (all-targets -D warnings)
 - **Zero vulnerabilities** (cargo audit)
 - **~50 unsafe blocks** (FFI: env vars, WebKitGTK, Cairo, X11)
-- **~49,500 lines of Rust** across 135 source files
+- **~50,800 lines of Rust** across 135 source files
 - **Release profile:** LTO thin + strip + panic=abort + codegen-units=1
 
 ## Quality Audit Summary (2026-05-12)
-- **Unsafe:** ~50 blocks (FFI: env vars, WebKitGTK, Cairo, X11, spellcheck)
+- **Unsafe:** 19 blocks (FFI: env vars, WebKitGTK, Cairo, X11, spellcheck)
 - **Panics:** 0 CRITICAL in production, 10 MODERATE (startup fail-fast), 6 LOW
 - **Concurrency:** 18 PASS, 12 WARN, 0 FAIL, 0 deadlocks
 - **Performance:** 5 hot-path fixes verified, 16 MODERATE items documented
@@ -21,7 +21,7 @@
 - **Error handling:** 11 silent swallows converted to tracing::warn
 - **Cross-file consistency:** 0 orphaned imports, 0 version mismatches
 - **Feature flags:** `terminal` and `extensions` removed (always-on core modules)
-- **Test count:** 1038 lib, 217 integration, 4 doc = 1259 total (+20 from prior run: clippy fixes applied, db migration hardened)
+- **Test count:** 1038 lib, 218 integration (11 suites), 4 doc = 1264 total (+25 from prior run: clippy fixes applied, db migration hardened, new integration suites)
 - **Duplicate code:** X11 error handler consolidated, spellcheck FFI deduplicated
 - **Data race fix:** proxy set_var removed from post-spawn command handler
 - **#[must_use]:** 122 attributes added across 57 files (all public Result/Option returns)

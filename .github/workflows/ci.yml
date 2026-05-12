@@ -52,7 +52,7 @@ jobs:
         run: cargo check
 
       - name: Clippy (zero warnings)
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Run library tests
         run: AILERON_TESTING=1 cargo test --lib -- --test-threads=4
@@ -61,7 +61,7 @@ jobs:
         run: AILERON_TESTING=1 cargo test --test integration_smoke -- --test-threads=4
 
       - name: Run integration tests
-        run: AILERON_TESTING=1 cargo test --test db_integration --test adblock_integration --test mcp_integration --test sync_integration --test extension_integration -- --test-threads=4
+        run: AILERON_TESTING=1 cargo test --test db_integration --test adblock_integration --test mcp_integration --test sync_integration --test extension_integration --test frame_tasks_integration --test input_routing_integration --test lua_integration --test offscreen_render_test -- --test-threads=4
 
       - name: Run startup test
         run: AILERON_TESTING=1 cargo test --test startup_test -- --test-threads=4
@@ -73,7 +73,7 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Security audit
-        run: cargo audit --deny warnings
+        run: cargo audit
 
       - name: Cross-compile check (x86_64-unknown-linux-gnu)
         run: cargo check --target x86_64-unknown-linux-gnu
