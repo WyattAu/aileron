@@ -532,6 +532,75 @@ impl AppState {
                     self.pending_wry_actions.push_back(WryAction::Print);
                     self.ui.status_message = "Printing...".into();
                 }
+                ActionEffect::RequestNewTab => {
+                    let active_id = self.wm.active_pane_id();
+                    let new_url = self
+                        .pending_new_tab_url
+                        .take()
+                        .unwrap_or_else(|| url::Url::parse("aileron://new").unwrap());
+                    if let Some(pane) = self
+                        .wm
+                        .root_mut()
+                        .and_then(|root| crate::wm::BspTree::find_pane_mut(root, active_id))
+                    {
+                        let new_tab_id = pane.tabs.add(new_url);
+                        self.engines
+                            .create_pane(new_tab_id, pane.tabs.active().url.clone(), None);
+                        self.ui.status_message =
+                            format!("Tab {}/{}", pane.tabs.active_index() + 1, pane.tabs.len());
+                    }
+                }
+                ActionEffect::RequestCloseTab => {
+                    let active_id = self.wm.active_pane_id();
+                    if let Some(pane) = self
+                        .wm
+                        .root_mut()
+                        .and_then(|root| crate::wm::BspTree::find_pane_mut(root, active_id))
+                    {
+                        if pane.tabs.is_single() {
+                            // Last tab: close the entire pane
+                            if let Ok(()) = self.wm.close(active_id) {
+                                self.engines.remove_pane(&active_id);
+                                self.terminal_pane_ids.remove(&active_id);
+                                self.ui.status_message = "Pane closed".into();
+                            }
+                        } else {
+                            let closed = pane.tabs.close_active();
+                            if let Some(closed_tab) = closed {
+                                self.engines.remove_pane(&closed_tab.id);
+                                self.ui.status_message = format!(
+                                    "Tab {}/{}",
+                                    pane.tabs.active_index() + 1,
+                                    pane.tabs.len()
+                                );
+                            }
+                        }
+                    }
+                }
+                ActionEffect::RequestNextTab => {
+                    let active_id = self.wm.active_pane_id();
+                    if let Some(pane) = self
+                        .wm
+                        .root_mut()
+                        .and_then(|root| crate::wm::BspTree::find_pane_mut(root, active_id))
+                    {
+                        pane.tabs.next();
+                        self.ui.status_message =
+                            format!("Tab {}/{}", pane.tabs.active_index() + 1, pane.tabs.len());
+                    }
+                }
+                ActionEffect::RequestPrevTab => {
+                    let active_id = self.wm.active_pane_id();
+                    if let Some(pane) = self
+                        .wm
+                        .root_mut()
+                        .and_then(|root| crate::wm::BspTree::find_pane_mut(root, active_id))
+                    {
+                        pane.tabs.prev();
+                        self.ui.status_message =
+                            format!("Tab {}/{}", pane.tabs.active_index() + 1, pane.tabs.len());
+                    }
+                }
                 ActionEffect::PinPane => {
                     let active_id = self.wm.active_pane_id();
                     if self.tabs.pinned_pane_ids.contains(&active_id) {

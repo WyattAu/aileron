@@ -612,6 +612,27 @@ impl BspTree {
         }
     }
 
+    /// Get a mutable reference to the root node (for tab operations).
+    pub fn root_mut(&mut self) -> Option<&mut BspNode> {
+        self.root.as_mut()
+    }
+
+    /// Find a mutable reference to a pane by ID within a node tree.
+    pub fn find_pane_mut(node: &mut BspNode, pane_id: Uuid) -> Option<&mut Pane> {
+        match node {
+            BspNode::Leaf { pane, .. } => {
+                if pane.id == pane_id {
+                    Some(pane)
+                } else {
+                    None
+                }
+            }
+            BspNode::Split { left, right, .. } => {
+                Self::find_pane_mut(left, pane_id).or_else(|| Self::find_pane_mut(right, pane_id))
+            }
+        }
+    }
+
     /// Remove all panes except the specified one, keeping it as the root.
     #[must_use = "ignoring this value may lead to unexpected behavior"]
     pub fn retain_only(&mut self, pane_id: Uuid) -> Result<(), String> {
@@ -689,9 +710,28 @@ impl BspTree {
         F: Fn(Uuid) -> Option<String>,
     {
         match node {
-            BspNode::Leaf { pane, .. } => WorkspaceNode::Leaf {
-                url: url_resolver(pane.id).unwrap_or_else(|| pane.url.to_string()),
-            },
+            BspNode::Leaf { pane, .. } => {
+                // Resolve URLs: for active tab use live URL from resolver, for others use stored URL
+                let tabs: Vec<crate::db::workspaces::TabEntry> = pane
+                    .tabs
+                    .iter()
+                    .map(|t| {
+                        let resolved_url = if t.id == pane.active_tab_id() {
+                            url_resolver(pane.id).unwrap_or_else(|| t.url.to_string())
+                        } else {
+                            t.url.to_string()
+                        };
+                        crate::db::workspaces::TabEntry {
+                            url: resolved_url,
+                            title: t.title.clone(),
+                        }
+                    })
+                    .collect();
+                WorkspaceNode::Leaf {
+                    tabs,
+                    active_tab: pane.tabs.active_index(),
+                }
+            }
             BspNode::Split {
                 direction,
                 ratio,
@@ -743,14 +783,32 @@ impl BspTree {
         _url: Option<&str>,
     ) -> anyhow::Result<(BspNode, Option<String>)> {
         match node {
-            WorkspaceNode::Leaf { url: leaf_url } => {
-                let pane = Pane::new(url::Url::parse(leaf_url)?);
+            WorkspaceNode::Leaf { tabs, active_tab } => {
+                // Build a TabList from the saved tabs
+                let mut tab_list = crate::wm::TabList::new(url::Url::parse(
+                    tabs.first()
+                        .map(|t| t.url.as_str())
+                        .unwrap_or("aileron://new"),
+                )?);
+                // Add remaining tabs
+                for entry in tabs.iter().skip(1) {
+                    tab_list.add(url::Url::parse(&entry.url)?);
+                }
+                // Switch to the saved active tab
+                tab_list.switch_to(*active_tab);
+
+                let pane = Pane {
+                    id: Uuid::new_v4(),
+                    tabs: tab_list,
+                    session_id: None,
+                };
+                let active_url = tabs.get(*active_tab).map(|t| t.url.clone());
                 Ok((
                     BspNode::Leaf {
                         pane,
                         rect: Rect::new(0.0, 0.0, 0.0, 0.0), // placeholder, will be resized
                     },
-                    Some(leaf_url.clone()),
+                    active_url,
                 ))
             }
             WorkspaceNode::Split {
@@ -790,7 +848,7 @@ impl BspTree {
     fn find_pane_by_url_node(node: &BspNode, target_url: &url::Url) -> Option<Uuid> {
         match node {
             BspNode::Leaf { pane, .. } => {
-                if &pane.url == target_url {
+                if pane.url() == target_url {
                     Some(pane.id)
                 } else {
                     None

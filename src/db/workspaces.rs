@@ -34,8 +34,11 @@ pub struct WorkspaceData {
 /// A node in the workspace's BSP tree.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WorkspaceNode {
-    /// A leaf pane with its URL.
-    Leaf { url: String },
+    /// A leaf pane with a list of tabs and the index of the active tab.
+    Leaf {
+        tabs: Vec<TabEntry>,
+        active_tab: usize,
+    },
     /// An internal split with direction and ratio.
     Split {
         direction: SplitDir,
@@ -43,6 +46,13 @@ pub enum WorkspaceNode {
         left: Box<WorkspaceNode>,
         right: Box<WorkspaceNode>,
     },
+}
+
+/// A serializable tab entry within a workspace pane.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TabEntry {
+    pub url: String,
+    pub title: String,
 }
 
 /// Split direction (serializable).
@@ -141,9 +151,14 @@ pub fn delete_workspace(conn: &Connection, name: &str) -> Result<bool> {
 
 /// Extract all pane URLs from a WorkspaceNode in order (depth-first left-to-right).
 /// The order matches the order panes are created during restoration.
+/// For multi-tab panes, returns the active tab's URL per pane.
 pub fn collect_urls(node: &WorkspaceNode) -> Vec<String> {
     match node {
-        WorkspaceNode::Leaf { url } => vec![url.clone()],
+        WorkspaceNode::Leaf { tabs, active_tab } => {
+            // Return the active tab's URL (one URL per pane for backward compat)
+            let idx = (*active_tab).min(tabs.len().saturating_sub(1));
+            vec![tabs.get(idx).map(|t| t.url.clone()).unwrap_or_default()]
+        }
         WorkspaceNode::Split { left, right, .. } => {
             let mut urls = collect_urls(left);
             urls.extend(collect_urls(right));
@@ -177,16 +192,28 @@ mod tests {
                 direction: SplitDir::Vertical,
                 ratio: 0.5,
                 left: Box::new(WorkspaceNode::Leaf {
-                    url: "https://example.com".into(),
+                    tabs: vec![TabEntry {
+                        url: "https://example.com".into(),
+                        title: "Example".into(),
+                    }],
+                    active_tab: 0,
                 }),
                 right: Box::new(WorkspaceNode::Split {
                     direction: SplitDir::Horizontal,
                     ratio: 0.6,
                     left: Box::new(WorkspaceNode::Leaf {
-                        url: "https://rust-lang.org".into(),
+                        tabs: vec![TabEntry {
+                            url: "https://rust-lang.org".into(),
+                            title: "Rust".into(),
+                        }],
+                        active_tab: 0,
                     }),
                     right: Box::new(WorkspaceNode::Leaf {
-                        url: "https://github.com".into(),
+                        tabs: vec![TabEntry {
+                            url: "https://github.com".into(),
+                            title: "GitHub".into(),
+                        }],
+                        active_tab: 0,
                     }),
                 }),
             },
@@ -220,7 +247,11 @@ mod tests {
 
         let data1 = WorkspaceData {
             tree: WorkspaceNode::Leaf {
-                url: "https://a.com".into(),
+                tabs: vec![TabEntry {
+                    url: "https://a.com".into(),
+                    title: "A".into(),
+                }],
+                active_tab: 0,
             },
             active_url: "https://a.com".into(),
         };
@@ -228,7 +259,11 @@ mod tests {
 
         let data2 = WorkspaceData {
             tree: WorkspaceNode::Leaf {
-                url: "https://b.com".into(),
+                tabs: vec![TabEntry {
+                    url: "https://b.com".into(),
+                    title: "B".into(),
+                }],
+                active_tab: 0,
             },
             active_url: "https://b.com".into(),
         };
@@ -293,12 +328,50 @@ mod tests {
     fn test_single_pane_roundtrip() {
         let data = WorkspaceData {
             tree: WorkspaceNode::Leaf {
-                url: "https://single.com".into(),
+                tabs: vec![TabEntry {
+                    url: "https://single.com".into(),
+                    title: "Single".into(),
+                }],
+                active_tab: 0,
             },
             active_url: "https://single.com".into(),
         };
         let json = data.to_json().unwrap();
         let restored = WorkspaceData::from_json(&json).unwrap();
         assert_eq!(restored.active_url, "https://single.com");
+    }
+
+    #[test]
+    fn test_multi_tab_pane_roundtrip() {
+        let data = WorkspaceData {
+            tree: WorkspaceNode::Leaf {
+                tabs: vec![
+                    TabEntry {
+                        url: "https://a.com".into(),
+                        title: "A".into(),
+                    },
+                    TabEntry {
+                        url: "https://b.com".into(),
+                        title: "B".into(),
+                    },
+                    TabEntry {
+                        url: "https://c.com".into(),
+                        title: "C".into(),
+                    },
+                ],
+                active_tab: 1,
+            },
+            active_url: "https://b.com".into(),
+        };
+        let json = data.to_json().unwrap();
+        let restored = WorkspaceData::from_json(&json).unwrap();
+        assert_eq!(restored.active_url, "https://b.com");
+        if let WorkspaceNode::Leaf { tabs, active_tab } = &restored.tree {
+            assert_eq!(tabs.len(), 3);
+            assert_eq!(*active_tab, 1);
+            assert_eq!(tabs[1].url, "https://b.com");
+        } else {
+            panic!("Expected Leaf node");
+        }
     }
 }

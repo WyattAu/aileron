@@ -95,6 +95,14 @@ pub enum ActionEffect {
     Print,
     /// Pin/unpin the active pane.
     PinPane,
+    /// Open a new tab within the active pane.
+    RequestNewTab,
+    /// Close the active tab within the pane.
+    RequestCloseTab,
+    /// Switch to the next tab within the active pane.
+    RequestNextTab,
+    /// Switch to the previous tab within the active pane.
+    RequestPrevTab,
 }
 
 /// Pure dispatch: map an `Action` to a list of effects.
@@ -175,12 +183,8 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
 
         // ─── New tab ──────────────────────────────────────────────
         Action::NewTab => {
-            let url = url::Url::parse("aileron://new")
-                .unwrap_or_else(|_| url::Url::parse("aileron://welcome").unwrap());
-            vec![
-                ActionEffect::Wry(WryAction::Navigate(url)),
-                ActionEffect::Status("New tab".into()),
-            ]
+            // Ctrl+T now creates a new tab within the active pane
+            vec![ActionEffect::RequestNewTab]
         }
 
         // ─── External browser (state-dependent) ───────────────────
@@ -332,6 +336,18 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
         Action::CloseOtherPanes => vec![ActionEffect::CloseOtherPanes],
         Action::Print => vec![ActionEffect::Print],
         Action::PinPane => vec![ActionEffect::PinPane],
+        Action::NewTabInPane => {
+            let url = url::Url::parse("aileron://new")
+                .unwrap_or_else(|_| url::Url::parse("aileron://welcome").unwrap());
+            vec![
+                ActionEffect::RequestNewTab,
+                ActionEffect::Wry(WryAction::Navigate(url)),
+                ActionEffect::Status("New tab".into()),
+            ]
+        }
+        Action::CloseTab => vec![ActionEffect::RequestCloseTab],
+        Action::NextTab => vec![ActionEffect::RequestNextTab],
+        Action::PrevTab => vec![ActionEffect::RequestPrevTab],
     }
 }
 
@@ -614,17 +630,10 @@ mod tests {
     // ─── New tab ──────────────────────────────────────────────────
 
     #[test]
-    fn test_new_tab_navigates_to_aileron_new() {
+    fn test_new_tab_requests_new_tab_effect() {
         let effects = dispatch_action(&Action::NewTab);
-        let wry = wry_effects(&effects);
-        assert_eq!(wry.len(), 1);
-        match &wry[0] {
-            WryAction::Navigate(url) => {
-                assert_eq!(url.as_str(), "aileron://new");
-            }
-            other => panic!("Expected Navigate, got {other:?}"),
-        }
-        assert_eq!(status_msg(&effects), Some("New tab"));
+        assert_eq!(effects.len(), 1);
+        assert_eq!(effects[0], ActionEffect::RequestNewTab);
     }
 
     // ─── External browser ─────────────────────────────────────────
@@ -713,6 +722,39 @@ mod tests {
         assert_eq!(status_msg(&effects), Some("Action: my-action"));
     }
 
+    #[test]
+    fn test_new_tab_in_pane() {
+        let effects = dispatch_action(&Action::NewTabInPane);
+        assert!(effects.contains(&ActionEffect::RequestNewTab));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, ActionEffect::Wry(WryAction::Navigate(_))))
+        );
+        assert_eq!(status_msg(&effects), Some("New tab"));
+    }
+
+    #[test]
+    fn test_close_tab() {
+        let effects = dispatch_action(&Action::CloseTab);
+        assert_eq!(effects.len(), 1);
+        assert_eq!(effects[0], ActionEffect::RequestCloseTab);
+    }
+
+    #[test]
+    fn test_next_tab() {
+        let effects = dispatch_action(&Action::NextTab);
+        assert_eq!(effects.len(), 1);
+        assert_eq!(effects[0], ActionEffect::RequestNextTab);
+    }
+
+    #[test]
+    fn test_prev_tab() {
+        let effects = dispatch_action(&Action::PrevTab);
+        assert_eq!(effects.len(), 1);
+        assert_eq!(effects[0], ActionEffect::RequestPrevTab);
+    }
+
     // ─── Exhaustiveness: every Action variant is handled ──────────
 
     #[test]
@@ -768,6 +810,10 @@ mod tests {
             Action::CloseOtherPanes,
             Action::Custom("test".into()),
             Action::PinPane,
+            Action::NewTabInPane,
+            Action::CloseTab,
+            Action::NextTab,
+            Action::PrevTab,
         ];
 
         for action in &actions {

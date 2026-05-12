@@ -299,14 +299,18 @@ fn test_ctrl_s_splits_horizontal() {
 fn test_ctrl_t_creates_new_tab() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('t'), Modifiers::ctrl()));
-    // Ctrl+T = NewTab, which produces a Navigate action (not a split)
-    assert!(
-        state
-            .pending_wry_actions
-            .iter()
-            .any(|a| matches!(a, WryAction::Navigate(_))),
-        "Ctrl+T should produce a Navigate action"
-    );
+    // Ctrl+T = NewTab, which now creates a new tab within the active pane.
+    // The pane should now have 2 tabs.
+    let active_id = state.wm.active_pane_id();
+    if let Some(root) = state.wm.root_mut()
+        && let Some(pane) = aileron::wm::BspTree::find_pane_mut(root, active_id)
+    {
+        assert_eq!(
+            pane.tabs.len(),
+            2,
+            "Ctrl+T should create a second tab in the active pane"
+        );
+    }
 }
 
 // ─── 7. Config keybinding override ─────────────────────────────────

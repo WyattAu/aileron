@@ -1,6 +1,10 @@
 
 
 
+# Historical Architectural Discussions
+
+> **HISTORICAL DOCUMENT** — Pre-implementation architectural discussions from project inception (2026-04). Many design decisions evolved during implementation. For current architecture, see README.md, ROADMAP.md, and CONTRIBUTING.md. Key divergences: (1) wry (WebKitGTK) replaced Servo as primary engine; (2) WebExtensions API was implemented despite initial scoping decision to defer; (3) Built-in password management was added beyond original Bitwarden CLI scope.
+
 To finalize your scope, we need to look at what your architecture (a native Rust app + an embedded web engine) makes uniquely possible. Because you control the network layer, the file system access, and the OS window—things standard browsers deeply sandbox for security—you can build features that would be impossible or highly restricted in Chrome or Firefox.
 
 Here are the remaining high-leverage, "killer features" you can build to complete the ultimate power-user web environment.

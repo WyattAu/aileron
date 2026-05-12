@@ -52,15 +52,15 @@
 
 | Property | Yellow Paper Theorem | Lean4 Proof | Status |
 |----------|---------------------|-------------|--------|
-| PROP-WM-001: Split preserves coverage | THM-BSP-001 | proof_bsp.lean: split_preserves_coverage | ✅ VERIFIED |
-| PROP-WM-002: Split preserves non-overlapping | THM-BSP-001 | proof_bsp.lean: partition_disjoint | ✅ VERIFIED |
-| PROP-WM-003: Close preserves coverage | THM-BSP-002 | proof_bsp.lean: close_preserves_coverage | ✅ VERIFIED |
-| PROP-WM-004: Resize preserves axioms | THM-BSP-003 | proof_bsp.lean (structural) | ✅ VERIFIED |
-| PROP-INP-001: Every event reaches one destination | THM-MODE-001 | proof_modes.lean: route_exhaustive | ✅ VERIFIED |
-| PROP-INP-002: Transitions are deterministic | THM-MODE-002 | proof_modes.lean: transition_deterministic | ✅ VERIFIED |
-| PROP-GFX-001: Frame time within budget | THM-GFX-001 | Benchmark (not proof) | ⏳ PENDING |
-| PROP-APP-001: Init without panic | — | Unit test | ⏳ PENDING |
-| PROP-APP-002: Graceful shutdown | — | Valgrind | ⏳ PENDING (needs Valgrind) |
+| PROP-WM-001: Split preserves coverage | THM-BSP-001 | proof_bsp.lean: split_preserves_coverage | VERIFIED |
+| PROP-WM-002: Split preserves non-overlapping | THM-BSP-001 | proof_bsp.lean: partition_disjoint | VERIFIED |
+| PROP-WM-003: Close preserves coverage | THM-BSP-002 | proof_bsp.lean: close_preserves_coverage | VERIFIED |
+| PROP-WM-004: Resize preserves axioms | THM-BSP-003 | proof_bsp.lean (structural) | VERIFIED |
+| PROP-INP-001: Every event reaches one destination | THM-MODE-001 | proof_modes.lean: route_exhaustive | VERIFIED |
+| PROP-INP-002: Transitions are deterministic | THM-MODE-002 | proof_modes.lean: transition_deterministic | VERIFIED |
+| PROP-GFX-001: Frame time within budget | THM-GFX-001 | Benchmark (not proof) | PENDING |
+| PROP-APP-001: Init without panic | — | Unit test | PENDING |
+| PROP-APP-002: Graceful shutdown | — | Valgrind | PENDING (needs Valgrind) |
 
 ## Execution Plan to Test Mapping
 

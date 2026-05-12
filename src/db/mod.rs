@@ -113,12 +113,13 @@ fn migrate_downloads_table(conn: &Connection) -> Result<()> {
         .prepare("SELECT progress_percent FROM downloads LIMIT 0")
         .is_ok();
     if !has_progress {
-        let _ = conn.execute_batch(
+        conn.execute_batch(
             "ALTER TABLE downloads ADD COLUMN progress_percent INTEGER NOT NULL DEFAULT 0;
              ALTER TABLE downloads ADD COLUMN total_bytes INTEGER NOT NULL DEFAULT 0;
              ALTER TABLE downloads ADD COLUMN received_bytes INTEGER NOT NULL DEFAULT 0;
              ALTER TABLE downloads ADD COLUMN mime_type TEXT NOT NULL DEFAULT '';",
-        );
+        )
+        .expect("downloads table migration must succeed or database is corrupt");
     }
     Ok(())
 }

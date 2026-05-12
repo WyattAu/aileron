@@ -5,7 +5,7 @@
 - **Version:** 0.18.0
 - **Status:** Shipped
 - **Last Updated:** 2026-05-12
-- **Test Count:** 1013 lib tests, 124 integration, 4 doc = 1239 total (was 1115)
+- **Test Count:** 1038 lib tests, 217 integration, 4 doc = 1259 total (was 1239)
 - **Zero clippy warnings** (all-targets -D warnings)
 - **Zero vulnerabilities** (cargo audit)
 - **~50 unsafe blocks** (FFI: env vars, WebKitGTK, Cairo, X11)
@@ -21,7 +21,7 @@
 - **Error handling:** 11 silent swallows converted to tracing::warn
 - **Cross-file consistency:** 0 orphaned imports, 0 version mismatches
 - **Feature flags:** `terminal` and `extensions` removed (always-on core modules)
-- **Test count:** 1013 lib, 124 integration, 4 doc = 1239 total (+124 from Phase 1 hardening)
+- **Test count:** 1038 lib, 217 integration, 4 doc = 1259 total (+20 from prior run: clippy fixes applied, db migration hardened)
 - **Duplicate code:** X11 error handler consolidated, spellcheck FFI deduplicated
 - **Data race fix:** proxy set_var removed from post-spawn command handler
 - **#[must_use]:** 122 attributes added across 57 files (all public Result/Option returns)

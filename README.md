@@ -1,6 +1,6 @@
 # Aileron
 
-**v0.18.0** — 1013 lib tests, 1239 total, ~49,500 Rust LOC
+**v0.18.0** — 1038 lib tests, 1259 total, ~50,800 Rust LOC
 
 **The terminal for the web.** A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals. Written in Rust with wry (WebKitGTK) for web rendering and egui for the UI overlay.
 
@@ -19,7 +19,7 @@
 - **Crash recovery** — `:crash-reload` reloads a pane after web content crash
 - **MCP bridge** — built-in Model Context Protocol server (stdio transport) so LLMs can browse the web
 - **ARP (Aileron Remote Protocol)** — WebSocket server for mobile clients, tab sync, clipboard sharing
-- **Sync protocol** — WebDAV + E2EE specification ready for implementation
+- **Sync protocol** — Local/SSH transport with delta detection and E2EE encryption (Age); WebDAV transport planned
 - **Cross-platform** — PlatformOps trait for Linux, macOS, Windows
 
 ### Internationalization
@@ -42,7 +42,7 @@
 - **Download manager** — progress tracking, open file, open directory
 - **Browser import** — `:import-firefox` / `:import-chrome` for bookmarks and history
 - **Multiple search engines** — pre-configured Google, DuckDuckGo, GitHub, YouTube, Wikipedia; switch with `:engine <name>`
-- **Engine selection** — choose rendering engine (auto/servo/webkit) with `:engine auto|servo|webkit`
+- **Engine selection** — choose rendering engine with `:engine auto|servo|webkit` (servo: experimental, not yet functional)
 - **Adaptive quality** — auto-reduces rendering quality when over frame budget (`:adaptive-quality`)
 - **Custom CSS** — inject custom stylesheets via config or `aileron://settings`
 - **Link hints** — press `f` to reveal clickable hints on all links, type digits to follow
@@ -356,7 +356,7 @@ accent = "#4db4ff"
 aileron.keymap.set("normal", "Ctrl+Shift+R", "reload")
 
 aileron.cmd.create("open-rust", "Open Rust documentation", function()
-    aileron.navigate("https://doc.rust-lang.org")
+    aileron.log("Navigating (use keybind or URL bar for navigation)")
 end)
 
 aileron.url.add_redirect("github.com", "ghproxy.com")

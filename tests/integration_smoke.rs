@@ -10,7 +10,7 @@
 use aileron::app::AppState;
 use aileron::app::dispatch::{ActionEffect, dispatch_action};
 use aileron::config::Config;
-use aileron::db::workspaces::{SplitDir, WorkspaceData, WorkspaceNode};
+use aileron::db::workspaces::{SplitDir, TabEntry, WorkspaceData, WorkspaceNode};
 use aileron::input::{Action, Key, KeyEvent, Modifiers};
 use aileron::wm::{BspTree, Rect, SplitDirection};
 
@@ -284,16 +284,28 @@ fn test_workspace_data_json_roundtrip() {
             direction: SplitDir::Vertical,
             ratio: 0.5,
             left: Box::new(WorkspaceNode::Leaf {
-                url: "https://example.com".into(),
+                tabs: vec![TabEntry {
+                    url: "https://example.com".into(),
+                    title: "Example".into(),
+                }],
+                active_tab: 0,
             }),
             right: Box::new(WorkspaceNode::Split {
                 direction: SplitDir::Horizontal,
                 ratio: 0.6,
                 left: Box::new(WorkspaceNode::Leaf {
-                    url: "https://rust-lang.org".into(),
+                    tabs: vec![TabEntry {
+                        url: "https://rust-lang.org".into(),
+                        title: "Rust".into(),
+                    }],
+                    active_tab: 0,
                 }),
                 right: Box::new(WorkspaceNode::Leaf {
-                    url: "https://github.com".into(),
+                    tabs: vec![TabEntry {
+                        url: "https://github.com".into(),
+                        title: "GitHub".into(),
+                    }],
+                    active_tab: 0,
                 }),
             }),
         },
@@ -315,7 +327,11 @@ fn test_workspace_data_json_roundtrip() {
 fn test_workspace_data_json_roundtrip_single_leaf() {
     let original = WorkspaceData {
         tree: WorkspaceNode::Leaf {
-            url: "aileron://welcome".into(),
+            tabs: vec![TabEntry {
+                url: "aileron://welcome".into(),
+                title: "Welcome".into(),
+            }],
+            active_tab: 0,
         },
         active_url: "aileron://welcome".into(),
     };
@@ -337,10 +353,18 @@ fn test_workspace_data_json_is_valid_json() {
             direction: SplitDir::Horizontal,
             ratio: 0.3,
             left: Box::new(WorkspaceNode::Leaf {
-                url: "https://a.com".into(),
+                tabs: vec![TabEntry {
+                    url: "https://a.com".into(),
+                    title: "A".into(),
+                }],
+                active_tab: 0,
             }),
             right: Box::new(WorkspaceNode::Leaf {
-                url: "https://b.com".into(),
+                tabs: vec![TabEntry {
+                    url: "https://b.com".into(),
+                    title: "B".into(),
+                }],
+                active_tab: 0,
             }),
         },
         active_url: "https://a.com".into(),

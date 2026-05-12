@@ -5,17 +5,17 @@
 | Metric | Value |
 |--------|-------|
 | Version | 0.18.0 (shipped) |
-| Lib tests | 999 |
-| Integration tests | 112 |
+| Lib tests | 1038 |
+| Integration tests | 217 |
 | Doc tests | 4 |
-| Total tests | 1115 |
+| Total tests | 1259 |
 | Clippy | Zero warnings (all-targets, -D warnings) |
 | Formatting | Zero issues (cargo fmt) |
 | Vulnerabilities | Zero critical (13 unmaintained warnings from transitive GTK3 deps via wry) |
-| Unsafe blocks | ~50 (all FFI: WebKitGTK, Cairo, X11, env vars, spellcheck) |
+| Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck) |
 | Release profile | LTO thin, strip, panic=abort, codegen-units=1 |
 | Binary size | ~21 MB stripped (x86_64 Linux) |
-| LOC | ~49,500 Rust across 135 source files |
+| LOC | ~50,800 Rust across 135 source files |
 | Pre-commit hook | 6-gate enforcement (fmt, clippy, lib, doc, integration, doc gen) |
 
 ---
@@ -26,12 +26,12 @@
 
 - **Clippy:** Zero warnings across all targets with `-D warnings`
 - **Formatting:** Zero deviations from rustfmt
-- **Tests:** 1115 tests all passing (999 lib + 112 integration + 4 doc)
+- **Tests:** 1259 tests all passing (1038 lib + 217 integration + 4 doc)
 - **Pre-commit hook:** All 6 quality gates pass deterministically
 - **Documentation:** Zero emojis, technically accurate, API signatures match source
 - **Determinism:** BTreeMap for sync manifest serialization, cached pane lists
 - **Error handling:** All silent swallows converted to `tracing::warn`
-- **`#[must_use]`:** 122 attributes across 57 files
+- **`#[must_use]`:** 40 attributes across 20 files
 - **`unwrap()` audit:** Zero risky unwrap() in production code paths
 - **Concurrency:** 18 PASS, 12 WARN, 0 FAIL, 0 deadlocks
 

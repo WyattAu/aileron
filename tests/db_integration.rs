@@ -5,8 +5,8 @@ use aileron::db::bookmarks::{
 use aileron::db::history::{clear_history, import_visit, recent_entries, record_visit};
 use aileron::db::open_database;
 use aileron::db::workspaces::{
-    SplitDir, WorkspaceData, WorkspaceNode, collect_urls, delete_workspace, list_workspaces,
-    load_workspace, save_workspace,
+    SplitDir, TabEntry, WorkspaceData, WorkspaceNode, collect_urls, delete_workspace,
+    list_workspaces, load_workspace, save_workspace,
 };
 use url::Url;
 
@@ -26,14 +26,26 @@ fn multi_pane_workspace() -> WorkspaceData {
                 direction: SplitDir::Horizontal,
                 ratio: 0.6,
                 left: Box::new(WorkspaceNode::Leaf {
-                    url: "https://example.com".into(),
+                    tabs: vec![TabEntry {
+                        url: "https://example.com".into(),
+                        title: "Example".into(),
+                    }],
+                    active_tab: 0,
                 }),
                 right: Box::new(WorkspaceNode::Leaf {
-                    url: "https://rust-lang.org".into(),
+                    tabs: vec![TabEntry {
+                        url: "https://rust-lang.org".into(),
+                        title: "Rust".into(),
+                    }],
+                    active_tab: 0,
                 }),
             }),
             right: Box::new(WorkspaceNode::Leaf {
-                url: "https://github.com".into(),
+                tabs: vec![TabEntry {
+                    url: "https://github.com".into(),
+                    title: "GitHub".into(),
+                }],
+                active_tab: 0,
             }),
         },
         active_url: "https://github.com".into(),
@@ -64,7 +76,11 @@ fn workspace_save_upsert_keeps_single_entry() {
 
     let data1 = WorkspaceData {
         tree: WorkspaceNode::Leaf {
-            url: "https://a.com".into(),
+            tabs: vec![TabEntry {
+                url: "https://a.com".into(),
+                title: "A".into(),
+            }],
+            active_tab: 0,
         },
         active_url: "https://a.com".into(),
     };
@@ -72,7 +88,11 @@ fn workspace_save_upsert_keeps_single_entry() {
 
     let data2 = WorkspaceData {
         tree: WorkspaceNode::Leaf {
-            url: "https://b.com".into(),
+            tabs: vec![TabEntry {
+                url: "https://b.com".into(),
+                title: "B".into(),
+            }],
+            active_tab: 0,
         },
         active_url: "https://b.com".into(),
     };
@@ -209,20 +229,36 @@ fn cross_module_save_workspace_with_bookmarks_reload_verify() {
                 direction: SplitDir::Vertical,
                 ratio: 0.5,
                 left: Box::new(WorkspaceNode::Leaf {
-                    url: pane_urls[0].into(),
+                    tabs: vec![TabEntry {
+                        url: pane_urls[0].into(),
+                        title: "Site 0".to_string(),
+                    }],
+                    active_tab: 0,
                 }),
                 right: Box::new(WorkspaceNode::Leaf {
-                    url: pane_urls[1].into(),
+                    tabs: vec![TabEntry {
+                        url: pane_urls[1].into(),
+                        title: "Site 1".to_string(),
+                    }],
+                    active_tab: 0,
                 }),
             }),
             right: Box::new(WorkspaceNode::Split {
                 direction: SplitDir::Vertical,
                 ratio: 0.5,
                 left: Box::new(WorkspaceNode::Leaf {
-                    url: pane_urls[2].into(),
+                    tabs: vec![TabEntry {
+                        url: pane_urls[2].into(),
+                        title: "Site 2".to_string(),
+                    }],
+                    active_tab: 0,
                 }),
                 right: Box::new(WorkspaceNode::Leaf {
-                    url: pane_urls[3].into(),
+                    tabs: vec![TabEntry {
+                        url: pane_urls[3].into(),
+                        title: "Site 3".to_string(),
+                    }],
+                    active_tab: 0,
                 }),
             }),
         },

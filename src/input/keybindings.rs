@@ -81,6 +81,14 @@ pub enum Action {
     Print,
     /// Pin/unpin the active pane.
     PinPane,
+    /// Open a new tab within the active pane.
+    NewTabInPane,
+    /// Close the active tab within the pane (close pane if last tab).
+    CloseTab,
+    /// Switch to the next tab within the active pane.
+    NextTab,
+    /// Switch to the previous tab within the active pane.
+    PrevTab,
 }
 
 /// Registry of keybindings, organized by mode.
@@ -293,6 +301,21 @@ impl KeybindingRegistry {
                 Key::Character('P'),
             ),
             Action::PinPane,
+        );
+
+        // Tab-within-pane: Ctrl+Shift+W = close tab (Ctrl+W = split, Ctrl+T = new tab)
+        self.register(
+            KeyCombo::new(
+                Mode::Normal,
+                Modifiers {
+                    ctrl: true,
+                    shift: true,
+                    alt: false,
+                    super_key: false,
+                },
+                Key::Character('W'),
+            ),
+            Action::CloseTab,
         );
 
         // Pane resize (Ctrl+Alt+H/J/K/L like tmux)

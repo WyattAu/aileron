@@ -162,19 +162,19 @@ aileron.keymap.set("normal", "p", "pin_pane")
 
 ### Example 2: Custom Commands
 
-Open frequently used sites with short commands:
+Create custom ex-commands. Note: URL navigation from Lua is not yet implemented; the examples below use `aileron.log()` as a stub for future navigation support:
 
 ```lua
 aileron.cmd.create("gh", "Open GitHub", function()
-    aileron.log("Opening github.com")
+    aileron.log("Navigate to github.com (pending: aileron.navigate support)")
 end)
 
 aileron.cmd.create("news", "Open Hacker News", function()
-    aileron.log("Opening news.ycombinator.com")
+    aileron.log("Navigate to news.ycombinator.com (pending: aileron.navigate support)")
 end)
 
 aileron.cmd.create("rc", "Reload current page", function()
-    aileron.log("Reloading...")
+    aileron.log("Reload triggered (pending: reload dispatch support)")
 end)
 ```
 
@@ -191,7 +191,7 @@ aileron.url.add_redirect("youtube.com", "yewtu.be")
 
 ### Example 4: Navigation Hooks
 
-Log all navigations and auto-pin work-related domains:
+Log all navigations and detect work-related domains:
 
 ```lua
 local work_domains = { "github.com", "gitlab.com", "linear.app" }
@@ -201,7 +201,7 @@ aileron.on("navigate", function(url)
 
     for _, domain in ipairs(work_domains) do
         if string.find(url, domain, 1, true) then
-            aileron.log("Work domain detected — pinning pane")
+            aileron.log("Work domain detected: " .. domain)
             break
         end
     end

@@ -3,8 +3,8 @@
 ## Current State (2026-05-10)
 
 - **Version:** 0.18.0 (shipped)
-- **Tests:** 998 lib, 73 integration, 13 startup, 4 doc (1114 total)
-- **Code:** 49,591 lines Rust across 132 source files
+- **Tests:** 1038 lib, 217 integration, 4 doc (1259 total)
+- **Code:** 50,766 lines Rust across 135 source files
 - **Quality:** Zero clippy warnings, zero fmt issues, pre-commit hook enforced
 - **Unsafe:** ~50 blocks (all FFI: WebKitGTK, Cairo, X11, env vars, spellcheck)
 - **CI:** Linux (full with integration tests), macOS (compile), Windows (compile), cross-compile matrix
@@ -311,7 +311,7 @@ Per `.specs/02_architecture/sync_protocol_design.md`:
 | Item | Priority | Effort | Location |
 |------|----------|--------|----------|
 | `main.rs` size (2500+ lines) | Medium | Medium | `src/main.rs` |
-| `offscreen_webview.rs` size (2500+ lines) | Medium | Medium | `src/offscreen_webview.rs` |
+| `offscreen_webview.rs` size (1373 lines) | Medium | Medium | `src/offscreen_webview.rs` |
 | Servo stub methods (7 no-ops) | Low | N/A (blocked) | `servo/servo_engine.rs` |
 | No code coverage measurement in CI | Medium | Low | `.github/workflows/ci.yml` |
 | VERSION.md stale LOC/binary size | Low | Low | `VERSION.md:103-106` |
