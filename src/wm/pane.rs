@@ -65,6 +65,7 @@ impl TabList {
     }
 
     /// Get a tab by index.
+    #[must_use]
     pub fn get(&self, index: usize) -> Option<&Tab> {
         self.tabs.get(index)
     }
@@ -80,11 +81,13 @@ impl TabList {
     }
 
     /// Find a tab by its UUID. Returns the index.
+    #[must_use]
     pub fn find_index(&self, tab_id: Uuid) -> Option<usize> {
         self.tabs.iter().position(|t| t.id == tab_id)
     }
 
     /// Get a tab by its UUID.
+    #[must_use]
     pub fn get_by_id(&self, tab_id: Uuid) -> Option<&Tab> {
         self.tabs.iter().find(|t| t.id == tab_id)
     }
@@ -122,6 +125,7 @@ impl TabList {
     /// Close a tab by index. Returns the closed tab's data, or None if invalid.
     /// If the closed tab was active, the next tab becomes active.
     /// Returns None if this is the last tab (use `is_single()` to check).
+    #[must_use]
     pub fn close(&mut self, index: usize) -> Option<Tab> {
         if index >= self.tabs.len() || self.tabs.len() <= 1 {
             return None;
@@ -144,6 +148,7 @@ impl TabList {
     }
 
     /// Close a tab by its UUID. Returns the closed tab's data.
+    #[must_use]
     pub fn close_by_id(&mut self, tab_id: Uuid) -> Option<Tab> {
         let index = self.find_index(tab_id)?;
         self.close(index)
@@ -151,6 +156,7 @@ impl TabList {
 
     /// Close the currently active tab. Returns the closed tab's data.
     /// After closing, the next tab becomes active.
+    #[must_use]
     pub fn close_active(&mut self) -> Option<Tab> {
         let index = self.active_index;
         self.close(index)

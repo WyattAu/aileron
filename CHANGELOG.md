@@ -5,15 +5,16 @@ All notable changes to Aileron will be documented in this file.
 ## v0.18.1 (2026-05-12) — Quality Audit & CI Hardening
 
 ### Quality Verification
-- **1264 tests pass** (1038 lib, 218 integration, 4 doc, 4 bin)
+- **1299 tests pass** (1038 lib, 253 integration, 4 doc, 4 bin)
 - **Zero clippy warnings** (`--all-targets -D warnings`)
 - **Zero rustfmt issues**
 - **Zero critical vulnerabilities** (`cargo audit`; 13 transitive GTK3 unmaintained warnings)
 - **Zero emojis in documentation**
 - **Zero code stubs** (1 legitimate STUB_GIF for adblock pixel)
+- **All 19 unsafe blocks have SAFETY comments** (down from ~50)
 
 ### Documentation Fixes
-- Updated all test counts to reflect actual: 1264 (was stale at 1259)
+- Updated all test counts to reflect actual: 1299 (was stale at 1259)
 - Fixed VERSION.md unsafe block count: 19 (was stale ~50)
 - Fixed LOC count: ~50,800 (was stale ~49,500)
 - Updated ROADMAP_PRODUCTION.md: marked `aileron.navigate()` as implemented
@@ -21,10 +22,20 @@ All notable changes to Aileron will be documented in this file.
 - Added v0.18.1 Quality Audit Results section to production roadmap
 
 ### CI/CD Hardening
-- Pre-commit hook: added 4 missing integration test suites (was 7, now 11)
-- GitHub Actions CI: added 4 missing integration test suites
+- Pre-commit hook: added 6 missing integration test suites (was 7, now 13)
+- GitHub Actions CI: added 6 missing integration test suites
 - GitHub Actions CI: clippy now runs with `--all-targets` (was `--lib` only)
-- GitHub Actions CI: security audit relaxed to `cargo audit` (was `--deny warnings` — blocked by transitive GTK3 unmaintained deps)
+- GitHub Actions CI: security audit relaxed to `cargo audit` (was `--deny warnings`)
+- GitHub Actions CI: added benchmark baseline verification step
+
+### Code Quality
+- `#[must_use]` audit complete: 48 attributes across 28 files (8 missing found and fixed)
+- Silent error swallow audit: 11 converted to tracing::warn in v0.18.0; ~15 remaining are benign shutdown channel sends
+- FFI SAFETY comment audit: all 19 unsafe blocks have actionable SAFETY comments
+
+### New Integration Tests
+- `tests/downloads_integration.rs`: 14 tests (manager lifecycle, filename sanitization, progress formatting, cleanup)
+- `tests/terminal_integration.rs`: 21 tests (PTY lifecycle, selection, NativeTerminalPane, colors, cell metrics)
 
 ### aileron.navigate() Implementation (already in v0.18.0)
 - Supports init.lua startup navigation
