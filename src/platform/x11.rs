@@ -11,6 +11,8 @@
 /// FFI callback registered via XSetErrorHandler. Signature matches the
 /// XErrorHandler typedef. Must only be registered with XSetErrorHandler.
 #[cfg(target_os = "linux")]
+// SAFETY: FFI callback with C ABI. Signature matches XErrorHandler typedef.
+// Only registered via XSetErrorHandler in main.rs.
 pub unsafe extern "C" fn x11_error_handler(
     _display: *mut x11_dl::xlib::Display,
     event: *mut x11_dl::xlib::XErrorEvent,

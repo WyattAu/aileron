@@ -700,6 +700,10 @@ a {{ color: #4db4ff; }}
         let width = pixbuf.width() as u32;
         let height = pixbuf.height() as u32;
         let rowstride = pixbuf.rowstride() as u32;
+        // SAFETY: pixbuf is a valid, non-null GdkPixbuf obtained from
+        // OffscreenWindow::pixbuf() (null-checked above). pixels() returns a
+        // raw pointer into the pixbuf's internal buffer, valid for pixbuf's
+        // lifetime, which spans this to_vec() call.
         let pixels = unsafe { pixbuf.pixels().to_vec() };
         if width == 0 || height == 0 || pixels.is_empty() {
             warn!(
