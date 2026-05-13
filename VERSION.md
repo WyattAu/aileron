@@ -1,16 +1,18 @@
 # Aileron — Version & State Tracking
 
 ## Current State
-- **Phase:** v0.19.0 Hardening
-- **Version:** 0.18.0
-- **Status:** Shipped
-- **Last Updated:** 2026-05-12
-- **Test Count:** 1038 lib tests, 253 integration (13 suites), 4 doc = 1299 total (was 1239)
+- **Phase:** v0.20.0 Performance
+- **Version:** 0.18.1
+- **Status:** In Progress
+- **Last Updated:** 2026-05-13
+- **Test Count:** 1038 lib tests, 253 integration (13 suites), 4 doc = 1299 total
 - **Zero clippy warnings** (all-targets -D warnings)
 - **Zero vulnerabilities** (cargo audit)
-- **~50 unsafe blocks** (FFI: env vars, WebKitGTK, Cairo, X11)
+- **19 unsafe blocks** (FFI: WebKitGTK, Cairo, X11, spellcheck -- all with SAFETY comments)
 - **~50,800 lines of Rust** across 135 source files
+- **Clean build time:** 7m 14s (dev, 6-core x86_64); ~2.5m incremental
 - **Release profile:** LTO thin + strip + panic=abort + codegen-units=1
+- **Feature gates:** mcp, arp, sync, passwords (with dependency-level gating)
 
 ## Quality Audit Summary (2026-05-12)
 - **Unsafe:** 19 blocks (FFI: env vars, WebKitGTK, Cairo, X11, spellcheck)
@@ -24,7 +26,7 @@
 - **Test count:** 1038 lib, 253 integration (13 suites), 4 doc = 1299 total (+60 from prior run: clippy fixes, db migration, new integration suites: downloads, terminal)
 - **Duplicate code:** X11 error handler consolidated, spellcheck FFI deduplicated
 - **Data race fix:** proxy set_var removed from post-spawn command handler
-- **#[must_use]:** 122 attributes added across 57 files (all public Result/Option returns)
+- **#[must_use]:** 48 attributes across 28 files (all public Result/Option returns; 8 added in v0.18.1)
 - **unwrap() audit:** 0 risky unwrap() in production code (all on compile-time constants)
 - **File splits:** wry_engine.rs 2550->1153 lines (extracted wry_pages.rs), main.rs 2529->2418 lines (extracted event_handlers.rs)
 - **i18n test fix:** Eliminated flaky env var race in locale detection tests (pure parse_lang_env function)

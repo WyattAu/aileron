@@ -2038,20 +2038,22 @@ impl ApplicationHandler for AileronApp {
             }
         }
 
-        let active_id = self
-            .app_state
-            .as_ref()
-            .map(|s| s.wm.active_pane_id())
-            .unwrap_or_default();
-        if let Some(app_state) = self.app_state.as_mut() {
-            #[cfg(feature = "mcp")]
-            frame_tasks::process_mcp_commands(
-                &self.mcp_bridge,
-                &mut self.wry_panes,
-                active_id,
-                app_state,
-                &mut self.offscreen_panes,
-            );
+        #[cfg(feature = "mcp")]
+        {
+            let active_id = self
+                .app_state
+                .as_ref()
+                .map(|s| s.wm.active_pane_id())
+                .unwrap_or_default();
+            if let Some(app_state) = self.app_state.as_mut() {
+                frame_tasks::process_mcp_commands(
+                    &self.mcp_bridge,
+                    &mut self.wry_panes,
+                    active_id,
+                    app_state,
+                    &mut self.offscreen_panes,
+                );
+            }
         }
 
         if let Some(close_id) = self
@@ -2097,21 +2099,15 @@ impl ApplicationHandler for AileronApp {
             if rss_bytes > limit_bytes {
                 // Collect eviction info without holding mutable borrow.
                 let evict_info = self.app_state.as_ref().and_then(|app_state| {
-                    let active_id = app_state.wm.active_pane_id();
-                    let panes = app_state.wm.panes();
-                    panes
-                        .iter()
-                        .filter(|(pid, _)| *pid != active_id)
-                        .map(|(pid, _)| {
-                            let url = self
-                                .wry_panes
-                                .get(pid)
-                                .map(|p| p.url().to_string())
-                                .unwrap_or_default();
-                            (*pid, url)
-                        })
-                        .next()
+                    let evict_id = app_state.find_lru_pane()?;
+                    let url = self
+                        .wry_panes
+                        .get(&evict_id)
+                        .map(|p| p.url().to_string())
+                        .unwrap_or_default();
+                    Some((evict_id, url))
                 });
+
                 if let Some((evict_id, url)) = evict_info {
                     info!(
                         "Memory limit exceeded (RSS {} > {} MB): evicting tab {}",

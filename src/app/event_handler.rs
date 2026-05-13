@@ -1110,13 +1110,7 @@ impl ApplicationHandler for AileronApp {
             if rss_bytes > limit_bytes {
                 // Collect eviction info without holding mutable borrow.
                 let evict_info = self.app_state.as_ref().and_then(|app_state| {
-                    let active_id = app_state.wm.active_pane_id();
-                    let panes = app_state.wm.panes();
-                    // Pick the first non-active pane (simplistic LRU proxy).
-                    let evict_id = panes
-                        .iter()
-                        .find(|(pid, _)| *pid != active_id)
-                        .map(|(pid, _)| *pid)?;
+                    let evict_id = app_state.find_lru_pane()?;
                     let url = self
                         .wry_panes
                         .get(&evict_id)

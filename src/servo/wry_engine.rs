@@ -802,7 +802,7 @@ impl WryPaneManager {
 
     /// Poll all panes for events.
     pub fn poll_all_events(&mut self) -> Vec<WryEvent> {
-        let mut events = Vec::new();
+        let mut events = Vec::with_capacity(self.panes.len());
         for pane in self.panes.values_mut() {
             events.extend(pane.poll_events());
         }

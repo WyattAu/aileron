@@ -104,32 +104,32 @@
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| 1 pane @ 60 fps | >= 60 fps | Validate with automated frame counter |
-| 4 panes @ 30 fps | >= 30 fps | Benchmark with 4-pane grid |
-| 16 panes @ 15 fps | >= 15 fps | Benchmark; may need texture pooling |
-| Frame time jitter (1 sigma) | < 2 ms | Add statistical frame profiler |
-| Cold start to first paint | < 2 s | Measure and optimize |
-| 95th percentile latency | < 33 ms | Monitor per-frame |
+| 1 pane @ 60 fps | >= 60 fps | Requires runtime measurement (display server) |
+| 4 panes @ 30 fps | >= 30 fps | Requires runtime measurement |
+| 16 panes @ 15 fps | >= 15 fps | Requires runtime measurement |
+| Frame time jitter (1 sigma) | < 2 ms | Profiler exists; needs runtime validation |
+| Cold start to first paint | < 2 s | Requires runtime measurement |
+| 95th percentile latency | < 33 ms | InputLatencyTracker exists; needs runtime validation |
 
 ### 2.2 Memory Optimization
 
-- **Heap profiling:** Track per-pane allocation via `profiling/memory.rs`
-- **Tab-unload LRU:** Replace heuristic with actual memory measurement
-- **Hot-path allocation audit:** Reduce Clone/Arc overhead on frame_tasks, wry_actions
-- **Texture pooling:** Avoid per-frame GPU allocation for multi-pane scenarios
+- **Heap profiling:** NOT implemented. Only global RSS via /proc/self/status. Needs allocator integration (jemalloc/mimalloc). Per-pane attribution requires thread-local context or explicit accounting.
+- **Tab-unload LRU:** FIXED. Automatic eviction now uses `find_lru_pane()` (proper LRU by focus timestamp) instead of `iter().find()`.
+- **Hot-path allocation audit:** DONE. 22 findings documented. 3 HIGH: tab cache String clones/8MB frame buffer/panes Vec clone. 9 MEDIUM: ARP JSON, dispatch Vec, WryAction clone, theme clone, HashMap key alloc, HashSet per keypress. See CHANGELOG v0.19.0 for full list.
+- **Texture pooling:** Not started. Frame capture buffer (render.rs:169) allocates 8MB per dirty pane per frame. Should pre-allocate and reuse.
 
 ### 2.3 Build Time & Binary Size
 
-- **Compile time profiling:** `cargo build --timings` analysis
-- **Cranelift backend:** Evaluate for debug builds (~30% faster compilation)
-- **Feature gate non-critical modules:** Allow minimal builds
-- **Dependency audit:** Remove unused crate features
+- **Compile time profiling:** DONE. Clean dev build: 7m 14s (6-core x86_64). Heaviest: wry/webkit2gtk, egui/wgpu, mlua (vendored Lua), alacritty_terminal.
+- **Cranelift backend:** Not started.
+- **Feature gate non-critical modules:** DONE. Existing features (mcp, arp, sync, passwords) now gate Cargo.toml dependencies. `--no-default-features` compiles clean. Future: `terminal` (15+ sites) and `lua` (10+ sites) identified for gating.
+- **Dependency audit:** DONE. Removed unused `chrono/serde` feature. All other 15 dependency features verified as used.
 
 ### 2.4 Regression Detection
 
-- **Automated benchmark in CI:** Compare against baseline; fail if >10% regression
-- **Memory regression:** Track heap usage per release
-- **Startup latency tracking:** Measure cold start time in CI
+- **Automated benchmark in CI:** Benchmark verification step exists in CI. Baseline comparison not yet implemented (requires stored baseline infrastructure).
+- **Memory regression:** Not started.
+- **Startup latency tracking:** Not started.
 
 ---
 
@@ -313,19 +313,19 @@
 
 ### Release Blockers (Must-Have)
 
-- [ ] Zero undocumented unsafe blocks (19/19 have SAFETY comments; verify completeness)
-- [ ] Zero `unwrap()` outside compile-time constants in production paths
-- [ ] `#[must_use]` on all public Result/Option returns (~102 remain)
-- [ ] Zero silent error swallows converted to `tracing::warn` or explicit handling
+- [x] Zero undocumented unsafe blocks (19/19 have SAFETY comments; verified v0.18.1)
+- [x] Zero `unwrap()` outside compile-time constants in production paths
+- [x] `#[must_use]` on all public Result/Option returns (48 across 28 files; verified v0.18.1)
+- [ ] Silent error swallows: ~15 benign shutdown channel sends documented; converting would spam (accepted)
 - [ ] macOS runs full test suite in CI
 - [ ] Windows runs full test suite in CI
 - [ ] >= 95% branch coverage on critical paths (wm, input, extensions, adblock)
 - [ ] All performance targets validated (per Section 2.1)
-- [ ] Pre-commit hook passes deterministically (validated)
+- [x] Pre-commit hook passes deterministically (6-gate hook validated v0.18.1)
 - [ ] All documentation accurate and free of placeholder/stub claims
 - [ ] At least 8 of 11 missing MV3 WebExtensions APIs implemented
 - [ ] WebDAV sync operational
-- [ ] All integration test gaps closed (downloads, terminal, website visit)
+- [ ] All integration test gaps closed (downloads, terminal done; website visit deferred -- needs display server)
 
 ### Release Should-Have
 
@@ -451,12 +451,10 @@
 
 Priority-ordered by impact:
 
-1. **Lua `aileron.navigate()` completed:** v0.18.1 implements startup + hook navigation (RESOLVED)
-2. **`#[must_use]` audit completed:** 48 attributes across 28 files. All public Result/Option returns annotated. (RESOLVED)
-3. **Downloads integration tests completed:** 14 tests covering manager lifecycle, filename sanitization, progress formatting, cleanup. (RESOLVED)
-4. **Terminal integration tests completed:** 21 tests covering PTY lifecycle, selection, NativeTerminalPane, colors. (RESOLVED)
-5. **FFI SAFETY comment audit completed:** All 19 unsafe blocks have actionable SAFETY comments. (RESOLVED)
-6. **Frame-time measurement baseline added to CI:** Benchmark verification step in CI pipeline. (RESOLVED)
-7. **Silent error swallows audited:** ~15 remaining are benign channel sends during shutdown. Documented, not converted — tracing::warn would spam during normal shutdown.
-8. **Website visit integration test:** Requires virtual display (Xvfb or similar) for WebKitGTK init. Deferred — evaluate feasibility when CI infrastructure supports virtual display.
-9. **Next priority — v0.19.0 Hardening:** Proceed to Phase 2 Performance (frame budget validation, memory optimization, startup latency) per production roadmap.
+1. **HIGH: Frame capture buffer reuse (render.rs:169):** Pre-allocate 8MB buffer on OffscreenWebView, reuse across frames. Eliminates ~8MB allocation per dirty pane per frame during scrolling.
+2. **HIGH: Tab display cache borrow refactoring (panels.rs):** Eliminate 3-4 String clones per tab per frame. Requires restructuring egui closure to pre-extract data before mutable borrow section.
+3. **HIGH: panes() return iterator (wm/tree.rs):** Replace `panes_cache.borrow().clone()` with borrowed reference or iterator. Eliminates 32*N bytes cloned per frame.
+4. **MEDIUM: Feature gate `terminal` module:** Add `#[cfg(feature = "terminal")]` at 15+ call sites. Removes portable-pty + alacritty_terminal from compilation. Estimated: saves ~1-2m compile time.
+5. **MEDIUM: Feature gate `lua` module:** Add `#[cfg(feature = "lua")]` at 10+ call sites. Removes vendored Lua 5.4 C compilation. Estimated: saves ~30-60s compile time.
+6. **MEDIUM: Benchmark regression CI:** Store baseline criterion results, compare on each PR, fail if >10% regression.
+7. **LOW: HashMap<String,String> -> HashMap<Uuid,String> for tab_names:** Avoids pane_id.to_string() allocation per tab per frame. Touches DB layer + 6 call sites.

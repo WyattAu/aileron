@@ -2,6 +2,48 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.19.0 (2026-05-13) -- Phase 2 Performance: Analysis & Quick Wins
+
+### Hot-Path Allocation Audit
+- Identified 22 allocation findings across frame_tasks, wry_actions, render loop, event routing
+- 3 HIGH severity: tab display cache String clones per frame (panels.rs), 8MB frame capture buffer per dirty pane (render.rs), panes() Vec clone per frame (wm/tree.rs)
+- 9 MEDIUM severity: ARP JSON serialization per frame, dispatch Vec+String per keypress, WryAction clone per dispatch, CachedThemeColors clone per frame, pane_id.to_string() HashMap lookup per tab, HashSet allocation per keypress for pane change detection, pane_ids() Vec allocation, format!() JS strings per scroll
+- 10 LOW severity: unconditional Vec allocations, mode string, Key enum clone, double String alloc in a11y, truncate_str
+
+### Fixes Applied
+- **Memory eviction LRU fix:** Automatic memory-limit eviction now uses `find_lru_pane()` (proper LRU by focus timestamp) instead of `iter().find()` (arbitrary first non-active pane). Fixed in both main.rs (Wry backend) and event_handler.rs (WebKitGTK backend).
+- **Dependency-level feature gates:** `image`, `base64` gated behind `mcp`; `tokio-tungstenite` behind `arp`; `fastcdc`, `blake3`, `age`, `notify`, `notify-debouncer-mini` behind `sync`; `keyring` behind `passwords`. No-features build compiles clean (verified).
+- **chrono serde removal:** Removed unused `serde` feature from chrono dependency (no DateTime fields in serializable structs).
+- **poll_all_events Vec pre-allocation:** Changed `Vec::new()` to `Vec::with_capacity(panes.len())` in wry_engine.rs.
+- **MCP code gate fix:** Wrapped `active_id` and `app_state` variables in `#[cfg(feature = "mcp")]` block to eliminate no-features warnings.
+- **v1.0.0 release blockers:** Updated ROADMAP_PRODUCTION.md with accurate status (4 items checked, 2 documented as accepted/deferred).
+
+### Feature Gate Infrastructure
+- Existing features (mcp, arp, sync, passwords) now gate their Cargo.toml dependencies, not just code
+- `cargo check --no-default-features` compiles clean with zero warnings
+- Identified `terminal` and `lua` as future feature-gate candidates (15+ and 10+ call sites respectively)
+
+### Compile Time Baseline
+- Clean dev build: 7m 14s (6-core x86_64, no caching)
+- Incremental build: ~2.5s after dependency changes
+- Heaviest crates: wry/webkit2gtk, egui/wgpu, mlua (vendored Lua 5.4), alacritty_terminal
+
+### Memory Profiling Assessment
+- Current: global RSS via `/proc/self/status` + static heuristic (50 MB/web pane, 3 MB/terminal pane)
+- Gap: no per-pane heap measurement, no allocator integration, automatic eviction was not using LRU (fixed)
+- Tab-unload LRU infrastructure exists (`find_lru_pane()`, `pane_last_focus` HashMap) but was bypassed in automatic eviction (now fixed)
+
+### Dependency Feature Audit
+- 16 dependencies with explicit features audited
+- 1 unused feature found and removed: `chrono/serde`
+- All other features verified as used
+- Transitively enabled `tokio/time` (via tokio-tungstenite) never directly used
+
+### v1.0.0 Release Blockers Updated
+- Checked: unsafe SAFETY comments (19/19), unwrap() audit, #[must_use] (48/28 files), pre-commit hook
+- Accepted: ~15 benign shutdown channel sends (converting would spam)
+- Deferred: website visit integration test (requires display server)
+
 ## v0.18.1 (2026-05-12) — Quality Audit & CI Hardening
 
 ### Quality Verification
