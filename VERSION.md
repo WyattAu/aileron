@@ -2,19 +2,19 @@
 
 ## Current State
 - **Phase:** v0.20.0 Performance
-- **Version:** 0.18.1
-- **Status:** In Progress
-- **Last Updated:** 2026-05-13
-- **Test Count:** 1038 lib tests, 253 integration (13 suites), 4 doc = 1299 total
+- **Version:** 0.20.0
+- **Status:** Shipped
+- **Last Updated:** 2026-05-14
+- **Test Count:** 1038 lib tests, 253 integration (13 suites), 4 doc = 1295 total
 - **Zero clippy warnings** (all-targets -D warnings)
 - **Zero vulnerabilities** (cargo audit)
 - **19 unsafe blocks** (FFI: WebKitGTK, Cairo, X11, spellcheck -- all with SAFETY comments)
-- **~50,800 lines of Rust** across 135 source files
+- **~51,300 lines of Rust** across 135 source files
 - **Clean build time:** 7m 14s (dev, 6-core x86_64); ~2.5m incremental
 - **Release profile:** LTO thin + strip + panic=abort + codegen-units=1
 - **Feature gates:** mcp, arp, sync, passwords (with dependency-level gating)
 
-## Quality Audit Summary (2026-05-12)
+## Quality Audit Summary (2026-05-14)
 - **Unsafe:** 19 blocks (FFI: env vars, WebKitGTK, Cairo, X11, spellcheck)
 - **Panics:** 0 CRITICAL in production, 10 MODERATE (startup fail-fast), 6 LOW
 - **Concurrency:** 18 PASS, 12 WARN, 0 FAIL, 0 deadlocks
@@ -23,7 +23,7 @@
 - **Error handling:** 11 silent swallows converted to tracing::warn
 - **Cross-file consistency:** 0 orphaned imports, 0 version mismatches
 - **Feature flags:** `terminal` and `extensions` removed (always-on core modules)
-- **Test count:** 1038 lib, 253 integration (13 suites), 4 doc = 1299 total (+60 from prior run: clippy fixes, db migration, new integration suites: downloads, terminal)
+- **Test count:** 1038 lib, 253 integration (13 suites), 4 doc = 1295 total
 - **Duplicate code:** X11 error handler consolidated, spellcheck FFI deduplicated
 - **Data race fix:** proxy set_var removed from post-spawn command handler
 - **#[must_use]:** 48 attributes across 28 files (all public Result/Option returns; 8 added in v0.18.1)
@@ -112,7 +112,7 @@
 ## Binary Size
 - **Release binary:** ~21 MB (stripped)
 - **Target architecture:** x86_64 Linux
-- **Total Rust code:** ~41,000 lines across 26 modules
+- **Total Rust code:** ~51,303 lines across 135 modules
 
 ## Key Discoveries
 1. wry cannot render to wgpu texture — always paints to its own native surface

@@ -12,9 +12,9 @@ All browsers cloned (shallow) on 2026-05-12. LOC counts from `wc -l` on primary 
 |---------|---------|-------------|--------|---------|-----------|-------------|------|--------|
 | **Engine** | WebKitGTK | Gecko | Gecko | Blink | Gecko | QtWebEngine | WebKitGTK | WebKitGTK |
 | **Language** | Rust | JS/MJS | JS/CSS | C/C++ | Shell | Python | Lisp | C+Lua |
-| **LOC** | ~49,500 | ~67,800 | ~45,700 | ~96,600 | ~600 | ~155,000 | ~25,900 | ~47,300 |
+| **LOC** | ~51,303 | ~67,800 | ~45,700 | ~96,600 | ~600 | ~155,000 | ~25,900 | ~47,300 |
 | **License** | Apache-2.0 | MPL 2.0 | MPL 2.0 | BSD 3 | MPL 2.0 | GPL v3 | BSD 3 | GPL v3 |
-| **Tests** | 1,115 | CI only | CI only | CI only | Build only | ~8,000+ | ~2,000+ | Minimal |
+| **Tests** | 1,295 | CI only | CI only | CI only | Build only | ~8,000+ | ~2,000+ | Minimal |
 | **Binary Size** | ~21 MB | ~90 MB | ~85 MB | ~120 MB | ~80 MB | ~45 MB | ~60 MB | ~5 MB |
 | **Rendering** | Offscreen texture | Native widget | Native widget | Native widget | Native widget | Native widget | Native widget | Native widget |
 | **Tiling** | BSP tree | Split-view | No | No | No | No | Buffer tabs | Tab widget |
@@ -116,15 +116,15 @@ All browsers cloned (shallow) on 2026-05-12. LOC counts from `wc -l` on primary 
 
 | Metric | Aileron | qutebrowser | Nyxt | Luakit |
 |--------|---------|-------------|------|--------|
-| Test count | 1,115 | ~8,000+ | ~2,000+ | Minimal |
+| Test count | 1,295 | ~8,000+ | ~2,000+ | Minimal |
 | Lint enforcement | Clippy -D warnings | Pylint/Flake8 | SBCL | None |
 | Pre-commit hook | 6-gate | Bots + pre-commit | CI | None |
 | CI/CD | GitHub Actions | GitHub Actions + Bots | GitLab CI | GitHub Actions |
 | Type safety | Rust (compile-time) | Python (runtime) | Lisp (runtime) | C (manual) + Lua |
-| Unsafe code | ~50 FFI blocks | N/A | N/A | C codebase |
+| Unsafe code | 19 FFI blocks | N/A | N/A | C codebase |
 | Documentation | Inline docs, API ref, scripting guide | Extensive Sphinx docs | Info pages | Lua wiki |
 
-**Aileron's test-to-LOC ratio** (1,115 tests / 49,500 LOC = 2.25%) is competitive. qutebrowser leads in absolute test count but Python's granularity differs from Rust's unit-level testing.
+**Aileron's test-to-LOC ratio** (1,295 tests / 51,303 LOC = 2.52%) is competitive. qutebrowser leads in absolute test count but Python's granularity differs from Rust's unit-level testing.
 
 ---
 

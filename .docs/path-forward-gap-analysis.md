@@ -29,7 +29,7 @@
 |---------|--------|
 | Rust type safety (memory-safe, no GC) | vs Python (qutebrowser), Lisp (Nyxt), C (Luakit) |
 | Small binary (21 MB) | vs Thorium (120 MB), Zen (90 MB) |
-| Test coverage (1,115 tests) | competitive for codebase size |
+| Test coverage (1,295 tests) | competitive for codebase size |
 | Pre-commit quality gates (6 gates) | no other analyzed browser has this |
 
 ---

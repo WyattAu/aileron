@@ -1,12 +1,12 @@
 # Aileron Roadmap v0.19.0 -- v1.0.0
 
-## Current State (2026-05-10)
+## Current State (2026-05-14)
 
-- **Version:** 0.18.0 (shipped)
-- **Tests:** 1038 lib, 253 integration, 4 doc (1299 total)
-- **Code:** 50,800 lines Rust across 135 source files
+- **Version:** 0.20.0 (shipped)
+- **Tests:** 1038 lib, 253 integration (13 suites), 4 doc (1295 total)
+- **Code:** 51,303 lines Rust across 135 source files
 - **Quality:** Zero clippy warnings, zero fmt issues, pre-commit hook enforced
-- **Unsafe:** ~50 blocks (all FFI: WebKitGTK, Cairo, X11, env vars, spellcheck)
+- **Unsafe:** 19 blocks (all FFI: WebKitGTK, Cairo, X11, spellcheck -- all with SAFETY comments)
 - **CI:** Linux (full with integration tests), macOS (compile), Windows (compile), cross-compile matrix
 - **Pre-commit:** 6-gate hook (fmt, clippy, lib, doc, integration, docs gen)
 - **Platform:** Linux primary (x86_64), macOS/Windows compile-only
@@ -17,13 +17,13 @@
 
 ### 1.1 Unsafe Block Reduction
 
-The ~50 unsafe blocks fall into three categories:
+The 19 unsafe blocks fall into three categories:
 
 | Category | Count | Action |
 |----------|-------|--------|
-| `std::env::set_var` / `remove_var` | ~30 (24 in tests) | Test blocks are acceptable. Production blocks in `commands.rs` (proxy command) run after thread spawn -- refactor to use thread-local or move before thread creation. |
-| WebKitGTK / Cairo FFI | ~15 | Required, justified. Add SAFETY documentation comments where missing. |
-| X11 error handler | ~3 | Duplicate definitions in `platform/x11.rs` and `main.rs` -- consolidate to single module. |
+| `std::env::set_var` / `remove_var` | ~10 (in tests) | Test blocks are acceptable. Production blocks in `commands.rs` (proxy command) run after thread spawn -- refactor to use thread-local or move before thread creation. |
+| WebKitGTK / Cairo FFI | ~6 | Required, justified. Add SAFETY documentation comments where missing. |
+| X11 error handler / spellcheck | ~3 | Consolidated to single module. |
 
 **Deliverables:**
 - [x] Consolidate duplicate X11 error handler into `platform/x11.rs`, import in `main.rs`

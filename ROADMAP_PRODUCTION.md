@@ -1,20 +1,20 @@
-# Aileron Production Roadmap: v0.18.0 to v1.0.0 and Beyond
+# Aileron Production Roadmap: v0.20.0 to v1.0.0 and Beyond
 
-## Current State (2026-05-12)
+## Current State (2026-05-14)
 
 | Metric | Value |
 |--------|-------|
-| Version | 0.18.0 |
+| Version | 0.20.0 |
 | Lib tests | 1038 |
-| Integration tests | 253 (13 test files) |
+| Integration tests | 253 (13 suites) |
 | Doc tests | 4 |
-| Total tests | 1299 |
+| Total tests | 1295 |
 | Clippy | Zero warnings (all-targets, -D warnings) |
 | Formatting | Zero issues (cargo fmt) |
 | Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck) |
 | Release profile | LTO thin, strip, panic=abort, codegen-units=1 |
 | Binary size | ~21 MB stripped (x86_64 Linux) |
-| LOC | ~50,800 Rust across 135 source files |
+| LOC | ~51,303 Rust across 135 source files |
 | CI | Linux (full), macOS (compile), Windows (compile), cross-compile matrix |
 | Pre-commit | 6-gate enforcement (fmt, clippy, lib, doc, 13-suite integration, doc gen) |
 | Vulnerability scan | Zero critical (13 allowed warnings from transitive GTK3 deps) |
@@ -438,7 +438,7 @@
 | `cargo fmt` | Checked | `fmt` job (ubuntu) |
 | `cargo clippy` | `--all-targets -D warnings` | `--all-targets -D warnings` (fixed) |
 | Unit tests | `cargo test --lib` | `cargo test --lib --release` |
-| Integration tests | All 11 suites | All 11 suites (fixed) |
+| Integration tests | All 13 suites | All 13 suites (fixed) |
 | Doc tests | `cargo test --doc` | `cargo test --doc` |
 | Doc generation | `cargo doc --no-deps --all-features` | `cargo doc --no-deps --all-features` |
 | Security audit | Not in hook | `cargo audit` |

@@ -1,15 +1,16 @@
 .\" Aileron man page
-.\" Generated for v0.16.0
-.TH AILERON "1" "April 2026" "aileron 0.16.0" "User Commands"
+.\" Generated for v0.20.0
+.TH AILERON "1" "May 2026" "aileron 0.20.0" "User Commands"
 .SH NAME
 aileron \- keyboard-driven tiling web environment for developers
 .SH SYNOPSIS
 .B aileron
 .RB [ \-d \fIconfig_dir\fR ] [ \-e \fIengine\fR ]
 .SH DESCRIPTION
-Aileron is a keyboard-driven tiling web browser built with Rust. It renders
+Aileron is a keyboard-driven tiling web browser built in Rust. It renders
 web content in tiled panes within a single window, inspired by terminal
-multiplexers and tiling window managers.
+multiplexers and tiling window managers. Uses wry (WebKitGTK) for web
+rendering and egui for the UI overlay.
 .PP
 Features include:
 .RS 4
@@ -18,40 +19,54 @@ BSP-tree tiling layout with horizontal/vertical splits
 .IP \(bu 2
 Vim-style modal editing (Normal, Insert, Command, Hint modes)
 .IP \(bu 2
-Command palette (Ctrl+P) with fuzzy search
+Command palette (Ctrl+P) with fuzzy search (Nucleo engine)
 .IP \(bu 2
-Integrated terminal emulator
+Integrated native terminal emulator (alacritty_terminal)
 .IP \(bu 2
-Bookmark management with folders
+Lua scripting via init.lua
 .IP \(bu 2
-Content scripts and Lua extensions
+Bookmark management with folders and search
+.IP \(bu 2
+WebExtensions API (partial MV3: runtime, tabs, storage, scripting, webRequest, permissions)
 .IP \(bu 2
 MCP (Model Context Protocol) server for AI integration
 .IP \(bu 2
-Ad blocking with EasyList-compatible filters
+Built-in ad blocking with EasyList-compatible filters ($redirect, $important, $badfilter)
 .IP \(bu 2
-Per-site settings (zoom, JavaScript, cookies, ad blocking)
+HTTPS upgrade, tracking protection, DNT/GPC headers
+.IP \(bu 2
+Per-site settings (zoom, JavaScript, cookies, ad blocking, autoplay)
 .IP \(bu 2
 Download manager with progress tracking
 .IP \(bu 2
-WebExtensions API, Bitwarden password integration
+ARP (Aileron Remote Protocol) for mobile clients
+.IP \(bu 2
+Sync protocol with delta detection and E2EE encryption (Age)
+.IP \(bu 2
+i18n support (9 languages: EN, ZH, JA, KO, DE, FR, ES, PT, RU)
+.IP \(bu 2
+Bitwarden password manager integration via keyring
 .RE
 .SH MODES
 .B Normal mode (default):
 Navigation, pane management, and command input.
-Key bindings: h/j/k/l (scroll), gt/gT (tabs), d (close), vs/sp (split).
+Key bindings: h/j/k/l (scroll), J/K (tabs), d (close), Ctrl+w (vertical split), Ctrl+s (horizontal split).
 .PP
-.B Insert mode (gi):
+.B Insert mode (i):
 Pass keyboard input to web content.
 Press Escape to return to Normal mode.
 .PP
 .B Command mode (:):
 Type commands at the bottom of the screen.
 Press Enter to execute, Escape to cancel.
+.PP
+.B Hint mode (f):
+Reveal clickable link hints on all visible links.
+Type hint digits to follow a link.
 .SH COMMANDS
 .TP
-.BR :open <url>
-Navigate to URL.
+.BR :open <url> " or " g<url>
+Navigate to URL. g<url> opens in a new tab.
 .TP
 .BR :q , :quit
 Quit Aileron.
@@ -59,11 +74,26 @@ Quit Aileron.
 .BR :vs , :sp
 Split vertically / horizontally.
 .TP
-.BR :gt , :gT
-Next / previous tab.
+.BR :tab-next , :tab-prev
+Next / previous tab (also J/K in normal mode).
+.TP
+.BR :tab-restore
+Reopen last closed tab.
+.TP
+.BR :tab-rename <name>
+Rename current tab.
+.TP
+.BR :tab-unload
+Unload least-recently-used background pane to free memory.
+.TP
+.BR :tabs
+Fuzzy search across open tabs.
 .TP
 .BR :gi
 Enter insert mode.
+.TP
+.BR :private
+Open a new private-browsing tab.
 .TP
 .BR :bookmarks
 Open bookmarks panel.
@@ -77,11 +107,8 @@ Browse history.
 .BR :downloads
 List active downloads.
 .TP
-.BR :g <url>
-Open URL in a new tab (horizontal split).
-.TP
-.BR :find <query>
-Find in page.
+.BR :find <query> " or " /<query>
+Find in page (also Ctrl+f).
 .TP
 .BR :set <key> <value>
 Set a configuration option.
@@ -95,11 +122,17 @@ Show input latency statistics.
 .BR :console
 Show JavaScript console log.
 .TP
-.BR :inspect
+.BR :inspect " or " F12
 Toggle WebKit developer tools.
 .TP
 .BR :mute , :unmute
 Toggle audio mute on current pane.
+.TP
+.BR :adblock-toggle
+Toggle ad blocking for current site.
+.TP
+.BR :adblock-update
+Update ad block filter lists.
 .TP
 .BR :crash-reload
 Reload pane after a crash.
@@ -110,30 +143,39 @@ Save / load workspace.
 .BR :ws-next , :ws-prev
 Cycle through workspaces.
 .TP
-.BR :tab-restore
-Reopen last closed tab.
-.TP
-.BR :tab-move <direction>
-Move tab (up, down, left, right).
-.TP
-.BR :zoom-in , :zoom-out
-Adjust page zoom level.
+.BR :zoom-in , :zoom-out , :zoom-reset
+Adjust page zoom level (also Ctrl+=/Ctrl+-/Ctrl+0).
 .TP
 .BR :theme <name>
 Switch color theme.
+.TP
+.BR :language <code>
+Switch UI language (en, zh, ja, ko, de, fr, es, pt, ru).
+.TP
+.BR :language-list
+List available languages.
+.TP
+.BR :engine auto|servo|webkit
+Select rendering engine.
+.TP
+.BR :bind <key> <action> " , " :unbind <key>
+Customize keybindings.
 .TP
 .BR :extension-load <path>
 Load a WebExtensions extension.
 .TP
 .BR :lua <code>
 Execute Lua code.
+.TP
+.BR :yt <query>
+Search YouTube.
 .SH KEY BINDINGS
 Normal mode defaults:
 .TP
 .BR h / j / k / l
 Scroll left / down / up / right.
 .TP
-.BR gt / gT
+.BR J / K
 Next / previous tab.
 .TP
 .BR d
@@ -142,19 +184,19 @@ Close current pane.
 .BR D
 Close current pane, focus left.
 .TP
-.BR vs
+.BR Ctrl+w
 Split vertically.
 .TP
-.BR sp
+.BR Ctrl+s
 Split horizontally.
 .TP
-.BR H / J / K / L
+.BR H / Shift+J / Shift+K / L
 Resize split (increase left/down/up/right).
 .TP
 .BR r
-Rotate split direction.
+Reload current pane.
 .TP
-.BR gi
+.BR i
 Enter insert mode.
 .TP
 .BR :
@@ -167,13 +209,13 @@ Open command palette.
 Toggle bookmarks panel.
 .TP
 .BR f
-Open link hints.
+Open link hints (F opens in new tab).
 .TP
 .BR y
 Copy current URL to clipboard.
 .TP
 .BR p
-Paste from clipboard.
+Paste from clipboard and navigate.
 .TP
 .BR u
 Reopen last closed tab.
@@ -183,6 +225,24 @@ Search in page.
 .TP
 .BR n / N
 Next / previous search match.
+.TP
+.BR Ctrl+f
+Open find bar.
+.TP
+.BR Ctrl+d / Ctrl+u
+Half page down / up.
+.TP
+.BR gg / G
+Scroll to top / bottom.
+.TP
+.BR Ctrl+t
+Open new tab.
+.TP
+.BR Ctrl+b
+Toggle bookmark on current page.
+.TP
+.BR F12
+Toggle developer tools.
 .SH OPTIONS
 .TP
 .BR \-d \fIconfig_dir\fR
@@ -193,10 +253,7 @@ Select rendering engine: webkit (default) or servo (experimental).
 .SH FILES
 .TP
 .IR ~/.config/aileron/config.toml
-User configuration file.
-.TP
-.IR ~/.config/aileron/keybindings.toml
-Custom keybindings (overrides defaults).
+User configuration file (homepage, search engine, keybindings, themes, etc.).
 .TP
 .IR ~/.config/aileron/aileron.db
 SQLite database (history, bookmarks, sessions, site settings).
@@ -206,6 +263,12 @@ Saved workspace files.
 .TP
 .IR ~/.local/share/aileron/
 Downloads directory.
+.TP
+.IR ~/.config/aileron/init.lua
+Lua scripting configuration.
+.TP
+.IR ~/.config/aileron/extensions/
+Installed WebExtensions.
 .SH CONFIGURATION
 Configuration is stored in TOML format. Key options:
 .TP
@@ -213,10 +276,10 @@ Configuration is stored in TOML format. Key options:
 Default new-tab URL.
 .TP
 .BR search_engine
-Default search engine URL template (%s placeholder).
+Default search engine URL template ({query} placeholder).
 .TP
-.BR tab_layout
-Tab bar layout: top, bottom, left, right.
+.BR [keybindings]
+Custom keybinding overrides (e.g., "<C-t>" = "new_tab").
 .TP
 .BR popup_blocker_enabled
 Block window.open() popups (default: true).
@@ -232,8 +295,14 @@ Restore tabs on startup (default: true).
 .TP
 .BR adaptive_quality
 Reduce frame rate for background tabs (default: true).
+.SH ENVIRONMENT
+.TP
+.BR AILERON_TESTING
+Set to 1 to disable GPU/rendering requirements (for CI/testing).
+.TP
+.BR RUST_LOG
+Logging verbosity (e.g., info, debug, trace).
 .SH SEE ALSO
-.BR aileron(5)
-for configuration file format details.
+Project documentation: https://github.com/WyattAu/aileron
 .SH AUTHOR
 Wyatt Au <wyatt@patch.com>

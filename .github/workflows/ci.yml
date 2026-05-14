@@ -69,11 +69,10 @@ jobs:
       - name: Generate documentation
         run: cargo doc --no-deps --all-features 2>&1 | tee doc-output.txt
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-
       - name: Security audit
-        run: cargo audit
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cross-compile check (x86_64-unknown-linux-gnu)
         run: cargo check --target x86_64-unknown-linux-gnu

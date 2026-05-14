@@ -1,11 +1,11 @@
 # Maintainer: Wyatt Au <wyatt@patch.com>
 pkgname=aileron
-pkgver=0.18.0
+pkgver=0.20.0
 pkgrel=1
 pkgdesc="Keyboard-driven tiling web environment for developers"
 arch=('x86_64')
 url="https://github.com/WyattAu/aileron"
-license=('MIT')
+license=('Apache-2.0')
 depends=('webkit2gtk-4.1' 'gtk3' 'openssl' 'sqlite' 'vulkan-driver' 'wayland')
 makedepends=('cargo' 'clang' 'pkgconf')
 provides=('aileron')
@@ -31,7 +31,7 @@ check() {
     cd "$srcdir/aileron"
     export RUSTUP_TOOLCHAIN=stable
     export CARGO_TARGET_DIR=target
-    cargo test --frozen --lib
+    AILERON_TESTING=1 cargo test --frozen --lib
 }
 
 package() {
