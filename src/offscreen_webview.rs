@@ -17,9 +17,11 @@ use uuid::Uuid;
 #[cfg(target_os = "linux")]
 use wry::WebViewBuilderExtUnix;
 #[cfg(target_os = "linux")]
+#[cfg(target_os = "linux")]
 use wry::{PageLoadEvent, WebViewBuilder};
 
 use crate::servo::wry_engine::WryEvent;
+#[cfg(target_os = "linux")]
 use crate::servo::wry_pages::{
     ERROR_MONITOR_JS, aileron_new_tab_page, aileron_reader_page, aileron_settings_page,
     aileron_welcome_page, file_browser_page, html_escape, is_pdf_url, percent_decode,

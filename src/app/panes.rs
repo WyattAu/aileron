@@ -16,7 +16,7 @@ impl AileronApp {
             None => return,
         };
 
-        #[cfg(feature = "terminal")]
+        #[cfg(all(target_os = "linux", feature = "terminal"))]
         let is_terminal = {
             let app_state = match &self.app_state {
                 Some(s) => s,
@@ -63,6 +63,7 @@ impl AileronApp {
 
         let blocked_domains: Vec<String> = self.adblocker.blocked_domains_iter();
 
+        #[cfg(target_os = "linux")]
         let https_safe_list = if self.config.https_upgrade_enabled {
             self.app_state
                 .as_mut()
@@ -71,6 +72,8 @@ impl AileronApp {
         } else {
             std::collections::HashSet::new()
         };
+        #[cfg(not(target_os = "linux"))]
+        let https_safe_list: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         let interceptor_registry = self
             .app_state
@@ -126,7 +129,7 @@ impl AileronApp {
     }
 
     pub(crate) fn create_offscreen_pane_for(&mut self, pane_id: uuid::Uuid, url: &url::Url) {
-        #[cfg(feature = "terminal")]
+        #[cfg(all(target_os = "linux", feature = "terminal"))]
         let is_terminal = {
             let app_state = match &self.app_state {
                 Some(s) => s,
@@ -178,6 +181,7 @@ impl AileronApp {
 
         let blocked_domains: Vec<String> = self.adblocker.blocked_domains_iter();
 
+        #[cfg(target_os = "linux")]
         let https_safe_list = if self.config.https_upgrade_enabled {
             self.app_state
                 .as_mut()
@@ -186,6 +190,8 @@ impl AileronApp {
         } else {
             std::collections::HashSet::new()
         };
+        #[cfg(not(target_os = "linux"))]
+        let https_safe_list: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         let interceptor_registry = self
             .app_state
