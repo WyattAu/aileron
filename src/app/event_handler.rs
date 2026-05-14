@@ -1232,11 +1232,15 @@ impl ApplicationHandler for AileronApp {
         if layout_dirty {
             self.reposition_all_panes();
         }
+        #[cfg(target_os = "linux")]
         frame_tasks::pump_gtk_loop();
 
         self.drain_pending_pane_creates();
 
+        #[cfg(target_os = "linux")]
         let textures_updated = self.update_webview_textures();
+        #[cfg(not(target_os = "linux"))]
+        let textures_updated = false;
 
         if let Some(app_state) = &mut self.app_state {
             app_state.input_latency.record_frame_end();

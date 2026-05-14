@@ -25,6 +25,7 @@ use crate::servo::wry_pages::{
 
 #[cfg(target_os = "linux")]
 use gtk::glib::Cast;
+#[cfg(target_os = "linux")]
 use gtk::prelude::{ContainerExt, FixedExt, OffscreenWindowExt, WidgetExt};
 #[cfg(target_os = "linux")]
 use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
@@ -682,6 +683,13 @@ a {{ color: #4db4ff; }}
         })
     }
 
+    /// Non-Linux stub: capture is a no-op on platforms without offscreen rendering.
+    #[cfg(not(target_os = "linux"))]
+    #[must_use]
+    pub fn capture_frame(&mut self) -> Option<&FrameData> {
+        None
+    }
+
     /// Fallback: capture via OffscreenWindow::pixbuf() (cairo-only rendering).
     ///
     /// Only captures GTK widget-level cairo drawing. Does NOT capture
@@ -793,6 +801,14 @@ a {{ color: #4db4ff; }}
             self.offscreen.queue_resize();
             self.dirty = true;
         }
+    }
+
+    /// Non-Linux stub: resize is a no-op on platforms without offscreen rendering.
+    #[cfg(not(target_os = "linux"))]
+    pub fn resize(&mut self, _width: i32, _height: i32) {
+        self.width = _width;
+        self.height = _height;
+        self.dirty = true;
     }
 
     /// Navigate back in history.

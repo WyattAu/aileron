@@ -188,9 +188,8 @@ impl WryPane {
 
         #[cfg(not(target_os = "linux"))]
         {
-            Err(wry::Error::Message(
-                "Failed to create webview: window handle kind not supported on this platform"
-                    .into(),
+            Err(wry::Error::InitScriptError(
+                "Offscreen webview not supported on this platform".into(),
             ))
         }
     }

@@ -2260,13 +2260,17 @@ impl ApplicationHandler for AileronApp {
         if layout_dirty {
             self.reposition_all_panes();
         }
+        #[cfg(target_os = "linux")]
         frame_tasks::pump_gtk_loop();
 
         // TASK-K27: create at most one deferred offscreen pane per frame.
         self.drain_pending_pane_creates();
 
         // Architecture B: capture dirty offscreen frames and update egui textures.
+        #[cfg(target_os = "linux")]
         let textures_updated = self.update_webview_textures();
+        #[cfg(not(target_os = "linux"))]
+        let textures_updated: bool = false;
 
         // Record frame end for input latency measurement.
         if let Some(app_state) = &mut self.app_state {
