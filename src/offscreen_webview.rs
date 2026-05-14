@@ -14,7 +14,9 @@ use std::sync::{Arc, mpsc};
 use tracing::{info, warn};
 use url::Url;
 use uuid::Uuid;
+#[cfg(target_os = "linux")]
 use wry::WebViewBuilderExtUnix;
+#[cfg(target_os = "linux")]
 use wry::{PageLoadEvent, WebViewBuilder};
 
 use crate::servo::wry_engine::WryEvent;
@@ -73,8 +75,10 @@ pub struct OffscreenWebView {
     dirty: bool,
     /// Pending snapshot receiver for async capture (non-blocking).
     /// Set when a snapshot is requested, cleared when the result is consumed.
+    #[cfg(target_os = "linux")]
     snapshot_rx: Option<mpsc::Receiver<Result<cairo::Surface, gtk::glib::Error>>>,
     /// How many times we've requested a snapshot (diagnostic counter).
+    #[cfg(target_os = "linux")]
     snapshot_request_count: u64,
     /// Receiver for navigation events from wry callbacks.
     event_rx: mpsc::Receiver<WryEvent>,
@@ -620,6 +624,7 @@ a {{ color: #4db4ff; }}
     }
 
     /// Convert a cairo surface from snapshot() into FrameData.
+    #[cfg(target_os = "linux")]
     fn process_snapshot_surface(&self, surface: cairo::Surface) -> Option<FrameData> {
         // Convert the cairo surface to raw pixel data.
         // snapshot() returns a cairo_image_surface_t (ARGB32 format).

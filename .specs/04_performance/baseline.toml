@@ -1,0 +1,62 @@
+# Benchmark Baseline Metrics
+# Generated: 2026-05-14
+# Profile: bench (optimized)
+# Platform: x86_64 Linux
+# Command: AILERON_TESTING=1 cargo bench --bench benchmarks -- --quick
+# Regression threshold: 20% (fail CI if any benchmark regresses beyond this)
+
+[metadata]
+version = "0.20.0"
+date = "2026-05-14"
+profile = "bench"
+platform = "x86_64-unknown-linux-gnu"
+regression_threshold_percent = 20
+
+[benchmarks]
+# BSP Tree Operations
+bsp_create = { median_ns = 329.81, unit = "ns" }
+bsp_split_vertical = { median_ns = 859.32, unit = "ns" }
+bsp_split_horizontal = { median_ns = 850.52, unit = "ns" }
+bsp_navigate_4pane_grid = { median_ns = 21.358, unit = "ns" }
+bsp_close = { median_ns = 1273.4, unit = "ns" }
+bsp_resize = { median_ns = 53.224, unit = "ns" }
+
+# Fuzzy Search (100 items)
+fuzzy_search_short = { median_ns = 28155.0, unit = "ns" }
+fuzzy_search_long = { median_ns = 175770.0, unit = "ns" }
+fuzzy_search_no_match = { median_ns = 18491.0, unit = "ns" }
+
+# Fuzzy Search (10k items)
+fuzzy_search_10k_exact = { median_us = 13.381, unit = "us" }
+fuzzy_search_10k_prefix = { median_us = 10.262, unit = "us" }
+
+# Pane State Management
+pane_state_create = { median_ns = 525.27, unit = "ns" }
+pane_state_navigate = { median_ns = 53.044, unit = "ns" }
+
+# Dispatch
+dispatch_all_actions = { median_ns = 202.87, unit = "ns" }
+dispatch_print_action = { median_ns = 34.133, unit = "ns" }
+
+# Filter List Parsing
+filter_list_parse_easylist = { median_ns = 949.54, unit = "ns" }
+
+# Site Settings URL Matching
+site_settings_url_match_exact = { median_ns = 353.90, unit = "ns" }
+site_settings_url_match_wildcard = { median_ns = 554.33, unit = "ns" }
+site_settings_url_match_regex = { median_us = 2.1629, unit = "us" }
+
+# Content Script Matching
+content_script_match_100_scripts = { median_us = 100.67, unit = "us" }
+
+# Ad-Blocking
+adblock_check_allowed = { median_ns = 306.95, unit = "ns" }
+adblock_check_with_100_blocked = { median_us = 1.9945, unit = "us" }
+
+# Mode Transitions
+mode_transition_insert_to_normal = { median_ns = 0.899, unit = "ns" }
+mode_transition_normal_to_insert = { median_ns = 1.112, unit = "ns" }
+
+# Keybinding Lookup
+lookup_bound_key = { median_ns = 273.35, unit = "ns" }
+lookup_unbound_key = { median_ns = 225.70, unit = "ns" }

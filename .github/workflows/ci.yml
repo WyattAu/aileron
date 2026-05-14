@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  checks: write
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -86,6 +90,9 @@ jobs:
 
       - name: Run doc tests
         run: AILERON_TESTING=1 cargo test --doc
+
+      - name: Run benchmarks (quick)
+        run: AILERON_TESTING=1 xvfb-run -a cargo bench --bench benchmarks -- --quick
 
   build-macos:
     name: macOS build check
