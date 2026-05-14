@@ -413,10 +413,10 @@ impl ApplicationHandler for AileronApp {
                     }
 
                     if is_insert_mode && self.config.is_offscreen() {
-                        #[cfg(feature = "terminal")]
+                        #[cfg(all(target_os = "linux", feature = "terminal"))]
                         let is_terminal = self.terminal_manager.is_terminal(&active_pane_id);
 
-                        #[cfg(feature = "terminal")]
+                        #[cfg(all(target_os = "linux", feature = "terminal"))]
                         if is_terminal {
                             if let crate::input::Key::Character(c) = &key {
                                 self.terminal_manager

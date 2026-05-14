@@ -188,9 +188,10 @@ impl WryPane {
 
         #[cfg(not(target_os = "linux"))]
         {
-            Err(wry::Error::InitScriptError(
-                "Offscreen webview not supported on this platform".into(),
-            ))
+            Err(wry::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "Offscreen webview not supported on this platform",
+            )))
         }
     }
 
