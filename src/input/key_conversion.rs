@@ -1,4 +1,6 @@
-use crate::input::{Key, Modifiers};
+use crate::input::Key;
+#[cfg(feature = "terminal")]
+use crate::input::Modifiers;
 
 pub(crate) fn key_to_js(key: &Key) -> (String, String) {
     match key {
@@ -19,6 +21,7 @@ pub(crate) fn key_to_js(key: &Key) -> (String, String) {
     }
 }
 
+#[cfg(feature = "terminal")]
 pub(crate) fn key_to_escape_sequence(key: &Key, mods: Modifiers) -> String {
     let ctrl = mods.ctrl;
     let shift = mods.shift;

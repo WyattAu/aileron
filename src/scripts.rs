@@ -154,6 +154,7 @@ impl ContentScriptManager {
         })
     }
 
+    #[cfg(feature = "lua")]
     fn eval_lua_script(source: &str) -> anyhow::Result<String> {
         let lua = mlua::Lua::new();
         let js_code: String = lua
@@ -161,6 +162,11 @@ impl ContentScriptManager {
             .eval()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         Ok(js_code)
+    }
+
+    #[cfg(not(feature = "lua"))]
+    fn eval_lua_script(_source: &str) -> anyhow::Result<String> {
+        anyhow::bail!("Lua scripting is not enabled")
     }
 
     fn extract_js_fallback(source: &str) -> String {

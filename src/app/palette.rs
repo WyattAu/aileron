@@ -1,4 +1,6 @@
+#[cfg(any(feature = "passwords", feature = "lua"))]
 use tracing::info;
+#[cfg(any(feature = "passwords", feature = "lua"))]
 use tracing::warn;
 
 use crate::db::bookmarks;
@@ -59,6 +61,7 @@ impl AppState {
         }
 
         // Re-add custom Lua commands
+        #[cfg(feature = "lua")]
         if let Some(ref engine) = self.lua_engine {
             for cmd in engine.custom_commands() {
                 self.palette.add_item(SearchItem {
@@ -119,6 +122,7 @@ impl AppState {
                     }
                 }
             }
+            #[cfg(feature = "lua")]
             SearchCategory::Custom => {
                 // Extract command name from "custom:<name>"
                 if let Some(name) = item.id.strip_prefix("custom:") {

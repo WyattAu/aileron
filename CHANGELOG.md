@@ -2,6 +2,24 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v0.20.0 (2026-05-14) -- Phase 2 Performance: Buffer Reuse & Feature Gates
+
+### Frame Capture Buffer Reuse
+- **Eliminated ~8MB per-frame heap allocation** during active scrolling. Capture buffers are now stored in `capture_buffers: HashMap<Uuid, Vec<u8>>` on `AileronApp` and reused across frames. Only reallocated when pane dimensions change.
+- Applied to both `app/render.rs` (WebKitGTK backend) and `main.rs` (Wry backend).
+- Buffers are cleaned up in `remove_wry_pane_for()` to prevent memory leaks.
+- Restructured `update_webview_textures()` to collect captured pane IDs first, then reference buffers by ID -- avoids borrowing `self` across mutable fields.
+
+### Feature Gates: `terminal` and `lua`
+- **`terminal` feature gate:** `src/terminal/` (1,464 LoC) and `portable-pty`, `alacritty_terminal` deps now gated behind `feature = "terminal"`. ~15 call sites wrapped with `#[cfg(feature = "terminal")]`.
+- **`lua` feature gate:** `src/lua/` (1,344 LoC) and `mlua` dep now gated behind `feature = "lua"`. ~10 call sites wrapped with `#[cfg(feature = "lua")]`.
+- Both features remain in `default = [...]` so existing users are unaffected.
+- `cargo check --no-default-features` compiles clean with zero warnings -- demonstrates minimal browser-only build.
+- Estimated compile time savings when disabled: terminal ~1-2m (C PTY libs + vendored VTE), lua ~30-60s (vendored Lua 5.4 C compiler).
+
+### Collapsible `if` Clippy Fixes
+- Collapsed 7 nested `if`/`if let` patterns into `if ... && let ...` chains in `event_handler.rs` and `main.rs`.
+
 ## v0.19.0 (2026-05-13) -- Phase 2 Performance: Analysis & Quick Wins
 
 ### Hot-Path Allocation Audit

@@ -1,3 +1,4 @@
+#[cfg(feature = "terminal")]
 use aileron::input::Modifiers;
 
 pub(crate) fn key_to_js(key: &aileron::input::Key) -> (String, String) {
@@ -22,6 +23,7 @@ pub(crate) fn key_to_js(key: &aileron::input::Key) -> (String, String) {
 /// Convert an aileron Key + modifiers to a terminal escape sequence.
 /// This is the native terminal equivalent of key_to_js — it sends
 /// the appropriate VT100/xterm escape sequence to the PTY.
+#[cfg(feature = "terminal")]
 pub(crate) fn key_to_escape_sequence(key: &aileron::input::Key, mods: Modifiers) -> String {
     use aileron::input::Key;
 

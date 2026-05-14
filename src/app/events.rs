@@ -220,6 +220,7 @@ impl AppState {
         if let Some(new_mode) = crate::input::mode::transition(self.mode, &event) {
             self.mode = new_mode;
             self.update_status();
+            #[cfg(feature = "lua")]
             if let Some(ref engine) = self.lua_engine {
                 engine.call_hooks("mode_change", &[self.mode.as_str()]);
             }
@@ -269,6 +270,7 @@ impl AppState {
                 ActionEffect::SetMode(mode) => {
                     self.mode = *mode;
                     self.update_status();
+                    #[cfg(feature = "lua")]
                     if let Some(ref engine) = self.lua_engine {
                         engine.call_hooks("mode_change", &[self.mode.as_str()]);
                     }
@@ -304,18 +306,25 @@ impl AppState {
                     }
                 }
                 ActionEffect::OpenTerminal => {
-                    let active = self.wm.active_pane_id();
-                    let term_url = url::Url::parse("aileron://terminal").unwrap();
-                    match self
-                        .wm
-                        .split(active, crate::wm::SplitDirection::Vertical, 0.5)
+                    #[cfg(feature = "terminal")]
                     {
-                        Ok(new_id) => {
-                            self.engines.create_pane(new_id, term_url.clone(), None);
-                            self.terminal_pane_ids.insert(new_id);
-                            self.ui.status_message = "Terminal opened".into();
+                        let active = self.wm.active_pane_id();
+                        let term_url = url::Url::parse("aileron://terminal").unwrap();
+                        match self
+                            .wm
+                            .split(active, crate::wm::SplitDirection::Vertical, 0.5)
+                        {
+                            Ok(new_id) => {
+                                self.engines.create_pane(new_id, term_url.clone(), None);
+                                self.terminal_pane_ids.insert(new_id);
+                                self.ui.status_message = "Terminal opened".into();
+                            }
+                            Err(e) => self.ui.status_message = format!("Terminal failed: {e}"),
                         }
-                        Err(e) => self.ui.status_message = format!("Terminal failed: {e}"),
+                    }
+                    #[cfg(not(feature = "terminal"))]
+                    {
+                        self.ui.status_message = "Terminal feature not enabled".into();
                     }
                 }
                 ActionEffect::RequestClosePane => {
@@ -496,6 +505,7 @@ impl AppState {
                         match self.wm.close(active_id) {
                             Ok(()) => {
                                 self.engines.remove_pane(&active_id);
+                                #[cfg(feature = "terminal")]
                                 self.terminal_pane_ids.remove(&active_id);
                                 self.pending_new_window = true;
                                 self.pending_detach_url = Some(url);
@@ -519,6 +529,7 @@ impl AppState {
                         .collect();
                     for id in &other_ids {
                         self.engines.remove_pane(id);
+                        #[cfg(feature = "terminal")]
                         self.terminal_pane_ids.remove(id);
                     }
                     if let Err(e) = self.wm.retain_only(active_id) {
@@ -561,6 +572,7 @@ impl AppState {
                             // Last tab: close the entire pane
                             if let Ok(()) = self.wm.close(active_id) {
                                 self.engines.remove_pane(&active_id);
+                                #[cfg(feature = "terminal")]
                                 self.terminal_pane_ids.remove(&active_id);
                                 self.ui.status_message = "Pane closed".into();
                             }

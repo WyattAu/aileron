@@ -44,7 +44,7 @@ notify-debouncer-mini = { version = "0.7", features = ["crossbeam-channel"], opt
 age = { version = "0.11", features = ["armor"], optional = true }
 
 # Lua scripting
-mlua = { version = "0.10.3", features = ["lua54", "vendored"] }
+mlua = { version = "0.10.3", features = ["lua54", "vendored"], optional = true }
 
 # Logging
 tracing = "0.1.44"
@@ -83,10 +83,10 @@ uuid = { version = "1.16.0", features = ["v4"] }
 pollster = "0.4.0"
 
 # PTY management for embedded terminal panes
-portable-pty = "0.8"
+portable-pty = { version = "0.8", optional = true }
 
 # Terminal emulation (VT parser + grid state)
-alacritty_terminal = "0.26"
+alacritty_terminal = { version = "0.26", optional = true }
 
 # WebView engine (wry = Tauri's system WebView wrapper)
 # NOTE: "devtools" feature is kept unconditionally because open_devtools() and
@@ -150,8 +150,10 @@ codegen-units = 1
 panic = "abort"
 
 [features]
-default = ["mcp", "arp", "sync", "passwords"]
+default = ["mcp", "arp", "sync", "passwords", "lua", "terminal"]
 mcp = ["dep:image", "dep:base64"]
 arp = ["dep:tokio-tungstenite"]
 sync = ["dep:fastcdc", "dep:blake3", "dep:age", "dep:notify", "dep:notify-debouncer-mini"]
 passwords = ["dep:keyring", "dep:age"]
+lua = ["dep:mlua"]
+terminal = ["dep:portable-pty", "dep:alacritty_terminal"]

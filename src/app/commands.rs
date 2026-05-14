@@ -3,8 +3,10 @@ use crate::app::WryAction;
 use super::AppState;
 
 impl AppState {
+    #[cfg_attr(not(feature = "lua"), allow(unused_mut))]
     pub(crate) fn navigate_with_redirects(&mut self, mut url: url::Url) {
         self.session.session_dirty = true;
+        #[cfg(feature = "lua")]
         if let Some(ref engine) = self.lua_engine {
             url = engine.apply_url_redirects(&url);
         }
@@ -12,9 +14,11 @@ impl AppState {
         if let Some(engine) = self.engines.get_mut(&active_id) {
             engine.navigate(&url);
         }
+        #[cfg(feature = "lua")]
         if let Some(ref engine) = self.lua_engine {
             engine.call_hooks("navigate", &[url.as_str()]);
         }
+        #[cfg(feature = "lua")]
         self.drain_lua_navigations();
         self.pending_wry_actions.push_back(WryAction::Navigate(url));
     }
@@ -118,14 +122,21 @@ impl AppState {
             return;
         }
 
-        if let Some(host) = query.strip_prefix("ssh ") {
-            let host = host.trim();
-            if host.is_empty() {
-                self.ui.status_message = "Usage: ssh <host>".into();
-                return;
+        if let Some(_host) = query.strip_prefix("ssh ") {
+            #[cfg(feature = "terminal")]
+            {
+                let host = _host.trim();
+                if host.is_empty() {
+                    self.ui.status_message = "Usage: ssh <host>".into();
+                    return;
+                }
+                self.pending_terminal_command = Some(format!("ssh {host}\n"));
+                self.execute_action(&crate::input::Action::OpenTerminal);
             }
-            self.pending_terminal_command = Some(format!("ssh {host}\n"));
-            self.execute_action(&crate::input::Action::OpenTerminal);
+            #[cfg(not(feature = "terminal"))]
+            {
+                self.ui.status_message = "Terminal feature not enabled".into();
+            }
             return;
         }
 
@@ -229,7 +240,7 @@ impl AppState {
 
         if query == "memory" {
             let rss = crate::profiling::memory::process_rss_human();
-            let term_count = self.terminal_pane_ids.len();
+            let term_count = self.terminal_pane_count();
             let total_panes = self.wm.panes().len();
             let web_count = total_panes - term_count;
             let estimated = crate::profiling::memory::estimate_pane_memory(web_count, term_count);
@@ -1034,6 +1045,7 @@ impl AppState {
         }
     }
 
+    #[cfg(feature = "lua")]
     pub fn call_lua_command(&self, name: &str) -> anyhow::Result<String> {
         if let Some(ref engine) = self.lua_engine {
             engine.call_command(name, &[])

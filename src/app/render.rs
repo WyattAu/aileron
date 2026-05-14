@@ -32,6 +32,7 @@ impl AileronApp {
                 &self.git_status,
                 STATUS_BAR_HEIGHT,
                 &self.webview_textures,
+                #[cfg(feature = "terminal")]
                 &mut self.terminal_manager,
                 &self.offscreen_panes,
             );
@@ -130,7 +131,8 @@ impl AileronApp {
         let skip_non_active = self.adaptive_quality.should_skip_non_active();
         let active_id = self.app_state.as_ref().map(|s| s.wm.active_pane_id());
 
-        let mut dirty_data: Vec<(uuid::Uuid, Vec<u8>, u32, u32)> = Vec::new();
+        // Collect IDs of panes that need capture (avoid holding mutable borrows across texture updates).
+        let mut captured: Vec<(uuid::Uuid, u32, u32)> = Vec::new();
 
         for (id, pane) in self.offscreen_panes.iter_mut() {
             if skip_non_active && active_id.is_some_and(|aid| aid != *id) {
@@ -166,12 +168,21 @@ impl AileronApp {
                     let fw = frame.width;
                     let fh = frame.height;
                     let needed = (fw as usize) * (fh as usize) * 4;
-                    let mut buf = vec![0u8; needed];
+                    // Reuse existing buffer; only reallocate when pane size grows.
+                    let buf = self
+                        .capture_buffers
+                        .entry(*id)
+                        .or_insert_with(|| Vec::with_capacity(needed));
+                    if buf.len() < needed {
+                        buf.resize(needed, 0);
+                    } else {
+                        buf[..needed].fill(0);
+                    }
                     if let Some(rgba) = pane.frame_rgba() {
                         let copy_len = rgba.len().min(needed);
                         buf[..copy_len].copy_from_slice(&rgba[..copy_len]);
                     }
-                    dirty_data.push((*id, buf, fw, fh));
+                    captured.push((*id, fw, fh));
                 }
                 self.offscreen_last_capture
                     .insert(*id, std::time::Instant::now());
@@ -179,9 +190,13 @@ impl AileronApp {
         }
 
         let mut updated = false;
-        for (pane_id, rgba, width, height) in dirty_data {
+        for (pane_id, width, height) in captured {
+            let rgba = self.capture_buffers.get(&pane_id);
+            let Some(rgba) = rgba else {
+                continue;
+            };
             let color_image =
-                egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &rgba);
+                egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], rgba);
 
             if let Some(ws) = self.egui_winit.as_ref() {
                 let ctx = ws.egui_ctx();

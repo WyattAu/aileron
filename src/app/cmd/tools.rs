@@ -157,7 +157,7 @@ pub fn cmd_tools(state: &mut AppState, query: &str) -> Option<()> {
 
     if query == "terminal-clear" || query == "cls" {
         let active_id = state.wm.active_pane_id();
-        if state.terminal_pane_ids.contains(&active_id) {
+        if state.is_terminal_pane(&active_id) {
             state
                 .pending_wry_actions
                 .push_back(crate::app::WryAction::RunJs(
@@ -178,7 +178,7 @@ pub fn cmd_tools(state: &mut AppState, query: &str) -> Option<()> {
             return Some(());
         }
         let active_id = state.wm.active_pane_id();
-        if state.terminal_pane_ids.contains(&active_id) {
+        if state.is_terminal_pane(&active_id) {
             let escaped = pattern.replace('\\', "\\\\").replace('\'', "\\'");
             state
                 .pending_wry_actions

@@ -11,6 +11,7 @@ pub mod gfx;
 pub mod git;
 pub mod i18n;
 pub mod input;
+#[cfg(feature = "lua")]
 pub mod lua;
 #[cfg(feature = "mcp")]
 pub mod mcp;
@@ -25,6 +26,7 @@ pub mod scripts;
 pub mod servo;
 #[cfg(feature = "sync")]
 pub mod sync;
+#[cfg(feature = "terminal")]
 pub mod terminal;
 pub mod ui;
 pub mod wm;

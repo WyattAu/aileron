@@ -2,8 +2,11 @@ use crate::app::{AppState, WryAction};
 use crate::git::GitStatus;
 use crate::input::Mode;
 use crate::servo::WryPaneManager;
+#[cfg(feature = "terminal")]
 use crate::terminal::NativeTerminalManager;
+#[cfg(feature = "terminal")]
 use crate::terminal::grid::CellMetrics;
+#[cfg(feature = "terminal")]
 use crate::terminal::render::render_terminal;
 use crate::ui::search::SearchCategory;
 use egui::{WidgetInfo, WidgetType};
@@ -35,8 +38,32 @@ pub fn build_ui(
     git_status: &GitStatus,
     status_bar_height: f64,
     webview_textures: &std::collections::HashMap<uuid::Uuid, egui::TextureId>,
-    terminal_manager: &mut NativeTerminalManager,
+    #[cfg(feature = "terminal")] terminal_manager: &mut NativeTerminalManager,
     offscreen_panes: &crate::offscreen_webview::OffscreenWebViewManager,
+) {
+    build_ui_inner(
+        ctx,
+        app_state,
+        wry_panes,
+        git_status,
+        status_bar_height,
+        webview_textures,
+        offscreen_panes,
+        #[cfg(feature = "terminal")]
+        terminal_manager,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_ui_inner(
+    ctx: &egui::Context,
+    app_state: &mut AppState,
+    wry_panes: &WryPaneManager,
+    git_status: &GitStatus,
+    status_bar_height: f64,
+    webview_textures: &std::collections::HashMap<uuid::Uuid, egui::TextureId>,
+    offscreen_panes: &crate::offscreen_webview::OffscreenWebViewManager,
+    #[cfg(feature = "terminal")] terminal_manager: &mut NativeTerminalManager,
 ) {
     let tab_layout = app_state.config.tab_layout.as_str();
     let tc = app_state.config.cached_theme_colors().clone();
@@ -932,7 +959,7 @@ pub fn build_ui(
 
                             let is_active = *id == active_id;
                             let is_selected = visible_index == app_state.panels.tab_search_selected;
-                            let is_terminal = app_state.terminal_pane_ids.contains(id);
+                            let is_terminal = app_state.is_terminal_pane(id);
                             let prefix = if is_terminal { "[term] " } else { "" };
                             let marker = if is_active { " ●" } else { "" };
 
@@ -1436,8 +1463,10 @@ pub fn build_ui(
                 };
 
                 if offscreen {
+                    #[cfg(feature = "terminal")]
                     let is_terminal = terminal_manager.is_terminal(id);
 
+                    #[cfg(feature = "terminal")]
                     if is_terminal {
                         // Native terminal rendering: draw grid directly with egui
                         let colors = terminal_manager.get_colors();
@@ -1459,26 +1488,35 @@ pub fn build_ui(
                         } else {
                             ui.painter().rect_filled(screen_rect, 0.0, bg);
                         }
-                    } else if let Some(&tex_id) = webview_textures.get(id) {
-                        // Web content: show captured webview texture
-                        let image = egui::Image::new(egui::load::SizedTexture::new(
-                            tex_id,
-                            screen_rect.size(),
-                        ));
-                        ui.put(screen_rect, image);
-                    } else {
-                        tracing::debug!(
-                            "render pane {}: NO texture ({} total)",
-                            &id.to_string()[..8],
-                            webview_textures.len(),
-                        );
-                        ui.painter().rect_filled(screen_rect, 0.0, bg);
-                        ui.painter().rect_stroke(
-                            screen_rect,
-                            0.0,
-                            egui::Stroke::new(2.0, border_color),
-                            egui::epaint::StrokeKind::Middle,
-                        );
+                    }
+
+                    #[cfg(feature = "terminal")]
+                    let show_webview = !is_terminal;
+                    #[cfg(not(feature = "terminal"))]
+                    let show_webview = true;
+
+                    if show_webview {
+                        if let Some(&tex_id) = webview_textures.get(id) {
+                            // Web content: show captured webview texture
+                            let image = egui::Image::new(egui::load::SizedTexture::new(
+                                tex_id,
+                                screen_rect.size(),
+                            ));
+                            ui.put(screen_rect, image);
+                        } else {
+                            tracing::debug!(
+                                "render pane {}: NO texture ({} total)",
+                                &id.to_string()[..8],
+                                webview_textures.len(),
+                            );
+                            ui.painter().rect_filled(screen_rect, 0.0, bg);
+                            ui.painter().rect_stroke(
+                                screen_rect,
+                                0.0,
+                                egui::Stroke::new(2.0, border_color),
+                                egui::epaint::StrokeKind::Middle,
+                            );
+                        }
                     }
                 }
 
@@ -1604,8 +1642,11 @@ pub fn build_ui(
         } else if offscreen && panes.len() == 1 {
             // Single-pane offscreen rendering: show the captured webview texture.
             let available = ui.available_rect_before_wrap();
+
+            #[cfg(feature = "terminal")]
             let is_terminal = panes.iter().any(|(id, _)| terminal_manager.is_terminal(id));
 
+            #[cfg(feature = "terminal")]
             if is_terminal {
                 let colors = terminal_manager.get_colors();
                 for (id, _) in &panes {
@@ -1626,15 +1667,24 @@ pub fn build_ui(
                         );
                     }
                 }
-            } else if let Some((_, tex_id)) = panes
-                .iter()
-                .find_map(|(id, _)| webview_textures.get_key_value(id))
-            {
-                let image =
-                    egui::Image::new(egui::load::SizedTexture::new(*tex_id, available.size()));
-                ui.put(available, image);
-            } else {
-                ui.painter().rect_filled(available, 0.0, bg);
+            }
+
+            #[cfg(feature = "terminal")]
+            let show_webview = !is_terminal;
+            #[cfg(not(feature = "terminal"))]
+            let show_webview = true;
+
+            if show_webview {
+                if let Some((_, tex_id)) = panes
+                    .iter()
+                    .find_map(|(id, _)| webview_textures.get_key_value(id))
+                {
+                    let image =
+                        egui::Image::new(egui::load::SizedTexture::new(*tex_id, available.size()));
+                    ui.put(available, image);
+                } else {
+                    ui.painter().rect_filled(available, 0.0, bg);
+                }
             }
         }
     });
@@ -1691,7 +1741,7 @@ pub fn build_tab_list(
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             for (pane_id, _rect) in &panes {
                 let is_active = *pane_id == active_id;
-                let is_terminal = app_state.terminal_pane_ids.contains(pane_id);
+                let is_terminal = app_state.is_terminal_pane(pane_id);
 
                 // Extract needed strings before mutable borrow of app_state.
                 let (trunc_h, info_title, info_url) = app_state
@@ -1802,7 +1852,7 @@ pub fn build_tab_list(
         egui::ScrollArea::vertical().show(ui, |ui| {
             for (pane_id, _rect) in &panes {
                 let is_active = *pane_id == active_id;
-                let is_terminal = app_state.terminal_pane_ids.contains(pane_id);
+                let is_terminal = app_state.is_terminal_pane(pane_id);
 
                 // Extract needed strings before mutable borrow of app_state.
                 let (trunc_s, trunc_u, info_title, info_url) = app_state

@@ -20,6 +20,7 @@ use crate::config::Config;
 use crate::db::bookmarks;
 use crate::extensions::ExtensionManager;
 use crate::input::{KeybindingRegistry, Mode};
+#[cfg(feature = "lua")]
 use crate::lua::LuaEngine;
 #[cfg(feature = "passwords")]
 use crate::passwords::BitwardenClient;
@@ -252,6 +253,7 @@ pub struct AppState {
     pub palette: CommandPalette,
 
     /// Lua scripting engine (for init.lua and custom keybindings).
+    #[cfg(feature = "lua")]
     lua_engine: Option<LuaEngine>,
 
     /// User configuration.
@@ -273,6 +275,7 @@ pub struct AppState {
     /// Set of pane IDs that should be terminal panes (not web panes).
     /// main.rs checks this when creating wry panes and uses the terminal
     /// custom protocol + IPC handler instead of regular web navigation.
+    #[cfg(feature = "terminal")]
     pub terminal_pane_ids: HashSet<Uuid>,
 
     /// Bitwarden password manager client.
@@ -280,6 +283,7 @@ pub struct AppState {
     pub bitwarden: BitwardenClient,
 
     /// Command to auto-type into the next terminal pane that gets created.
+    #[cfg(feature = "terminal")]
     pub pending_terminal_command: Option<String>,
 
     /// Pane ID pending close from tab sidebar click.
@@ -419,6 +423,7 @@ impl AppState {
         }
 
         // Initialize Lua engine and load init.lua if present
+        #[cfg(feature = "lua")]
         let lua_engine = match LuaEngine::new() {
             Ok(engine) => {
                 let init_lua = config.init_lua_path();
@@ -463,6 +468,9 @@ impl AppState {
             }
         };
 
+        #[cfg(not(feature = "lua"))]
+        let _lua_engine: Option<std::convert::Infallible> = None;
+
         // Load quickmarks from database
         let mut quickmarks = if let Some(ref conn) = db {
             crate::db::quickmarks::load_quickmarks(conn).unwrap_or_default()
@@ -502,6 +510,7 @@ impl AppState {
         let extension_manager = Arc::new(parking_lot::RwLock::new(ExtensionManager::new(
             Self::extensions_dir(),
         )));
+        #[cfg(feature = "lua")]
         if let Some(ref engine) = lua_engine {
             engine.set_extension_manager(extension_manager.clone());
         }
@@ -523,14 +532,17 @@ impl AppState {
             db,
             engines,
             palette,
+            #[cfg(feature = "lua")]
             lua_engine,
             config,
             pending_wry_actions: VecDeque::new(),
             pending_workspace_restore: None,
             current_workspace_name: "default".into(),
+            #[cfg(feature = "terminal")]
             terminal_pane_ids: HashSet::new(),
             #[cfg(feature = "passwords")]
             bitwarden: BitwardenClient::new(),
+            #[cfg(feature = "terminal")]
             pending_terminal_command: None,
             pending_tab_close: None,
             pending_new_window: false,
@@ -571,6 +583,7 @@ impl AppState {
     /// Drain pending navigations from the Lua engine and push them as WryAction::Navigate.
     /// Call this after hook callbacks or during frame processing to ensure Lua-initiated
     /// navigations are processed.
+    #[cfg(feature = "lua")]
     pub fn drain_lua_navigations(&mut self) {
         if let Some(ref engine) = self.lua_engine {
             let navs = engine.take_pending_navigations();
@@ -700,6 +713,38 @@ impl AppState {
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
+    }
+
+    #[cfg(feature = "terminal")]
+    pub fn is_terminal_pane(&self, id: &uuid::Uuid) -> bool {
+        self.terminal_pane_ids.contains(id)
+    }
+
+    #[cfg(not(feature = "terminal"))]
+    #[allow(dead_code)]
+    pub fn is_terminal_pane(&self, _id: &uuid::Uuid) -> bool {
+        false
+    }
+
+    #[cfg(feature = "terminal")]
+    pub fn register_terminal_pane(&mut self, id: uuid::Uuid) {
+        self.terminal_pane_ids.insert(id);
+    }
+
+    #[cfg(feature = "terminal")]
+    pub fn unregister_terminal_pane(&mut self, id: &uuid::Uuid) {
+        self.terminal_pane_ids.remove(id);
+    }
+
+    #[cfg(feature = "terminal")]
+    pub fn terminal_pane_count(&self) -> usize {
+        self.terminal_pane_ids.len()
+    }
+
+    #[cfg(not(feature = "terminal"))]
+    #[allow(dead_code)]
+    pub fn terminal_pane_count(&self) -> usize {
+        0
     }
 
     /// Load persisted scroll marks from the database for a given URL into the

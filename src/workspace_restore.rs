@@ -1,5 +1,6 @@
 //! Workspace restore logic — rebuild panes from saved workspace data.
 
+#[cfg(feature = "terminal")]
 use std::collections::HashSet;
 
 use tracing::{info, warn};
@@ -7,6 +8,7 @@ use url::Url;
 
 use crate::db::workspaces;
 use crate::servo::PaneStateManager;
+#[cfg(feature = "terminal")]
 use crate::terminal::NativeTerminalManager;
 use crate::wm::{BspTree, Rect};
 
@@ -36,10 +38,10 @@ pub fn restore_workspace(
     workspace_name: &str,
     viewport: Rect,
     db: Option<&rusqlite::Connection>,
-    terminal_pane_ids: &mut HashSet<uuid::Uuid>,
+    #[cfg(feature = "terminal")] terminal_pane_ids: &mut HashSet<uuid::Uuid>,
     engines: &mut PaneStateManager,
     wm: &mut BspTree,
-    terminal_manager: &mut NativeTerminalManager,
+    #[cfg(feature = "terminal")] terminal_manager: &mut NativeTerminalManager,
 ) -> RestoreOutcome {
     let load_result = db.and_then(|conn| workspaces::load_workspace(conn, workspace_name).ok());
 
@@ -49,12 +51,14 @@ pub fn restore_workspace(
         None => return RestoreOutcome::NoDatabase,
     };
 
+    #[cfg(feature = "terminal")]
     for tid in terminal_manager.pane_ids() {
         terminal_manager.remove(&tid);
     }
 
     for pid in engines.pane_ids() {
         engines.remove_pane(&pid);
+        #[cfg(feature = "terminal")]
         terminal_pane_ids.remove(&pid);
     }
 
@@ -84,6 +88,7 @@ pub fn restore_workspace(
         engines.create_pane(*pid, url.clone(), None);
 
         if url_str == "aileron://terminal" {
+            #[cfg(feature = "terminal")]
             terminal_pane_ids.insert(*pid);
         }
 

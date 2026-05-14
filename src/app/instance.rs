@@ -13,6 +13,7 @@ use crate::offscreen_webview::OffscreenWebViewManager;
 use crate::popup::PopupManager;
 use crate::profiling::AdaptiveQuality;
 use crate::servo::WryPaneManager;
+#[cfg(feature = "terminal")]
 use crate::terminal::NativeTerminalManager;
 use crate::wm::Rect;
 
@@ -34,6 +35,7 @@ pub struct AileronApp {
     #[cfg(feature = "mcp")]
     pub(crate) mcp_bridge: McpBridge,
 
+    #[cfg(feature = "terminal")]
     pub(crate) terminal_manager: NativeTerminalManager,
 
     pub(crate) content_scripts: crate::scripts::ContentScriptManager,
@@ -61,6 +63,10 @@ pub struct AileronApp {
     pub(crate) webview_texture_handles: std::collections::HashMap<uuid::Uuid, egui::TextureHandle>,
 
     pub(crate) offscreen_last_capture: std::collections::HashMap<uuid::Uuid, std::time::Instant>,
+
+    /// Reusable capture buffers keyed by pane ID. Avoids per-frame 8MB allocation
+    /// for RGBA pixel data during active scrolling.
+    pub(crate) capture_buffers: std::collections::HashMap<uuid::Uuid, Vec<u8>>,
 
     pub(crate) pending_pane_creates: std::collections::VecDeque<(uuid::Uuid, url::Url)>,
 
@@ -99,6 +105,7 @@ impl AileronApp {
             adblocker: AdBlocker::new(),
             #[cfg(feature = "mcp")]
             mcp_bridge,
+            #[cfg(feature = "terminal")]
             terminal_manager: NativeTerminalManager::new(),
             content_scripts: crate::scripts::ContentScriptManager::new(),
             git_status: crate::git::GitStatus::default(),
@@ -115,6 +122,7 @@ impl AileronApp {
             webview_textures: std::collections::HashMap::new(),
             webview_texture_handles: std::collections::HashMap::new(),
             offscreen_last_capture: std::collections::HashMap::new(),
+            capture_buffers: std::collections::HashMap::new(),
             pending_pane_creates: std::collections::VecDeque::new(),
             adblock_reload_pending: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             adaptive_quality,

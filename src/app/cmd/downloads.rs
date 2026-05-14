@@ -170,7 +170,7 @@ pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
 
     if query == "stats" {
         let tab_count = state.wm.pane_ids().len();
-        let term_count = state.terminal_pane_ids.len();
+        let term_count = state.terminal_pane_count();
         let ext_count = state.extension_manager.read().count();
 
         let mut stats = format!("Tabs: {tab_count} ({term_count} terminal)");

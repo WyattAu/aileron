@@ -12,10 +12,12 @@ use crate::input::{KeyEvent as AileronKeyEvent, Mode};
 use crate::offscreen_webview::OffscreenWebViewManager;
 use crate::wm::Rect;
 
+#[cfg(all(target_os = "linux", feature = "terminal"))]
+use crate::input::key_conversion::key_to_escape_sequence;
 #[cfg(not(target_os = "linux"))]
 use crate::input::key_conversion::key_to_js;
 #[cfg(target_os = "linux")]
-use crate::input::key_conversion::{key_to_escape_sequence, key_to_js};
+use crate::input::key_conversion::key_to_js;
 
 impl ApplicationHandler for AileronApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -203,8 +205,10 @@ impl ApplicationHandler for AileronApp {
                     },
                 ..
             } => {
-                if *repeat && let Some(app_state) = &self.app_state {
-                    let active_id = app_state.wm.active_pane_id();
+                if *repeat && let Some(_app_state) = &self.app_state {
+                    #[cfg(feature = "terminal")]
+                    let active_id = _app_state.wm.active_pane_id();
+                    #[cfg(feature = "terminal")]
                     if !self.terminal_manager.is_terminal(&active_id) {
                         return;
                     }
@@ -409,8 +413,10 @@ impl ApplicationHandler for AileronApp {
                     }
 
                     if is_insert_mode && self.config.is_offscreen() {
+                        #[cfg(feature = "terminal")]
                         let is_terminal = self.terminal_manager.is_terminal(&active_pane_id);
 
+                        #[cfg(feature = "terminal")]
                         if is_terminal {
                             if let crate::input::Key::Character(c) = &key {
                                 self.terminal_manager
@@ -422,7 +428,12 @@ impl ApplicationHandler for AileronApp {
                                         .write_input(&active_pane_id, &escape_seq);
                                 }
                             }
-                        } else if let Some(pane) = self.offscreen_panes.get_mut(&active_pane_id) {
+                        }
+
+                        #[cfg(feature = "terminal")]
+                        if !is_terminal
+                            && let Some(pane) = self.offscreen_panes.get_mut(&active_pane_id)
+                        {
                             if let crate::input::Key::Character(c) = &key {
                                 pane.insert_text(&c.to_string());
                             } else {
@@ -434,6 +445,23 @@ impl ApplicationHandler for AileronApp {
                                     mods.super_key,
                                 );
                                 pane.forward_key_event("keydown", &js_key, &js_code, &mods);
+                            }
+                        }
+                        #[cfg(not(feature = "terminal"))]
+                        {
+                            if let Some(pane) = self.offscreen_panes.get_mut(&active_pane_id) {
+                                if let crate::input::Key::Character(c) = &key {
+                                    pane.insert_text(&c.to_string());
+                                } else {
+                                    let (js_key, js_code) = key_to_js(&key);
+                                    let mods = crate::offscreen_webview::modifiers_js(
+                                        mods.ctrl,
+                                        mods.alt,
+                                        mods.shift,
+                                        mods.super_key,
+                                    );
+                                    pane.forward_key_event("keydown", &js_key, &js_code, &mods);
+                                }
                             }
                         }
                     }
@@ -454,7 +482,12 @@ impl ApplicationHandler for AileronApp {
                     && app_state.mode == Mode::Insert
                 {
                     let active_id = app_state.wm.active_pane_id();
-                    if !self.terminal_manager.is_terminal(&active_id) {
+                    #[cfg(feature = "terminal")]
+                    let is_terminal = self.terminal_manager.is_terminal(&active_id);
+                    #[cfg(not(feature = "terminal"))]
+                    let is_terminal = false;
+
+                    if !is_terminal {
                         let key = crate::input::map_key(*physical_key, logical_key);
                         if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
                             let (js_key, js_code) = key_to_js(&key);
@@ -486,19 +519,38 @@ impl ApplicationHandler for AileronApp {
                         winit::event::MouseScrollDelta::PixelDelta(pos) => (pos.x, pos.y),
                     };
                     if dx.abs() > 0.1 || dy.abs() > 0.1 {
-                        if self.terminal_manager.is_terminal(&active_id) {
-                            let lines = (dy / 40.0).round() as i32;
-                            if lines != 0 {
-                                self.terminal_manager.scroll(&active_id, -lines);
+                        #[cfg(feature = "terminal")]
+                        {
+                            if self.terminal_manager.is_terminal(&active_id) {
+                                let lines = (dy / 40.0).round() as i32;
+                                if lines != 0 {
+                                    self.terminal_manager.scroll(&active_id, -lines);
+                                }
+                                return;
                             }
-                        } else if !self.config.is_offscreen() {
+                        }
+
+                        let is_terminal = {
+                            #[cfg(feature = "terminal")]
+                            {
+                                self.terminal_manager.is_terminal(&active_id)
+                            }
+                            #[cfg(not(feature = "terminal"))]
+                            {
+                                false
+                            }
+                        };
+
+                        if !is_terminal && !self.config.is_offscreen() {
                             if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                 let js = format!(
                                     "window.scrollBy({{top: {dy}, left: {dx}, behavior: 'smooth'}})"
                                 );
                                 wry_pane.execute_js(&js);
                             }
-                        } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
+                        } else if !is_terminal
+                            && let Some(pane) = self.offscreen_panes.get_mut(&active_id)
+                        {
                             pane.scroll_by(dx, dy);
                         }
                     }
@@ -514,6 +566,7 @@ impl ApplicationHandler for AileronApp {
 
                     let active_id = app_state.wm.active_pane_id();
 
+                    #[cfg(feature = "terminal")]
                     if self.terminal_manager.is_terminal(&active_id) {
                         let terminal_info = (|| {
                             let ws = self.egui_winit.as_ref()?;
@@ -588,7 +641,14 @@ impl ApplicationHandler for AileronApp {
                                 }
                             }
                         }
-                    } else {
+                    }
+
+                    #[cfg(feature = "terminal")]
+                    let is_terminal = self.terminal_manager.is_terminal(&active_id);
+                    #[cfg(not(feature = "terminal"))]
+                    let is_terminal = false;
+
+                    if !is_terminal {
                         let forward_info = (|| {
                             let ws = self.egui_winit.as_ref()?;
                             let ctx = ws.egui_ctx();
@@ -675,6 +735,7 @@ impl ApplicationHandler for AileronApp {
                 {
                     let active_id = app_state.wm.active_pane_id();
 
+                    #[cfg(feature = "terminal")]
                     if self.terminal_manager.is_terminal(&active_id) {
                         let terminal_info = (|| {
                             let panes = app_state.wm.panes();
@@ -712,7 +773,14 @@ impl ApplicationHandler for AileronApp {
                                 pane.extend_selection(line, col);
                             }
                         }
-                    } else {
+                    }
+
+                    #[cfg(feature = "terminal")]
+                    let is_terminal = self.terminal_manager.is_terminal(&active_id);
+                    #[cfg(not(feature = "terminal"))]
+                    let is_terminal = false;
+
+                    if !is_terminal {
                         let forward_info = (|| {
                             let panes = app_state.wm.panes();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
@@ -764,11 +832,14 @@ impl ApplicationHandler for AileronApp {
                                 if app_state.mode == Mode::Insert && self.config.is_offscreen() {
                                     let active_id = app_state.wm.active_pane_id();
                                     let text_owned = text.clone();
-                                    if self.terminal_manager.is_terminal(&active_id) {
-                                        self.terminal_manager.write_input(&active_id, &text_owned);
-                                    } else if let Some(pane) =
-                                        self.offscreen_panes.get_mut(&active_id)
+                                    #[cfg(feature = "terminal")]
+                                    if !self.terminal_manager.is_terminal(&active_id)
+                                        && let Some(pane) = self.offscreen_panes.get_mut(&active_id)
                                     {
+                                        pane.insert_text(&text_owned);
+                                    }
+                                    #[cfg(not(feature = "terminal"))]
+                                    if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
                                         pane.insert_text(&text_owned);
                                     }
                                 }
@@ -810,10 +881,20 @@ impl ApplicationHandler for AileronApp {
                                         let text_owned = text.clone();
 
                                         if self.config.is_offscreen() {
+                                            #[cfg(feature = "terminal")]
                                             if self.terminal_manager.is_terminal(&active_id) {
                                                 self.terminal_manager
                                                     .write_input(&active_id, &text_owned);
-                                            } else if let Some(pane) =
+                                            }
+                                            #[cfg(feature = "terminal")]
+                                            if !self.terminal_manager.is_terminal(&active_id)
+                                                && let Some(pane) =
+                                                    self.offscreen_panes.get_mut(&active_id)
+                                            {
+                                                pane.insert_text(&text_owned);
+                                            }
+                                            #[cfg(not(feature = "terminal"))]
+                                            if let Some(pane) =
                                                 self.offscreen_panes.get_mut(&active_id)
                                             {
                                                 pane.insert_text(&text_owned);
@@ -1008,9 +1089,11 @@ impl ApplicationHandler for AileronApp {
                 &ws_name,
                 viewport,
                 app_state.db.as_ref(),
+                #[cfg(feature = "terminal")]
                 &mut app_state.terminal_pane_ids,
                 &mut app_state.engines,
                 &mut app_state.wm,
+                #[cfg(feature = "terminal")]
                 &mut self.terminal_manager,
             );
 
@@ -1081,6 +1164,7 @@ impl ApplicationHandler for AileronApp {
             layout_dirty = true;
         }
 
+        #[cfg(feature = "terminal")]
         frame_tasks::poll_terminal_output(&mut self.terminal_manager);
 
         if let Some(app_state) = &mut self.app_state {

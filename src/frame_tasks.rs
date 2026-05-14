@@ -17,6 +17,7 @@ use crate::mcp::{McpBridge, McpCommand};
 use crate::offscreen_webview::OffscreenWebViewManager;
 use crate::scripts::{ContentScriptManager, RunAt};
 use crate::servo::{WryEvent, WryPaneManager, pump_gtk};
+#[cfg(feature = "terminal")]
 use crate::terminal::NativeTerminalManager;
 
 const EXTENSION_RUNTIME_SHIM_JS: &str = r#"
@@ -990,6 +991,7 @@ pub fn process_pending_wry_actions(
     content_scripts: &ContentScriptManager,
 ) {
     // Drain any navigations queued by the Lua engine (aileron.navigate from hooks/init.lua)
+    #[cfg(feature = "lua")]
     if let Some(state) = app_state {
         state.drain_lua_navigations();
     }
@@ -1237,6 +1239,7 @@ pub fn process_mcp_commands(
                         warn!(%e, "Failed to close tab via MCP");
                     }
                     app_state.engines.remove_pane(&close_id);
+                    #[cfg(feature = "terminal")]
                     app_state.terminal_pane_ids.remove(&close_id);
                     if active_before == close_id
                         && let Some(&next) = pane_ids.iter().find(|&&id| id != close_id)
@@ -1264,6 +1267,7 @@ pub fn handle_pending_tab_close(app_state: &mut AppState, close_id: Uuid) {
         warn!(%e, "Failed to close pending tab");
     }
     app_state.engines.remove_pane(&close_id);
+    #[cfg(feature = "terminal")]
     app_state.terminal_pane_ids.remove(&close_id);
     app_state.update_a11y("Pane closed");
 }
@@ -1290,6 +1294,7 @@ pub fn handle_pending_import(app_state: &mut AppState) {
 }
 
 /// Poll native terminals for new output and feed VT parser.
+#[cfg(feature = "terminal")]
 pub fn poll_terminal_output(terminal_manager: &mut NativeTerminalManager) {
     terminal_manager.tick_all();
 }
@@ -2418,6 +2423,7 @@ mod tests {
 
     // ─── poll_terminal_output ───────────────────────────────────────────
 
+    #[cfg(feature = "terminal")]
     #[test]
     fn poll_terminal_output_calls_tick_all_without_panic() {
         let mut terminal_manager = NativeTerminalManager::new();

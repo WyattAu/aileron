@@ -16,12 +16,13 @@ impl AileronApp {
             None => return,
         };
 
+        #[cfg(feature = "terminal")]
         let is_terminal = {
             let app_state = match &self.app_state {
                 Some(s) => s,
                 None => return,
             };
-            app_state.terminal_pane_ids.contains(&pane_id)
+            app_state.is_terminal_pane(&pane_id)
         };
 
         let wm_rect = {
@@ -88,6 +89,7 @@ impl AileronApp {
             interceptor_registry,
         ) {
             Ok(()) => {
+                #[cfg(feature = "terminal")]
                 if is_terminal {
                     match self.terminal_manager.create_terminal(pane_id, 80, 24) {
                         Ok(_size) => {
@@ -124,12 +126,13 @@ impl AileronApp {
     }
 
     pub(crate) fn create_offscreen_pane_for(&mut self, pane_id: uuid::Uuid, url: &url::Url) {
+        #[cfg(feature = "terminal")]
         let is_terminal = {
             let app_state = match &self.app_state {
                 Some(s) => s,
                 None => return,
             };
-            app_state.terminal_pane_ids.contains(&pane_id)
+            app_state.is_terminal_pane(&pane_id)
         };
 
         let wm_rect = {
@@ -204,6 +207,7 @@ impl AileronApp {
             interceptor_registry,
         ) {
             Ok(()) => {
+                #[cfg(feature = "terminal")]
                 if is_terminal {
                     match self.terminal_manager.create_terminal(pane_id, 80, 24) {
                         Ok(_size) => {
@@ -246,6 +250,7 @@ impl AileronApp {
     }
 
     pub(crate) fn remove_wry_pane_for(&mut self, pane_id: &uuid::Uuid) {
+        #[cfg(feature = "terminal")]
         self.terminal_manager.remove(pane_id);
         self.wry_panes.remove_pane(pane_id);
         self.offscreen_panes.remove_pane(pane_id);
@@ -327,32 +332,53 @@ impl AileronApp {
         }
 
         if self.config.is_offscreen() {
-            use crate::terminal::grid::CellMetrics;
+            #[cfg(feature = "terminal")]
+            {
+                use crate::terminal::grid::CellMetrics;
 
-            for (pane_id, wm_rect) in &panes {
-                let wry_rect = bsp_rect_to_wry_rect(
-                    wm_rect,
-                    STATUS_BAR_HEIGHT,
-                    URL_BAR_HEIGHT,
-                    sidebar_width,
-                    sidebar_on_right,
-                );
-                let (w, h) = match wry_rect.size {
-                    winit::dpi::Size::Logical(s) => (s.width as i32, s.height as i32),
-                    winit::dpi::Size::Physical(s) => (s.width as i32, s.height as i32),
-                };
+                for (pane_id, wm_rect) in &panes {
+                    let wry_rect = bsp_rect_to_wry_rect(
+                        wm_rect,
+                        STATUS_BAR_HEIGHT,
+                        URL_BAR_HEIGHT,
+                        sidebar_width,
+                        sidebar_on_right,
+                    );
+                    let (w, h) = match wry_rect.size {
+                        winit::dpi::Size::Logical(s) => (s.width as i32, s.height as i32),
+                        winit::dpi::Size::Physical(s) => (s.width as i32, s.height as i32),
+                    };
 
-                if self.terminal_manager.is_terminal(pane_id) {
-                    if let Some(ws) = self.egui_winit.as_ref() {
-                        let ctx = ws.egui_ctx();
-                        let metrics = CellMetrics::from_egui(ctx, 14.0);
-                        let cols = (w as f32 / metrics.cell_width).max(2.0) as u16;
-                        let rows = (h as f32 / metrics.cell_height).max(1.0) as u16;
-                        self.terminal_manager.resize(pane_id, cols, rows);
-                    }
-                } else {
-                    if w > 0 && h > 0 {
+                    if self.terminal_manager.is_terminal(pane_id) {
+                        if let Some(ws) = self.egui_winit.as_ref() {
+                            let ctx = ws.egui_ctx();
+                            let metrics = CellMetrics::from_egui(ctx, 14.0);
+                            let cols = (w as f32 / metrics.cell_width).max(2.0) as u16;
+                            let rows = (h as f32 / metrics.cell_height).max(1.0) as u16;
+                            self.terminal_manager.resize(pane_id, cols, rows);
+                        }
+                    } else if w > 0 && h > 0 {
                         self.offscreen_panes.resize(pane_id, w, h);
+                    }
+                }
+            }
+            #[cfg(not(feature = "terminal"))]
+            {
+                for (_pane_id, wm_rect) in &panes {
+                    let wry_rect = bsp_rect_to_wry_rect(
+                        wm_rect,
+                        STATUS_BAR_HEIGHT,
+                        URL_BAR_HEIGHT,
+                        sidebar_width,
+                        sidebar_on_right,
+                    );
+                    let (w, h) = match wry_rect.size {
+                        winit::dpi::Size::Logical(s) => (s.width as i32, s.height as i32),
+                        winit::dpi::Size::Physical(s) => (s.width as i32, s.height as i32),
+                    };
+
+                    if w > 0 && h > 0 {
+                        self.offscreen_panes.resize(_pane_id, w, h);
                     }
                 }
             }
