@@ -21,7 +21,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -93,6 +93,21 @@ jobs:
 
       - name: Run benchmarks (quick)
         run: AILERON_TESTING=1 xvfb-run -a cargo bench --bench benchmarks -- --quick
+
+      - name: Generate code coverage
+        uses: actions-rs/tarpaulin@v0.1
+        with:
+          version: "0.31.0"
+          args: "--lib --timeout 300 --out Xml"
+          env:
+            AILERON_TESTING: "1"
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        with:
+          files: cobertura.xml
+          fail_ci_if_error: false
+          verbose: true
 
   build-macos:
     name: macOS build check
