@@ -92,7 +92,7 @@ impl AileronApp {
             interceptor_registry,
         ) {
             Ok(()) => {
-                #[cfg(feature = "terminal")]
+                #[cfg(all(target_os = "linux", feature = "terminal"))]
                 if is_terminal {
                     match self.terminal_manager.create_terminal(pane_id, 80, 24) {
                         Ok(_size) => {
@@ -213,7 +213,7 @@ impl AileronApp {
             interceptor_registry,
         ) {
             Ok(()) => {
-                #[cfg(feature = "terminal")]
+                #[cfg(all(target_os = "linux", feature = "terminal"))]
                 if is_terminal {
                     match self.terminal_manager.create_terminal(pane_id, 80, 24) {
                         Ok(_size) => {

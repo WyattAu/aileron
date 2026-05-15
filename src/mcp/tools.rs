@@ -1221,6 +1221,9 @@ mod tests {
 
     #[test]
     fn test_search_web() {
+        if std::env::var("AILERON_NETWORK_TESTS").is_err() {
+            return; // Skip: requires network access to DuckDuckGo API
+        }
         let tool = SearchWebTool;
         let args = json!({"query": "rust programming"});
         let result = tool.execute(&args).unwrap();
