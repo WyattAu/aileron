@@ -9,7 +9,7 @@
 - **Zero clippy warnings** (all-targets -D warnings)
 - **Zero vulnerabilities** (cargo audit)
 - **19 unsafe blocks** (FFI: WebKitGTK, Cairo, X11, spellcheck -- all with SAFETY comments)
-- **~51,300 lines of Rust** across 135 source files
+- **~51,358 lines of Rust** across 135 source files
 - **Clean build time:** 7m 14s (dev, 6-core x86_64); ~2.5m incremental
 - **Release profile:** LTO thin + strip + panic=abort + codegen-units=1
 - **Feature gates:** mcp, arp, sync, passwords (with dependency-level gating)
@@ -26,9 +26,9 @@
 - **Test count:** 1038 lib, 253 integration (13 suites), 4 doc = 1295 total
 - **Duplicate code:** X11 error handler consolidated, spellcheck FFI deduplicated
 - **Data race fix:** proxy set_var removed from post-spawn command handler
-- **#[must_use]:** 48 attributes across 28 files (all public Result/Option returns; 8 added in v0.18.1)
+- **#[must_use]:** 49 attributes across 21 files (all public Result/Option returns; 8 added in v0.18.1)
 - **unwrap() audit:** 0 risky unwrap() in production code (all on compile-time constants)
-- **File splits:** wry_engine.rs 2550->1153 lines (extracted wry_pages.rs), main.rs 2529->2418 lines (extracted event_handlers.rs)
+- **File splits:** wry_engine.rs 2550->1166 lines (extracted wry_pages.rs), main.rs 2529->2618 lines (extracted event_handlers.rs)
 - **i18n test fix:** Eliminated flaky env var race in locale detection tests (pure parse_lang_env function)
 - **New integration tests:** input routing (34), lua scripting (51), frame_tasks (20), key_conversion unit (14)
 

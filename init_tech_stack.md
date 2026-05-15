@@ -1,3 +1,6 @@
+> HISTORICAL DOCUMENT -- Pre-implementation tech stack analysis from project
+> inception (2026-04). Many crates listed here were replaced during development.
+> Refer to `Cargo.toml` for the current dependency set.
 
 ### Layer 1: The Rendering & Graphics Pipeline (The Core)
 *This is the heaviest layer. It is responsible for parsing the web and painting pixels.*

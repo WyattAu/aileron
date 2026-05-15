@@ -12,10 +12,10 @@
 | Clippy | Zero warnings (all-targets, -D warnings) |
 | Formatting | Zero issues (cargo fmt) |
 | Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck) |
-| #[must_use] | 48 attributes across 21 files |
+| #[must_use] | 49 attributes across 21 files |
 | Release profile | LTO thin, strip, panic=abort, codegen-units=1 |
 | Binary size | ~21 MB stripped (x86_64 Linux) |
-| LOC | 51,303 Rust across 135 source files |
+| LOC | 51,358 Rust across 135 source files |
 | CI | Linux (full), macOS (compile), Windows (compile), cross-compile matrix |
 | Pre-commit | 6-gate enforcement (fmt, clippy, lib, doc, 13-suite integration, doc gen) |
 | Vulnerability scan | Zero critical (13 allowed warnings from transitive GTK3 deps) |
@@ -250,8 +250,8 @@ Per ADR-002 (dual-engine strategy): wry now, Servo later.
 | docs/lua-scripting.md | Current | Update `aileron.theme.set` when non-placeholder |
 | docs/extension-api.md | Current | Update as APIs are implemented |
 | Architecture ADRs | 11 ADRs | Add ADR-012 for feature flag cleanup |
-| docs/config-reference.md | Missing | Create standalone config reference |
-| docs/keybindings-reference.md | Missing | Create standalone keybindings reference |
+| docs/config-reference.md | Complete | 645-line standalone config reference |
+| docs/keybindings-reference.md | Complete | 354-line standalone keybindings reference |
 
 ---
 

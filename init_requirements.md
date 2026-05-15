@@ -1,4 +1,6 @@
-
+> HISTORICAL DOCUMENT -- Pre-implementation requirements from project inception (2026-04).
+> Many design decisions evolved during implementation. Refer to `Cargo.toml` for
+> the current dependency set and `docs/` for authoritative documentation.
 
 ### Phase 1: Core Infrastructure & Tooling
 *The foundational Rust stack that powers the application.*

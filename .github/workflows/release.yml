@@ -11,6 +11,7 @@ jobs:
   build-release:
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -49,7 +50,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             libwebkit2gtk-4.1-dev:arm64 libgtk-3-dev:arm64 \
-            libssl-dev:arm64 libsqlite3-dev:arm64 \
+            libssl-dev:arm64 libsqlite3-dev:arm64 libvulkan-dev:arm64 \
+            libx11-dev:arm64 \
             pkg-config clang
 
       - name: Install Rust toolchain
@@ -80,7 +82,8 @@ jobs:
         shell: pwsh
         run: |
           cd target/${{ matrix.target }}/release
-          Get-FileHash aileron.exe -Algorithm SHA256 | Format-List
+          $hash = (Get-FileHash aileron.exe -Algorithm SHA256).Hash
+          "$hash  aileron.exe" | Out-File -Encoding ascii "aileron-${{ matrix.target }}.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -94,6 +97,7 @@ jobs:
     name: Publish GitHub Release
     needs: build-release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

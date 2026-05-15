@@ -45,7 +45,7 @@
 2. **Servo non-functional:** Engine selection lists `servo` but the implementation is a skeleton. Users must understand this is experimental.
 3. **WebDAV sync not implemented:** README previously claimed "ready for implementation." Actual code: Local/SSH transport only.
 4. **Background JS evaluation not implemented:** Extension background scripts are loaded but not executed in a JS runtime.
-5. **`#[must_use]` coverage:** 48 attributes across 28 files. All public functions returning Result/Option now annotated (8 missing found and fixed in v0.18.1).
+5. **`#[must_use]` coverage:** 49 attributes across 21 files. All public functions returning Result/Option now annotated (8 missing found and fixed in v0.18.1).
 6. **Silent error swallowing:** ~11 silent swallows converted to tracing::warn in v0.18.0. ~15 benign channel-send failures remain (shutdown race, not critical).
 7. **Integration test gaps:** All 13 suites now have integration coverage. Remaining gap: website visit test (requires display server).
 

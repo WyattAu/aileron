@@ -31,7 +31,7 @@
 - **Documentation:** Zero emojis, technically accurate, API signatures match source
 - **Determinism:** BTreeMap for sync manifest serialization, cached pane lists
 - **Error handling:** All silent swallows converted to `tracing::warn`
-- **`#[must_use]`:** 48 attributes across 21 files
+- **`#[must_use]`:** 49 attributes across 21 files
 - **`unwrap()` audit:** Zero risky unwrap() in production code paths
 - **Concurrency:** 18 PASS, 12 WARN, 0 FAIL, 0 deadlocks
 

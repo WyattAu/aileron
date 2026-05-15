@@ -122,7 +122,7 @@ LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH" ./target/debug/aileron
 ## Test
 
 ```bash
-# Unit tests (999 tests)
+# Unit tests (1038 tests)
 cargo test --lib -- --test-threads=4
 
 # Integration tests
@@ -306,12 +306,14 @@ custom_css = ""                       # Inline CSS or path to CSS file
 
 # ── Rendering ──────────────────────────────────
 render_mode = "offscreen"             # "offscreen" (texture) | "native" (window)
-engine_selection = "auto"             # "auto" | "webkit" | "servo"
+engine_selection = "webkit"            # "auto" | "webkit" | "servo"
 adaptive_quality = true               # Reduce frame rate when slow
 
 # ── Search ──────────────────────────────────────
 search_engine = "https://duckduckgo.com/?q={query}"
-palette_max_results = 20              # Command palette result limit
+
+[palette]
+max_results = 20                    # Command palette result limit
 
 # ── Session ─────────────────────────────────────
 restore_session = false               # Restore last workspace on startup
@@ -326,7 +328,7 @@ init_lua_path = ""                    # Path to custom init.lua
 sync_target = ""                      # SSH target or local path
 sync_encrypted = false                # E2EE for sync
 sync_auto = false                     # Auto-sync via filesystem watcher
-sync_auto_interval_sec = 300          # Auto-sync interval
+sync_auto_interval_sec = 60           # Auto-sync interval
 
 # ── ARP (Remote Protocol) ──────────────────────
 arp_port = 19743                      # WebSocket server port

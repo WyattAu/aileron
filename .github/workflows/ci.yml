@@ -75,9 +75,9 @@ jobs:
         run: cargo doc --no-deps --all-features 2>&1 | tee doc-output.txt
 
       - name: Security audit
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
 
       - name: Cross-compile check (x86_64-unknown-linux-gnu)
         run: cargo check --target x86_64-unknown-linux-gnu
@@ -92,17 +92,17 @@ jobs:
         run: AILERON_TESTING=1 cargo test --doc
 
       - name: Run benchmarks (quick)
-        run: AILERON_TESTING=1 xvfb-run -a cargo bench --bench benchmarks -- --quick
+        run: AILERON_TESTING=1 xvfb-run -a cargo bench --bench benchmarks -- --sample-size 10
 
       - name: Generate code coverage
         run: |
-          cargo install cargo-tarpaulin --version 0.31.0 --locked
-          AILERON_TESTING=1 cargo tarpaulin --lib --timeout 300 --out Xml
+          cargo install cargo-llvm-cov --locked
+          cargo llvm-cov --lib --lcov --output-path lcov.info
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v4
         with:
-          files: cobertura.xml
+          files: lcov.info
           fail_ci_if_error: false
           verbose: true
 
@@ -221,7 +221,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            webkit2gtk-4.1-dev libgtk-3-dev libssl-dev libsqlite3-dev libvulkan-dev pkg-config clang
+            webkit2gtk-4.1-dev libgtk-3-dev libssl-dev libsqlite3-dev libvulkan-dev pkg-config clang xvfb
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -238,7 +238,7 @@ jobs:
             bench-${{ runner.os }}-
 
       - name: Run benchmarks
-        run: cargo bench -- --output-format bencher | tee benchmark-results.txt
+        run: AILERON_TESTING=1 xvfb-run -a cargo bench -- --output-format bencher | tee benchmark-results.txt
 
       - name: Verify benchmark baselines
         run: |
