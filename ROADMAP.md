@@ -1,330 +1,350 @@
-# Aileron Roadmap v0.19.0 -- v1.0.0
+# Aileron Roadmap: v0.21 to v2.0 and Beyond
 
-## Current State (2026-05-14)
+## Current State (v0.20.0)
 
-- **Version:** 0.20.0 (shipped)
-- **Tests:** 1038 lib, 253 integration (13 suites), 4 doc (1295 total)
-- **Code:** 51,303 lines Rust across 135 source files
-- **Quality:** Zero clippy warnings, zero fmt issues, pre-commit hook enforced
-- **Unsafe:** 19 blocks (all FFI: WebKitGTK, Cairo, X11, spellcheck -- all with SAFETY comments)
-- **CI:** Linux (full with integration tests), macOS (compile), Windows (compile), cross-compile matrix
-- **Pre-commit:** 6-gate hook (fmt, clippy, lib, doc, integration, docs gen)
-- **Platform:** Linux primary (x86_64), macOS/Windows compile-only
+| Metric | Value |
+|--------|-------|
+| Version | 0.20.0 |
+| Tests | 1038 lib, 253 integration (13 suites), 4 doc = 1295 total |
+| Clippy | Zero warnings (all-targets, -D warnings) |
+| Formatting | Zero issues (cargo fmt) |
+| Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck -- SAFETY commented) |
+| #[must_use] | 49 attributes across 21 files |
+| LOC | 51,358 Rust across 135 source files |
+| Binary size | ~21 MB stripped (x86_64 Linux) |
+| CI | 8 jobs: Linux test, macOS check, Windows check, cross-compile (3 targets), fmt, benchmark |
+| Coverage | cargo-llvm-cov (lcov) via Codecov |
+| Pre-commit | 7-gate enforcement (fmt, check, clippy, lib, doc, 13-suite integration, doc gen) |
+| GitHub Pages | Deployed at https://wyattau.github.io/aileron/ |
+| Platforms | Linux (primary), macOS (compile), Windows (compile) |
 
----
+## Execution Model
 
-## Phase 1: Hardening and Correctness (v0.19.0)
-
-### 1.1 Unsafe Block Reduction
-
-The 19 unsafe blocks fall into three categories:
-
-| Category | Count | Action |
-|----------|-------|--------|
-| `std::env::set_var` / `remove_var` | ~10 (in tests) | Test blocks are acceptable. Production blocks in `commands.rs` (proxy command) run after thread spawn -- refactor to use thread-local or move before thread creation. |
-| WebKitGTK / Cairo FFI | ~6 | Required, justified. Add SAFETY documentation comments where missing. |
-| X11 error handler / spellcheck | ~3 | Consolidated to single module. |
-
-**Deliverables:**
-- [x] Consolidate duplicate X11 error handler into `platform/x11.rs`, import in `main.rs`
-- [x] Refactor `commands.rs` proxy `set_var` to avoid post-spawn env mutation
-- [x] Add `// SAFETY:` comments to all FFI unsafe blocks missing them
-- [x] Consolidate duplicate spellcheck FFI between `offscreen_webview.rs` and `wry_engine.rs` into shared helper
-
-### 1.2 Test Coverage Expansion
-
-Current gaps in integration test coverage:
-
-| Module | Lib Tests | Integration Tests | Gap |
-|--------|-----------|-------------------|-----|
-| db/ | 38 | 0 | No integration tests for SQLite operations |
-| net/adblock | 48 | 0 | No end-to-end filter + block test |
-| extensions/ | 82 | 0 | No extension load + content script injection test |
-| mcp/ | 24 | 0 | No end-to-end MCP tool call test |
-| sync/ | 12 | 0 | No end-to-end sync manifest roundtrip test |
-| downloads/ | 8 | 0 | No download manager integration test |
-| terminal/ | 12 | 0 | No PTY lifecycle integration test |
-
-**Deliverables:**
-- [x] `tests/db_integration.rs` -- workspace save/load, bookmark CRUD, history dedup
-- [x] `tests/adblock_integration.rs` -- load EasyList, verify block/allow on known domains
-- [x] `tests/extension_integration.rs` -- load manifest, fire content script, verify JS injection
-- [x] `tests/mcp_integration.rs` -- JSON-RPC initialize, tools/list, tools/call roundtrip
-- [x] `tests/sync_integration.rs` -- manifest computation, delta detection, age encrypt/decrypt
-
-### 1.3 Code Quality Hardening
-
-**Deliverables:**
-- [x] Add `#[must_use]` to all fallible function returns (Result, Option)
-- [x] Replace remaining `unwrap()` in non-test code with `?` or explicit error handling
-- [x] Audit all `expect()` messages for actionability (no "this should never happen")
-- [x] Add `cargo doc` generation to CI and fix all `#[warn(missing_docs)]` items
+Each release targets a 2-3 week cadence. Items are organized by dependency order. Blocked items are marked with their blocker and tracked separately.
 
 ---
 
-## Phase 2: Performance (v0.20.0)
+## v0.21: Performance and Hot-Path Optimization
 
-### 2.1 Frame Budget Compliance
+**Target:** 2-3 weeks
+**Goal:** Eliminate per-frame allocations, establish performance baselines, harden CI
 
-Per `.specs/04_performance/performance_requirements.md`:
+### Priority 1: Frame Rendering Performance
 
-| Metric | Target | Current Status | Action |
-|--------|--------|----------------|--------|
-| 1 pane @ 60 fps | >= 60 fps | Likely met | Validate with frame counter |
-| 4 panes @ 30 fps | >= 30 fps | Unknown | Benchmark with 4-pane grid |
-| 16 panes @ 15 fps | >= 15 fps | Unknown | Benchmark; may need texture pooling |
-| Frame time jitter (1 sigma) | < 2 ms | Unknown | Add statistical frame profiler |
-| Cold start to first paint | < 2 s | Unknown | Measure and optimize |
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| P1-01 | Pre-allocate frame capture buffer (eliminate ~8MB/frame alloc in render.rs) | 2h | Pending |
+| P1-02 | Refactor tab display cache in panels.rs (eliminate 3-4 String clones per tab per frame) | 3h | Pending |
+| P1-03 | Change `panes()` to return iterator instead of cloned Vec (wm/tree.rs) | 2h | Pending |
+| P1-04 | Texture pooling for multi-pane scenarios (avoid per-frame texture creation) | 4h | Pending |
 
-**Deliverables:**
-- [ ] Add automated frame-time measurement to `profiling/` module
-- [ ] Create `benches/frame_bench.rs` -- multi-pane render benchmarks
-- [ ] Startup latency benchmark (cold start to first paint)
-- [ ] Texture pooling for multi-pane scenarios (avoid per-frame allocation)
+### Priority 2: Profiling Infrastructure
 
-### 2.2 Memory Optimization
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| P2-01 | Add frame-time percentile tracking to profiling module | 3h | Pending |
+| P2-02 | Create startup latency benchmark (cold start to first paint) | 2h | Pending |
+| P2-03 | Expand frame_bench.rs with multi-pane render benchmarks | 3h | Pending |
+| P2-04 | Implement tab-unload LRU with actual RSS memory measurement | 4h | Pending |
 
-**Deliverables:**
-- [ ] Add heap profiling to `profiling/memory.rs` (track per-pane allocation)
-- [ ] Implement tab-unload LRU with actual memory measurement (not just heuristic)
-- [ ] Audit and reduce Clone/Arc overhead on hot paths (frame_tasks, wry_actions)
+### Priority 3: Build and CI
 
-### 2.3 Build Time Reduction
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| P3-01 | Profile compile times with `cargo build --timings`, optimize split | 2h | Pending |
+| P3-02 | Evaluate cranelift codegen backend for faster debug builds | 2h | Pending |
+| P3-03 | Store benchmark baselines in CI, fail on >10% regression | 4h | Pending |
+| P3-04 | Feature gate `terminal` module behind `terminal` feature (reduce cold compile) | 3h | Pending |
+| P3-05 | Feature gate `lua` module behind `lua` feature | 2h | Pending |
+| P3-06 | Further split main.rs (2618 lines -> target <2000) | 3h | Pending |
 
-**Deliverables:**
-- [ ] Profile compile times with `cargo build --timings`
-- [ ] Evaluate `cranelift` codegen backend for debug builds
-- [x] Split `offscreen_webview.rs` (2500+ lines) and `main.rs` (2400+ lines) into smaller modules
+### Success Criteria for v0.21
 
----
-
-## Phase 3: Platform Expansion (v0.21.0)
-
-### 3.1 macOS
-
-Current status: compile-only. Steps to daily-driver:
-
-| Task | Effort | Blocker |
-|------|--------|---------|
-| Run tests on macOS CI | Low | None |
-| Verify WebKit rendering on macOS | Medium | None |
-| Implement macOS-native file dialog (NSOpenPanel) | Medium | None |
-| macOS-specific keymap (Cmd vs Ctrl) | Medium | None |
-| Sign and notarize for distribution | High | Apple Developer account |
-
-### 3.2 Windows
-
-Current status: compile-only. Steps:
-
-| Task | Effort | Blocker |
-|------|--------|---------|
-| Run tests on Windows CI | Low | None |
-| Verify WebView2 rendering | Medium | None |
-| Windows-native file dialog | Medium | None |
-| Windows-specific keymap (Alt vs Ctrl) | Medium | None |
-| Windows installer (MSIX or NSIS) | High | Code signing certificate |
-
-### 3.3 Cross-Platform CI
-
-**Deliverables:**
-- [ ] Add macOS test execution to CI (not just compile check)
-- [ ] Add Windows test execution to CI (not just compile check)
-- [ ] Cross-platform integration test matrix
+- [ ] Zero per-frame heap allocations on critical rendering path
+- [ ] Startup latency < 2s cold, < 500ms warm
+- [ ] Benchmark baselines stored and regression-checked in CI
+- [ ] Debug build time reduced by >15% from feature gating
 
 ---
 
-## Phase 4: Servo Integration (v0.22.0)
+## v0.22: Platform Expansion (macOS)
 
-### 4.1 Servo Readiness
+**Target:** 2-3 weeks
+**Goal:** First-class macOS support with verified rendering and tests
 
-Per `ADR-002` (dual-engine strategy): wry now, Servo later.
+### Priority 1: macOS Rendering
 
-Current Servo status: skeleton stub (`servo/servo_engine.rs`) with 7 no-op methods.
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| M1-01 | Verify WebKit rendering on macOS (WKWebView via wry) | 4h | Pending |
+| M1-02 | Implement macOS-native file dialog (NSOpenPanel via objc FFI) | 6h | Pending |
+| M1-03 | macOS-specific keymap (Cmd vs Ctrl, system shortcuts) | 4h | Pending |
+| M1-04 | Verify offscreen rendering path on macOS | 4h | Pending |
 
-**Prerequisites (external):**
-- Servo's `Embedder` trait stabilization
-- Servo's wgpu texture export support
-- Servo's SpiderMonkey JS engine API
+### Priority 2: macOS CI and Distribution
 
-**Deliverables (when Servo is ready):**
-- [ ] Implement `ServoPane::new()` with real Servo initialization
-- [ ] Implement `ServoPane::navigate()` with real URL loading
-- [ ] Implement texture sharing via `servo/texture_share.rs` (already scaffolded)
-- [ ] Engine selection runtime toggle (`:engine servo|webkit|auto`)
-- [ ] Per-domain compat overrides (`:compat-override add example.com servo`)
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| M2-01 | Run integration tests on macOS CI (xvfb not needed) | 2h | Pending |
+| M2-02 | Run clippy on macOS CI (catch platform-specific warnings) | 1h | Pending |
+| M2-03 | Create macOS install guide in CONTRIBUTING.md | 2h | Pending |
+| M2-04 | Test AUR-equivalent install path (cargo install, Homebrew formula) | 2h | Pending |
 
-### 4.2 Engine Abstraction Hardening
+### Blocked
 
-**Deliverables:**
-- [ ] Formalize `PaneRenderer` trait with full lifecycle (create, navigate, resize, destroy, execute_js, screenshot)
-- [ ] Add engine-specific benchmarks (wry vs servo render latency)
-- [ ] Graceful fallback when Servo crashes (auto-switch to wry, log error)
+| Item | Blocker | Mitigation |
+|------|---------|------------|
+| Code signing and notarization | Apple Developer account ($99/yr) | Defer to post-v1.0 or seek sponsor |
 
----
+### Success Criteria for v0.22
 
-## Phase 5: Extension API Completion (v0.23.0)
-
-### 5.1 WebExtensions API Surface
-
-Currently implemented: 6 API traits (runtime, tabs, storage, scripting, webRequest, permissions).
-
-Missing from MV3 spec:
-
-| API | Priority | Effort |
-|-----|----------|--------|
-| `alarms` | Medium | Low |
-| `cookies` | Medium | Medium |
-| `declarativeNetRequest` | High | High |
-| `devtools` | Low | High |
-| `i18n` | Low | Medium |
-| `menus/contextMenus` | Medium | Medium |
-| `notifications` | Medium | Low |
-| `permissions.request()` | High | Medium |
-| `scripting.registerContentScripts` | Done | -- |
-| `sidePanel` | Low | High |
-| `theme` | Low | Medium |
-| `webNavigation` | Medium | Medium |
-
-### 5.2 Extension Distribution
-
-**Deliverables:**
-- [ ] Extension store / marketplace specification
-- [ ] Extension signing and verification
-- [ ] Sandboxed extension installation (per-extension process isolation not feasible with wry; use JS sandbox)
+- [ ] `cargo test` passes all 1295 tests on macOS CI
+- [ ] WebKit renders real websites on macOS
+- [ ] File dialogs work natively on macOS
+- [ ] macOS keymap matches platform conventions
 
 ---
 
-## Phase 6: Sync Protocol Implementation (v0.24.0)
+## v0.23: Platform Expansion (Windows) and Extension API
 
-### 6.1 Core Sync
+**Target:** 3-4 weeks
+**Goal:** Windows support + extension infrastructure
 
-Per `.specs/02_architecture/sync_protocol_design.md`:
+### Priority 1: Windows
 
-| Component | Status | Effort |
-|-----------|--------|--------|
-| Manifest computation (content-addressed) | Implemented (sync::core) | -- |
-| Delta detection | Implemented (sync::core) | -- |
-| Age encryption (E2EE) | Implemented (sync::crypto) | -- |
-| WebDAV transport | Spec only | Medium |
-| Filesystem watcher | Implemented (sync::watcher) | -- |
-| CRDT conflict resolution | Spec only | High |
-| Actual sync execution | Not implemented | High |
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| W1-01 | Verify WebView2 rendering on Windows | 4h | Pending |
+| W1-02 | Windows-native file dialog (COM IFileDialog) | 6h | Pending |
+| W1-03 | Windows-specific keymap (Alt vs Ctrl) | 4h | Pending |
+| W1-04 | Run integration tests on Windows CI | 2h | Pending |
+| W1-05 | Run clippy on Windows CI | 1h | Pending |
 
-**Deliverables:**
-- [ ] Implement WebDAV transport layer (PUT/GET/DELETE/PROPFIND)
-- [ ] Implement sync execution loop (manifest -> delta -> upload -> download -> merge)
-- [ ] Implement CRDT merge for bookmarks (last-write-wins with operational transform)
-- [ ] Implement CRDT merge for history (union with dedup)
-- [ ] Add sync status UI (`:sync-status`, sync indicator in status bar)
+### Priority 2: Extension Infrastructure
 
----
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| E1-01 | Implement `cookies` API (get, set, remove, onChanged) | 8h | Pending |
+| E1-02 | Implement `declarativeNetRequest` rule engine | 12h | Pending |
+| E1-03 | Implement `permissions.request()` prompt | 4h | Pending |
+| E1-04 | Implement `alarms` API | 4h | Pending |
+| E1-05 | Implement `contextMenus` API | 6h | Pending |
+| E1-06 | Background script JS runtime (quick-js or v8 isolate) | 16h | Pending |
+| E1-07 | Port messaging between background and content scripts | 8h | Pending |
 
-## Phase 7: Polish and Growth (v0.25.0)
+### Blocked
 
-### 7.1 UX Polish
+| Item | Blocker | Mitigation |
+|------|---------|------------|
+| Windows code signing | EV code signing certificate | Defer to post-v1.0 |
+| Windows installer (MSIX) | Code signing + Microsoft Store account | Defer to post-v1.0 |
 
-| Feature | Description | Effort |
-|---------|-------------|--------|
-| Vertical tabs | Tab bar on left/right side | Low (already have sidebar) |
-| Tab groups | Color-coded tab groups | Medium |
-| Split pane tabs | Multiple tabs per pane | High |
-| Drag-and-drop tab reorder | Drag tabs between panes | Medium |
-| Tab search | Fuzzy search across open tabs | Low (already have `:tabs`) |
-| Keyboard macro recording | Record/replay key sequences | Medium |
-| Vim-style marks | Set/jump marks across panes | Low (partially done) |
-| Session manager | Visual session list with preview | Medium |
+### Success Criteria for v0.23
 
-### 7.2 Developer Experience
-
-| Feature | Description | Effort |
-|---------|-------------|--------|
-| `aileron --debug` | Structured debug output mode | Low |
-| `aileron --profile <dir>` | Custom profile directory | Low |
-| `aileron --dump-config` | Print resolved configuration | Low |
-| Performance overlay | Real-time FPS, memory, frame time graph | Low (partially done) |
-| Crash reporter | Structured crash dump with stack trace | Medium |
-| Telemetry opt-in | Anonymous usage statistics | Low |
-
-### 7.3 Documentation
-
-| Document | Status | Action |
-|----------|--------|--------|
-| README.md | Current | Maintain with each release |
-| CONTRIBUTING.md | Current | Add pre-commit hook documentation |
-| docs/lua-scripting.md | Current | Add `aileron.theme.set` non-placeholder docs |
-| docs/extension-api.md | Current | Update as new APIs are implemented |
-| Architecture ADRs | 11 ADRs | Add ADR-012 for feature flag cleanup |
-| Inline documentation | Partial | Add `#[warn(missing_docs)]` and fix all warnings |
+- [ ] `cargo test` passes on Windows CI
+- [ ] WebView2 renders real websites on Windows
+- [ ] At least 4 additional extension APIs implemented
+- [ ] Background script JS runtime functional
 
 ---
 
-## Phase 8: v1.0.0 Release Criteria
+## v0.24: Sync Protocol and Privacy
 
-### Must-Have (Blockers)
+**Target:** 3-4 weeks
+**Goal:** Operational cross-device sync with E2EE
 
-- [ ] All Phase 1 items (hardening, correctness, test coverage)
-- [ ] macOS runs tests in CI
-- [ ] Windows runs tests in CI
-- [ ] Zero unsafe blocks without SAFETY comments
-- [ ] Zero `unwrap()` in production code paths
-- [ ] >= 95% branch coverage on critical paths (wm, input, extensions, adblock)
-- [ ] All performance targets met (per performance_requirements.md)
-- [ ] Complete user-facing documentation (README, keybindings, config reference, scripting guide)
+### Priority 1: WebDAV Sync
 
-### Should-Have
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| S1-01 | Implement WebDAV transport (PUT/GET/DELETE/PROPFIND via reqwest) | 12h | Pending |
+| S1-02 | WebDAV authentication (HTTP Basic, Bearer) | 4h | Pending |
+| S1-03 | WebDAV retry with exponential backoff | 3h | Pending |
+| S1-04 | Sync execution loop (manifest -> delta -> upload -> download -> merge) | 8h | Pending |
+| S1-05 | CRDT merge for bookmarks (last-write-wins + operational transform) | 8h | Pending |
+| S1-06 | CRDT merge for history (union with dedup) | 4h | Pending |
+| S1-07 | Sync status UI (`:sync-status`, status bar indicator) | 4h | Pending |
+| S1-08 | Conflict UI (`:sync-conflicts` panel) | 6h | Pending |
 
-- [ ] Servo engine functional (even if experimental)
-- [ ] WebDAV sync operational
-- [ ] At least 8 of 11 missing WebExtensions APIs implemented
-- [ ] Flatpak build working
-- [ ] AUR package stable (not `-git`)
+### Priority 2: Privacy
 
-### Nice-to-Have
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| P1-01 | Fingerprint protection (canvas/WebGL/audio context override) | 8h | Pending |
+| P1-02 | Container/isolated tabs (per-pane cookie/storage partition) | 12h | Pending |
+| P1-03 | Form autofill expansion (Bitwarden identities, addresses, cards) | 8h | Pending |
 
-- [ ] Windows installer
-- [ ] macOS notarized build
-- [ ] Extension marketplace
-- [ ] CRDT conflict resolution for sync
-- [ ] Keyboard macro recording
+### Success Criteria for v0.24
 
----
-
-## Timeline Estimate
-
-| Phase | Version | Duration | Dependencies |
-|-------|---------|----------|-------------|
-| 1. Hardening | v0.19.0 | 2-3 weeks | None |
-| 2. Performance | v0.20.0 | 2-3 weeks | Phase 1 |
-| 3. Platform | v0.21.0 | 3-4 weeks | Phase 1 (for CI tests) |
-| 4. Servo | v0.22.0 | 4-8 weeks | External (Servo API) |
-| 5. Extensions | v0.23.0 | 3-4 weeks | Phase 1 |
-| 6. Sync | v0.24.0 | 2-3 weeks | Phase 1 |
-| 7. Polish | v0.25.0 | 2-3 weeks | Phases 1-6 |
-| 8. v1.0.0 | v1.0.0 | 1-2 weeks | All phases |
-
-**Estimated total:** 19-30 weeks to v1.0.0 (depending on Servo readiness and platform testing).
+- [ ] WebDAV sync round-trips bookmarks and history between two instances
+- [ ] E2EE sync with passphrase (age encryption)
+- [ ] Conflict resolution UI functional
+- [ ] Fingerprint randomization reduces uniqueness score
 
 ---
 
-## Technical Debt Inventory
+## v0.25: UX Polish and Distribution
 
-| Item | Priority | Effort | Location |
-|------|----------|--------|----------|
-| `main.rs` size (2500+ lines) | Medium | Medium | `src/main.rs` |
-| `offscreen_webview.rs` size (1373 lines) | Medium | Medium | `src/offscreen_webview.rs` |
-| Servo stub methods (7 no-ops) | Low | N/A (blocked) | `servo/servo_engine.rs` |
-| No code coverage measurement in CI | Medium | Low | `.github/workflows/ci.yml` |
-| VERSION.md stale LOC/binary size | Low | Low | `VERSION.md:103-106` |
+**Target:** 3-4 weeks
+**Goal:** Daily-driver UX + distribution infrastructure
+
+### Priority 1: UX
+
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| U1-01 | Tab-within-pane (multiple tabs per BSP leaf node) | 12h | Pending |
+| U1-02 | Drag-and-drop tab reorder | 6h | Pending |
+| U1-03 | Tab search (fuzzy search across open tabs) | 3h | Pending |
+| U1-04 | Session manager (visual session list with preview) | 8h | Pending |
+| U1-05 | Workspace templates (predefined pane layouts) | 4h | Pending |
+| U1-06 | Keyboard macro recording (`:macro-record`, `:macro-play`) | 8h | Pending |
+| U1-07 | Reader mode enhancement (reading time, font controls, save-to-markdown) | 6h | Pending |
+
+### Priority 2: Distribution
+
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| D1-01 | Linux: AppImage build (via cargo-bundle) | 4h | Pending |
+| D1-02 | Linux: Flatpak build (manifest already exists, needs verification) | 6h | Pending |
+| D1-03 | Linux: AUR stable package (non-git) | 2h | Pending |
+| D1-04 | Auto-update check (GitHub API version comparison on startup) | 4h | Pending |
+| D1-05 | CLI flags: `--debug`, `--profile <dir>`, `--dump-config` | 3h | Pending |
+
+### Success Criteria for v0.25
+
+- [ ] Multiple tabs per pane functional
+- [ ] At least 2 Linux distribution formats (AppImage + Flatpak or AUR stable)
+- [ ] Auto-update notification functional
+- [ ] Session manager saves and restores workspace templates
 
 ---
 
-## Risk Register
+## v1.0.0: Production Release
+
+**Target:** 2-3 weeks (stabilization)
+**Goal:** Production-ready browser for developers
+
+### v1.0 Must-Have (all required for release)
+
+| ID | Requirement | Status |
+|----|-------------|--------|
+| R1 | All 1295+ tests pass on Linux, macOS, Windows | Pending |
+| R2 | >= 95% branch coverage on critical paths (wm, input, extensions, adblock) | Pending |
+| R3 | Zero critical clippy warnings on all 3 platforms | Pending |
+| R4 | All performance targets validated (startup <2s, input latency <16ms) | Pending |
+| R5 | Documentation complete: README, config, keybindings, scripting, extension API | Partial |
+| R6 | No misleading claims in documentation (Servo = experimental, not functional) | Done |
+| R7 | Reproducible builds (Nix flake verified) | Pending |
+| R8 | External security audit passed | Pending |
+| R9 | At least 8 additional MV3 APIs implemented beyond current set | Pending |
+| R10 | WebDAV sync operational with E2EE | Pending |
+
+### v1.0 Should-Have
+
+| ID | Requirement | Status |
+|----|-------------|--------|
+| S1 | Servo engine functional (even if experimental) | Blocked |
+| S2 | Flatpak published on Flathub | Pending |
+| S3 | macOS notarized build | Blocked |
+| S4 | Windows installer (MSIX) | Blocked |
+| S5 | Crash reporter with telemetry opt-in | Pending |
+| S6 | Keyboard macro recording | Pending |
+| S7 | Extension marketplace specification | Pending |
+
+### v1.0 Release Process
+
+1. Create `release/v1.0.0` branch from `main`
+2. Freeze features; only bug fixes allowed
+3. Run full test matrix on all 3 platforms
+4. Generate SBOM, verify dependency checksums
+5. Tag `v1.0.0-rc.1`, build release artifacts
+6. Internal testing (1 week)
+7. Address any critical issues
+8. Tag `v1.0.0`, trigger release workflow
+9. Publish to AUR, update documentation site
+10. Announcement blog post / GitHub discussion
+
+### Success Criteria for v1.0
+
+- [ ] All R1-R10 requirements met
+- [ ] At least 5 S1-S7 requirements met
+- [ ] Zero P0/P1 bugs open
+- [ ] Documentation reviewed by external contributor
+- [ ] Release artifacts available for Linux, macOS, Windows
+
+---
+
+## Post-v1.0: Future Horizons
+
+### Horizon 1: Multi-Device Ecosystem (v1.1-v1.2)
+
+| Feature | Description | Dependencies |
+|---------|-------------|--------------|
+| ARP mobile client | Flutter/SwiftUI mobile app for remote tab control | ARP protocol stabilization |
+| Push sync | Real-time cross-device sync via WebSocket | v1.0 sync infrastructure |
+| Cross-device clipboard | Encrypted clipboard sharing between devices | ARP protocol |
+| Remote tab access | View and control desktop tabs from mobile | ARP mobile client |
+| Multi-window | Independent tiled windows with shared state | WM refactoring |
+| Reading list | Save articles for later with offline caching | Sync infrastructure |
+| Passwordless auth | WebAuthn/passkey support for web forms | Security audit |
+
+### Horizon 2: AI-Native Browsing (v1.3-v1.4)
+
+| Feature | Description | Dependencies |
+|---------|-------------|--------------|
+| MCP agent expansion | DOM manipulation, multi-step workflows, data extraction | v0.23 extension JS runtime |
+| Local LLM integration | Ollama-backed summarization, translation, content analysis | No external deps |
+| Semantic history | Vector embeddings of visited pages for semantic search | Embedding model integration |
+| Workflow automation | Lua-driven browser automation without Selenium | v0.23 Lua infrastructure |
+| Smart tab management | AI-suggested tab grouping, auto-close stale tabs | Semantic history |
+
+### Horizon 3: Rendering Independence (v1.5-v1.6)
+
+| Feature | Description | Dependencies |
+|---------|-------------|--------------|
+| Servo as default engine | When Servo Embedder API stabilizes | Servo project milestone |
+| Multi-engine per pane | Different engines simultaneously | PaneRenderer trait formalization |
+| Custom renderer API | Third-party rendering plugins | Plugin ABI design |
+| Headless mode | Server-side rendering for automation | Servo or headless WebKit |
+
+### Horizon 4: Distributed Browsing (v2.0)
+
+| Feature | Description | Dependencies |
+|---------|-------------|--------------|
+| Remote rendering | Render on server, stream to thin client | GPU streaming infrastructure |
+| Session sharing | Collaborative browsing with shared pane state | CRDT sync |
+| Sandboxed containers | Per-tab OS-level isolation (Flatpak-like) | Platform integration |
+| Plugin ecosystem | Rust-based plugins with stable ABI | ABI specification |
+| Extension store | Curated extension repository | Extension API v1.0 |
+| Wasm extensions | WebAssembly extension sandbox | Wasm runtime integration |
+
+---
+
+## Cross-Cutting Risks
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| Servo Embedder API changes | High | High | Abstract behind PaneRenderer trait; wry as fallback |
+| Servo Embedder API not ready | High | Medium | wry/WebKitGTK remains primary; Servo is optional |
+| wry `!Send + !Sync` constraint | Certain | Medium | Arc<RwLock<>> + mpsc bridge pattern |
 | WebKitGTK API breakage | Medium | High | Pin wry version; test on multiple WebKitGTK versions |
-| wry `!Send + !Sync` constraint | Ongoing | Medium | Current Arc<RwLock<>> + mpsc bridge is functional |
-| macOS/Windows platform bugs | Medium | Medium | Extend CI to run tests, not just compile |
-| Extension API fragmentation | Medium | Low | Follow MV3 spec strictly; skip deprecated MV2 features |
-| Performance regression with feature additions | Medium | Medium | Automated regression detection in CI |
+| GTK3 deprecation (wry dependency) | Medium | High | Monitor wry GTK4 migration; no action needed until upstream moves |
+| Linux-only CI test coverage | Certain (until v0.22) | Medium | Prioritize macOS/Windows CI expansion |
+| Distribution gap (no signed builds) | Certain | High | Prioritize signing infrastructure in v0.25 |
+| Performance regression from new features | Medium | Medium | Benchmark regression CI in v0.21 |
+| Extension API compatibility breaks | Medium | Medium | Semantic versioning; deprecation period |
+
+## Timeline Estimate
+
+| Release | Target Date | Weeks from Now |
+|---------|------------|----------------|
+| v0.21 | 2026-06-05 | 3 |
+| v0.22 | 2026-06-26 | 6 |
+| v0.23 | 2026-07-24 | 9 |
+| v0.24 | 2026-08-21 | 13 |
+| v0.25 | 2026-09-18 | 17 |
+| v1.0.0-rc.1 | 2026-10-09 | 20 |
+| v1.0.0 | 2026-10-23 | 22 |
+| v1.1 | 2026-12 | 28 |
+| v2.0 | 2027-Q2 | 40+ |
+
+*Estimates assume single full-time developer. Parallel work on independent tracks can compress timeline.*
