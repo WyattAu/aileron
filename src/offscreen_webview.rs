@@ -9,14 +9,15 @@
 //! on Wayland and required XWayland workarounds.
 
 use std::collections::HashMap;
-use std::sync::{Arc, mpsc};
+#[cfg(target_os = "linux")]
+use std::sync::Arc;
+use std::sync::mpsc;
 
 use tracing::{info, warn};
 use url::Url;
 use uuid::Uuid;
 #[cfg(target_os = "linux")]
 use wry::WebViewBuilderExtUnix;
-#[cfg(target_os = "linux")]
 #[cfg(target_os = "linux")]
 use wry::{PageLoadEvent, WebViewBuilder};
 
@@ -1381,6 +1382,7 @@ mod tests {
             .expect("clear zoom");
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn test_is_pdf_url() {
         assert!(is_pdf_url("https://example.com/doc.pdf"));

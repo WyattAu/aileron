@@ -430,7 +430,7 @@ impl ApplicationHandler for AileronApp {
                             }
                         }
 
-                        #[cfg(feature = "terminal")]
+                        #[cfg(all(target_os = "linux", feature = "terminal"))]
                         if !is_terminal
                             && let Some(pane) = self.offscreen_panes.get_mut(&active_pane_id)
                         {

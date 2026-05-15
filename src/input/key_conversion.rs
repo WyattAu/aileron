@@ -169,6 +169,7 @@ mod tests {
 
     // ─── key_to_escape_sequence tests ───────────────────────────
 
+    #[cfg(feature = "terminal")]
     #[test]
     fn test_escape_special_keys() {
         assert_eq!(
@@ -183,6 +184,7 @@ mod tests {
         assert_eq!(key_to_escape_sequence(&Key::Tab, Modifiers::none()), "\t");
     }
 
+    #[cfg(feature = "terminal")]
     #[test]
     fn test_escape_arrows() {
         assert_eq!(
@@ -203,6 +205,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "terminal")]
     #[test]
     fn test_escape_shift_arrows() {
         assert_eq!(key_to_escape_sequence(&Key::Up, shift_mods()), "\x1b[1;2A");
@@ -220,6 +223,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "terminal")]
     #[test]
     fn test_escape_navigation_keys() {
         assert_eq!(
@@ -240,6 +244,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "terminal")]
     #[test]
     fn test_escape_function_keys() {
         assert_eq!(
@@ -292,6 +297,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "terminal")]
     #[test]
     fn test_escape_ctrl_letters() {
         let ctrl = Modifiers::ctrl();
@@ -301,6 +307,7 @@ mod tests {
         assert_eq!(key_to_escape_sequence(&Key::Character('z'), ctrl), "\x1a");
     }
 
+    #[cfg(feature = "terminal")]
     #[test]
     fn test_escape_ctrl_uppercase_maps_to_lowercase() {
         let ctrl = Modifiers::ctrl();
@@ -310,6 +317,7 @@ mod tests {
         assert_eq!(lower, upper, "Ctrl should be case-insensitive");
     }
 
+    #[cfg(feature = "terminal")]
     #[test]
     fn test_escape_ctrl_non_alpha_returns_empty() {
         let ctrl = Modifiers::ctrl();
@@ -318,6 +326,7 @@ mod tests {
         assert!(result.is_empty(), "Ctrl+0 should return empty sequence");
     }
 
+    #[cfg(feature = "terminal")]
     #[test]
     fn test_escape_alt_prefix() {
         assert_eq!(
@@ -334,6 +343,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "terminal")]
     #[test]
     fn test_escape_unknown_and_character_return_empty() {
         assert_eq!(key_to_escape_sequence(&Key::Unknown, Modifiers::none()), "");
