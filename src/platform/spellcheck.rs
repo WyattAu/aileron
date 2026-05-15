@@ -16,8 +16,8 @@ pub fn configure_webkit_spellcheck() {
         let ctx_ptr = gtk::glib::translate::ToGlibPtr::to_glib_none(&context).0;
         webkit2gtk::ffi::webkit_web_context_set_spell_checking_enabled(ctx_ptr, 1);
         // Null-terminated array required by WebKitGTK FFI.
-        let c_en_us = std::ffi::CString::new("en_US").unwrap();
-        let c_en_gb = std::ffi::CString::new("en_GB").unwrap();
+        let c_en_us = std::ffi::CString::new("en_US").expect("en_US contains no NUL bytes");
+        let c_en_gb = std::ffi::CString::new("en_GB").expect("en_GB contains no NUL bytes");
         let lang_ptrs: Vec<*const i8> = vec![c_en_us.as_ptr(), c_en_gb.as_ptr(), std::ptr::null()];
         webkit2gtk::ffi::webkit_web_context_set_spell_checking_languages(
             ctx_ptr,

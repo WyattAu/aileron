@@ -52,6 +52,10 @@ fn test_offscreen_webview_creates_and_captures() {
 
     let width = pixbuf.width();
     let height = pixbuf.height();
+    // SAFETY: pixbuf is a valid, non-null GdkPixbuf obtained from
+    // OffscreenWindow::pixbuf() (None case panics above on line 50).
+    // pixels() returns a raw pointer into the pixbuf's internal buffer,
+    // valid for pixbuf's lifetime, which spans the subsequent iterator usage.
     let pixels = unsafe { pixbuf.pixels() };
 
     // Verify we got actual pixel data

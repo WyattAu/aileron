@@ -142,6 +142,10 @@ criterion = { version = "0.5", features = ["html_reports"] }
 name = "benchmarks"
 harness = false
 
+[[bench]]
+name = "frame_bench"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = "thin"

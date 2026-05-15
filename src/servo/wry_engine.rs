@@ -937,7 +937,8 @@ pub fn pump_gtk() {
         // SAFETY: FFI call to g_log_set_handler. log_domain is a valid CString pointer.
         // glib_log_handler is a valid function pointer matching GLogFunc signature.
         unsafe {
-            let log_domain = std::ffi::CString::new("WebKitGTK").unwrap();
+            let log_domain =
+                std::ffi::CString::new("WebKitGTK").expect("WebKitGTK contains no NUL bytes");
             glib_sys::g_log_set_handler(
                 log_domain.as_ptr(),
                 glib_sys::G_LOG_LEVEL_MASK | glib_sys::G_LOG_FLAG_RECURSION,

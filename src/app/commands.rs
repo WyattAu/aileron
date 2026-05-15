@@ -438,7 +438,9 @@ impl AppState {
             return;
         }
         if query == "engine auto" || query == "engine servo" || query == "engine webkit" {
-            let val = query.strip_prefix("engine ").unwrap();
+            let val = query
+                .strip_prefix("engine ")
+                .expect("guarded: query starts with 'engine '");
             match val.parse::<crate::servo::EngineSelection>() {
                 Ok(selection) => {
                     self.config.engine_selection = selection.to_string();
