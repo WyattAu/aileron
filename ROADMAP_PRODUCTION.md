@@ -1,6 +1,6 @@
 # Aileron Production Roadmap: v0.20.0 to v1.0.0 and Beyond
 
-## Current State (2026-05-14)
+## Current State (2026-05-16)
 
 | Metric | Value |
 |--------|-------|
@@ -11,12 +11,13 @@
 | Total tests | 1295 |
 | Clippy | Zero warnings (all-targets, -D warnings) |
 | Formatting | Zero issues (cargo fmt) |
-| Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck) |
+| Unsafe blocks | 19 (12 FFI: WebKitGTK, Cairo, X11, spellcheck; 7 std::env set_var/remove_var in pre-thread-spawn contexts) |
 | Release profile | LTO thin, strip, panic=abort, codegen-units=1 |
 | Binary size | ~21 MB stripped (x86_64 Linux) |
-| LOC | ~51,303 Rust across 135 source files |
+| LOC | ~51,413 Rust across 135 source files |
 | CI | Linux (full), macOS (compile), Windows (compile), cross-compile matrix |
-| Pre-commit | 6-gate enforcement (fmt, clippy, lib, doc, 13-suite integration, doc gen) |
+| Pre-commit | 5-gate enforcement (fmt, check, clippy, lib, doc) |
+| Pre-push | 2-gate enforcement (13-suite integration, doc gen) |
 | Vulnerability scan | Zero critical (13 allowed warnings from transitive GTK3 deps) |
 
 ### Core Systems Status
@@ -302,8 +303,8 @@
 | CONTRIBUTING.md | Add macOS/Windows contributor guidance |
 | docs/lua-scripting.md | Navigate examples now functional (aileron.navigate() implemented) |
 | docs/extension-api.md | Document missing APIs as "planned" |
-| docs/config-reference.md | Create: full config.toml reference |
-| docs/keybindings-reference.md | Create: printable keybinding cheat sheet |
+| docs/config-reference.md | Maintain: update with new config options each release |
+| docs/keybindings-reference.md | Maintain: update with new bindings each release |
 | docs/architecture.md | Create: high-level architecture overview |
 | Architecture ADRs | Maintain with each major decision |
 
@@ -321,7 +322,7 @@
 - [ ] Windows runs full test suite in CI
 - [ ] >= 95% branch coverage on critical paths (wm, input, extensions, adblock)
 - [ ] All performance targets validated (per Section 2.1)
-- [x] Pre-commit hook passes deterministically (6-gate hook validated v0.18.1)
+- [x] Pre-commit hook passes deterministically (5-gate hook validated v0.18.1)
 - [ ] All documentation accurate and free of placeholder/stub claims
 - [ ] At least 8 of 11 missing MV3 WebExtensions APIs implemented
 - [ ] WebDAV sync operational
@@ -424,26 +425,27 @@
 | Rustfmt | `cargo fmt --all -- --check` | Zero issues |
 | Security audit | `cargo audit` | Zero critical vulnerabilities; 13 allowed transitive warnings (GTK3 unmaintained) |
 | Benchmarks | `cargo bench --no-run` | 27 benchmarks compile and pass |
-| Pre-commit hook | Bash script (6 gates) | All gates pass (fmt, clippy, lib, doc, integration, docs) |
+| Pre-commit hook | Bash script (5 fast + 2 pre-push gates) | All gates pass (fmt, check, clippy, lib, doc, integration, docs) |
 | Doc generation | `cargo doc --no-deps --all-features` | Compiles without warnings |
-| Unsafe audit | Manual + grep | 19 blocks (down from ~50), all FFI with SAFETY comments |
+| Unsafe audit | Manual + grep | 19 blocks (down from ~50), 12 FFI with SAFETY comments, 7 std::env set_var/remove_var |
 | Emoji audit | Regex scan | Zero emojis in documentation |
 | Stub audit | Grep `TODO\|FIXME\|STUB\|placeholder` | 0 code stubs; 1 legitimate STUB_GIF for adblock |
-| #[must_use] coverage | Grep | 48 attributes across 28 files; all public Result/Option returns annotated |
+| #[must_use] coverage | Grep | 49 attributes across 21 files; all public Result/Option returns annotated |
 
 ### CI Configuration Verification
 
-| Item | Pre-Commit Hook | GitHub Actions CI |
-|------|-----------------|-------------------|
-| `cargo fmt` | Checked | `fmt` job (ubuntu) |
-| `cargo clippy` | `--all-targets -D warnings` | `--all-targets -D warnings` (fixed) |
-| Unit tests | `cargo test --lib` | `cargo test --lib --release` |
-| Integration tests | All 13 suites | All 13 suites (fixed) |
-| Doc tests | `cargo test --doc` | `cargo test --doc` |
-| Doc generation | `cargo doc --no-deps --all-features` | `cargo doc --no-deps --all-features` |
-| Security audit | Not in hook | `cargo audit` |
-| Benchmarks | Not in hook | `cargo bench` (regression detection) |
-| Cross-compile | Not in hook | macOS/Windows/aarch64 checks |
+| Item | Pre-commit Hook | Pre-push Hook | GitHub Actions CI |
+|------|-----------------|---------------|-------------------|
+| `cargo fmt` | Checked | -- | `fmt` job (ubuntu) |
+| `cargo check` | Checked | -- | `test` job |
+| `cargo clippy` | `--all-targets -D warnings` | -- | `--all-targets -D warnings` |
+| Unit tests | `cargo test --lib` | -- | `cargo test --lib --release` |
+| Integration tests | -- | All 13 suites | All 13 suites |
+| Doc tests | `cargo test --doc` | -- | `cargo test --doc` |
+| Doc generation | -- | `cargo doc --no-deps --all-features` | `cargo doc --no-deps --all-features` |
+| Security audit | -- | -- | `cargo audit` |
+| Benchmarks | -- | -- | `cargo bench` (regression detection) |
+| Cross-compile | -- | -- | macOS/Windows/aarch64 checks |
 
 ---
 

@@ -13,7 +13,8 @@ git config core.hooksPath .githooks
 ```
 
 - **Pre-commit** runs fast checks: formatting (`cargo fmt`), compilation (`cargo check`), clippy (`-D warnings`), lib tests, and doc tests
-- **Pre-push** runs the full suite: all integration tests and documentation generation
+- **Pre-push** runs the full suite: all 13 integration test suites and documentation generation
+- Hooks use `AILERON_TESTING=1` and auto-detect `xvfb-run` for headless environments
 
 ### Prerequisites
 

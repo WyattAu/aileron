@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="Aileron — the keyboard-driven browser for developers. Vim-style interface, tiling panes, WebExtensions, MCP integration, and Lua scripting.">
-<title>Aileron — The keyboard-driven browser for developers</title>
+<meta name="description" content="Aileron — the keyboard-driven web environment for developers. Tiling panes, Vim-style interface, WebExtensions, MCP integration, Lua scripting, and embedded terminal.">
+<title>Aileron — The keyboard-driven web environment for developers</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#1a1a2e;--bg2:#16213e;--text:#e0e0e0;--text2:#a0a8b8;--accent:#4db4ff;--accent2:#3a8fd4;--code-bg:#0f1629;--border:#2a2a4a;--max-w:960px}
@@ -75,11 +75,10 @@ footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;borde
 <header class="hero" role="banner">
   <div class="container">
     <h1>Aileron</h1>
-    <p class="tagline">The keyboard-driven browser for developers<span>Take control of the web without reaching for the mouse.</span></p>
+    <p class="tagline">The terminal for the web<span>A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals.</span></p>
     <div class="buttons" role="group" aria-label="Install options">
       <a href="https://aur.archlinux.org/packages/aileron-git" class="btn btn-primary">Arch AUR</a>
       <a href="https://crates.io/crates/aileron" class="btn btn-outline">Cargo</a>
-      <a href="#" class="btn btn-outline">Nix</a>
     </div>
   </div>
 </header>
@@ -91,7 +90,7 @@ footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;borde
       <div class="grid">
         <article class="card">
           <h3 id="feat-kb">Keyboard-first</h3>
-          <p>Vim-style modal interface with Normal, Insert, and Command modes. Every action&mdash;navigation, tabs, history, search&mdash;mapped to keystrokes.</p>
+          <p>Vim-style modal interface with Normal, Insert, and Command modes. Press <code>f</code> for link hints, <code>Ctrl+P</code> for the command palette. Every action&mdash;navigation, tabs, history, search&mdash;mapped to keystrokes.</p>
         </article>
         <article class="card">
           <h3 id="feat-tiling">Tiling Panes</h3>
@@ -117,6 +116,22 @@ footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;borde
           <h3 id="feat-terminal">Embedded Terminal</h3>
           <p>Press backtick to open a native terminal pane. Uses alacritty_terminal for rendering with portable-pty for process management. SSH quick-connect, scrollback search, and mouse selection included.</p>
         </article>
+        <article class="card">
+          <h3 id="feat-passwords">Password Manager</h3>
+          <p>Built-in credential storage with Bitwarden integration. Auto-detect login forms, save credentials, and autofill with <code>:bw-unlock</code> / <code>:bw-autofill</code>.</p>
+        </article>
+        <article class="card">
+          <h3 id="feat-sync">Sync &amp; Remote</h3>
+          <p>Sync workspaces via local path or SSH with end-to-end encryption (Age). ARP WebSocket server enables remote tab access and clipboard sharing from mobile clients.</p>
+        </article>
+        <article class="card">
+          <h3 id="feat-i18n">Internationalization</h3>
+          <p>9 languages (EN, ZH, JA, KO, DE, FR, ES, PT, RU) with instant runtime switching via <code>:language</code>.</p>
+        </article>
+        <article class="card">
+          <h3 id="feat-themes">Theming</h3>
+          <p>7 built-in themes (dark, light, gruvbox, nord, dracula, solarized, catppuccin) plus custom theme support in config.</p>
+        </article>
       </div>
     </div>
   </section>
@@ -127,7 +142,7 @@ footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;borde
       <div class="arch">
         <div class="arch-item">
           <strong>WebKitGTK + future Servo</strong>
-          <p>WebKitGTK for stable rendering today. Servo integration is planned for next-gen rendering. Switch engines per-site with <code>:engine</code>.</p>
+          <p>WebKitGTK for stable rendering today. Servo integration is in early development (experimental skeleton). Switch engines per-site with <code>:engine</code>.</p>
         </div>
         <div class="arch-item">
           <strong>Offscreen rendering</strong>
@@ -146,7 +161,7 @@ footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;borde
       <h2 id="quickstart-heading">Quick Start</h2>
       <p>Install and launch in under a minute.</p>
       <pre role="region" aria-label="Installation commands"><code><span class="comment"># Arch Linux (AUR)</span>
-<span class="prompt">$ </span>paru -S aileron
+<span class="prompt">$ </span>paru -S aileron-git
 
 <span class="comment"># Cargo (any platform)</span>
 <span class="prompt">$ </span>cargo install aileron
@@ -160,6 +175,8 @@ footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;borde
     <div class="container">
       <div class="links" role="list">
         <a href="https://github.com/WyattAu/aileron" role="listitem">GitHub</a>
+        <a href="https://github.com/WyattAu/aileron/blob/main/CHANGELOG.md" role="listitem">Changelog</a>
+        <a href="https://github.com/WyattAu/aileron/blob/main/CONTRIBUTING.md" role="listitem">Contributing</a>
         <a href="extension-api.md" role="listitem">Extension API</a>
         <a href="lua-scripting.md" role="listitem">Lua Scripting</a>
         <a href="config-reference.md" role="listitem">Configuration Reference</a>
@@ -170,7 +187,7 @@ footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;borde
 </main>
 
 <footer role="contentinfo">
-  <p>Aileron &mdash; written in Rust, built for developers.</p>
+  <p>Aileron v0.20.0 &mdash; written in Rust, built for developers. <a href="https://github.com/WyattAu/aileron/blob/main/LICENSE">Apache-2.0</a></p>
 </footer>
 
 </body>
