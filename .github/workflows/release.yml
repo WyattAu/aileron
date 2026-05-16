@@ -36,6 +36,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Verify CI passed for this ref
+        run: |
+          gh run list --branch ${{ github.ref_name }} --status success --limit 1 --json databaseId --jq '.[0].databaseId'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install system dependencies (Linux native)
         if: runner.os == 'Linux' && matrix.cross_compile != true
         run: |
