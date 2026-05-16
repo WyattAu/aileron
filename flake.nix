@@ -70,6 +70,10 @@
           libGL
           libxkbcommon
           wayland
+          xorg.libX11
+          xorg.libXcursor
+          xorg.libXi
+          xorg.libXrandr
           vulkan-loader
           fontconfig
           freetype
@@ -90,6 +94,10 @@
         # Runtime wrapper: sets LD_LIBRARY_PATH + VK_ICD_FILENAMES + WINIT backend
         postInstall = ''
           mkdir -p $out/bin
+
+          # Move the actual binary to be wrapped
+          mv $out/bin/aileron $out/bin/.aileron-wrapped
+
           cat > $out/bin/aileron <<'EOF'
           #!/usr/bin/env bash
           set -e
@@ -112,9 +120,6 @@
           exec "$out/bin/.aileron-wrapped" "$@"
           EOF
           chmod +x $out/bin/aileron
-
-          # Move the actual binary to be wrapped
-          mv $out/bin/aileron $out/bin/.aileron-wrapped
 
           # Install desktop entry and icon
           install -Dm644 ${./resources/aileron.desktop} $out/share/applications/aileron.desktop
@@ -165,8 +170,6 @@
           export PKG_CONFIG_PATH="${pkgConfigPath}:$PKG_CONFIG_PATH"
           export WINIT_UNIX_BACKEND=wayland,x11
           export RUST_LOG="info"
-          # Point Vulkan to system GPU drivers (NVIDIA)
-          export VK_ICD_FILENAMES="/usr/share/vulkan/icd.d/nvidia_icd.json"
 
           echo "✈️  Welcome to the Aileron dev environment (CachyOS/Wayland/Vulkan ready)"
           echo "  Build:  cargo build"

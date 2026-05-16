@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+#
+# Aileron pre-push hook (full suite)
+# Runs integration tests and doc generation before allowing push
+#
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo -e "${YELLOW}[pre-push] Aileron full test suite${NC}"
+
+export AILERON_TESTING=1
+
+# Detect whether xvfb is needed
+if [ -z "${DISPLAY:-}" ] && command -v xvfb-run &>/dev/null; then
+    XVFB="xvfb-run -a"
+    echo -e "${YELLOW}No DISPLAY detected, using xvfb-run${NC}"
+else
+    XVFB=""
+fi
+
+# 1. Integration tests
+echo -e "${YELLOW}[1/2] Running integration tests...${NC}"
+if ! ${XVFB} cargo test --test integration_smoke --test startup_test \
+    --test db_integration --test adblock_integration \
+    --test mcp_integration --test sync_integration \
+    --test extension_integration --test frame_tasks_integration \
+    --test input_routing_integration --test lua_integration \
+    --test offscreen_render_test --test downloads_integration \
+    --test terminal_integration -- --test-threads=4 2>&1; then
+    echo -e "${RED}[FAIL] Integration tests failed.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}[PASS] Integration tests${NC}"
+
+# 2. Documentation generation
+echo -e "${YELLOW}[2/2] Generating documentation...${NC}"
+if ! cargo doc --no-deps --all-features 2>&1; then
+    echo -e "${RED}[FAIL] Documentation generation failed.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}[PASS] Documentation${NC}"
+
+echo -e "${GREEN}All pre-push gates passed. Pushing.${NC}"
+exit 0

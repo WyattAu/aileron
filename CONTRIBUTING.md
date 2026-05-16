@@ -4,6 +4,17 @@ Thanks for your interest in contributing! This is a keyboard-driven, tiling web 
 
 ## Development Setup
 
+### Git Hooks
+
+Install the project git hooks to run automated checks on commit and push:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+- **Pre-commit** runs fast checks: formatting (`cargo fmt`), compilation (`cargo check`), clippy (`-D warnings`), lib tests, and doc tests
+- **Pre-push** runs the full suite: all integration tests and documentation generation
+
 ### Prerequisites
 
 - **Nix** (with flakes enabled) — [install guide](https://nixos.org/download)
