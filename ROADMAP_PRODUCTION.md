@@ -87,7 +87,7 @@
 
 | Task | Status |
 |------|--------|
-| Add `#[must_use]` to all public Result/Option returns | Done (48 across 28 files; 8 missing found and added in v0.18.1) |
+| Add `#[must_use]` to all public Result/Option returns | Done (49 across 21 files; 8 missing found and added in v0.18.1) |
 | Replace remaining `unwrap()` in non-test code | Done (all remaining are compile-time constants or guarded) |
 | Audit all `expect()` messages for actionability | Done |
 | Add `cargo doc` generation to CI | Done |
@@ -315,7 +315,7 @@
 
 - [x] Zero undocumented unsafe blocks (19/19 have SAFETY comments; verified v0.18.1)
 - [x] Zero `unwrap()` outside compile-time constants in production paths
-- [x] `#[must_use]` on all public Result/Option returns (48 across 28 files; verified v0.18.1)
+- [x] `#[must_use]` on all public Result/Option returns (49 across 21 files; verified v0.18.1)
 - [ ] Silent error swallows: ~15 benign shutdown channel sends documented; converting would spam (accepted)
 - [ ] macOS runs full test suite in CI
 - [ ] Windows runs full test suite in CI

@@ -29,7 +29,7 @@ Aileron uses a modal input system. The current mode determines how keystrokes ar
 | Mode | Character keys | Escape/Enter/Backspace/Tab | Arrow keys / F-keys / Ctrl / Alt |
 |------|---------------|---------------------------|-------------------------------|
 | Normal | Keybinding handler | Keybinding handler | egui (UI) |
-| Insert | Web content (Servo) | Web content (Servo) | egui (UI) |
+| Insert | Web content (wry/WebKitGTK) | Web content (wry/WebKitGTK) | egui (UI) |
 | Command | Command palette | Command palette | egui (UI) |
 
 ---

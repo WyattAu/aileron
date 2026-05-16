@@ -129,7 +129,7 @@ cargo test --lib -- --test-threads=4
 cargo test --test integration_smoke
 
 # All tests + clippy (zero warnings)
-cargo clippy --lib -- -D warnings
+cargo clippy --all-targets -- -D warnings
 cargo test -- --test-threads=4
 ```
 
@@ -190,6 +190,12 @@ flatpak run com.github.WyattAu.aileron
 | `Ctrl+Shift+J` | Normal | Show captured console output |
 | `Ctrl+Shift+D` | Normal | Detach pane to popup window |
 | `Ctrl+Shift+P` | Normal | Pin/unpin active pane |
+| `Ctrl+T` | Normal | New tab |
+| `Ctrl+Shift+W` | Normal | Close tab |
+| `/` | Normal | Find in page |
+| `F` | Normal | Follow link in new tab |
+| `G` | Normal | Scroll to bottom |
+| `Ctrl+G` | Normal | Scroll to top |
 | `m` + letter | Normal | Set a scroll mark (a-z) |
 | `'` + letter | Normal | Jump to mark (a-z) |
 
@@ -221,6 +227,7 @@ flatpak run com.github.WyattAu.aileron
 | `:pdf <path>` | Open PDF |
 | `:popups [on\|off]` | Toggle popup blocker |
 | `:cookies` | View cookies for current site |
+| `:stats` | Show adblock, tab, and memory statistics |
 | `:cookies-clear` | Clear cookies for current pane |
 | `:cookies-block <domain>` | Block cookies for a domain |
 | `:cookies-allow <domain>` | Allow cookies for a domain |
@@ -289,7 +296,7 @@ devtools = false                      # Enable WebKit devtools
 
 # ── Privacy ─────────────────────────────────────
 adblock_enabled = true                # Block ads from filter lists
-adblock_filter_lists = ["https://easylist.to/easylist/easylist.txt"]
+adblock_filter_lists = ["https://easylist.to/easylist/easylist.txt", "https://easylist.to/easylist/easyprivacy.txt"]
 adblock_cosmetic_filtering = true     # Hide ad elements via CSS
 adblock_update_interval_hours = 24    # Filter list update frequency
 https_upgrade_enabled = true          # Auto-upgrade HTTP to HTTPS
