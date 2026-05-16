@@ -345,11 +345,11 @@ impl BspTree {
 
     /// Borrow all panes with their rectangles without cloning.
     ///
-    /// Returns a [`RefCell::Ref`] pointing to the internal cache, avoiding the
-    /// per-call `.clone()` that [`panes()`] performs. The borrow is valid until
+    /// Returns a `Ref` pointing to the internal cache, avoiding the
+    /// per-call `.clone()` that `panes()` performs. The borrow is valid until
     /// the next `&mut self` operation (split, close, resize, etc.).
     ///
-    /// Prefer this over [`panes()`] in hot paths that only iterate the result.
+    /// Prefer this over `panes()` in hot paths that only iterate the result.
     pub fn panes_ref(&self) -> std::cell::Ref<'_, Vec<(Uuid, Rect)>> {
         if self.cache_dirty.get() {
             // Force cache rebuild – the clone is dropped immediately.
