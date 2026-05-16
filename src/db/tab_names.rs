@@ -1,6 +1,7 @@
 use anyhow::Result;
 use rusqlite::Connection;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 /// Save or update a tab name for a pane.
 #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
@@ -25,18 +26,20 @@ pub fn remove_tab_name(conn: &Connection, pane_id: &str) -> Result<bool> {
 
 /// Load all tab names from the database.
 #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
-pub fn load_tab_names(conn: &Connection) -> Result<HashMap<String, String>> {
+pub fn load_tab_names(conn: &Connection) -> Result<HashMap<Uuid, String>> {
     let mut stmt = conn.prepare("SELECT pane_id, name FROM tab_names")?;
     let rows = stmt.query_map([], |row| {
-        let pane_id: String = row.get(0)?;
+        let pane_id_str: String = row.get(0)?;
         let name: String = row.get(1)?;
-        Ok((pane_id, name))
+        Ok((pane_id_str, name))
     })?;
 
     let mut map = HashMap::new();
     for row in rows {
-        let (pane_id, name) = row?;
-        map.insert(pane_id, name);
+        let (pane_id_str, name) = row?;
+        if let Ok(uuid) = Uuid::parse_str(&pane_id_str) {
+            map.insert(uuid, name);
+        }
     }
     Ok(map)
 }
@@ -70,30 +73,40 @@ mod tests {
     #[test]
     fn test_set_and_load_tab_names() {
         let db = test_db();
-        set_tab_name(&db, "abc-123", "GitHub").unwrap();
-        set_tab_name(&db, "def-456", "Gmail").unwrap();
+        set_tab_name(&db, "00000000-0000-0000-0000-000000000001", "GitHub").unwrap();
+        set_tab_name(&db, "00000000-0000-0000-0000-000000000002", "Gmail").unwrap();
 
         let names = load_tab_names(&db).unwrap();
         assert_eq!(names.len(), 2);
-        assert_eq!(names.get("abc-123").unwrap(), "GitHub");
+        assert_eq!(
+            names
+                .get(&Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap())
+                .unwrap(),
+            "GitHub"
+        );
     }
 
     #[test]
     fn test_set_tab_name_upsert() {
         let db = test_db();
-        set_tab_name(&db, "abc-123", "Old").unwrap();
-        set_tab_name(&db, "abc-123", "New").unwrap();
+        set_tab_name(&db, "00000000-0000-0000-0000-000000000001", "Old").unwrap();
+        set_tab_name(&db, "00000000-0000-0000-0000-000000000001", "New").unwrap();
 
         let names = load_tab_names(&db).unwrap();
         assert_eq!(names.len(), 1);
-        assert_eq!(names.get("abc-123").unwrap(), "New");
+        assert_eq!(
+            names
+                .get(&Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap())
+                .unwrap(),
+            "New"
+        );
     }
 
     #[test]
     fn test_remove_tab_name() {
         let db = test_db();
-        set_tab_name(&db, "abc-123", "GitHub").unwrap();
-        assert!(remove_tab_name(&db, "abc-123").unwrap());
+        set_tab_name(&db, "00000000-0000-0000-0000-000000000001", "GitHub").unwrap();
+        assert!(remove_tab_name(&db, "00000000-0000-0000-0000-000000000001").unwrap());
         assert!(!remove_tab_name(&db, "nonexistent").unwrap());
     }
 }

@@ -91,6 +91,8 @@ pub struct OffscreenWebView {
     loading: bool,
     /// Reusable buffer for RGBA frame data (avoids per-frame allocation).
     rgba_buffer: Vec<u8>,
+    /// Reusable buffer for BGRA capture data (avoids per-frame ~8MB allocation).
+    bgra_buffer: Vec<u8>,
 }
 
 impl OffscreenWebView {
@@ -404,6 +406,7 @@ a {{ color: #4db4ff; }}
             last_activity_time: std::time::Instant::now(),
             loading: false,
             rgba_buffer: Vec::new(),
+            bgra_buffer: Vec::new(),
         })
     }
 
@@ -628,7 +631,7 @@ a {{ color: #4db4ff; }}
 
     /// Convert a cairo surface from snapshot() into FrameData.
     #[cfg(target_os = "linux")]
-    fn process_snapshot_surface(&self, surface: cairo::Surface) -> Option<FrameData> {
+    fn process_snapshot_surface(&mut self, surface: cairo::Surface) -> Option<FrameData> {
         // Convert the cairo surface to raw pixel data.
         // snapshot() returns a cairo_image_surface_t (ARGB32 format).
         let raw = surface.to_raw_none();
@@ -671,7 +674,13 @@ a {{ color: #4db4ff; }}
                 return None;
             }
             let len = (stride as usize) * (height as usize);
-            std::slice::from_raw_parts(data_ptr, len).to_vec()
+            if self.bgra_buffer.capacity() < len {
+                self.bgra_buffer = Vec::with_capacity(len);
+            }
+            self.bgra_buffer.clear();
+            self.bgra_buffer
+                .extend_from_slice(std::slice::from_raw_parts(data_ptr, len));
+            std::mem::take(&mut self.bgra_buffer)
         };
 
         info!(
@@ -722,7 +731,15 @@ a {{ color: #4db4ff; }}
         // OffscreenWindow::pixbuf() (null-checked above). pixels() returns a
         // raw pointer into the pixbuf's internal buffer, valid for pixbuf's
         // lifetime, which spans this to_vec() call.
-        let pixels = unsafe { pixbuf.pixels().to_vec() };
+        let pixels = unsafe {
+            let needed = (width as usize) * (height as usize) * 4;
+            if self.bgra_buffer.capacity() < needed {
+                self.bgra_buffer = Vec::with_capacity(needed);
+            }
+            self.bgra_buffer.clear();
+            self.bgra_buffer.extend_from_slice(pixbuf.pixels());
+            std::mem::take(&mut self.bgra_buffer)
+        };
         if width == 0 || height == 0 || pixels.is_empty() {
             warn!(
                 "capture_frame: empty pixbuf {}x{} ({} bytes) for pane {}",

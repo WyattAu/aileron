@@ -28,7 +28,7 @@ pub fn list_workspaces(state: &AppState) -> Vec<crate::db::workspaces::Workspace
 pub fn swap_panes(state: &mut AppState) {
     if let Some(last_id) = state.tabs.last_active_pane_id {
         let active_id = state.wm.active_pane_id();
-        if last_id != active_id && state.wm.panes().iter().any(|(id, _)| *id == last_id) {
+        if last_id != active_id && state.wm.panes_ref().iter().any(|(id, _)| *id == last_id) {
             let active_url = state
                 .engines
                 .get(&active_id)

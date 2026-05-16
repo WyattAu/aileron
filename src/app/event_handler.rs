@@ -348,13 +348,13 @@ impl ApplicationHandler for AileronApp {
                         return;
                     }
                     let pane_ids_before: std::collections::HashSet<uuid::Uuid> =
-                        app_state.wm.panes().iter().map(|(id, _)| *id).collect();
+                        app_state.wm.panes_ref().iter().map(|(id, _)| *id).collect();
 
                     app_state.process_key_event(aileron_event);
                     app_state.input_latency.record_key_press();
 
                     let pane_ids_after: std::collections::HashSet<uuid::Uuid> =
-                        app_state.wm.panes().iter().map(|(id, _)| *id).collect();
+                        app_state.wm.panes_ref().iter().map(|(id, _)| *id).collect();
 
                     let closed_pane_ids: Vec<uuid::Uuid> = pane_ids_before
                         .difference(&pane_ids_after)
@@ -572,7 +572,7 @@ impl ApplicationHandler for AileronApp {
                             let ws = self.egui_winit.as_ref()?;
                             let ctx = ws.egui_ctx();
                             let pos = ctx.pointer_latest_pos()?;
-                            let panes = app_state.wm.panes();
+                            let panes = app_state.wm.panes_ref();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
                             let top_offset = URL_BAR_HEIGHT as f32;
                             let sidebar_offset = if app_state.config.tab_layout == "sidebar"
@@ -653,7 +653,7 @@ impl ApplicationHandler for AileronApp {
                             let ws = self.egui_winit.as_ref()?;
                             let ctx = ws.egui_ctx();
                             let pos = ctx.pointer_latest_pos()?;
-                            let panes = app_state.wm.panes();
+                            let panes = app_state.wm.panes_ref();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
                             let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
                             let top_offset = URL_BAR_HEIGHT as f32;
@@ -738,7 +738,7 @@ impl ApplicationHandler for AileronApp {
                     #[cfg(feature = "terminal")]
                     if self.terminal_manager.is_terminal(&active_id) {
                         let terminal_info = (|| {
-                            let panes = app_state.wm.panes();
+                            let panes = app_state.wm.panes_ref();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
                             let top_offset = URL_BAR_HEIGHT as f32;
                             let sidebar_offset = if app_state.config.tab_layout == "sidebar"
@@ -782,7 +782,7 @@ impl ApplicationHandler for AileronApp {
 
                     if !is_terminal {
                         let forward_info = (|| {
-                            let panes = app_state.wm.panes();
+                            let panes = app_state.wm.panes_ref();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
                             let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
                             let top_offset = URL_BAR_HEIGHT as f32;

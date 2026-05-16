@@ -55,8 +55,7 @@ impl AppState {
                     return;
                 }
                 Key::Enter => {
-                    let panes = self.wm.panes();
-                    let ids: Vec<_> = panes.iter().map(|(id, _)| *id).collect();
+                    let ids: Vec<_> = self.wm.panes_ref().iter().map(|(id, _)| *id).collect();
                     if let Some(id) = ids.get(self.panels.tab_search_selected) {
                         self.wm.set_active_pane(*id);
                     }
@@ -523,7 +522,7 @@ impl AppState {
                     let active_id = self.wm.active_pane_id();
                     let other_ids: Vec<uuid::Uuid> = self
                         .wm
-                        .panes()
+                        .panes_ref()
                         .iter()
                         .filter_map(|(id, _)| if *id != active_id { Some(*id) } else { None })
                         .collect();

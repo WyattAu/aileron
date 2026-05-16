@@ -38,8 +38,8 @@ impl AppState {
         }
 
         // Add open pane URLs as switchable tabs
-        let panes = self.wm.panes();
-        for (pane_id, _rect) in &panes {
+        let panes = self.wm.panes_ref();
+        for (pane_id, _rect) in panes.iter() {
             let url_str = self
                 .engines
                 .get(pane_id)

@@ -66,7 +66,9 @@ fn build_ui_inner(
     #[cfg(feature = "terminal")] terminal_manager: &mut NativeTerminalManager,
 ) {
     let tab_layout = app_state.config.tab_layout.as_str();
-    let tc = app_state.config.cached_theme_colors().clone();
+    // Extract only the Copy Color32 fields we need from CachedThemeColors,
+    // avoiding a clone of the entire struct (which contains Strings) every frame.
+    let tc = app_state.config.cached_theme_colors();
     let tab_bg = tc.tab_bar_bg;
     let tab_fg = tc.tab_bar_fg;
     let _status_bg = tc.status_bar_bg;
@@ -75,6 +77,8 @@ fn build_ui_inner(
     let _url_fg = tc.url_bar_fg;
     let accent = tc.accent;
     let bg = tc.bg;
+    let border_color_default = tc.border;
+    drop(tc);
 
     // CRITICAL: In modes without a TextEdit widget, release egui keyboard focus.
     // Otherwise egui retains focus on the last TextEdit and consumes ALL
@@ -91,7 +95,6 @@ fn build_ui_inner(
             }
         });
     }
-    let border_color_default = tc.border;
 
     if tab_layout == "sidebar" {
         let panel = if app_state.config.tab_sidebar_right {
@@ -104,11 +107,18 @@ fn build_ui_inner(
             .resizable(true)
             .frame(egui::Frame::new().fill(tab_bg))
             .show(ctx, |ui| {
-                build_tab_list(ui, app_state, wry_panes, false, &tc);
+                build_tab_list(
+                    ui,
+                    app_state,
+                    wry_panes,
+                    false,
+                    tab_bg,
+                    border_color_default,
+                );
             });
     } else if tab_layout == "topbar" {
         egui::TopBottomPanel::top("tab-bar").show(ctx, |ui| {
-            build_tab_list(ui, app_state, wry_panes, true, &tc);
+            build_tab_list(ui, app_state, wry_panes, true, tab_bg, border_color_default);
         });
     }
 
@@ -230,9 +240,10 @@ fn build_ui_inner(
                     } else {
                         egui::Color32::from_rgb(200, 200, 100)
                     };
-                    let et = engine_text.clone();
-                    ui.colored_label(engine_color, engine_text)
-                        .widget_info(|| a11y_info(WidgetType::Label, format!("Engine: {et}")));
+                    ui.colored_label(engine_color, &engine_text)
+                        .widget_info(|| {
+                            a11y_info(WidgetType::Label, format!("Engine: {}", &engine_text))
+                        });
                 }
 
                 let git_text = git_status.status_bar_text();
@@ -243,9 +254,9 @@ fn build_ui_inner(
                     } else {
                         tab_fg
                     };
-                    let gt = git_text.clone();
-                    ui.colored_label(git_color, git_text)
-                        .widget_info(|| a11y_info(WidgetType::Label, format!("Git: {gt}")));
+                    ui.colored_label(git_color, &git_text).widget_info(|| {
+                        a11y_info(WidgetType::Label, format!("Git: {}", &git_text))
+                    });
                 }
 
                 ui.separator();
@@ -341,8 +352,8 @@ fn build_ui_inner(
 
                 if app_state.ui.hint_mode {
                     let hint_text = format!("hint: {}", app_state.ui.hint_buffer);
-                    ui.colored_label(accent, hint_text.clone())
-                        .widget_info(|| a11y_info(WidgetType::Label, hint_text.clone()));
+                    ui.colored_label(accent, &hint_text)
+                        .widget_info(|| a11y_info(WidgetType::Label, &hint_text));
                 } else if !app_state.ui.status_message.is_empty() {
                     let msg = app_state.ui.status_message.clone();
                     ui.label(&msg)
@@ -370,8 +381,10 @@ fn build_ui_inner(
                 // command_palette_input (the keybind-handler string) so both
                 // paths stay in sync, and update search results.
                 let query_snapshot = app_state.palette.query.clone();
-                app_state.ui.command_palette_input = query_snapshot.clone();
-                app_state.palette.update_query(&query_snapshot);
+                app_state.ui.command_palette_input = query_snapshot;
+                app_state
+                    .palette
+                    .update_query(&app_state.ui.command_palette_input);
             } else if app_state.ui.url_bar_focused {
                 ui.colored_label(accent, "URL>").widget_info(|| {
                     a11y_info(WidgetType::Label, "URL bar mode indicator: editing")
@@ -1695,12 +1708,11 @@ pub fn build_tab_list(
     app_state: &mut AppState,
     wry_panes: &WryPaneManager,
     horizontal: bool,
-    cached: &crate::config::CachedThemeColors,
+    tab_bar_bg: egui::Color32,
+    border_color: egui::Color32,
 ) {
     let panes = app_state.wm.panes();
     let active_id = app_state.wm.active_pane_id();
-    let tab_bar_bg = cached.tab_bar_bg;
-    let border_color = cached.border;
 
     // Populate tab display cache when dirty
     if app_state.tabs.tab_display_dirty {
@@ -1759,7 +1771,7 @@ pub fn build_tab_list(
 
                 // Use custom tab name if set
                 let display_title = {
-                    let custom = app_state.tabs.tab_names.get(&pane_id.to_string()).cloned();
+                    let custom = app_state.tabs.tab_names.get(pane_id).cloned();
                     match custom {
                         Some(name) => truncate_str(&name, 21),
                         None => {
@@ -1873,7 +1885,7 @@ pub fn build_tab_list(
 
                 // Use custom tab name if set
                 let display_title = {
-                    let custom = app_state.tabs.tab_names.get(&pane_id.to_string()).cloned();
+                    let custom = app_state.tabs.tab_names.get(pane_id).cloned();
                     match custom {
                         Some(name) => truncate_str(&name, 17),
                         None => {

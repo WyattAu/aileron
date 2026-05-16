@@ -158,7 +158,7 @@ pub struct SessionState {
 
 pub struct TabState {
     pub closed_tab_stack: VecDeque<(String, String)>,
-    pub tab_names: HashMap<String, String>,
+    pub tab_names: HashMap<Uuid, String>,
     pub muted_pane_ids: HashSet<Uuid>,
     pub pinned_pane_ids: HashSet<Uuid>,
     pub private_pane_ids: HashSet<Uuid>,
@@ -688,7 +688,7 @@ impl AppState {
     pub fn cleanup_pane_state(&mut self, pane_id: &uuid::Uuid) {
         self.pane_last_focus.remove(pane_id);
         self.session.marks.remove(pane_id);
-        self.tabs.tab_names.remove(&pane_id.to_string());
+        self.tabs.tab_names.remove(pane_id);
         self.tabs.private_pane_ids.remove(pane_id);
     }
 

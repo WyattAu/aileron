@@ -30,7 +30,7 @@ impl AileronApp {
                 Some(s) => s,
                 None => return,
             };
-            let panes = app_state.wm.panes();
+            let panes = app_state.wm.panes_ref();
             match panes.iter().find(|(id, _)| *id == pane_id) {
                 Some((_, rect)) => *rect,
                 None => {
@@ -143,7 +143,7 @@ impl AileronApp {
                 Some(s) => s,
                 None => return,
             };
-            let panes = app_state.wm.panes();
+            let panes = app_state.wm.panes_ref();
             match panes.iter().find(|(id, _)| *id == pane_id) {
                 Some((_, rect)) => *rect,
                 None => {
@@ -279,7 +279,7 @@ impl AileronApp {
         let current_pane_ids: std::collections::HashSet<uuid::Uuid> = self
             .app_state
             .as_ref()
-            .map(|s| s.wm.panes().iter().map(|(id, _)| *id).collect())
+            .map(|s| s.wm.panes_ref().iter().map(|(id, _)| *id).collect())
             .unwrap_or_default();
 
         let has_active = self
@@ -323,8 +323,8 @@ impl AileronApp {
         };
         let sidebar_on_right = app_state.config.tab_sidebar_right;
 
-        let panes = app_state.wm.panes();
-        for (pane_id, wm_rect) in &panes {
+        let panes = app_state.wm.panes_ref();
+        for (pane_id, wm_rect) in panes.iter() {
             if let Some(wry_pane) = self.wry_panes.get(pane_id) {
                 let wry_rect = bsp_rect_to_wry_rect(
                     wm_rect,
@@ -342,7 +342,7 @@ impl AileronApp {
             {
                 use crate::terminal::grid::CellMetrics;
 
-                for (pane_id, wm_rect) in &panes {
+                for (pane_id, wm_rect) in panes.iter() {
                     let wry_rect = bsp_rect_to_wry_rect(
                         wm_rect,
                         STATUS_BAR_HEIGHT,

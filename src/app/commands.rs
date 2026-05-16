@@ -241,7 +241,7 @@ impl AppState {
         if query == "memory" {
             let rss = crate::profiling::memory::process_rss_human();
             let term_count = self.terminal_pane_count();
-            let total_panes = self.wm.panes().len();
+            let total_panes = self.wm.panes_ref().len();
             let web_count = total_panes - term_count;
             let estimated = crate::profiling::memory::estimate_pane_memory(web_count, term_count);
             self.ui.status_message = format!(

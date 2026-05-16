@@ -58,23 +58,21 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
     }
 
     if query == "tab-rename" || query.starts_with("tab-rename ") {
-        let active_id = state.wm.active_pane_id().to_string();
+        let active_id = state.wm.active_pane_id();
         let name = query.strip_prefix("tab-rename ").unwrap_or("").trim();
         if name.is_empty() {
             state.tabs.tab_names.remove(&active_id);
             if let Some(ref conn) = state.db
-                && let Err(e) = crate::db::tab_names::remove_tab_name(conn, &active_id)
+                && let Err(e) = crate::db::tab_names::remove_tab_name(conn, &active_id.to_string())
             {
                 tracing::warn!("Failed to remove tab name: {}", e);
             }
             state.ui.status_message = "Tab name cleared".into();
         } else {
-            state
-                .tabs
-                .tab_names
-                .insert(active_id.clone(), name.to_string());
+            state.tabs.tab_names.insert(active_id, name.to_string());
             if let Some(ref conn) = state.db
-                && let Err(e) = crate::db::tab_names::set_tab_name(conn, &active_id, name)
+                && let Err(e) =
+                    crate::db::tab_names::set_tab_name(conn, &active_id.to_string(), name)
             {
                 tracing::warn!("Failed to persist tab name: {}", e);
             }

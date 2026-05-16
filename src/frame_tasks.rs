@@ -1164,7 +1164,8 @@ pub fn process_mcp_commands(
             }
             McpCommand::ListTabs { response_tx } => {
                 let active = app_state.wm.active_pane_id();
-                let pane_ids: Vec<Uuid> = app_state.wm.panes().iter().map(|(id, _)| *id).collect();
+                let pane_ids: Vec<Uuid> =
+                    app_state.wm.panes_ref().iter().map(|(id, _)| *id).collect();
                 let lines: Vec<String> = pane_ids
                     .iter()
                     .enumerate()
