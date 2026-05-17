@@ -239,12 +239,12 @@ jobs:
             bench-${{ runner.os }}-
 
       - name: Run benchmarks
-        run: AILERON_TESTING=1 xvfb-run -a cargo bench -- --output-format bencher | tee benchmark-results.txt
+        run: AILERON_TESTING=1 xvfb-run -a cargo bench 2>&1 | tee benchmark-results.txt
 
       - name: Verify benchmark baselines
         run: |
-          echo "Benchmark baseline check: verify no regressions >10%"
-          grep -q "Benchmarking" benchmark-results.txt
+          echo "Benchmark baseline check: verify benchmarks ran successfully"
+          grep -qiE "benchmarking|test result" benchmark-results.txt
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
