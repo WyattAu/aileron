@@ -38,7 +38,7 @@ jobs:
 
       - name: Verify CI passed for this ref
         run: |
-          gh run list --branch ${{ github.ref_name }} --status success --limit 1 --json databaseId --jq '.[0].databaseId'
+          gh run list --workflow=ci.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -112,6 +112,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
 
       - name: Create release
         uses: softprops/action-gh-release@v2

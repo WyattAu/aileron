@@ -49,7 +49,7 @@
 - **Find in page** — `Ctrl+F` incremental search with next/previous navigation
 - **Smooth scrolling** — native smooth scroll behavior
 - **Print support** — `:print` triggers system print dialog
-- **PDF viewer** — `:pdf <path>` opens PDFs via system viewer (WebEngine PDF planned)
+- **PDF viewer** — PDFs render inline via WebKitGTK; `:pdf <path>` opens local files
 - **Reader mode** — `Ctrl+Shift+R` strips CSS and extracts article text; toggle per pane
 - **Minimal mode** — `Ctrl+Shift+M` hides images/media and removes scripts; toggle per pane
 

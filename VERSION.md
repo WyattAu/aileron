@@ -12,7 +12,7 @@
 - **~51,413 lines of Rust** across 135 source files
 - **Clean build time:** 7m 14s (dev, 6-core x86_64); ~2.5m incremental
 - **Release profile:** LTO thin + strip + panic=abort + codegen-units=1
-- **Feature gates:** mcp, arp, sync, passwords (with dependency-level gating)
+- **Feature flags:** mcp, arp, sync, passwords, lua, terminal (with dependency-level gating)
 
 ## Quality Audit Summary (2026-05-14)
 - **Unsafe:** 19 blocks (FFI: env vars, WebKitGTK, Cairo, X11, spellcheck)
@@ -22,7 +22,7 @@
 - **Determinism:** BTreeMap for sync manifest, cached pane lists
 - **Error handling:** 11 silent swallows converted to tracing::warn
 - **Cross-file consistency:** 0 orphaned imports, 0 version mismatches
-- **Feature flags:** `terminal` and `extensions` removed (always-on core modules)
+- **Feature flags:** `lua` and `terminal` feature-gated in v0.20.0 (always-on via default features); extensions always compiled
 - **Test count:** 1038 lib, 253 integration (13 suites), 4 doc = 1295 total
 - **Duplicate code:** X11 error handler consolidated, spellcheck FFI deduplicated
 - **Data race fix:** proxy set_var removed from post-spawn command handler

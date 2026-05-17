@@ -292,20 +292,25 @@ mod tests {
     }
 
     // --- Locale override tests (use LOCALE_OVERRIDE, not env vars) ---
+    // NOTE: These must run in a single test to avoid races on the global RwLock.
 
     #[test]
-    fn test_set_locale_override() {
-        set_locale(Locale::Chinese);
-        // Override takes precedence regardless of what detect_locale would read from env.
-        assert_eq!(detect_locale(), Locale::Chinese);
+    fn test_locale_override_set_clear_and_precedence() {
+        // Start clean
         clear_locale_override();
-    }
+        let original = detect_locale();
 
-    #[test]
-    fn test_set_locale_override_takes_precedence() {
+        // Set Chinese override
+        set_locale(Locale::Chinese);
+        assert_eq!(detect_locale(), Locale::Chinese);
+
+        // Override to German -- takes precedence
         set_locale(Locale::German);
         assert_eq!(detect_locale(), Locale::German);
+
+        // Clear override -- reverts to env-based detection
         clear_locale_override();
+        assert_eq!(detect_locale(), original);
     }
 
     #[test]

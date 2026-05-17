@@ -17,7 +17,7 @@
 | LOC | ~51,413 Rust across 135 source files |
 | CI | Linux (full), macOS (compile), Windows (compile), cross-compile matrix |
 | Pre-commit | 5-gate enforcement (fmt, check, clippy, lib, doc) |
-| Pre-push | 2-gate enforcement (13-suite integration, doc gen) |
+| Pre-push | 2-gate enforcement (all integration tests via `cargo test --tests`, doc gen) |
 | Vulnerability scan | Zero critical (13 allowed warnings from transitive GTK3 deps) |
 
 ### Core Systems Status
@@ -117,7 +117,7 @@
 - **Heap profiling:** NOT implemented. Only global RSS via /proc/self/status. Needs allocator integration (jemalloc/mimalloc). Per-pane attribution requires thread-local context or explicit accounting.
 - **Tab-unload LRU:** FIXED. Automatic eviction now uses `find_lru_pane()` (proper LRU by focus timestamp) instead of `iter().find()`.
 - **Hot-path allocation audit:** DONE. 22 findings documented. 3 HIGH: tab cache String clones/8MB frame buffer/panes Vec clone. 9 MEDIUM: ARP JSON, dispatch Vec, WryAction clone, theme clone, HashMap key alloc, HashSet per keypress. See CHANGELOG v0.19.0 for full list.
-- **Texture pooling:** Not started. Frame capture buffer (render.rs:169) allocates 8MB per dirty pane per frame. Should pre-allocate and reuse.
+- **Texture pooling:** DONE (v0.20.0). Frame capture buffer pre-allocated and reused across frames.
 
 ### 2.3 Build Time & Binary Size
 
@@ -453,10 +453,10 @@
 
 Priority-ordered by impact:
 
-1. **HIGH: Frame capture buffer reuse (render.rs:169):** Pre-allocate 8MB buffer on OffscreenWebView, reuse across frames. Eliminates ~8MB allocation per dirty pane per frame during scrolling.
-2. **HIGH: Tab display cache borrow refactoring (panels.rs):** Eliminate 3-4 String clones per tab per frame. Requires restructuring egui closure to pre-extract data before mutable borrow section.
-3. **HIGH: panes() return iterator (wm/tree.rs):** Replace `panes_cache.borrow().clone()` with borrowed reference or iterator. Eliminates 32*N bytes cloned per frame.
-4. **MEDIUM: Feature gate `terminal` module:** Add `#[cfg(feature = "terminal")]` at 15+ call sites. Removes portable-pty + alacritty_terminal from compilation. Estimated: saves ~1-2m compile time.
-5. **MEDIUM: Feature gate `lua` module:** Add `#[cfg(feature = "lua")]` at 10+ call sites. Removes vendored Lua 5.4 C compilation. Estimated: saves ~30-60s compile time.
+1. **DONE (v0.20.0): Frame capture buffer reuse (render.rs):** Pre-allocate buffer on OffscreenWebView, reuse across frames. Eliminated per-frame allocation during scrolling.
+2. **DONE (v0.20.0): Feature gate `terminal` module:** Added `#[cfg(feature = "terminal")]` at call sites. Removes portable-pty + alacritty_terminal from compilation with `--no-default-features`.
+3. **DONE (v0.20.0): Feature gate `lua` module:** Added `#[cfg(feature = "lua")]` at call sites. Removes vendored Lua 5.4 C compilation with `--no-default-features`.
+4. **HIGH: Tab display cache borrow refactoring (panels.rs):** Eliminate 3-4 String clones per tab per frame. Requires restructuring egui closure to pre-extract data before mutable borrow section.
+5. **HIGH: panes() return iterator (wm/tree.rs):** Replace `panes_cache.borrow().clone()` with borrowed reference or iterator. Eliminates 32*N bytes cloned per frame.
 6. **MEDIUM: Benchmark regression CI:** Store baseline criterion results, compare on each PR, fail if >10% regression.
 7. **LOW: HashMap<String,String> -> HashMap<Uuid,String> for tab_names:** Avoids pane_id.to_string() allocation per tab per frame. Touches DB layer + 6 call sites.

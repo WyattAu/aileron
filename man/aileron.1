@@ -17,7 +17,7 @@ Features include:
 .IP \(bu 2
 BSP-tree tiling layout with horizontal/vertical splits
 .IP \(bu 2
-Vim-style modal editing (Normal, Insert, Command, Hint modes)
+Vim-style modal editing (Normal, Insert, Command modes)
 .IP \(bu 2
 Command palette (Ctrl+P) with fuzzy search (Nucleo engine)
 .IP \(bu 2
@@ -50,7 +50,7 @@ Bitwarden password manager integration via keyring
 .SH MODES
 .B Normal mode (default):
 Navigation, pane management, and command input.
-Key bindings: h/j/k/l (scroll), J/K (tabs), d (close), Ctrl+w (vertical split), Ctrl+s (horizontal split).
+Key bindings: h/j/k/l (scroll), q (close), Ctrl+w (vertical split), Ctrl+s (horizontal split), Ctrl+Alt+h/j/k/l (resize).
 .PP
 .B Insert mode (i):
 Pass keyboard input to web content.
@@ -62,11 +62,11 @@ Press Enter to execute, Escape to cancel.
 .PP
 .B Hint mode (f):
 Reveal clickable link hints on all visible links.
-Type hint digits to follow a link.
+Type hint digits to follow a link. This is a normal-mode overlay, not a separate mode.
 .SH COMMANDS
 .TP
-.BR :open <url> " or " g<url>
-Navigate to URL. g<url> opens in a new tab.
+.BR :open <url> " or " g <url>
+Navigate to URL. g <url> opens in a new tab.
 .TP
 .BR :q , :quit
 Quit Aileron.
@@ -178,11 +178,8 @@ Scroll left / down / up / right.
 .BR J / K
 Next / previous tab.
 .TP
-.BR d
+.BR q
 Close current pane.
-.TP
-.BR D
-Close current pane, focus left.
 .TP
 .BR Ctrl+w
 Split vertically.
@@ -190,7 +187,7 @@ Split vertically.
 .BR Ctrl+s
 Split horizontally.
 .TP
-.BR H / Shift+J / Shift+K / L
+.BR Ctrl+Alt+h / Ctrl+Alt+j / Ctrl+Alt+k / Ctrl+Alt+l
 Resize split (increase left/down/up/right).
 .TP
 .BR r
@@ -206,7 +203,7 @@ Enter command mode.
 Open command palette.
 .TP
 .BR Ctrl+h
-Toggle bookmarks panel.
+Navigate left (pane navigation).
 .TP
 .BR f
 Open link hints (F opens in new tab).
@@ -291,7 +288,7 @@ Upgrade HTTP to HTTPS (default: true).
 Enable tracking protection (default: true).
 .TP
 .BR restore_session
-Restore tabs on startup (default: true).
+Restore tabs on startup (default: false).
 .TP
 .BR adaptive_quality
 Reduce frame rate for background tabs (default: true).

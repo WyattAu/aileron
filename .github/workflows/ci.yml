@@ -48,6 +48,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cargo/bin
             target/
           key: test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
@@ -66,7 +67,7 @@ jobs:
         run: AILERON_TESTING=1 xvfb-run -a cargo test --test integration_smoke -- --test-threads=4
 
       - name: Run integration tests
-        run: AILERON_TESTING=1 xvfb-run -a cargo test --test db_integration --test adblock_integration --test mcp_integration --test sync_integration --test extension_integration --test frame_tasks_integration --test input_routing_integration --test lua_integration --test offscreen_render_test --test downloads_integration --test terminal_integration -- --test-threads=4
+        run: AILERON_TESTING=1 xvfb-run -a cargo test --tests -- --test-threads=4
 
       - name: Run startup test
         run: AILERON_TESTING=1 xvfb-run -a cargo test --test startup_test -- --test-threads=4
@@ -76,8 +77,8 @@ jobs:
 
       - name: Security audit
         run: |
-          cargo install cargo-audit --locked
-          cargo audit
+          cargo install cargo-audit --locked --root ~/.cargo
+          ~/.cargo/bin/cargo audit
 
       - name: Build release
         run: cargo build --release
@@ -96,8 +97,8 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          cargo install cargo-llvm-cov --locked
-          cargo llvm-cov --lcov --output-path lcov.info --exclude offscreen_render_test -- --test-threads=4
+          cargo install cargo-llvm-cov --locked --root ~/.cargo
+          ~/.cargo/bin/cargo llvm-cov --lcov --output-path lcov.info --exclude offscreen_render_test -- --test-threads=4
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v4
@@ -243,10 +244,7 @@ jobs:
       - name: Verify benchmark baselines
         run: |
           echo "Benchmark baseline check: verify no regressions >10%"
-          # Full regression detection requires baseline file comparison.
-          # Current approach: run benchmarks and fail on any panic/timeout.
-          # Future: compare against stored baseline in .specs/04_performance/baseline.toml
-          grep -q "Benchmarking" benchmark-results.txt && echo "Benchmarks executed successfully" || echo "Warning: no benchmark output"
+          grep -q "Benchmarking" benchmark-results.txt
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4

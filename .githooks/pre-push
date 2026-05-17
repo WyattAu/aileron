@@ -24,13 +24,7 @@ fi
 
 # 1. Integration tests
 echo -e "${YELLOW}[1/2] Running integration tests...${NC}"
-if ! ${XVFB} cargo test --test integration_smoke --test startup_test \
-    --test db_integration --test adblock_integration \
-    --test mcp_integration --test sync_integration \
-    --test extension_integration --test frame_tasks_integration \
-    --test input_routing_integration --test lua_integration \
-    --test offscreen_render_test --test downloads_integration \
-    --test terminal_integration -- --test-threads=4 2>&1; then
+if ! ${XVFB} cargo test --tests -- --test-threads=4 2>&1; then
     echo -e "${RED}[FAIL] Integration tests failed.${NC}"
     exit 1
 fi
