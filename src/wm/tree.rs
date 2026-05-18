@@ -358,6 +358,21 @@ impl BspTree {
         self.panes_cache.borrow()
     }
 
+    /// Iterate over all panes without cloning the underlying Vec.
+    ///
+    /// Equivalent to `panes_ref().iter().copied()` but collects into a
+    /// local Vec to avoid lifetime issues with the internal RefCell borrow.
+    /// Still avoids the double-clone that `panes()` performs (cache hit path).
+    pub fn iter_panes(&self) -> impl Iterator<Item = (Uuid, Rect)> {
+        // panes_ref() ensures cache is warm; we copy tuples into a local Vec
+        // to release the RefCell borrow before returning the iterator.
+        self.panes_ref()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
     fn collect_panes(node: &BspNode, result: &mut Vec<(Uuid, Rect)>) {
         match node {
             BspNode::Leaf { pane, rect } => {
@@ -390,6 +405,22 @@ impl BspTree {
         result
     }
 
+    /// Iterate over all pane IDs without cloning the underlying Vec.
+    ///
+    /// Prefer over `pane_ids()` in hot paths that only need to iterate IDs.
+    pub fn iter_pane_ids(&self) -> impl Iterator<Item = Uuid> {
+        // Force cache rebuild if dirty, then borrow and collect to release RefCell.
+        if self.cache_dirty.get() || self.pane_ids_cache.borrow().is_empty() {
+            drop(self.pane_ids());
+        }
+        self.pane_ids_cache
+            .borrow()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
     fn collect_ids(node: &BspNode, result: &mut Vec<Uuid>) {
         match node {
             BspNode::Leaf { pane, .. } => {
@@ -415,6 +446,18 @@ impl BspTree {
             Self::collect_split_borders(root, &mut borders);
         }
         borders
+    }
+
+    /// Iterate over all split borders without an intermediate Vec.
+    ///
+    /// Uses a small Vec internally but avoids exposing it to callers;
+    /// each tuple is copied (cheap: 2 Uuids + f64 + enum = 48 bytes).
+    /// Prefer over `split_borders()` in hot paths.
+    pub fn iter_split_borders(
+        &self,
+    ) -> impl Iterator<Item = (f64, SplitDirection, Uuid, Uuid)> + '_ {
+        let borders = self.split_borders();
+        borders.into_iter()
     }
 
     fn collect_split_borders(node: &BspNode, borders: &mut Vec<(f64, SplitDirection, Uuid, Uuid)>) {

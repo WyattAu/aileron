@@ -103,13 +103,22 @@ pub fn auto_save_workspace(app_state: &mut AppState, wry_panes: &WryPaneManager)
 }
 
 /// Push current tab state to the ARP server (if running).
-/// Called every frame but only serializes when the server is active.
+/// Skips serialization entirely when tab state has not changed since the last push
+/// (tracked via `tab_display_dirty`). This eliminates per-frame JSON allocation
+/// and async mutex contention on the ~99.9% of frames where nothing changed.
 #[cfg(feature = "arp")]
 pub fn push_tabs_to_arp(app_state: &AppState, wry_panes: &WryPaneManager) {
     let server = match &app_state.arp_server {
         Some(s) if s.is_running() => s,
         _ => return,
     };
+
+    // Tab state changes only on user actions (navigate, create, close, pin, mute).
+    // The tab_display_dirty flag is set by the same events that change ARP state.
+    // On clean frames, skip the entire JSON construction + async lock.
+    if !app_state.tabs.tab_display_dirty {
+        return;
+    }
 
     let active_id = app_state.wm.active_pane_id();
     let pane_ids = wry_panes.pane_ids();

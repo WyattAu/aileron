@@ -21,12 +21,13 @@ fn a11y_info(typ: WidgetType, label: impl Into<String>) -> WidgetInfo {
 }
 
 /// Truncate a string to at most `max_chars` characters without splitting multi-byte UTF-8.
-fn truncate_str(s: &str, max_chars: usize) -> String {
+/// Returns `Cow::Borrowed` when no truncation is needed (avoids allocation on the common path).
+fn truncate_str<'a>(s: &'a str, max_chars: usize) -> std::borrow::Cow<'a, str> {
     if s.chars().count() <= max_chars {
-        s.to_string()
+        std::borrow::Cow::Borrowed(s)
     } else {
         let truncated: String = s.chars().take(max_chars).collect();
-        format!("{truncated}...")
+        std::borrow::Cow::Owned(format!("{truncated}..."))
     }
 }
 
@@ -265,26 +266,22 @@ fn build_ui_inner(
                 if let Some(wry_pane) = wry_panes.get(&active_id) {
                     let url_str = wry_pane.url().as_str();
                     let display_url = truncate_str(url_str, 57);
-                    let full_url = url_str.to_string();
-                    let url_resp = ui.label(display_url.clone());
-                    url_resp.widget_info(|| {
-                        a11y_info(WidgetType::Label, format!("Current URL: {full_url}"))
-                    });
+                    let a11y_label = format!("Current URL: {url_str}");
+                    let url_resp = ui.label(display_url.as_ref());
+                    url_resp.widget_info(move || a11y_info(WidgetType::Label, &a11y_label));
                     if url_resp.clicked() {
                         app_state.ui.url_bar_focused = true;
-                        app_state.ui.url_bar_input = full_url;
+                        app_state.ui.url_bar_input = url_str.to_string();
                     }
                 } else if let Some(pane) = offscreen_panes.get(&active_id) {
                     let url_str = pane.url().as_str();
                     let display_url = truncate_str(url_str, 57);
-                    let full_url = url_str.to_string();
-                    let url_resp = ui.label(display_url.clone());
-                    url_resp.widget_info(|| {
-                        a11y_info(WidgetType::Label, format!("Current URL: {full_url}"))
-                    });
+                    let a11y_label = format!("Current URL: {url_str}");
+                    let url_resp = ui.label(display_url.as_ref());
+                    url_resp.widget_info(move || a11y_info(WidgetType::Label, &a11y_label));
                     if url_resp.clicked() {
                         app_state.ui.url_bar_focused = true;
-                        app_state.ui.url_bar_input = full_url;
+                        app_state.ui.url_bar_input = url_str.to_string();
                     }
                 }
 
@@ -647,18 +644,17 @@ fn build_ui_inner(
 
                 let active_id = app_state.wm.active_pane_id();
                 let url_str = if let Some(wry_pane) = wry_panes.get(&active_id) {
-                    wry_pane.url().to_string()
+                    wry_pane.url().as_str()
                 } else {
-                    "aileron://welcome".to_string()
+                    "aileron://welcome"
                 };
 
-                let url_clone = url_str.clone();
-                let url_label = ui.strong(&url_str);
-                url_label.widget_info(|| a11y_info(WidgetType::Label, format!("URL: {url_clone}")));
+                let url_label = ui.strong(url_str);
+                url_label.widget_info(|| a11y_info(WidgetType::Label, format!("URL: {url_str}")));
 
                 if url_label.clicked() {
                     app_state.ui.url_bar_focused = true;
-                    app_state.ui.url_bar_input = url_str.clone();
+                    app_state.ui.url_bar_input = url_str.to_string();
                 }
             }
         });
@@ -940,7 +936,7 @@ fn build_ui_inner(
 
                 // Tab list with fuzzy filter
                 let query = app_state.panels.tab_search_query.to_lowercase();
-                let pane_ids = app_state.wm.pane_ids();
+                let pane_ids: Vec<_> = app_state.wm.iter_pane_ids().collect();
                 let active_id = app_state.wm.active_pane_id();
 
                 let mut switch_to: Option<uuid::Uuid> = None;
@@ -951,20 +947,20 @@ fn build_ui_inner(
                     .show(ui, |ui| {
                         let mut visible_index = 0usize;
                         for id in &pane_ids {
-                            let url = wry_panes
-                                .url_for(id)
-                                .map(|u| u.to_string())
-                                .unwrap_or_default();
-                            let title = wry_panes
+                            // Use tab_display_cache instead of direct wry_panes lookups
+                            // to avoid per-frame String allocations.
+                            let (title, url) = app_state
+                                .tabs
+                                .tab_display_cache
                                 .get(id)
-                                .map(|p| p.title().to_string())
-                                .unwrap_or_default();
+                                .map(|i| (i.title.as_str(), i.url.as_str()))
+                                .unwrap_or(("New Tab", "aileron://new"));
 
                             // Simple substring filter (not fuzzy, but good enough)
                             if !query.is_empty() {
                                 let matches = title.to_lowercase().contains(&query)
                                     || url.to_lowercase().contains(&query)
-                                    || id.to_string().starts_with(&query);
+                                    || id.simple().to_string().starts_with(&query);
                                 if !matches {
                                     continue;
                                 }
@@ -1450,7 +1446,7 @@ fn build_ui_inner(
     }
 
     egui::CentralPanel::default().show(ctx, |ui| {
-        let panes = app_state.wm.panes();
+        let panes: Vec<_> = app_state.wm.iter_panes().collect();
         let active_id = app_state.wm.active_pane_id();
         let offscreen = app_state.config.is_offscreen();
 
@@ -1593,9 +1589,8 @@ fn build_ui_inner(
                     // Apply resize to both adjacent panes
                     let viewport = app_state
                         .wm
-                        .panes()
-                        .iter()
-                        .find_map(|(id, r)| if *id == *pane_a_id { Some(*r) } else { None });
+                        .iter_panes()
+                        .find_map(|(id, r)| if id == *pane_a_id { Some(r) } else { None });
                     if let Some(viewport) = viewport {
                         let resize_amount = match direction {
                             crate::wm::rect::SplitDirection::Horizontal => {
@@ -1711,7 +1706,7 @@ pub fn build_tab_list(
     tab_bar_bg: egui::Color32,
     border_color: egui::Color32,
 ) {
-    let panes = app_state.wm.panes();
+    let panes: Vec<_> = app_state.wm.iter_panes().collect();
     let active_id = app_state.wm.active_pane_id();
 
     // Populate tab display cache when dirty
@@ -1737,9 +1732,9 @@ pub fn build_tab_list(
             fresh.insert(
                 *pane_id,
                 crate::app::TabDisplayInfo {
-                    truncated_title_horizontal: truncate_str(&title, 21),
-                    truncated_title_sidebar: truncate_str(&title, 17),
-                    truncated_url: truncate_str(&url, 19),
+                    truncated_title_horizontal: truncate_str(&title, 21).into_owned(),
+                    truncated_title_sidebar: truncate_str(&title, 17).into_owned(),
+                    truncated_url: truncate_str(&url, 19).into_owned(),
                     title,
                     url,
                 },
@@ -1755,30 +1750,37 @@ pub fn build_tab_list(
                 let is_active = *pane_id == active_id;
                 let is_terminal = app_state.is_terminal_pane(pane_id);
 
-                // Extract needed strings before mutable borrow of app_state.
-                let (trunc_h, info_title, info_url) = app_state
-                    .tabs
-                    .tab_display_cache
-                    .get(pane_id)
-                    .map(|i| {
-                        (
-                            i.truncated_title_horizontal.clone(),
-                            i.title.clone(),
-                            i.url.clone(),
-                        )
-                    })
-                    .unwrap_or_else(|| (String::new(), String::new(), String::new()));
+                // Extract needed data from cache before any mutable borrows of app_state.
+                // The egui closures below also capture &mut app_state, so all shared
+                // borrows of app_state must end before those closures run.
+                let trunc_h: std::borrow::Cow<'_, str>;
+                let a11y_base: String;
+                {
+                    let entry = app_state.tabs.tab_display_cache.get(pane_id);
+                    trunc_h = entry
+                        .map(|i| std::borrow::Cow::Borrowed(i.truncated_title_horizontal.as_str()))
+                        .unwrap_or_else(|| std::borrow::Cow::Borrowed(""));
+                    let info_title = entry.map(|i| i.title.as_str()).unwrap_or("");
+                    let info_url = entry.map(|i| i.url.as_str()).unwrap_or("");
+                    a11y_base = if info_title.is_empty() {
+                        String::from("Tab: New Tab")
+                    } else {
+                        format!("Tab: {info_title} - {info_url}")
+                    };
+                }
 
                 // Use custom tab name if set
-                let display_title = {
-                    let custom = app_state.tabs.tab_names.get(pane_id).cloned();
+                // Force into owned String so the borrow of app_state.tabs is released
+                // before the egui closures below that also use &mut app_state.
+                let display_title: String = {
+                    let custom = app_state.tabs.tab_names.get(pane_id).map(|s| s.as_str());
                     match custom {
-                        Some(name) => truncate_str(&name, 21),
+                        Some(name) => truncate_str(name, 21).into_owned(),
                         None => {
                             if trunc_h.is_empty() {
-                                "New Tab".into()
+                                String::from("New Tab")
                             } else {
-                                trunc_h
+                                trunc_h.into_owned()
                             }
                         }
                     }
@@ -1790,7 +1792,26 @@ pub fn build_tab_list(
                     tab_bar_bg
                 };
 
-                let display_title_clone = display_title.clone();
+                let close_label = format!("Close tab: {display_title}");
+                let is_pinned = app_state.tabs.pinned_pane_ids.contains(pane_id);
+                let is_muted = app_state.tabs.muted_pane_ids.contains(pane_id);
+                let is_private = app_state.tabs.private_pane_ids.contains(pane_id);
+                let muted_prefix = if is_muted { "\u{1f507} " } else { "" };
+                let pinned_prefix = if is_pinned { "\u{1f4cc} " } else { "" };
+                let private_prefix = if is_private { "\u{1f512} " } else { "" };
+
+                // Pre-format the full a11y label so the Fn closure only captures a &String.
+                let mut a11y_label = a11y_base;
+                if is_pinned {
+                    a11y_label.push_str(" (Pinned)");
+                }
+                if is_muted {
+                    a11y_label.push_str(" (Muted)");
+                }
+                if is_private {
+                    a11y_label.push_str(" (Private)");
+                }
+
                 egui::Frame::new().fill(frame_color).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.add_space(8.0);
@@ -1798,59 +1819,19 @@ pub fn build_tab_list(
                         let icon = if is_terminal { "\u{2328} " } else { "  " };
                         ui.label(icon);
 
-                        let muted_prefix = if app_state.tabs.muted_pane_ids.contains(pane_id) {
-                            "\u{1f507} "
-                        } else {
-                            ""
-                        };
-                        let pinned_prefix = if app_state.tabs.pinned_pane_ids.contains(pane_id) {
-                            "\u{1f4cc} "
-                        } else {
-                            ""
-                        };
-                        let private_prefix = if app_state.tabs.private_pane_ids.contains(pane_id) {
-                            "\u{1f512} "
-                        } else {
-                            ""
-                        };
-
-                        let is_pinned = app_state.tabs.pinned_pane_ids.contains(pane_id);
-                        let is_muted = app_state.tabs.muted_pane_ids.contains(pane_id);
-                        let is_private = app_state.tabs.private_pane_ids.contains(pane_id);
-
                         let response = ui.selectable_label(
                             is_active,
                             format!("{pinned_prefix}{muted_prefix}{private_prefix}{display_title}"),
                         );
-                        response.widget_info(|| {
-                            let mut label = if info_title.is_empty() {
-                                "Tab: New Tab".into()
-                            } else {
-                                format!("Tab: {} - {}", info_title, info_url)
-                            };
-                            if is_pinned {
-                                label.push_str(" (Pinned)");
-                            }
-                            if is_muted {
-                                label.push_str(" (Muted)");
-                            }
-                            if is_private {
-                                label.push_str(" (Private)");
-                            }
-                            a11y_info(WidgetType::SelectableLabel, label)
-                        });
+                        response
+                            .widget_info(|| a11y_info(WidgetType::SelectableLabel, &a11y_label));
                         if response.clicked() && !is_active {
                             app_state.wm.set_active_pane(*pane_id);
                             app_state.update_status();
                         }
 
                         let close_btn = ui.small_button("\u{00d7}");
-                        close_btn.widget_info(|| {
-                            a11y_info(
-                                WidgetType::Button,
-                                format!("Close tab: {display_title_clone}"),
-                            )
-                        });
+                        close_btn.widget_info(move || a11y_info(WidgetType::Button, &close_label));
                         if close_btn.clicked() {
                             app_state.pending_tab_close = Some(*pane_id);
                         }
@@ -1866,33 +1847,45 @@ pub fn build_tab_list(
                 let is_active = *pane_id == active_id;
                 let is_terminal = app_state.is_terminal_pane(pane_id);
 
-                // Extract needed strings before mutable borrow of app_state.
-                let (trunc_s, trunc_u, info_title, info_url) = app_state
-                    .tabs
-                    .tab_display_cache
-                    .get(pane_id)
-                    .map(|i| {
-                        (
-                            i.truncated_title_sidebar.clone(),
-                            i.truncated_url.clone(),
-                            i.title.clone(),
-                            i.url.clone(),
-                        )
-                    })
-                    .unwrap_or_else(|| {
-                        (String::new(), String::new(), String::new(), String::new())
-                    });
+                // Extract needed data from cache before any mutable borrows of app_state.
+                let trunc_s: std::borrow::Cow<'_, str>;
+                let trunc_u: std::borrow::Cow<'_, str>;
+                let a11y_base: String;
+                let url_label_str: String;
+                {
+                    let entry = app_state.tabs.tab_display_cache.get(pane_id);
+                    trunc_s = entry
+                        .map(|i| std::borrow::Cow::Borrowed(i.truncated_title_sidebar.as_str()))
+                        .unwrap_or_else(|| std::borrow::Cow::Borrowed(""));
+                    trunc_u = entry
+                        .map(|i| std::borrow::Cow::Borrowed(i.truncated_url.as_str()))
+                        .unwrap_or_else(|| std::borrow::Cow::Borrowed(""));
+                    let info_title = entry.map(|i| i.title.as_str()).unwrap_or("");
+                    let info_url = entry.map(|i| i.url.as_str()).unwrap_or("");
+                    a11y_base = if info_title.is_empty() {
+                        String::from("Tab: New Tab")
+                    } else {
+                        format!("Tab: {info_title} - {info_url}")
+                    };
+                    url_label_str = if trunc_u.is_empty() {
+                        String::from("aileron://new")
+                    } else {
+                        trunc_u.clone().into_owned()
+                    };
+                }
 
                 // Use custom tab name if set
-                let display_title = {
-                    let custom = app_state.tabs.tab_names.get(pane_id).cloned();
+                // Force into owned String so the borrow of app_state.tabs is released
+                // before the egui closures below that also use &mut app_state.
+                let display_title: String = {
+                    let custom = app_state.tabs.tab_names.get(pane_id).map(|s| s.as_str());
                     match custom {
-                        Some(name) => truncate_str(&name, 17),
+                        Some(name) => truncate_str(name, 17).into_owned(),
                         None => {
                             if trunc_s.is_empty() {
-                                "New Tab".into()
+                                String::from("New Tab")
                             } else {
-                                trunc_s
+                                trunc_s.into_owned()
                             }
                         }
                     }
@@ -1904,65 +1897,44 @@ pub fn build_tab_list(
                     tab_bar_bg
                 };
 
-                let display_title_clone = display_title.clone();
+                let close_label = format!("Close tab: {display_title}");
+                let is_pinned = app_state.tabs.pinned_pane_ids.contains(pane_id);
+                let is_muted = app_state.tabs.muted_pane_ids.contains(pane_id);
+                let is_private = app_state.tabs.private_pane_ids.contains(pane_id);
+                let muted_prefix = if is_muted { "\u{1f507} " } else { "" };
+                let pinned_prefix = if is_pinned { "\u{1f4cc} " } else { "" };
+                let private_prefix = if is_private { "\u{1f512} " } else { "" };
+
+                // Pre-format the full a11y label so the Fn closure only captures a &String.
+                let mut a11y_label = a11y_base;
+                if is_pinned {
+                    a11y_label.push_str(" (Pinned)");
+                }
+                if is_muted {
+                    a11y_label.push_str(" (Muted)");
+                }
+                if is_private {
+                    a11y_label.push_str(" (Private)");
+                }
+
                 egui::Frame::new().fill(frame_color).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let icon = if is_terminal { "\u{2328}" } else { "\u{1f310}" };
                         ui.label(icon);
 
-                        let muted_prefix = if app_state.tabs.muted_pane_ids.contains(pane_id) {
-                            "\u{1f507} "
-                        } else {
-                            ""
-                        };
-                        let pinned_prefix = if app_state.tabs.pinned_pane_ids.contains(pane_id) {
-                            "\u{1f4cc} "
-                        } else {
-                            ""
-                        };
-                        let private_prefix = if app_state.tabs.private_pane_ids.contains(pane_id) {
-                            "\u{1f512} "
-                        } else {
-                            ""
-                        };
-
-                        let is_pinned = app_state.tabs.pinned_pane_ids.contains(pane_id);
-                        let is_muted = app_state.tabs.muted_pane_ids.contains(pane_id);
-                        let is_private = app_state.tabs.private_pane_ids.contains(pane_id);
-
                         let response = ui.selectable_label(
                             is_active,
                             format!("{pinned_prefix}{muted_prefix}{private_prefix}{display_title}"),
                         );
-                        response.widget_info(|| {
-                            let mut label = if info_title.is_empty() {
-                                "Tab: New Tab".into()
-                            } else {
-                                format!("Tab: {} - {}", info_title, info_url)
-                            };
-                            if is_pinned {
-                                label.push_str(" (Pinned)");
-                            }
-                            if is_muted {
-                                label.push_str(" (Muted)");
-                            }
-                            if is_private {
-                                label.push_str(" (Private)");
-                            }
-                            a11y_info(WidgetType::SelectableLabel, label)
-                        });
+                        response
+                            .widget_info(|| a11y_info(WidgetType::SelectableLabel, &a11y_label));
                         if response.clicked() && !is_active {
                             app_state.wm.set_active_pane(*pane_id);
                             app_state.update_status();
                         }
 
                         let close_btn = ui.small_button("\u{00d7}");
-                        close_btn.widget_info(|| {
-                            a11y_info(
-                                WidgetType::Button,
-                                format!("Close tab: {display_title_clone}"),
-                            )
-                        });
+                        close_btn.widget_info(move || a11y_info(WidgetType::Button, &close_label));
                         if close_btn.clicked() {
                             app_state.pending_tab_close = Some(*pane_id);
                         }
@@ -1970,13 +1942,9 @@ pub fn build_tab_list(
 
                     if !is_terminal {
                         ui.label(
-                            egui::RichText::new(if trunc_u.is_empty() {
-                                "aileron://new".into()
-                            } else {
-                                trunc_u
-                            })
-                            .small()
-                            .color(border_color),
+                            egui::RichText::new(&url_label_str)
+                                .small()
+                                .color(border_color),
                         );
                     } else {
                         ui.label(egui::RichText::new("Terminal").small().color(border_color));
@@ -1995,6 +1963,11 @@ mod tests {
     #[test]
     fn truncate_short_string_unchanged() {
         assert_eq!(truncate_str("hi", 10), "hi");
+        // Verify borrowed path: no allocation for short strings.
+        assert!(matches!(
+            truncate_str("hi", 10),
+            std::borrow::Cow::Borrowed(_)
+        ));
     }
 
     #[test]
@@ -2005,6 +1978,11 @@ mod tests {
     #[test]
     fn truncate_over_length_appends_ellipsis() {
         assert_eq!(truncate_str("hello world", 5), "hello...");
+        // Verify owned path: allocation when truncation needed.
+        assert!(matches!(
+            truncate_str("hello world", 5),
+            std::borrow::Cow::Owned(_)
+        ));
     }
 
     #[test]
