@@ -7,6 +7,8 @@ fn frame_bench(c: &mut Criterion) {
     bsp_tree_frame_benchmarks(c);
     input_routing_benchmarks(c);
     event_dispatch_benchmarks(c);
+    multi_pane_benchmarks(c);
+    tab_display_cache_benchmarks(c);
 }
 
 // ── 1. Frame capture latency ─────────────────────────────────────────────────
@@ -348,6 +350,102 @@ fn event_dispatch_benchmarks(c: &mut Criterion) {
             ];
             for action in &actions {
                 let _ = aileron::app::dispatch::dispatch_action(action);
+            }
+        })
+    });
+}
+
+// ── 5. Multi-pane rendering simulation ────────────────────────────────────────
+
+fn multi_pane_benchmarks(c: &mut Criterion) {
+    use aileron::wm::BspTree;
+
+    // Build a 16-pane tree: repeatedly split the root, which always splits
+    // the active (last-created) pane, producing a deep tree.
+    fn build_16pane_tree() -> BspTree {
+        let mut tree = BspTree::new(
+            aileron::wm::Rect::new(0.0, 0.0, 1920.0, 1080.0),
+            url::Url::parse("aileron://new").unwrap(),
+        );
+        let mut last = tree.active_pane_id();
+        for i in 0..15 {
+            let dir = if i % 2 == 0 {
+                aileron::wm::SplitDirection::Horizontal
+            } else {
+                aileron::wm::SplitDirection::Vertical
+            };
+            last = tree.split(last, dir, 0.5).unwrap();
+        }
+        tree
+    }
+
+    // Benchmark: iter_panes() on a 16-pane tree
+    c.bench_function("multi_pane_iter_16panes", |b| {
+        let tree = build_16pane_tree();
+        b.iter(|| {
+            let panes: Vec<_> = tree.iter_panes().collect();
+            black_box(panes);
+        })
+    });
+
+    // Benchmark: pane_ids() on 16-pane tree
+    c.bench_function("multi_pane_pane_ids_16", |b| {
+        let tree = build_16pane_tree();
+        b.iter(|| {
+            let ids: Vec<_> = tree.iter_pane_ids().collect();
+            black_box(ids);
+        })
+    });
+
+    // Benchmark: split_borders() on 16-pane tree
+    c.bench_function("multi_pane_split_borders_16", |b| {
+        let tree = build_16pane_tree();
+        b.iter(|| {
+            let borders: Vec<_> = tree.iter_split_borders().collect();
+            black_box(borders);
+        })
+    });
+}
+
+// ── 6. Tab display cache benchmarks ──────────────────────────────────────────
+
+fn tab_display_cache_benchmarks(c: &mut Criterion) {
+    use aileron::app::TabDisplayInfo;
+    use std::collections::HashMap;
+
+    // Benchmark: building a TabDisplayInfo (simulates cache rebuild)
+    c.bench_function("tab_display_info_create", |b| {
+        b.iter(|| {
+            black_box(TabDisplayInfo {
+                title: "Very Long Page Title That Exceeds Display Width".into(),
+                url: "https://example.com/very/long/path/to/page.html".into(),
+                truncated_title_horizontal: "Very Long Page Titl...".into(),
+                truncated_title_sidebar: "Very Long Pa...".into(),
+                truncated_url: "https://example.co...".into(),
+            })
+        })
+    });
+
+    // Benchmark: HashMap lookup for 16 tabs (simulates per-frame cache read)
+    c.bench_function("tab_display_cache_lookup_16", |b| {
+        let mut cache = HashMap::new();
+        for i in 0..16u32 {
+            let id = uuid::Uuid::new_v4();
+            cache.insert(
+                id,
+                TabDisplayInfo {
+                    title: format!("Page Title {i}"),
+                    url: format!("https://example.com/page/{i}"),
+                    truncated_title_horizontal: format!("Page Title {i}"),
+                    truncated_title_sidebar: format!("Page Titl{i}"),
+                    truncated_url: format!("https://exa{i}"),
+                },
+            );
+        }
+        let ids: Vec<_> = cache.keys().copied().collect();
+        b.iter(|| {
+            for id in &ids {
+                black_box(cache.get(id).map(|i| i.title.as_str()));
             }
         })
     });

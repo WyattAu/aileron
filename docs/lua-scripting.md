@@ -22,7 +22,7 @@ Register a keybinding.
 
 **Key format:** Modifier+key combinations like `"ctrl+a"`, `"alt+shift+t"`, `"super+k"`. Unmodified keys use their literal name.
 
-**Special keys:** `enter`, `escape`, `backspace`, `tab`, `space`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `page_down`
+**Special keys:** `enter`, `escape`, `backspace`, `tab`, `space`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, `page_down`
 
 **Supported actions:**
 
@@ -138,7 +138,7 @@ end
 
 ### `aileron.extensions.info(id)`
 
-Returns detailed info about a specific extension by its ID.
+Returns detailed info about a specific extension by ID. The table includes: `id`, `name`, `version`, `description`, `has_background`, `host_permissions`, and optionally `background_script`.
 
 ```lua
 local info = aileron.extensions.info("my-extension")

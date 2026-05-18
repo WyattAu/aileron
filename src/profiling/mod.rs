@@ -93,6 +93,14 @@ impl Profiler {
                 .unwrap_or(0.0),
             max_ms: durations.last().copied().unwrap_or(0.0),
             avg_ms: durations.iter().sum::<f64>() / durations.len() as f64,
+            std_dev_ms: if durations.len() > 1 {
+                let mean = durations.iter().sum::<f64>() / durations.len() as f64;
+                let variance = durations.iter().map(|d| (d - mean).powi(2)).sum::<f64>()
+                    / (durations.len() - 1) as f64;
+                variance.sqrt()
+            } else {
+                0.0
+            },
             dropped_frames: durations.iter().filter(|d| **d > 16.7).count(),
         }
     }
@@ -121,6 +129,7 @@ pub struct FrameStats {
     pub p99_ms: f64,
     pub max_ms: f64,
     pub avg_ms: f64,
+    pub std_dev_ms: f64,
     pub dropped_frames: usize,
 }
 

@@ -272,8 +272,8 @@ impl AppState {
                 }
                 if ps.count > 0 {
                     parts.push(format!(
-                        "frame avg:{:.1}ms p50:{:.1}ms p99:{:.1}ms max:{:.1}ms dropped:{} ({} samples)",
-                        ps.avg_ms, ps.p50_ms, ps.p99_ms, ps.max_ms, ps.dropped_frames, ps.count,
+                        "frame avg:{:.1}ms p50:{:.1}ms p95:{:.1}ms p99:{:.1}ms max:{:.1}ms dropped:{} ({} samples)",
+                        ps.avg_ms, ps.p50_ms, ps.p95_ms, ps.p99_ms, ps.max_ms, ps.dropped_frames, ps.count,
                     ));
                 }
                 self.ui.status_message = parts.join(" | ");
