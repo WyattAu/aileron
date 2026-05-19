@@ -1,6 +1,6 @@
 use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 
-criterion_group!(frame_pipeline, frame_bench);
+criterion_group!(frame_pipeline, frame_bench, startup_benchmarks);
 
 fn frame_bench(c: &mut Criterion) {
     frame_capture_benchmarks(c);
@@ -448,6 +448,40 @@ fn tab_display_cache_benchmarks(c: &mut Criterion) {
                 black_box(cache.get(id).map(|i| i.title.as_str()));
             }
         })
+    });
+}
+
+// ── 7. Startup latency ─────────────────────────────────────────────────────
+
+fn startup_benchmarks(c: &mut Criterion) {
+    // Benchmark: Config::load() (file I/O + TOML parse + migration)
+    c.bench_function("startup_config_load", |b| {
+        b.iter(|| black_box(aileron::config::Config::load()))
+    });
+
+    // Benchmark: BspTree::new() (tree allocation + initial pane creation)
+    c.bench_function("startup_bsp_tree_new", |b| {
+        b.iter_batched(
+            || {
+                let viewport = aileron::wm::Rect::new(0.0, 0.0, 1920.0, 1080.0);
+                let url = url::Url::parse("aileron://welcome").unwrap();
+                (viewport, url)
+            },
+            |(viewport, url)| black_box(aileron::wm::BspTree::new(viewport, url)),
+            BatchSize::SmallInput,
+        )
+    });
+
+    // Benchmark: KeybindingRegistry::default() (parse all default bindings)
+    c.bench_function("startup_keybinding_registry", |b| {
+        b.iter(|| black_box(aileron::input::KeybindingRegistry::default()))
+    });
+
+    // Benchmark: cached_theme_colors() (theme resolution + hex parsing)
+    c.bench_function("startup_theme_colors_cached", |b| {
+        let config = aileron::config::Config::load();
+        // First call computes, subsequent return cached
+        b.iter(|| black_box(config.cached_theme_colors()))
     });
 }
 

@@ -246,6 +246,15 @@ jobs:
           echo "Benchmark baseline check: verify benchmarks ran successfully"
           grep -qiE "benchmarking|test result" benchmark-results.txt
 
+      - name: Extract benchmark timings
+        run: |
+          echo "## Benchmark Summary" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep -E "benchmarking\s+" benchmark-results.txt \
+            | sed 's/.*benchmarking/  /' \
+            | head -30 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:

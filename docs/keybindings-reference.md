@@ -224,6 +224,9 @@ The following actions are defined in the `Action` enum but have no default keybi
 | `Quit` | Quit the application |
 | `Yank` | Copy text selection to clipboard |
 | `Paste` | Paste clipboard text at cursor |
+| `FindNext` | Find next match in page |
+| `FindPrev` | Find previous match in page |
+| `FindClose` | Close the find bar |
 | `SaveWorkspace` | Save current pane layout as a named workspace |
 | `CloseOtherPanes` | Close all panes except the current one |
 | `Print` | Print the current page |
@@ -293,7 +296,11 @@ The full action name from the enum, or a shorthand alias where available:
 | `ScrollBottom` | -- |
 | `SplitVertical` | `vs` |
 | `SplitHorizontal` | `sp` |
-| `ClosePane` | `CloseTab` |
+| `ClosePane` | -- |
+| `CloseTab` | -- |
+| `NewTabInPane` | -- |
+| `NextTab` | -- |
+| `PrevTab` | -- |
 | `CloseOtherPanes` | -- |
 | `NavigateUp` | -- |
 | `NavigateDown` | -- |

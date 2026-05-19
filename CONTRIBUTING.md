@@ -18,11 +18,11 @@ git config core.hooksPath .githooks
 
 ### Prerequisites
 
-- **Nix** (with flakes enabled) — [install guide](https://nixos.org/download)
-- **Linux** (x86_64) — tested on CachyOS (Wayland + NVIDIA)
-- **Vulkan-capable GPU** — required by wgpu for egui rendering
+- **Nix** (with flakes enabled) -- [install guide](https://nixos.org/download)
+- **Linux** (x86_64) -- tested on CachyOS (Wayland + NVIDIA)
+- **Vulkan-capable GPU** -- required by wgpu for egui rendering
 
-### Build & Run
+### Build & Run (Linux)
 
 ```bash
 # Enter the Nix dev shell (all dependencies included)
@@ -34,6 +34,42 @@ cargo build
 # Run
 LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH" ./target/debug/aileron
 ```
+
+### Build & Run (macOS)
+
+Aileron compiles on macOS using WKWebView (via wry). No Nix shell is required.
+
+```bash
+# Build
+cargo build
+
+# Run
+./target/debug/aileron
+```
+
+**macOS notes:**
+- Requires Xcode Command Line Tools (`xcode-select --install`)
+- Offscreen rendering is the default (`render_mode = "offscreen"`)
+- Tab sidebar defaults to right side (`tab_sidebar_right = true`)
+- CI verifies compilation on both x86_64 and aarch64
+
+### Build & Run (Windows)
+
+Aileron compiles on Windows using WebView2 (via wry).
+
+```bash
+# Build
+cargo build
+
+# Run
+.\target\debug\aileron.exe
+```
+
+**Windows notes:**
+- Requires WebView2 Runtime (pre-installed on Windows 11, downloadable for Windows 10)
+- Native rendering is the default (`render_mode = "native"`)
+- Some features (adblock cosmetic filtering, offscreen mode) may behave differently
+- CI verifies compilation on x86_64-pc-windows-msvc
 
 ### Test
 
@@ -77,7 +113,8 @@ Key modules:
 - `src/scripts/` — Content script system (Lua → JS injection)
 - `src/mcp/` — MCP JSON-RPC server for LLM integration
 - `src/net/` — Ad blocker
-- `src/main.rs` — Event loop, wry pane management, egui UI
+- `src/main.rs` -- Event loop, wry pane management, egui UI
+- `src/bootstrap.rs` -- Application bootstrap, panic hook, environment diagnostics
 
 ## Pull Request Process
 
