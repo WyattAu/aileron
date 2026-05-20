@@ -360,21 +360,27 @@ fn event_dispatch_benchmarks(c: &mut Criterion) {
 fn multi_pane_benchmarks(c: &mut Criterion) {
     use aileron::wm::BspTree;
 
-    // Build a 16-pane tree: repeatedly split the root, which always splits
-    // the active (last-created) pane, producing a deep tree.
+    // Build a 16-pane tree using balanced splits to avoid PaneTooSmall.
+    // Strategy: split every existing pane once, producing a balanced binary tree.
     fn build_16pane_tree() -> BspTree {
         let mut tree = BspTree::new(
-            aileron::wm::Rect::new(0.0, 0.0, 1920.0, 1080.0),
+            aileron::wm::Rect::new(0.0, 0.0, 3840.0, 2160.0),
             url::Url::parse("aileron://new").unwrap(),
         );
-        let mut last = tree.active_pane_id();
-        for i in 0..15 {
-            let dir = if i % 2 == 0 {
-                aileron::wm::SplitDirection::Horizontal
-            } else {
+        // Round 1: split root -> 2 panes
+        // Round 2: split both -> 4 panes
+        // Round 3: split all 4 -> 8 panes
+        // Round 4: split all 8 -> 16 panes
+        for round in 0..4 {
+            let dir = if round % 2 == 0 {
                 aileron::wm::SplitDirection::Vertical
+            } else {
+                aileron::wm::SplitDirection::Horizontal
             };
-            last = tree.split(last, dir, 0.5).unwrap();
+            let ids: Vec<_> = tree.pane_ids();
+            for id in ids {
+                tree.split(id, dir, 0.5).unwrap();
+            }
         }
         tree
     }
