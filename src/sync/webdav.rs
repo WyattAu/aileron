@@ -11,7 +11,7 @@ use tracing::{debug, warn};
 /// WebDAV client configuration.
 #[derive(Debug, Clone)]
 pub struct WebdavConfig {
-    /// Base URL of the WebDAV server (e.g., "https://dav.example.com/aileron/").
+    /// Base URL of the WebDAV server (e.g., `https://dav.example.com/aileron/`).
     pub base_url: String,
     /// Authentication credentials.
     pub auth: WebdavAuth,
