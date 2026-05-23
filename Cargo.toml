@@ -104,8 +104,8 @@ wry = { version = "0.55.0", default-features = false, features = [
 # HTTP client (for downloading filter/privacy lists)
 attohttpc = "0.28"
 
-# HTTP client with streaming (for download manager)
-reqwest = { version = "0.13", default-features = false, features = ["stream", "rustls"] }
+# HTTP client with streaming (for download manager) and blocking (for sync WebDAV)
+reqwest = { version = "0.13", default-features = false, features = ["stream", "rustls", "blocking"] }
 futures-util = "0.3"
 
 # Regex (for site settings pattern matching)
