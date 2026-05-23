@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
+use crate::extensions::alarms::AlarmsApi;
 use crate::extensions::api::ExtensionApi;
+use crate::extensions::context_menus::ContextMenusApi;
+use crate::extensions::cookies::CookiesApi;
+use crate::extensions::declarative_net_request::DeclarativeNetRequestApi;
 use crate::extensions::manifest::ExtensionManifest;
 use crate::extensions::message_bus::MessageBus;
 use crate::extensions::permissions::{self, Permission};
@@ -14,6 +18,10 @@ use crate::extensions::types::{
 };
 use crate::extensions::web_request::WebRequestApi;
 
+pub mod alarms;
+pub mod context_menus;
+pub mod cookies;
+pub mod declarative_net_request;
 mod runtime;
 mod scripting;
 mod storage;
@@ -23,6 +31,10 @@ mod web_request;
 #[cfg(test)]
 mod tests;
 
+use alarms::AileronAlarmsApi;
+use context_menus::AileronContextMenusApi;
+use cookies::AileronCookiesApi;
+use declarative_net_request::AileronDeclarativeNetRequestApi;
 use runtime::AileronRuntimeApi;
 use scripting::AileronScriptingApi;
 use storage::AileronStorageApi;
@@ -46,6 +58,11 @@ fn next_listener_id() -> ListenerId {
     ListenerId(LISTENER_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1)
 }
 
+/// Raw counter increment for sub-modules that need their own listener IDs.
+pub(crate) fn next_listener_id_raw() -> u64 {
+    LISTENER_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+}
+
 pub struct AileronExtensionApi {
     extension_id: ExtensionId,
     manifest: ExtensionManifest,
@@ -54,6 +71,10 @@ pub struct AileronExtensionApi {
     runtime_api: AileronRuntimeApi,
     web_request_api: Arc<AileronWebRequestApi>,
     scripting_api: AileronScriptingApi,
+    alarms_api: AileronAlarmsApi,
+    cookies_api: AileronCookiesApi,
+    context_menus_api: AileronContextMenusApi,
+    dnr_api: AileronDeclarativeNetRequestApi,
     granted_permissions: std::collections::HashSet<Permission>,
     granted_host_permissions: Vec<String>,
     background_script: Option<crate::extensions::types::BackgroundScript>,
@@ -107,12 +128,20 @@ impl AileronExtensionApi {
         wr_api.set_permissions(granted_permissions.clone());
         let scripting_api = AileronScriptingApi::new(registry);
         let granted_host_permissions = manifest.host_permissions.clone();
+        let alarms_api = AileronAlarmsApi::new();
+        let cookies_api = AileronCookiesApi::new_in_memory();
+        let context_menus_api = AileronContextMenusApi::new(extension_id.0.as_str());
+        let dnr_api = AileronDeclarativeNetRequestApi::new();
         Self {
             tabs_api,
             storage_api,
             runtime_api,
             web_request_api: Arc::new(wr_api),
             scripting_api,
+            alarms_api,
+            cookies_api,
+            context_menus_api,
+            dnr_api,
             extension_id,
             manifest,
             granted_permissions,
@@ -207,6 +236,26 @@ impl AileronExtensionApi {
     pub fn content_script_registry(&self) -> &ExtensionContentScriptRegistry {
         &self.scripting_api.registry
     }
+
+    /// Get the alarms API implementation.
+    pub fn alarms_api(&self) -> &AileronAlarmsApi {
+        &self.alarms_api
+    }
+
+    /// Get the cookies API implementation.
+    pub fn cookies_api(&self) -> &AileronCookiesApi {
+        &self.cookies_api
+    }
+
+    /// Get the context menus API implementation.
+    pub fn context_menus_api(&self) -> &AileronContextMenusApi {
+        &self.context_menus_api
+    }
+
+    /// Get the declarativeNetRequest API implementation.
+    pub fn dnr_api(&self) -> &AileronDeclarativeNetRequestApi {
+        &self.dnr_api
+    }
 }
 
 impl ExtensionApi for AileronExtensionApi {
@@ -236,6 +285,22 @@ impl ExtensionApi for AileronExtensionApi {
 
     fn scripting(&self) -> &dyn ScriptingApi {
         &self.scripting_api
+    }
+
+    fn alarms(&self) -> &dyn AlarmsApi {
+        &self.alarms_api
+    }
+
+    fn cookies(&self) -> &dyn CookiesApi {
+        &self.cookies_api
+    }
+
+    fn context_menus(&self) -> &dyn ContextMenusApi {
+        &self.context_menus_api
+    }
+
+    fn declarative_net_request(&self) -> &dyn DeclarativeNetRequestApi {
+        &self.dnr_api
     }
 }
 

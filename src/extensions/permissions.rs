@@ -145,6 +145,12 @@ pub fn required_permissions(api: &str, method: &str) -> Vec<Permission> {
         ("runtime", _) => vec![],
         // Notifications
         ("notifications", _) => vec![Permission::Notifications],
+        // Alarms
+        ("alarms", _) => vec![Permission::Alarms],
+        // Context menus
+        ("contextMenus", _) => vec![Permission::ContextMenus],
+        // Cookies (requires host permission, checked separately)
+        ("cookies", _) => vec![],
         // Default: no permission required
         _ => vec![],
     }

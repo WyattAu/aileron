@@ -1,3 +1,7 @@
+use crate::extensions::alarms::AlarmsApi;
+use crate::extensions::context_menus::ContextMenusApi;
+use crate::extensions::cookies::CookiesApi;
+use crate::extensions::declarative_net_request::DeclarativeNetRequestApi;
 use crate::extensions::manifest::ExtensionManifest;
 use crate::extensions::runtime::RuntimeApi;
 use crate::extensions::scripting::ScriptingApi;
@@ -23,4 +27,12 @@ pub trait ExtensionApi: Send + Sync {
     fn web_request(&self) -> &dyn WebRequestApi;
 
     fn scripting(&self) -> &dyn ScriptingApi;
+
+    fn alarms(&self) -> &dyn AlarmsApi;
+
+    fn cookies(&self) -> &dyn CookiesApi;
+
+    fn context_menus(&self) -> &dyn ContextMenusApi;
+
+    fn declarative_net_request(&self) -> &dyn DeclarativeNetRequestApi;
 }
