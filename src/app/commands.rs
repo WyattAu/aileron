@@ -875,6 +875,27 @@ impl AppState {
             return;
         }
         #[cfg(feature = "sync")]
+        if query == "sync-status" {
+            self.panels.sync_status_panel_open = !self.panels.sync_status_panel_open;
+            return;
+        }
+        #[cfg(feature = "sync")]
+        if query == "sync-conflicts" {
+            if self.panels.sync_conflicts_panel_open {
+                self.panels.sync_conflicts_panel_open = false;
+                self.panels.sync_conflict_entries.clear();
+            } else {
+                let conflicts = super::cmd::sync::detect_sync_conflicts(
+                    &self.config.sync_target,
+                    self.config.sync_encrypted,
+                );
+                self.panels.sync_conflict_entries = conflicts;
+                self.panels.sync_conflict_selected = 0;
+                self.panels.sync_conflicts_panel_open = true;
+            }
+            return;
+        }
+        #[cfg(feature = "sync")]
         if query == "sync-watch" {
             if let Err(e) = super::cmd::sync::execute_sync_watch(&self.config.sync_target) {
                 self.ui.status_message = e;
@@ -1030,6 +1051,8 @@ impl AppState {
                 "sync-watch",
                 "sync-stop",
                 "sync-target",
+                "sync-status",
+                "sync-conflicts",
             ];
             let cmd = query;
             let suggestion = known_commands

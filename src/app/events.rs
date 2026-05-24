@@ -120,6 +120,60 @@ impl AppState {
             }
         }
 
+        // Sync conflicts panel: j/k navigation (feature-gated)
+        #[cfg(feature = "sync")]
+        if self.panels.sync_conflicts_panel_open {
+            match &event.key {
+                Key::Character('j') | Key::Down => {
+                    if !self.panels.sync_conflict_entries.is_empty() {
+                        self.panels.sync_conflict_selected = (self.panels.sync_conflict_selected
+                            + 1)
+                        .min(self.panels.sync_conflict_entries.len() - 1);
+                    }
+                    return;
+                }
+                Key::Character('k') | Key::Up => {
+                    self.panels.sync_conflict_selected =
+                        self.panels.sync_conflict_selected.saturating_sub(1);
+                    return;
+                }
+                Key::Enter => {
+                    // Keep local for selected conflict
+                    if !self.panels.sync_conflict_entries.is_empty() {
+                        let idx = self.panels.sync_conflict_selected;
+                        self.panels.sync_conflict_entries.remove(idx);
+                        self.ui.status_message = "Kept local version".into();
+                        if self.panels.sync_conflict_selected
+                            >= self.panels.sync_conflict_entries.len()
+                        {
+                            self.panels.sync_conflict_selected =
+                                self.panels.sync_conflict_entries.len().saturating_sub(1);
+                        }
+                    }
+                    return;
+                }
+                Key::Character('d') => {
+                    // Keep remote for selected conflict
+                    if !self.panels.sync_conflict_entries.is_empty() {
+                        let idx = self.panels.sync_conflict_selected;
+                        if let Some(conflict) = self.panels.sync_conflict_entries.get(idx) {
+                            self.ui.status_message =
+                                format!("Keep remote: {} (run :sync --pull)", conflict.path);
+                        }
+                        self.panels.sync_conflict_entries.remove(idx);
+                        if self.panels.sync_conflict_selected
+                            >= self.panels.sync_conflict_entries.len()
+                        {
+                            self.panels.sync_conflict_selected =
+                                self.panels.sync_conflict_entries.len().saturating_sub(1);
+                        }
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         // If palette is open, route input to it
         if self.palette.open {
             let key_str: Option<String> = match &event.key {

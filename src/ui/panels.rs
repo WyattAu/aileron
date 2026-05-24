@@ -31,6 +31,25 @@ fn truncate_str<'a>(s: &'a str, max_chars: usize) -> std::borrow::Cow<'a, str> {
     }
 }
 
+/// Format a byte count as a human-readable size string.
+fn format_size(bytes: u64) -> String {
+    if bytes == 0 {
+        return "0 B".into();
+    }
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn build_ui(
     ctx: &egui::Context,
@@ -175,6 +194,10 @@ fn build_ui_inner(
                     mode_str = format!("{mode_str} HELP");
                 } else if app_state.panels.workspace_panel_open {
                     mode_str = format!("{mode_str} WS");
+                } else if app_state.panels.sync_status_panel_open {
+                    mode_str = format!("{mode_str} SYNC");
+                } else if app_state.panels.sync_conflicts_panel_open {
+                    mode_str = format!("{mode_str} CONFLICTS");
                 }
 
                 ui.colored_label(mode_color, &mode_str).widget_info(|| {
@@ -257,6 +280,24 @@ fn build_ui_inner(
                     };
                     ui.colored_label(git_color, &git_text).widget_info(|| {
                         a11y_info(WidgetType::Label, format!("Git: {}", &git_text))
+                    });
+                }
+
+                // Sync status indicator (when sync feature is enabled and target is set)
+                #[cfg(feature = "sync")]
+                if !app_state.config.sync_target.is_empty() {
+                    ui.separator();
+                    let watcher_running = app_state.sync_watcher.is_running();
+                    let (sync_label, sync_color) = if watcher_running {
+                        ("[SYNC:ON]", egui::Color32::from_rgb(100, 200, 100))
+                    } else {
+                        ("[SYNC]", egui::Color32::from_rgb(180, 180, 100))
+                    };
+                    ui.colored_label(sync_color, sync_label).widget_info(|| {
+                        a11y_info(
+                            WidgetType::Label,
+                            format!("Sync: target {}", app_state.config.sync_target),
+                        )
                     });
                 }
 
@@ -1304,6 +1345,285 @@ fn build_ui_inner(
                                 app_state.current_workspace_name = "default".into();
                             }
                             app_state.ui.status_message = format!("Workspace deleted: {name}");
+                        }
+                    });
+            });
+    }
+
+    // ─── Sync Status Panel ───
+    #[cfg(feature = "sync")]
+    if app_state.panels.sync_status_panel_open {
+        let bg = egui::Color32::from_rgb(0x19, 0x19, 0x20);
+        let accent = egui::Color32::from_rgb(0x4d, 0xb4, 0xff);
+        let text = egui::Color32::from_rgb(0xd4, 0xd4, 0xd4);
+        let dim = egui::Color32::from_rgb(0x88, 0x88, 0x88);
+
+        egui::Window::new("sync-status")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(480.0)
+            .default_height(320.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .frame(
+                egui::Frame::new()
+                    .fill(bg)
+                    .inner_margin(12.0)
+                    .corner_radius(6.0)
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgb(0x40, 0x40, 0x50),
+                    )),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Sync Status")
+                            .size(16.0)
+                            .color(accent)
+                            .strong(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("X").clicked() {
+                            app_state.panels.sync_status_panel_open = false;
+                        }
+                    });
+                });
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(8.0);
+
+                let config_dir = crate::config::Config::config_dir();
+                let sm = crate::sync::SyncManager::new(config_dir);
+                let file_count = match sm.compute_manifest() {
+                    Ok(m) => m.files.len(),
+                    Err(_) => 0,
+                };
+                let watcher_running = app_state.sync_watcher.is_running();
+                let has_target = !app_state.config.sync_target.is_empty();
+
+                // Status rows
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Target:").color(dim));
+                    if has_target {
+                        ui.label(egui::RichText::new(&app_state.config.sync_target).color(text));
+                    } else {
+                        ui.label(
+                            egui::RichText::new("not configured")
+                                .color(egui::Color32::from_rgb(255, 100, 100)),
+                        );
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Encryption:").color(dim));
+                    ui.label(
+                        egui::RichText::new(if app_state.config.sync_encrypted {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        })
+                        .color(text),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Watcher:").color(dim));
+                    let (watcher_text, watcher_color) = if watcher_running {
+                        ("running", egui::Color32::from_rgb(100, 200, 100))
+                    } else {
+                        ("stopped", egui::Color32::from_rgb(200, 100, 100))
+                    };
+                    ui.colored_label(watcher_color, watcher_text);
+                });
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Local files:").color(dim));
+                    ui.label(egui::RichText::new(format!("{file_count}")).color(text));
+                });
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                ui.horizontal(|ui| {
+                    if ui.button("Sync Push").clicked() {
+                        app_state.ui.status_message = crate::app::cmd::sync::execute_sync_push(
+                            &app_state.config.sync_target,
+                            app_state.config.sync_encrypted,
+                        );
+                    }
+                    if ui.button("Sync Pull").clicked() {
+                        app_state.ui.status_message = crate::app::cmd::sync::execute_sync_pull(
+                            &app_state.config.sync_target,
+                            app_state.config.sync_encrypted,
+                        );
+                    }
+                    if watcher_running {
+                        if ui.button("Stop Watcher").clicked() {
+                            app_state.sync_watcher.stop();
+                            app_state.ui.status_message = "Sync watcher stopped".into();
+                        }
+                    } else if ui.button("Start Watcher").clicked()
+                        && crate::app::cmd::sync::execute_sync_watch(&app_state.config.sync_target)
+                            .is_ok()
+                    {
+                        let config_dir = crate::config::Config::config_dir();
+                        match app_state.sync_watcher.start(&config_dir) {
+                            Ok(()) => app_state.ui.status_message = "Sync watcher started".into(),
+                            Err(e) => {
+                                app_state.ui.status_message =
+                                    format!("Failed to start watcher: {e}");
+                            }
+                        }
+                    }
+                });
+            });
+    }
+
+    // ─── Sync Conflicts Panel ───
+    #[cfg(feature = "sync")]
+    if app_state.panels.sync_conflicts_panel_open {
+        let bg = egui::Color32::from_rgb(0x19, 0x19, 0x20);
+        let accent = egui::Color32::from_rgb(0x4d, 0xb4, 0xff);
+        let dim = egui::Color32::from_rgb(0x88, 0x88, 0x88);
+        let warn_color = egui::Color32::from_rgb(255, 200, 100);
+
+        let conflict_count = app_state.panels.sync_conflict_entries.len();
+        egui::Window::new("sync-conflicts")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(560.0)
+            .default_height(400.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .frame(
+                egui::Frame::new()
+                    .fill(bg)
+                    .inner_margin(12.0)
+                    .corner_radius(6.0)
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgb(0x40, 0x40, 0x50),
+                    )),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("Sync Conflicts ({conflict_count})"))
+                            .size(16.0)
+                            .color(accent)
+                            .strong(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("X").clicked() {
+                            app_state.panels.sync_conflicts_panel_open = false;
+                            app_state.panels.sync_conflict_entries.clear();
+                        }
+                    });
+                });
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        if app_state.panels.sync_conflict_entries.is_empty() {
+                            ui.label(
+                                egui::RichText::new(
+                                    "No conflicts detected. All files are in sync.",
+                                )
+                                .color(egui::Color32::GRAY),
+                            );
+                        }
+
+                        let mut resolve_keep_local: Option<usize> = None;
+                        let mut resolve_keep_remote: Option<usize> = None;
+
+                        for (i, conflict) in
+                            app_state.panels.sync_conflict_entries.iter().enumerate()
+                        {
+                            let is_selected = i == app_state.panels.sync_conflict_selected;
+                            let deleted = conflict.local_hash.is_empty();
+
+                            ui.horizontal(|ui| {
+                                let response = ui.selectable_label(
+                                    is_selected,
+                                    egui::RichText::new(if deleted {
+                                        format!("  [DELETED] {}", conflict.path)
+                                    } else {
+                                        format!("  {}", conflict.path)
+                                    })
+                                    .size(13.0)
+                                    .color(if deleted {
+                                        egui::Color32::from_rgb(255, 100, 100)
+                                    } else if is_selected {
+                                        accent
+                                    } else {
+                                        warn_color
+                                    }),
+                                );
+                                if response.clicked() {
+                                    app_state.panels.sync_conflict_selected = i;
+                                }
+                                if is_selected {
+                                    response.scroll_to_me(Some(egui::Align::Center));
+                                }
+
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if !deleted && ui.small_button("Keep Remote").clicked() {
+                                            resolve_keep_remote = Some(i);
+                                        }
+                                        if !deleted && ui.small_button("Keep Local").clicked() {
+                                            resolve_keep_local = Some(i);
+                                        }
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "{} -> {}",
+                                                format_size(conflict.remote_size),
+                                                format_size(conflict.local_size),
+                                            ))
+                                            .small()
+                                            .color(dim),
+                                        );
+                                    },
+                                );
+                            });
+                        }
+
+                        // Handle conflict resolution
+                        if let Some(idx) = resolve_keep_local {
+                            app_state.panels.sync_conflict_entries.remove(idx);
+                            app_state.ui.status_message = "Kept local version".into();
+                            if app_state.panels.sync_conflict_selected
+                                >= app_state.panels.sync_conflict_entries.len()
+                            {
+                                app_state.panels.sync_conflict_selected = app_state
+                                    .panels
+                                    .sync_conflict_entries
+                                    .len()
+                                    .saturating_sub(1);
+                            }
+                        }
+                        if let Some(idx) = resolve_keep_remote {
+                            // For keep-remote: revert local file to the synced version
+                            if let Some(conflict) = app_state.panels.sync_conflict_entries.get(idx)
+                            {
+                                app_state.ui.status_message = format!(
+                                    "Keep remote selected for: {} (re-run :sync --pull to restore)",
+                                    conflict.path
+                                );
+                            }
+                            app_state.panels.sync_conflict_entries.remove(idx);
+                            if app_state.panels.sync_conflict_selected
+                                >= app_state.panels.sync_conflict_entries.len()
+                            {
+                                app_state.panels.sync_conflict_selected = app_state
+                                    .panels
+                                    .sync_conflict_entries
+                                    .len()
+                                    .saturating_sub(1);
+                            }
                         }
                     });
             });

@@ -137,6 +137,21 @@ pub struct PendingPermissionRequest {
     pub request_id: u64,
 }
 
+/// A sync conflict entry for display in the conflicts panel.
+#[derive(Debug, Clone)]
+pub struct SyncConflictEntry {
+    /// Relative path of the conflicted file.
+    pub path: String,
+    /// BLAKE3 hash of the local version.
+    pub local_hash: String,
+    /// BLAKE3 hash of the remote version.
+    pub remote_hash: String,
+    /// Local file size in bytes.
+    pub local_size: u64,
+    /// Remote file size in bytes.
+    pub remote_size: u64,
+}
+
 #[derive(Default)]
 pub struct PanelState {
     pub history_panel_open: bool,
@@ -161,6 +176,12 @@ pub struct PanelState {
     /// Permission prompt dialog state.
     pub permission_prompt_open: bool,
     pub pending_permission_request: Option<PendingPermissionRequest>,
+    /// Sync status panel state.
+    pub sync_status_panel_open: bool,
+    /// Sync conflicts panel state.
+    pub sync_conflicts_panel_open: bool,
+    pub sync_conflict_entries: Vec<SyncConflictEntry>,
+    pub sync_conflict_selected: usize,
 }
 
 pub struct SessionState {

@@ -112,6 +112,71 @@ pub fn execute_sync_watch(sync_target: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Detect sync conflicts by comparing local files against the last-synced manifest.
+/// Files whose current hash differs from the last-synced hash are potential conflicts.
+pub fn detect_sync_conflicts(
+    sync_target: &str,
+    _sync_encrypted: bool,
+) -> Vec<super::super::SyncConflictEntry> {
+    if sync_target.is_empty() {
+        return Vec::new();
+    }
+
+    let config_dir = crate::config::Config::config_dir();
+    let sm = crate::sync::SyncManager::new(config_dir);
+
+    // Load the last-synced manifest (stored in .sync/manifest.json)
+    let last_synced = {
+        let manifest_path = sm.state_dir().join("manifest.json");
+        if manifest_path.exists() {
+            match crate::sync::core::SyncManifest::load(&manifest_path) {
+                Ok(m) => m,
+                Err(_) => return Vec::new(),
+            }
+        } else {
+            // No previous sync, no conflicts possible
+            return Vec::new();
+        }
+    };
+
+    // Compute current manifest
+    let current = match sm.compute_manifest() {
+        Ok(m) => m,
+        Err(_) => return Vec::new(),
+    };
+
+    // Find files that differ between current and last-synced
+    let mut conflicts = Vec::new();
+    for (path, current_file) in &current.files {
+        if let Some(synced_file) = last_synced.files.get(path)
+            && current_file.blake3_hash != synced_file.blake3_hash
+        {
+            conflicts.push(super::super::SyncConflictEntry {
+                path: path.clone(),
+                local_hash: current_file.blake3_hash.clone(),
+                remote_hash: synced_file.blake3_hash.clone(),
+                local_size: current_file.size,
+                remote_size: synced_file.size,
+            });
+        }
+    }
+
+    // Also report files deleted locally but present in last sync
+    for (path, synced_file) in &last_synced.files {
+        if !current.files.contains_key(path) {
+            conflicts.push(super::super::SyncConflictEntry {
+                path: path.clone(),
+                local_hash: String::new(),
+                remote_hash: synced_file.blake3_hash.clone(),
+                local_size: 0,
+                remote_size: synced_file.size,
+            });
+        }
+    }
+
+    conflicts
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,5 +210,18 @@ mod tests {
     fn sync_watch_with_target() {
         let result = execute_sync_watch("/tmp/test");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn detect_conflicts_no_target() {
+        let conflicts = detect_sync_conflicts("", false);
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn detect_conflicts_with_target_no_manifest() {
+        // A target path that has never been synced — no manifest means no conflicts
+        let conflicts = detect_sync_conflicts("/tmp/aileron-test-nonexistent", false);
+        assert!(conflicts.is_empty());
     }
 }
