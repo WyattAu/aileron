@@ -5,18 +5,19 @@
 | Metric | Value |
 |--------|-------|
 | Version | 0.20.0 |
-| Tests | 1038 lib, 253 integration (13 suites), 4 doc = 1295 total |
+| Tests | 1143 lib, 253 integration (13 suites), 4 doc = 1400 total |
 | Clippy | Zero warnings (all-targets, -D warnings) |
 | Formatting | Zero issues (cargo fmt) |
 | Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck -- SAFETY commented) |
 | #[must_use] | 49 attributes across 21 files |
-| LOC | 51,358 Rust across 135 source files |
+| LOC | 51,413 Rust across 135 source files |
 | Binary size | ~21 MB stripped (x86_64 Linux) |
-| CI | 8 jobs: Linux test, macOS check, Windows check, cross-compile (3 targets), fmt, benchmark |
+| CI | 8 jobs: Linux test + coverage, macOS check, Windows check, cross-compile (3 targets), fmt, benchmark regression |
 | Coverage | cargo-llvm-cov (lcov) via Codecov |
-| Pre-commit | 7-gate enforcement (fmt, check, clippy, lib, doc, 13-suite integration, doc gen) |
+| Pre-commit | fmt, check, clippy, lib tests, doc tests; pre-push: integration tests, doc gen |
 | GitHub Pages | Deployed at https://wyattau.github.io/aileron/ |
 | Platforms | Linux (primary), macOS (compile), Windows (compile) |
+| Audit (2026-05-24) | Zero stubs, zero placeholder strings, zero risky unwrap(), 5 code fixes, CI/CD hardened |
 
 ## Execution Model
 
@@ -54,8 +55,8 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | P3-01 | Profile compile times with `cargo build --timings`, optimize split | 2h | Pending |
 | P3-02 | Evaluate cranelift codegen backend for faster debug builds | 2h | Pending |
 | P3-03 | Store benchmark baselines in CI, fail on >10% regression | 4h | Pending |
-| P3-04 | Feature gate `terminal` module behind `terminal` feature (reduce cold compile) | 3h | Pending |
-| P3-05 | Feature gate `lua` module behind `lua` feature | 2h | Pending |
+| P3-04 | Feature gate `terminal` module behind `terminal` feature (reduce cold compile) | 3h | Done |
+| P3-05 | Feature gate `lua` module behind `lua` feature | 2h | Done |
 | P3-06 | Further split main.rs (2618 lines -> target <2000) | 3h | Pending |
 
 ### Success Criteria for v0.21
@@ -228,7 +229,7 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 
 | ID | Requirement | Status |
 |----|-------------|--------|
-| R1 | All 1295+ tests pass on Linux, macOS, Windows | Pending |
+| R1 | All 1400+ tests pass on Linux, macOS, Windows | Pending |
 | R2 | >= 95% branch coverage on critical paths (wm, input, extensions, adblock) | Pending |
 | R3 | Zero critical clippy warnings on all 3 platforms | Pending |
 | R4 | All performance targets validated (startup <2s, input latency <16ms) | Pending |
