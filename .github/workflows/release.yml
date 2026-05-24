@@ -36,9 +36,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Verify CI passed for this ref
+      - name: Verify tag matches Cargo.toml version
         run: |
-          gh run list --workflow=ci.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId'
+          TAG="${GITHUB_REF#refs/tags/v}"
+          CARGO_VER=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          if [ "$TAG" != "$CARGO_VER" ]; then
+            echo "ERROR: Tag v$TAG does not match Cargo.toml version $CARGO_VER"
+            exit 1
+          fi
+          echo "Version verified: v$TAG"
+        shell: bash
+
+      - name: Verify CI passed for this commit
+        run: |
+          COMMIT_SHA=$(git rev-list -n 1 ${{ github.ref_name }})
+          gh run list --workflow=ci.yml --commit "$COMMIT_SHA" --status success --limit 1 --json databaseId --jq '.[0].databaseId'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -52,6 +64,7 @@ jobs:
       - name: Install system dependencies (Linux aarch64 cross-compile)
         if: runner.os == 'Linux' && matrix.cross_compile == true
         run: |
+          sudo dpkg --add-architecture arm64
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
@@ -73,31 +86,35 @@ jobs:
           [target.aarch64-unknown-linux-gnu]
           linker = "aarch64-linux-gnu-gcc"
           EOF
+          echo "PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_SYSROOT_DIR=/" >> "$GITHUB_ENV"
 
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Generate SHA256 checksum
+      - name: Prepare artifacts (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          sha256sum aileron > aileron-${{ matrix.target }}.sha256
+          cp aileron ${{ matrix.artifact }}
+          sha256sum ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256
 
-      - name: Generate SHA256 checksum (Windows)
+      - name: Prepare artifacts (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           cd target/${{ matrix.target }}/release
-          $hash = (Get-FileHash aileron.exe -Algorithm SHA256).Hash
-          "$hash  aileron.exe" | Out-File -Encoding ascii "aileron-${{ matrix.target }}.sha256"
+          Copy-Item aileron.exe ${{ matrix.artifact }}.exe
+          $hash = (Get-FileHash ${{ matrix.artifact }}.exe -Algorithm SHA256).Hash
+          "$hash  ${{ matrix.artifact }}.exe" | Out-File -Encoding ascii "${{ matrix.artifact }}.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: |
-            target/${{ matrix.target }}/release/aileron${{ matrix.target == 'x86_64-pc-windows-msvc' && '.exe' || '' }}
-            target/${{ matrix.target }}/release/aileron-${{ matrix.target }}.sha256
+            target/${{ matrix.target }}/release/${{ matrix.artifact }}${{ matrix.target == 'x86_64-pc-windows-msvc' && '.exe' || '' }}
+            target/${{ matrix.target }}/release/${{ matrix.artifact }}.sha256
 
   publish-release:
     name: Publish GitHub Release
@@ -112,7 +129,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: true
+
+      - name: Flatten artifacts for release
+        run: find artifacts -type f -exec mv {} artifacts/ \;
 
       - name: Create release
         uses: softprops/action-gh-release@v2

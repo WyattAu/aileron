@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  checks: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -69,9 +68,6 @@ jobs:
       - name: Run integration tests
         run: AILERON_TESTING=1 xvfb-run -a cargo test --tests -- --test-threads=4
 
-      - name: Run startup test
-        run: AILERON_TESTING=1 xvfb-run -a cargo test --test startup_test -- --test-threads=4
-
       - name: Generate documentation
         run: cargo doc --no-deps --all-features 2>&1 | tee doc-output.txt
 
@@ -89,16 +85,10 @@ jobs:
       - name: Run doc tests
         run: AILERON_TESTING=1 cargo test --doc
 
-      - name: Run benchmarks (quick)
-        run: AILERON_TESTING=1 xvfb-run -a cargo bench --bench benchmarks -- --sample-size 10
-
-      - name: Run frame benchmarks (quick)
-        run: AILERON_TESTING=1 xvfb-run -a cargo bench --bench frame_bench -- --sample-size 10
-
       - name: Generate code coverage
         run: |
           cargo install cargo-llvm-cov --locked --root ~/.cargo
-          ~/.cargo/bin/cargo llvm-cov --lcov --output-path lcov.info --exclude offscreen_render_test -- --test-threads=4
+          AILERON_TESTING=1 xvfb-run -a ~/.cargo/bin/cargo llvm-cov --lcov --output-path lcov.info --exclude offscreen_render_test -- --test-threads=4
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v4
