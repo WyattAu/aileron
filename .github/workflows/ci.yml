@@ -73,7 +73,7 @@ jobs:
 
       - name: Security audit
         run: |
-          cargo install cargo-audit --locked --root ~/.cargo
+          cargo install cargo-audit --locked --root ~/.cargo --force
           ~/.cargo/bin/cargo audit
 
       - name: Build release
@@ -87,7 +87,7 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          cargo install cargo-llvm-cov --locked --root ~/.cargo
+          cargo install cargo-llvm-cov --locked --root ~/.cargo --force
           AILERON_TESTING=1 xvfb-run -a ~/.cargo/bin/cargo llvm-cov --workspace --lcov --output-path lcov.info --exclude offscreen_render_test -- --test-threads=4
 
       - name: Upload coverage report

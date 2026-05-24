@@ -122,11 +122,11 @@ LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH" ./target/debug/aileron
 ## Test
 
 ```bash
-# Unit tests (1038 tests)
+# Unit tests (1143 tests)
 cargo test --lib -- --test-threads=4
 
-# Integration tests
-cargo test --test integration_smoke
+# Integration tests (253 tests, 13 suites)
+cargo test --tests -- --test-threads=4
 
 # All tests + clippy (zero warnings)
 cargo clippy --all-targets -- -D warnings
@@ -135,16 +135,37 @@ cargo test -- --test-threads=4
 
 ## Install
 
+### Binary Download
+
+Pre-built binaries for Linux, macOS, and Windows are available on the [releases page](https://github.com/WyattAu/aileron/releases).
+
+| Platform | Architecture | Download |
+|----------|-------------|----------|
+| Linux | x86_64 | `aileron-x86_64-linux` |
+| Linux | ARM64 | `aileron-aarch64-linux` |
+| macOS | Apple Silicon | `aileron-aarch64-macos` |
+| macOS | Intel | `aileron-x86_64-macos` |
+| Windows | x86_64 | `aileron-x86_64-windows.exe` |
+
 ### Cargo
 
 ```bash
-cargo install --path .
+cargo install aileron
 ```
 
-### AUR
+### Arch Linux (AUR)
 
 ```bash
 paru -S aileron-git
+```
+
+### Build from Source
+
+```bash
+git clone https://github.com/WyattAu/aileron.git
+cd aileron
+cargo build --release
+cargo install --path .
 ```
 
 ### Flatpak (experimental)
