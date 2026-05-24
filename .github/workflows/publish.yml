@@ -35,12 +35,37 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install SSH key
+      - name: Install SSH key and verify AUR host fingerprints
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Fetch AUR host keys and verify against known fingerprints
+          ssh-keyscan -t ed25519,ecdsa-sha2-nistp256,rsa aur.archlinux.org 2>/dev/null > ~/.ssh/known_hosts
+
+          ED25519_FP=$(ssh-keygen -l -f ~/.ssh/known_hosts | grep ED25519 | awk '{print $2}')
+          ECDSA_FP=$(ssh-keygen -l -f ~/.ssh/known_hosts | grep ECDSA | awk '{print $2}')
+          RSA_FP=$(ssh-keygen -l -f ~/.ssh/known_hosts | grep RSA | awk '{print $2}')
+
+          EXPECTED_ED25519="SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4"
+          EXPECTED_ECDSA="SHA256:uTa/0PndEgPZTf76e1DFqXKJEXKsn7m9ivhLQtzGOCI"
+          EXPECTED_RSA="SHA256:5s5cIyReIfNNVGRFdDbe3hdYiI5OelHGpw2rOUud3Q8"
+
+          if [ "$ED25519_FP" != "$EXPECTED_ED25519" ]; then
+            echo "ERROR: Ed25519 fingerprint mismatch! Expected $EXPECTED_ED25519, got $ED25519_FP"
+            exit 1
+          fi
+          if [ "$ECDSA_FP" != "$EXPECTED_ECDSA" ]; then
+            echo "ERROR: ECDSA fingerprint mismatch! Expected $EXPECTED_ECDSA, got $ECDSA_FP"
+            exit 1
+          fi
+          if [ "$RSA_FP" != "$EXPECTED_RSA" ]; then
+            echo "ERROR: RSA fingerprint mismatch! Expected $EXPECTED_RSA, got $RSA_FP"
+            exit 1
+          fi
+
+          echo "AUR SSH fingerprints verified (Ed25519 + ECDSA + RSA)"
           echo "GIT_SSH_COMMAND=ssh -i ~/.ssh/aur -o UserKnownHostsFile=~/.ssh/known_hosts" >> "$GITHUB_ENV"
 
       - name: Update PKGBUILD version
