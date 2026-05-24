@@ -1,6 +1,6 @@
 # Aileron
 
-**v0.20.0** — 1038 lib tests, 253 integration, 4 doc (1295 total), ~51,300 Rust LOC
+**v0.20.0** — 1143 lib tests, 253 integration, 4 doc (1400 total), ~51,400 Rust LOC
 
 **The terminal for the web.** A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals. Written in Rust with wry (WebKitGTK) for web rendering and egui for the UI overlay.
 

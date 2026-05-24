@@ -5,7 +5,7 @@
 - **Version:** 0.20.0
 - **Status:** Shipped
 - **Last Updated:** 2026-05-14
-- **Test Count:** 1038 lib tests, 253 integration (13 suites), 4 doc = 1295 total
+- **Test Count:** 1143 lib tests, 253 integration (13 suites), 4 doc = 1400 total
 - **Zero clippy warnings** (all-targets -D warnings)
 - **Zero vulnerabilities** (cargo audit)
 - **19 unsafe blocks** (FFI: WebKitGTK, Cairo, X11, spellcheck -- all with SAFETY comments)
@@ -23,7 +23,7 @@
 - **Error handling:** 11 silent swallows converted to tracing::warn
 - **Cross-file consistency:** 0 orphaned imports, 0 version mismatches
 - **Feature flags:** `lua` and `terminal` feature-gated in v0.20.0 (always-on via default features); extensions always compiled
-- **Test count:** 1038 lib, 253 integration (13 suites), 4 doc = 1295 total
+- **Test count:** 1143 lib, 253 integration (13 suites), 4 doc = 1400 total
 - **Duplicate code:** X11 error handler consolidated, spellcheck FFI deduplicated
 - **Data race fix:** proxy set_var removed from post-spawn command handler
 - **#[must_use]:** 49 attributes across 21 files (all public Result/Option returns; 8 added in v0.18.1)
