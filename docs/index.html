@@ -77,8 +77,8 @@ footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;borde
     <h1>Aileron</h1>
     <p class="tagline">The terminal for the web<span>A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals.</span></p>
     <div class="buttons" role="group" aria-label="Install options">
-      <a href="https://aur.archlinux.org/packages/aileron-git" class="btn btn-primary">Arch AUR</a>
-      <a href="https://crates.io/crates/aileron" class="btn btn-outline">Cargo</a>
+      <a href="https://github.com/WyattAu/aileron" class="btn btn-primary">Build from Source</a>
+      <a href="https://github.com/WyattAu/aileron/releases" class="btn btn-outline">Releases</a>
     </div>
   </div>
 </header>
@@ -160,11 +160,12 @@ footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;borde
     <div class="container quickstart">
       <h2 id="quickstart-heading">Quick Start</h2>
       <p>Install and launch in under a minute.</p>
-      <pre role="region" aria-label="Installation commands"><code><span class="comment"># Arch Linux (AUR)</span>
-<span class="prompt">$ </span>paru -S aileron-git
+      <pre role="region" aria-label="Installation commands"><code><span class="comment"># Clone and build (any platform)</span>
+<span class="prompt">$ </span>git clone https://github.com/WyattAu/aileron.git
+<span class="prompt">$ </span>cd aileron && cargo build --release
 
-<span class="comment"># Cargo (any platform)</span>
-<span class="prompt">$ </span>cargo install aileron
+<span class="comment"># Install locally</span>
+<span class="prompt">$ </span>cargo install --path .
 
 <span class="comment"># Launch</span>
 <span class="prompt">$ </span>aileron</code></pre>
