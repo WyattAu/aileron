@@ -1,0 +1,25 @@
+pkgbase = aileron-git
+	pkgdesc = A keyboard-driven, tiling web environment with an embedded terminal, built in Rust
+	pkgver = 0.20.0
+	pkgrel = 1
+	url = https://github.com/WyattAu/aileron
+	arch = x86_64
+	arch = aarch64
+	license = Apache-2.0
+	makedepends = cargo
+	makedepends = git
+	makedepends = clang
+	makedepends = pkgconf
+	depends = webkit2gtk-4.1
+	depends = gtk3
+	depends = openssl
+	depends = sqlite
+	depends = vulkan-icd-loader
+	depends = gcc-libs
+	depends = glibc
+	provides = aileron
+	conflicts = aileron
+	source = git+https://github.com/WyattAu/aileron.git
+	sha256sums = SKIP
+
+pkgname = aileron-git

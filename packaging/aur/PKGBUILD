@@ -1,0 +1,44 @@
+# Maintainer: WyattAu
+pkgname=aileron-git
+pkgver=0.20.0
+pkgrel=1
+pkgdesc="A keyboard-driven, tiling web environment with an embedded terminal, built in Rust"
+arch=('x86_64' 'aarch64')
+url="https://github.com/WyattAu/aileron"
+license=('Apache-2.0')
+depends=(
+  'webkit2gtk-4.1'
+  'gtk3'
+  'openssl'
+  'sqlite'
+  'vulkan-icd-loader'
+  'gcc-libs'
+  'glibc'
+)
+makedepends=('cargo' 'git' 'clang' 'pkgconf')
+provides=('aileron')
+conflicts=('aileron')
+source=("$pkgname::git+https://github.com/WyattAu/aileron.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$pkgname"
+  # Strip leading 'v' from tag, convert - to .r and . for pkgver format
+  git describe --long --tags 2>/dev/null | sed 's/^v//;s/-/.r/;s/-/./' || \
+    printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cd "$pkgname"
+  cargo build --release --locked
+}
+
+check() {
+  cd "$pkgname"
+  cargo test --lib -- --test-threads="$(nproc)"
+}
+
+package() {
+  cd "$pkgname"
+  install -Dm755 "target/release/aileron" "$pkgdir/usr/bin/aileron"
+}
