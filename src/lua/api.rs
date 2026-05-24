@@ -238,7 +238,7 @@ impl LuaEngine {
         let info_fn = lua.create_function(|lua, ()| {
             let info = lua.create_table()?;
             info.set("version", "0.1.0")?;
-            info.set("engine", "placeholder")?;
+            info.set("engine", "wry")?;
             Ok(info)
         })?;
         aileron.set("info", info_fn)?;

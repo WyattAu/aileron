@@ -428,8 +428,7 @@ impl AppState {
             }
         };
 
-        // Create web engine manager with placeholder factory
-        // (will be replaced with Servo when available per ADR-001)
+        // Create web engine manager (wry via WebEngine trait; Servo planned per ADR-001)
         let mut engines = PaneStateManager::new();
         let root_pane_id = wm.active_pane_id();
         engines.create_pane(root_pane_id, initial_url, None);

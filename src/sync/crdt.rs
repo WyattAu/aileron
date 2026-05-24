@@ -102,9 +102,9 @@ impl<T: Clone> LwwElementSet<T> {
     }
 
     /// Get all entries (including tombstoned) for sync.
-    pub fn get_all_with_metadata(&self) -> &[String] {
-        // Return IDs for iteration
-        unimplemented!()
+    /// Returns references to all entries with their full metadata for serialization.
+    pub fn get_all_with_metadata(&self) -> Vec<&LwwEntry<T>> {
+        self.entries.values().collect()
     }
 
     /// Get all raw entries.

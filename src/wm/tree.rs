@@ -868,7 +868,7 @@ impl BspTree {
                 Ok((
                     BspNode::Leaf {
                         pane,
-                        rect: Rect::new(0.0, 0.0, 0.0, 0.0), // placeholder, will be resized
+                        rect: Rect::new(0.0, 0.0, 0.0, 0.0), // zero rect; resized by layout pass
                     },
                     active_url,
                 ))
@@ -889,7 +889,7 @@ impl BspTree {
                     BspNode::Split {
                         direction: dir,
                         ratio: *ratio,
-                        rect: Rect::new(0.0, 0.0, 0.0, 0.0), // placeholder
+                        rect: Rect::new(0.0, 0.0, 0.0, 0.0), // zero rect; resized by layout pass
                         left: Box::new(left_node),
                         right: Box::new(right_node),
                     },

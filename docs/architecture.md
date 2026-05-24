@@ -93,7 +93,7 @@ Sandboxed Lua 5.4 environment via `mlua`. Available APIs: `aileron.version`, `ai
 
 ### Ad Blocking (`src/net/`)
 
-Aho-Corasick multi-pattern matcher against EasyList-compatible filter lists. Supports network filters (domain blocking, exception rules, `$third-party`, `popup`, `redirect`, `CSP header removal, `important` priority) and cosmetic filters (CSS/JS injection per domain).
+Aho-Corasick multi-pattern matcher against EasyList-compatible filter lists. Supports network filters (domain blocking, exception rules, `$third-party`, `$popup`, `$redirect`, `$csp`, `$removeheader`, `$important`) and cosmetic filters (CSS/JS injection per domain).
 
 ### Sync Protocol (`src/sync/`)
 
