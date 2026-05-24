@@ -11,6 +11,7 @@ pub mod context_menus;
 pub mod cookies;
 pub mod declarative_net_request;
 pub mod impls;
+pub mod js_runtime;
 pub mod loader;
 pub mod manifest;
 pub mod message_bus;

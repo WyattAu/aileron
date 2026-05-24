@@ -90,6 +90,43 @@ impl Permission {
         }
     }
 
+    /// Human-readable display name for UI prompts.
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::ActiveTab => "Access the active tab",
+            Self::Tabs => "Access browser tabs",
+            Self::TabHide => "Hide browser tabs",
+            Self::TopSites => "Access top sites",
+            Self::Bookmarks => "Read and modify bookmarks",
+            Self::History => "Access browsing history",
+            Self::Downloads => "Manage downloads",
+            Self::DownloadsOpen => "Open downloaded files",
+            Self::DownloadsUI => "Manage download UI",
+            Self::Storage => "Store local data",
+            Self::UnlimitedStorage => "Store unlimited local data",
+            Self::Scripting => "Inject scripts into web pages",
+            Self::ClipboardWrite => "Write to clipboard",
+            Self::ClipboardRead => "Read from clipboard",
+            Self::Notifications => "Show notifications",
+            Self::Alarms => "Schedule alarms",
+            Self::WebRequest => "Monitor network requests",
+            Self::WebRequestBlocking => "Block network requests",
+            Self::WebRequestFilterResponse => "Filter response data",
+            Self::DeclarativeNetRequest => "Block or redirect requests",
+            Self::Proxy => "Manage proxy settings",
+            Self::Dns => "Resolve DNS queries",
+            Self::Identity => "Access identity",
+            Self::Privacy => "Access privacy settings",
+            Self::BrowsingData => "Clear browsing data",
+            Self::ContextMenus => "Add context menu items",
+            Self::Devtools => "Access developer tools",
+            Self::Override => "Override browser pages",
+            Self::Management => "Manage extensions",
+            Self::Theme => "Change browser theme",
+            Self::Custom(_) => "Custom permission",
+        }
+    }
+
     /// The API namespace this permission gates.
     pub fn api_namespace(&self) -> &'static str {
         match self {
@@ -355,5 +392,18 @@ mod tests {
         assert_eq!(Permission::Storage.api_namespace(), "storage");
         assert_eq!(Permission::WebRequest.api_namespace(), "webRequest");
         assert_eq!(Permission::Scripting.api_namespace(), "scripting");
+    }
+
+    #[test]
+    fn test_display_name_not_empty() {
+        // Every well-known variant returns a non-empty display name
+        assert!(!Permission::Tabs.display_name().is_empty());
+        assert!(!Permission::Storage.display_name().is_empty());
+        assert!(!Permission::WebRequest.display_name().is_empty());
+        assert!(!Permission::Scripting.display_name().is_empty());
+        assert!(!Permission::Alarms.display_name().is_empty());
+        assert!(!Permission::ContextMenus.display_name().is_empty());
+        assert!(!Permission::DeclarativeNetRequest.display_name().is_empty());
+        assert!(!Permission::Custom("foo".into()).display_name().is_empty());
     }
 }

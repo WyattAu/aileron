@@ -363,6 +363,43 @@ impl ExtensionManager {
         self.extensions.contains_key(&builtin_adblock_id())
     }
 
+    /// Grant an optional permission to an extension at runtime.
+    /// Validates that the permission is declared in `optional_permissions`.
+    /// Returns `Ok(())` on success, or an error string if invalid.
+    pub fn grant_optional_permission(
+        &mut self,
+        id: &ExtensionId,
+        permission: &str,
+    ) -> std::result::Result<(), String> {
+        // First validate: check the manifest for optional_permissions
+        let is_optional = self
+            .extensions
+            .get(id)
+            .and_then(|api| {
+                api.manifest()
+                    .optional_permissions
+                    .iter()
+                    .find(|p| *p == permission)
+                    .map(|_| true)
+            })
+            .unwrap_or(false);
+
+        if !is_optional {
+            return Err(format!(
+                "Permission '{}' not declared in optional_permissions for extension '{}'",
+                permission, id.0
+            ));
+        }
+
+        // Now grant the permission
+        let api = self
+            .extensions
+            .get_mut(id)
+            .ok_or_else(|| format!("Extension '{}' not found", id.0))?;
+        api.grant_permission(permission);
+        Ok(())
+    }
+
     /// Enable or disable the built-in adblock extension.
     pub fn set_builtin_adblock_enabled(&mut self, enabled: bool) {
         let id = builtin_adblock_id();
@@ -948,5 +985,84 @@ mod tests {
             1,
             "Unloading builtin adblock should remove its interceptor"
         );
+    }
+
+    #[test]
+    fn test_grant_optional_permission_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let ext_dir = dir.path().join("opt-perm-ext");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        std::fs::write(
+            ext_dir.join("manifest.json"),
+            r#"{
+                "manifest_version": 3,
+                "name": "Optional Perm Ext",
+                "version": "1.0.0",
+                "permissions": ["storage"],
+                "optional_permissions": ["tabs", "history"]
+            }"#,
+        )
+        .unwrap();
+
+        let mut manager = ExtensionManager::new(dir.path().to_path_buf());
+        let loaded = manager.load_all();
+        assert_eq!(loaded.len(), 1);
+
+        let ext_id = &loaded[0];
+
+        // Should NOT have tabs permission initially
+        let api = manager.get(ext_id).unwrap();
+        assert!(!api.has_permission("tabs"));
+
+        // Grant tabs via optional_permissions
+        let _ = api;
+        manager
+            .grant_optional_permission(ext_id, "tabs")
+            .expect("Should grant tabs");
+
+        // Now should have it
+        let api = manager.get(ext_id).unwrap();
+        assert!(api.has_permission("tabs"));
+    }
+
+    #[test]
+    fn test_grant_optional_permission_rejects_non_optional() {
+        let dir = tempfile::tempdir().unwrap();
+        let ext_dir = dir.path().join("no-opt-ext");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        std::fs::write(
+            ext_dir.join("manifest.json"),
+            r#"{
+                "manifest_version": 3,
+                "name": "No Optional",
+                "version": "1.0.0",
+                "permissions": ["storage"],
+                "optional_permissions": []
+            }"#,
+        )
+        .unwrap();
+
+        let mut manager = ExtensionManager::new(dir.path().to_path_buf());
+        let loaded = manager.load_all();
+        assert_eq!(loaded.len(), 1);
+
+        let ext_id = &loaded[0];
+        let result = manager.grant_optional_permission(ext_id, "tabs");
+        assert!(
+            result.is_err(),
+            "Should reject permission not in optional_permissions"
+        );
+    }
+
+    #[test]
+    fn test_grant_optional_permission_unknown_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ExtensionManager::new(dir.path().to_path_buf());
+
+        let result = manager.grant_optional_permission(
+            &crate::extensions::types::ExtensionId("nonexistent".into()),
+            "tabs",
+        );
+        assert!(result.is_err(), "Should reject unknown extension");
     }
 }

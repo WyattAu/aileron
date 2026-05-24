@@ -122,6 +122,21 @@ pub struct AutofillState {
     pub status_msg: String,
 }
 
+/// Pending permission request from an extension.
+/// Set when an extension calls `permissions.request()`, consumed when
+/// the user clicks Allow or Deny in the prompt dialog.
+#[derive(Debug, Clone)]
+pub struct PendingPermissionRequest {
+    /// Extension ID that requested the permission.
+    pub extension_id: String,
+    /// Human-readable extension name (from manifest).
+    pub extension_name: String,
+    /// Permissions being requested (for display).
+    pub permissions: Vec<String>,
+    /// Unique request ID for correlating with the JS Promise.
+    pub request_id: u64,
+}
+
 #[derive(Default)]
 pub struct PanelState {
     pub history_panel_open: bool,
@@ -143,6 +158,9 @@ pub struct PanelState {
     pub site_settings_cookies: Option<bool>,
     pub site_settings_adblock: Option<bool>,
     pub site_settings_url_pattern: String,
+    /// Permission prompt dialog state.
+    pub permission_prompt_open: bool,
+    pub pending_permission_request: Option<PendingPermissionRequest>,
 }
 
 pub struct SessionState {

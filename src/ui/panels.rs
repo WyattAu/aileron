@@ -1445,6 +1445,104 @@ fn build_ui_inner(
             });
     }
 
+    // ── Permission prompt dialog ──
+    // Take ownership of the pending request to avoid borrow conflicts.
+    let pending_perm = app_state.panels.pending_permission_request.take();
+    if app_state.panels.permission_prompt_open {
+        if let Some(req) = pending_perm {
+            egui::Window::new("permission-prompt")
+                .title_bar(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .frame(
+                    egui::Frame::new()
+                        .fill(bg)
+                        .stroke(egui::Stroke::new(1.0, border_color_default))
+                        .corner_radius(6)
+                        .inner_margin(egui::Margin::same(16)),
+                )
+                .show(ctx, |ui| {
+                    // Header
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("Permission Request")
+                                .size(14.0)
+                                .strong(),
+                        );
+                    });
+                    ui.add_space(8.0);
+
+                    // Extension name
+                    ui.label(format!(
+                        "\"{}\" requests additional permissions:",
+                        req.extension_name
+                    ));
+                    ui.add_space(6.0);
+
+                    // Permission list
+                    for perm in &req.permissions {
+                        ui.horizontal(|ui| {
+                            ui.add_space(12.0);
+                            ui.label(egui::RichText::new(format!("- {}", perm)).size(12.0));
+                        });
+                    }
+                    ui.add_space(12.0);
+
+                    // Action buttons
+                    ui.horizontal(|ui| {
+                        let allow_btn = ui.button(egui::RichText::new("Allow").strong());
+                        let deny_btn = ui.button("Deny");
+
+                        if allow_btn.clicked() || deny_btn.clicked() {
+                            let granted = allow_btn.clicked();
+                            let ext_id_str = req.extension_id.clone();
+                            let perms = req.permissions.clone();
+                            let request_id = req.request_id;
+
+                            app_state.panels.permission_prompt_open = false;
+
+                            if granted {
+                                let ext_id =
+                                    crate::extensions::types::ExtensionId(ext_id_str.clone());
+                                let mut em = app_state.extension_manager.write();
+                                for perm in &perms {
+                                    if let Err(e) = em.grant_optional_permission(&ext_id, perm) {
+                                        tracing::warn!(
+                                            target: "extensions",
+                                            "Failed to grant permission '{}': {}",
+                                            perm,
+                                            e
+                                        );
+                                    }
+                                }
+                                tracing::info!(
+                                    target: "extensions",
+                                    "User granted permissions {:?} to extension '{}'",
+                                    perms,
+                                    ext_id_str
+                                );
+                            }
+
+                            // Resolve the JS Promise in the active pane
+                            let js = format!(
+                                "window.__aileron_resolve_permission_request({}, {})",
+                                request_id, granted
+                            );
+                            app_state
+                                .pending_wry_actions
+                                .push_back(WryAction::RunJs(js));
+                        } else {
+                            // Not clicked yet — put the request back
+                            app_state.panels.pending_permission_request = Some(req);
+                        }
+                    });
+                });
+        } else {
+            // Prompt open but no request data — close it
+            app_state.panels.permission_prompt_open = false;
+        }
+    }
+
     egui::CentralPanel::default().show(ctx, |ui| {
         let panes: Vec<_> = app_state.wm.iter_panes().collect();
         let active_id = app_state.wm.active_pane_id();
