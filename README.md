@@ -1,6 +1,6 @@
 # Aileron
 
-**v0.20.0** — 1143 lib tests, 253 integration, 4 doc (1400 total), ~51,400 Rust LOC
+**v0.20.0** — 1143 lib tests, 253 integration, 4 doc (1400 total), ~56,900 Rust LOC
 
 **The terminal for the web.** A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals. Written in Rust with wry (WebKitGTK) for web rendering and egui for the UI overlay.
 
@@ -100,7 +100,7 @@
 - **Command chaining** — `:open github.com && mg` chains ex-commands
 - **Did-you-mean** — fuzzy Levenshtein suggestions for mistyped commands
 - **Custom protocols** — `aileron://` for internal pages (welcome, settings, files, error)
-- **WebExtensions** — 6 API traits, extension loading from disk, `:extensions`/`:extension-load`/`:extension-info` commands
+- **WebExtensions** — 9 API traits, extension loading from disk, `:extensions`/`:extension-load`/`:extension-info` commands
 
 ## Prerequisites
 
@@ -216,9 +216,9 @@ flatpak run com.github.WyattAu.aileron
 | `/` | Normal | Find in page |
 | `F` | Normal | Follow link in new tab |
 | `G` | Normal | Scroll to bottom |
-| `Ctrl+G` | Normal | Scroll to top |
-| `m` + letter | Normal | Set a scroll mark (a-z) |
-| `'` + letter | Normal | Jump to mark (a-z) |
+| `Ctrl+g` | Normal | Scroll to top |
+| `m` + letter | Normal | Set a scroll mark (a-z; configurable via `:bind`) |
+| `'` + letter | Normal | Jump to mark (a-z; configurable via `:bind`) |
 
 ## Commands
 
@@ -437,19 +437,22 @@ src/
   mcp/                 — MCP JSON-RPC server, tools, stdio transport
   net/                 — AdBlocker (EasyList parser), filter_list (network/cosmetic), privacy (HTTPS upgrade, tracking protection)
   downloads/           — Download manager (async, resume, progress tracking)
-  extensions/          — WebExtensions support (6 API traits, extension loading, lifecycle)
+  extensions/          — WebExtensions support (9 API traits, extension loading, lifecycle)
   i18n/                — Internationalization (9 languages, locale resolution, message catalog)
   passwords/           — Password manager (credential storage, OAuth detection, multi-step login flows, Bitwarden client)
   platform/            — PlatformOps trait, Linux/macOS/Windows platform implementations
-  scripts/             — Content script manager (Lua → JS injection, @match/@match-regexp, @run-at)
+  scripts.rs           — Content script manager (Lua to JS injection, @match/@match-regexp, @run-at)
   gfx/                 — wgpu surface + egui renderer setup
   git.rs               — Git repo detection, status bar integration
   popup.rs             — Standalone popup window management
   frame_tasks.rs       — Frame-level task execution, auto-save, ARP sync
   offscreen_webview.rs — Offscreen webview texture compositing
   wry_actions.rs       — WryAction queue utilities
-  sync.rs              — Sync protocol specification (WebDAV + E2EE)
+  sync/                — Sync protocol (delta sync, E2EE via Age, transports)
   profiling/           — Memory profiling, performance monitoring
+  event_handlers.rs    — Shared key-to-JS event conversion
+  workspace_restore.rs — Workspace save/restore with crash recovery
+  bootstrap.rs         — Application bootstrap, panic hook, environment diagnostics
 tests/
   integration_smoke.rs — Cross-module integration tests
 ```

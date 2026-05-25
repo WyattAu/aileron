@@ -51,7 +51,12 @@ jobs:
         if: runner.os == 'Linux' && matrix.cross_compile != true
         run: |
           COMMIT_SHA=$(git rev-list -n 1 ${{ github.ref_name }})
-          gh run list --workflow=ci.yml --commit "$COMMIT_SHA" --status success --limit 1 --json databaseId --jq '.[0].databaseId'
+          RUN_ID=$(gh run list --workflow=ci.yml --commit "$COMMIT_SHA" --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "ERROR: No successful CI run found for commit $COMMIT_SHA"
+            exit 1
+          fi
+          echo "CI verified: run $RUN_ID passed"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -471,10 +471,12 @@ impl BspTree {
                 ..
             } => {
                 // Find the leftmost/topmost pane ID in the left subtree
-                // and the rightmost/bottommost pane ID in the right subtree
-                let left_ids = Self::collect_leaf_ids(left);
-                let right_ids = Self::collect_leaf_ids(right);
-                if let (Some(&id_a), Some(&id_b)) = (left_ids.first(), right_ids.first()) {
+                // and the rightmost/bottommost pane ID in the right subtree.
+                // Only the first leaf ID is needed, so use O(depth) descent
+                // instead of O(n) collect_leaf_ids.
+                let id_a = Self::first_leaf_id(left);
+                let id_b = Self::first_leaf_id(right);
+                {
                     let pos = match direction {
                         SplitDirection::Horizontal => rect.x + rect.w * ratio,
                         SplitDirection::Vertical => rect.y + rect.h * ratio,
@@ -485,17 +487,6 @@ impl BspTree {
                 Self::collect_split_borders(right, borders);
             }
             BspNode::Leaf { .. } => {}
-        }
-    }
-
-    fn collect_leaf_ids(node: &BspNode) -> Vec<Uuid> {
-        match node {
-            BspNode::Leaf { pane, .. } => vec![pane.id],
-            BspNode::Split { left, right, .. } => {
-                let mut ids = Self::collect_leaf_ids(left);
-                ids.extend(Self::collect_leaf_ids(right));
-                ids
-            }
         }
     }
 

@@ -106,8 +106,8 @@ impl LuaEngine {
         // aileron = {}
         let aileron = lua.create_table()?;
 
-        // aileron.version = "0.1.0"
-        aileron.set("version", "0.1.0")?;
+        // aileron.version = env!("CARGO_PKG_VERSION")
+        aileron.set("version", env!("CARGO_PKG_VERSION"))?;
 
         // aileron.keymap = {}
         let keymap = lua.create_table()?;
@@ -237,7 +237,7 @@ impl LuaEngine {
         // aileron.info()
         let info_fn = lua.create_function(|lua, ()| {
             let info = lua.create_table()?;
-            info.set("version", "0.1.0")?;
+            info.set("version", env!("CARGO_PKG_VERSION"))?;
             info.set("engine", "wry")?;
             Ok(info)
         })?;
@@ -652,14 +652,14 @@ mod tests {
     fn test_lua_version() {
         let engine = LuaEngine::new().unwrap();
         let version = engine.eval("return aileron.version").unwrap();
-        assert!(version.contains("0.1.0"));
+        assert!(version.contains(env!("CARGO_PKG_VERSION")));
     }
 
     #[test]
     fn test_lua_info() {
         let engine = LuaEngine::new().unwrap();
         let result = engine.eval("aileron.info().version").unwrap();
-        assert!(result.contains("0.1.0"));
+        assert!(result.contains(env!("CARGO_PKG_VERSION")));
     }
 
     #[test]

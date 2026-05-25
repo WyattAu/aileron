@@ -41,4 +41,5 @@ check() {
 package() {
   cd "$pkgname"
   install -Dm755 "target/release/aileron" "$pkgdir/usr/bin/aileron"
+  install -Dm644 "man/aileron.1" "$pkgdir/usr/share/man/man1/aileron.1"
 }

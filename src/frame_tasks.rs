@@ -1085,13 +1085,9 @@ pub fn process_mcp_commands(
                 }
             }
             McpCommand::GetActivePane { response_tx } => {
-                let url = wry_panes
+                let (url, title) = wry_panes
                     .get(&active_id)
-                    .map(|p| p.url().as_str().to_string())
-                    .unwrap_or_default();
-                let title = wry_panes
-                    .get(&active_id)
-                    .map(|p| p.title().to_string())
+                    .map(|p| (p.url().as_str().to_string(), p.title().to_string()))
                     .unwrap_or_default();
                 let _ = response_tx.send((url, title));
             }
@@ -1180,14 +1176,10 @@ pub fn process_mcp_commands(
                     .enumerate()
                     .map(|(i, id)| {
                         let marker = if *id == active { " [active]" } else { "" };
-                        let url = wry_panes
+                        let (url, title) = wry_panes
                             .get(id)
-                            .map(|p| p.url().to_string())
-                            .unwrap_or_else(|| "about:blank".into());
-                        let title = wry_panes
-                            .get(id)
-                            .map(|p| p.title().to_string())
-                            .unwrap_or_else(|| "(untitled)".into());
+                            .map(|p| (p.url().to_string(), p.title().to_string()))
+                            .unwrap_or_else(|| ("about:blank".into(), "(untitled)".into()));
                         format!("{}. {} - {}{}", i + 1, title, url, marker)
                     })
                     .collect();

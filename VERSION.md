@@ -9,7 +9,7 @@
 - **Zero clippy warnings** (all-targets -D warnings)
 - **Zero vulnerabilities** (cargo audit)
 - **19 unsafe blocks** (FFI: WebKitGTK, Cairo, X11, spellcheck -- all with SAFETY comments)
-- **~51,413 lines of Rust** across 135 source files
+- **~56,865 lines of Rust** across 148 source files
 - **Clean build time:** 7m 14s (dev, 6-core x86_64); ~2.5m incremental
 - **Release profile:** LTO thin + strip + panic=abort + codegen-units=1
 - **Feature flags:** mcp, arp, sync, passwords, lua, terminal (with dependency-level gating)
@@ -112,7 +112,7 @@
 ## Binary Size
 - **Release binary:** ~21 MB (stripped)
 - **Target architecture:** x86_64 Linux
-- **Total Rust code:** ~51,413 lines across 135 modules
+- **Total Rust code:** ~56,865 lines across 148 modules
 
 ## Key Discoveries
 1. wry cannot render to wgpu texture — always paints to its own native surface

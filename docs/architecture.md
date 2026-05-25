@@ -89,7 +89,7 @@ Partial MV3 implementation:
 
 ### Lua Scripting (`src/lua/`)
 
-Sandboxed Lua 5.4 environment via `mlua`. Available APIs: `aileron.version`, `aileron.navigate`, `aileron.cmd.create`, `aileron.on`, `aileron.keymap.set`, `aileron.url.add_redirect`, `aileron.theme.set`, `aileron.info`, `aileron.log`, `aileron.extensions.*`, `aileron.bookmarks.*`, `aileron.history.*`.
+Sandboxed Lua 5.4 environment via `mlua`. Available APIs: `aileron.version`, `aileron.navigate`, `aileron.cmd.create`, `aileron.on`, `aileron.keymap.set`, `aileron.url.add_redirect`, `aileron.theme.set`, `aileron.info`, `aileron.log`, `aileron.warn`, `aileron.extensions.list`, `aileron.extensions.info`, `aileron.extensions.reload`.
 
 ### Ad Blocking (`src/net/`)
 

@@ -358,27 +358,36 @@ impl ApplicationHandler for AileronApp {
                         app_state.panels.help_panel_open = false;
                         return;
                     }
-                    // Track pane count before processing key
-                    let pane_ids_before: std::collections::HashSet<uuid::Uuid> =
-                        app_state.wm.panes_ref().iter().map(|(id, _)| *id).collect();
+                    // Track pane count before processing key.
+                    // Only construct HashSets if pane count actually changed.
+                    let pane_count_before = app_state.wm.leaf_count();
 
                     app_state.process_key_event(aileron_event);
                     app_state.input_latency.record_key_press();
 
-                    let pane_ids_after: std::collections::HashSet<uuid::Uuid> =
-                        app_state.wm.panes_ref().iter().map(|(id, _)| *id).collect();
+                    let pane_count_after = app_state.wm.leaf_count();
 
-                    let closed_pane_ids: Vec<uuid::Uuid> = pane_ids_before
-                        .difference(&pane_ids_after)
-                        .copied()
-                        .collect();
+                    let (closed_pane_ids, new_pane_ids): (Vec<uuid::Uuid>, Vec<uuid::Uuid>) =
+                        if pane_count_before == pane_count_after {
+                            (Vec::new(), Vec::new())
+                        } else {
+                            let pane_ids_before: std::collections::HashSet<uuid::Uuid> =
+                                app_state.wm.panes_ref().iter().map(|(id, _)| *id).collect();
+                            let pane_ids_after: std::collections::HashSet<uuid::Uuid> =
+                                app_state.wm.panes_ref().iter().map(|(id, _)| *id).collect();
+                            (
+                                pane_ids_before
+                                    .difference(&pane_ids_after)
+                                    .copied()
+                                    .collect(),
+                                pane_ids_after
+                                    .difference(&pane_ids_before)
+                                    .copied()
+                                    .collect(),
+                            )
+                        };
 
-                    let new_pane_ids: Vec<uuid::Uuid> = pane_ids_after
-                        .difference(&pane_ids_before)
-                        .copied()
-                        .collect();
-
-                    let need_reposition = pane_ids_before.len() != pane_ids_after.len();
+                    let need_reposition = pane_count_before != pane_count_after;
                     let active_pane_id = app_state.wm.active_pane_id();
                     let is_insert_mode = app_state.mode == aileron::input::Mode::Insert;
 
