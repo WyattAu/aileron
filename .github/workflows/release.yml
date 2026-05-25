@@ -65,13 +65,15 @@ jobs:
       - name: Install system dependencies (Linux aarch64 cross-compile)
         if: runner.os == 'Linux' && matrix.cross_compile == true
         run: |
+          # Restrict default sources to amd64 (prevents security.ubuntu.com arm64 404s)
+          sudo sed -i '/^Types: deb/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
           sudo dpkg --add-architecture arm64
           # arm64 packages live on ports.ubuntu.com, not archive.ubuntu.com
           sudo tee /etc/apt/sources.list.d/arm64.sources << 'EOSRC'
           Types: deb
           URIs: http://ports.ubuntu.com/ubuntu-ports
-          Suites: noble noble-updates noble-backports
-          Components: main universe
+          Suites: noble noble-updates noble-backports noble-security
+          Components: main universe restricted
           Architectures: arm64
           Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
           EOSRC
