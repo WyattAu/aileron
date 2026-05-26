@@ -376,7 +376,7 @@ a {{ color: #4db4ff; }}
                     let details = crate::extensions::web_request::RequestDetails {
                         request_id: crate::extensions::types::RequestId(0),
                         url: url::Url::parse(&url).unwrap_or_else(|_| {
-                            url::Url::parse("about:blank").unwrap()
+                            url::Url::parse("about:blank").expect("'about:blank' is a valid URL")
                         }),
                         method: "GET".into(),
                         frame_id: crate::extensions::types::FrameId(0),

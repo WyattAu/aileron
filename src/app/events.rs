@@ -362,7 +362,8 @@ impl AppState {
                     #[cfg(feature = "terminal")]
                     {
                         let active = self.wm.active_pane_id();
-                        let term_url = url::Url::parse("aileron://terminal").unwrap();
+                        let term_url = url::Url::parse("aileron://terminal")
+                            .expect("'aileron://terminal' is a valid URL");
                         match self
                             .wm
                             .split(active, crate::wm::SplitDirection::Vertical, 0.5)

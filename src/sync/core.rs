@@ -254,8 +254,12 @@ mod tests {
 
     fn make_file(dir: &Path, name: &str, content: &[u8]) -> PathBuf {
         let path = dir.join(name);
-        std::fs::create_dir_all(path.parent().unwrap()).ok();
-        std::fs::write(&path, content).unwrap();
+        std::fs::create_dir_all(
+            path.parent()
+                .expect("manifest path must have a parent directory"),
+        )
+        .ok();
+        std::fs::write(&path, content).expect("failed to write manifest file");
         path
     }
 

@@ -38,10 +38,10 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | P1-02 | Refactor tab display cache in panels.rs (eliminate 3-4 String clones per tab per frame) | 3h | Pending |
 | P1-03 | Change `panes()` to return iterator instead of cloned Vec (wm/tree.rs) | 2h | Pending |
 | P1-04 | Texture pooling for multi-pane scenarios (avoid per-frame texture creation) | 4h | Pending |
-| P1-05 | Pre-lowercase blocked_domains into HashSet at construction (navigation handler O(n)->O(1)) | 3h | Pending |
-| P1-06 | Wrap https_safe_list in Arc<HashSet> to avoid cloning ~1000 entries per pane creation | 2h | Pending |
-| P1-07 | Wrap blocked_domains in Arc<HashSet> to avoid Vec<String> clone per pane creation | 2h | Pending |
-| P1-08 | Fix double-clone pattern in BspTree::panes() and pane_ids() (move into cache, return clone) | 2h | Pending |
+| P1-05 | Pre-lowercase blocked_domains into HashSet at construction (navigation handler O(n)->O(1)) | 3h | Done |
+| P1-06 | Wrap https_safe_list in Arc<HashSet> to avoid cloning ~1000 entries per pane creation | 2h | Done |
+| P1-07 | Wrap blocked_domains in Arc<HashSet> to avoid Vec<String> clone per pane creation | 2h | Done |
+| P1-08 | Fix double-clone pattern in BspTree::panes() and pane_ids() (move into cache, return clone) | 2h | Done |
 
 ### Priority 2: Profiling Infrastructure
 
@@ -61,7 +61,7 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | P3-03 | Store benchmark baselines in CI, fail on >10% regression | 4h | Pending |
 | P3-04 | Feature gate `terminal` module behind `terminal` feature (reduce cold compile) | 3h | Done |
 | P3-05 | Feature gate `lua` module behind `lua` feature | 2h | Done |
-| P3-06 | Further split main.rs (2618 lines -> target <2000) | 3h | Pending |
+| P3-06 | Further split large files (frame_tasks.rs, ui/panels.rs -> target <2000 lines each) | 3h | Done |
 
 ### Success Criteria for v0.21
 
@@ -392,10 +392,10 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 
 | Issue | Severity | Recommendation |
 |-------|----------|----------------|
-| extension-api.md missing 4 API sections (alarms, cookies, contextMenus, declarativeNetRequest) | Medium | Add docs when APIs are fully implemented |
+| extension-api.md missing 4 API sections (alarms, cookies, contextMenus, declarativeNetRequest) | Medium | Done |
 | keybindings-reference.md incomplete source references | Low | Add keymap.rs and key_conversion.rs |
 | Crates.io/AUR links on landing page (404 until first release) | Low | Publish v0.21.0 tag to populate |
-| No .desktop file in repo for PKGBUILD | Low | Create com.github.WyattAu.aileron.desktop |
+| No .desktop file in repo for PKGBUILD | Low | Done |
 
 ### Architecture Assessment
 

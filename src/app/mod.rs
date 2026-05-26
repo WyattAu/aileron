@@ -652,7 +652,10 @@ impl AppState {
         let list = crate::net::privacy::load_https_safe_list();
         self.cache.https_safe_list_debug_flag = current_debug;
         self.cache.https_safe_list_cache = Some(std::sync::Arc::new(list));
-        self.cache.https_safe_list_cache.clone().unwrap()
+        self.cache
+            .https_safe_list_cache
+            .clone()
+            .expect("https_safe_list_cache must be populated after set above")
     }
 
     /// Store a scroll mark fraction for a pane. Called from the IPC handler

@@ -141,7 +141,10 @@ impl WebdavClient {
         debug!("MKCOL {url}");
 
         let response = self.execute_with_retry(|http| {
-            http.request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &url)
+            http.request(
+                reqwest::Method::from_bytes(b"MKCOL").expect("MKCOL is a valid HTTP method"),
+                &url,
+            )
         })?;
 
         let status = response.status();
@@ -222,7 +225,8 @@ impl WebdavClient {
 </d:propfind>"#;
 
         let response = self.execute_with_retry(|http| {
-            let method = reqwest::Method::from_bytes(b"PROPFIND").unwrap();
+            let method =
+                reqwest::Method::from_bytes(b"PROPFIND").expect("PROPFIND is a valid HTTP method");
             http.request(method, &url)
                 .header("Depth", depth_header)
                 .header("Content-Type", "application/xml")

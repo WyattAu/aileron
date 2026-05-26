@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Aileron debug launcher with full trace logging
+# All internal actions are logged to both stderr and a timestamped log file.
+
+set -euo pipefail
+
+export RUST_LOG="${RUST_LOG:-aileron=trace,wgpu=warn,wry=trace,webkit2gtk=debug,gdk=debug,gtk=debug,egui=debug}"
+
+# Log directory
+LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/aileron/Aileron/logs"
+mkdir -p "$LOG_DIR"
+
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+LOG_FILE="$LOG_DIR/aileron_debug_${TIMESTAMP}.log"
+
+echo "[aileron-debug] RUST_LOG=$RUST_LOG"
+echo "[aileron-debug] Log file: $LOG_FILE"
+echo "[aileron-debug] Launching aileron..."
+echo "---"
+
+exec aileron "$@" 2>&1 | tee "$LOG_FILE"

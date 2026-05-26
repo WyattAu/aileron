@@ -84,7 +84,9 @@ pub fn restore_workspace(
             .get(i)
             .cloned()
             .unwrap_or_else(|| "aileron://new".into());
-        let url = Url::parse(&url_str).unwrap_or_else(|_| Url::parse("aileron://new").unwrap());
+        let url = Url::parse(&url_str).unwrap_or_else(|_| {
+            Url::parse("aileron://new").expect("'aileron://new' is a valid URL")
+        });
         engines.create_pane(*pid, url.clone(), None);
 
         if url_str == "aileron://terminal" {

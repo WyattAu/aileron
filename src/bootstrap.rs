@@ -176,22 +176,39 @@ pub fn run() -> anyhow::Result<()> {
         eprintln!("[aileron] Logging to: {}", log_file_path.display());
     }
 
-    // Build subscriber with optional file layer
-    let subscriber = tracing_subscriber::fmt::Subscriber::builder()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                "aileron=debug,wgpu=warn,wry=debug,webkit2gtk=debug,gdk=debug,gtk=debug,egui=info"
-                    .parse()
-                    .unwrap()
-            }),
-        )
-        .with_writer(std::io::stderr)
-        .finish();
+    // Build subscriber writing to both stderr AND a log file
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        "aileron=debug,wgpu=warn,wry=debug,webkit2gtk=debug,gdk=debug,gtk=debug,egui=info"
+            .parse()
+            .expect("hardcoded fallback env filter is valid")
+    });
 
-    // We can't easily add a file layer with type-compatible subscriber,
-    // so just use stderr + direct file writes via the crash hook
-    tracing::subscriber::set_global_default(subscriber)?;
+    if let Some(file) = log_file {
+        use std::sync::Arc;
+        use tracing_subscriber::Layer as _;
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+
+        let stderr_layer = tracing_subscriber::fmt::layer()
+            .with_writer(std::io::stderr)
+            .with_filter(env_filter.clone());
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_writer(Arc::new(file))
+            .with_ansi(false)
+            .with_filter(env_filter);
+
+        tracing_subscriber::registry()
+            .with(stderr_layer)
+            .with(file_layer)
+            .init();
+    } else {
+        let subscriber = tracing_subscriber::fmt::Subscriber::builder()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_env_filter(env_filter)
+            .with_writer(std::io::stderr)
+            .finish();
+        tracing::subscriber::set_global_default(subscriber)?;
+    }
 
     info!("Aileron v0.12.0");
     info!("Keyboard-Driven Web Environment");

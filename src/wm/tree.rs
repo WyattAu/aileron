@@ -127,7 +127,9 @@ impl BspTree {
                     return Err(TileError::PaneTooSmall);
                 }
 
-                let new_pane = Pane::new(url::Url::parse("aileron://new").unwrap());
+                let new_pane = Pane::new(
+                    url::Url::parse("aileron://new").expect("'aileron://new' is a valid URL"),
+                );
                 let new_id = new_pane.id;
 
                 let new_node = BspNode::Split {
