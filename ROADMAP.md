@@ -1,6 +1,6 @@
 # Aileron Roadmap: v0.21 to v2.0 and Beyond
 
-## Current State (v0.20.0)
+## Current State (v0.20.0, post-audit 2026-05-26)
 
 | Metric | Value |
 |--------|-------|
@@ -10,14 +10,14 @@
 | Formatting | Zero issues (cargo fmt) |
 | Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck -- SAFETY commented) |
 | #[must_use] | 49 attributes across 21 files |
-| LOC | 51,413 Rust across 135 source files |
+| LOC | 56,865 Rust across 148 source files |
 | Binary size | ~21 MB stripped (x86_64 Linux) |
 | CI | 8 jobs: Linux test + coverage, macOS check, Windows check, cross-compile (3 targets), fmt, benchmark regression |
 | Coverage | cargo-llvm-cov (lcov) via Codecov |
 | Pre-commit | fmt, check, clippy, lib tests, doc tests; pre-push: integration tests, doc gen |
 | GitHub Pages | Deployed at https://wyattau.github.io/aileron/ |
 | Platforms | Linux (primary), macOS (compile), Windows (compile) |
-| Audit (2026-05-24) | Zero stubs, zero placeholder strings, zero risky unwrap(), 5 code fixes, CI/CD hardened |
+| Audit (2026-05-26) | Zero code stubs, zero TODO/FIXME, zero emojis in docs, CI/CD hardened, Lua version fixed, per-keypress allocation reduced, docs accuracy verified |
 
 ## Execution Model
 
@@ -30,7 +30,7 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 **Target:** 2-3 weeks
 **Goal:** Eliminate per-frame allocations, establish performance baselines, harden CI
 
-### Priority 1: Frame Rendering Performance
+### Priority 1: Frame Rendering Performance (from audit findings)
 
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
@@ -38,6 +38,10 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | P1-02 | Refactor tab display cache in panels.rs (eliminate 3-4 String clones per tab per frame) | 3h | Pending |
 | P1-03 | Change `panes()` to return iterator instead of cloned Vec (wm/tree.rs) | 2h | Pending |
 | P1-04 | Texture pooling for multi-pane scenarios (avoid per-frame texture creation) | 4h | Pending |
+| P1-05 | Pre-lowercase blocked_domains into HashSet at construction (navigation handler O(n)->O(1)) | 3h | Pending |
+| P1-06 | Wrap https_safe_list in Arc<HashSet> to avoid cloning ~1000 entries per pane creation | 2h | Pending |
+| P1-07 | Wrap blocked_domains in Arc<HashSet> to avoid Vec<String> clone per pane creation | 2h | Pending |
+| P1-08 | Fix double-clone pattern in BspTree::panes() and pane_ids() (move into cache, return clone) | 2h | Pending |
 
 ### Priority 2: Profiling Infrastructure
 
@@ -333,6 +337,81 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | Distribution gap (no signed builds) | Certain | High | Prioritize signing infrastructure in v0.25 |
 | Performance regression from new features | Medium | Medium | Benchmark regression CI in v0.21 |
 | Extension API compatibility breaks | Medium | Medium | Semantic versioning; deprecation period |
+
+## Audit Results (2026-05-26)
+
+### CI/CD Audit Findings (Fixed)
+
+| Issue | Severity | Status |
+|-------|----------|--------|
+| publish.yml missing system deps for crates.io (build fails) | Critical | Fixed |
+| release.yml CI verify step never fails (outputs null on no CI) | Critical | Fixed |
+| AUR SSH key written before chmod (brief window of exposure) | Low | Fixed |
+| AUR clone errors silently suppressed via 2>/dev/null | High | Fixed |
+| ci.yml redundant integration_smoke step (doubles test work) | Medium | Fixed |
+| ci.yml --force on cached tools reinstalls every run | Low | Fixed |
+| pages.yml no validation before deployment | Medium | Fixed |
+
+### Code Quality Findings (Fixed)
+
+| Issue | Severity | Status |
+|-------|----------|--------|
+| Lua aileron.version hardcoded to "0.1.0" instead of CARGO_PKG_VERSION | High | Fixed |
+| Per-keypress HashSet construction in app_handler.rs and event_handler.rs | High | Fixed |
+| collect_leaf_ids O(n) Vec alloc per Split node per frame | Critical | Fixed |
+| MCP double HashMap lookup (same key twice) | High | Fixed |
+
+### Code Quality Findings (Remaining -- Low Priority)
+
+| Issue | Severity | Recommendation |
+|-------|----------|----------------|
+| 24 production unwrap() on hardcoded URLs (aileron://new, about:blank) | Low | Convert to expect() for debuggability |
+| 29 production expect() calls (mostly well-guarded) | Low | Accept as-is; window/runtime creation failures are catastrophic by design |
+| blocked_domains Vec<String> cloned per pane creation | Medium | Wrap in Arc<HashSet> (v0.21) |
+| https_safe_list HashSet cloned per pane creation (~1000 entries) | Medium | Wrap in Arc<HashSet> (v0.21) |
+| char.to_string() per keystroke in Insert mode | Medium | Use stack buffer (v0.21) |
+| BspTree::split() clones entire tree for error rollback | Low | Accept; split is user-triggered, not per-frame |
+
+### Documentation Audit Findings (Fixed)
+
+| Issue | Severity | Status |
+|-------|----------|--------|
+| Man page lists nonexistent :lua command | High | Fixed |
+| Man page :yt described as "Search YouTube" (actually copies host) | High | Fixed |
+| Man page lists incorrect default keybindings (J/K, p, u, n/N, gg) | High | Fixed |
+| Man page missing 8 documented keybindings | Medium | Fixed |
+| README "6 API traits" (actual: 9) | Medium | Fixed |
+| README incorrect default keybindings (m + letter, ' + letter) | Medium | Fixed |
+| README architecture section wrong paths (scripts/ vs scripts.rs, sync.rs vs sync/) | Medium | Fixed |
+| README/VERSION.md stale LOC count (51,413 vs 56,865) | Medium | Fixed |
+| architecture.md lists unimplemented bookmarks/history Lua APIs | High | Fixed |
+| index.html missing architecture.md link | Low | Fixed |
+| PKGBUILD missing man page installation | Medium | Fixed |
+
+### Remaining Documentation Items
+
+| Issue | Severity | Recommendation |
+|-------|----------|----------------|
+| extension-api.md missing 4 API sections (alarms, cookies, contextMenus, declarativeNetRequest) | Medium | Add docs when APIs are fully implemented |
+| keybindings-reference.md incomplete source references | Low | Add keymap.rs and key_conversion.rs |
+| Crates.io/AUR links on landing page (404 until first release) | Low | Publish v0.21.0 tag to populate |
+| No .desktop file in repo for PKGBUILD | Low | Create com.github.WyattAu.aileron.desktop |
+
+### Architecture Assessment
+
+The codebase demonstrates high quality:
+- Zero unimplemented!/todo! macros in production code
+- Zero panic!() calls in production code
+- All 19 unsafe blocks have SAFETY comments
+- Feature flags cleanly gate optional dependencies
+- Pure dispatch pattern (Action -> ActionEffect) is well-structured
+- 1400 tests with zero failures
+
+Known architectural debt:
+- Servo integration is skeleton only (documented, tracked)
+- wry !Send + !Sync requires bridging (documented, ADR-009)
+- main.rs is 2618 lines (target <2000, tracked in v0.21)
+- No per-pane heap measurement for tab-unload
 
 ## Timeline Estimate
 
