@@ -210,7 +210,7 @@ pub fn run() -> anyhow::Result<()> {
         tracing::subscriber::set_global_default(subscriber)?;
     }
 
-    info!("Aileron v0.12.0");
+    info!("Aileron v{}", env!("CARGO_PKG_VERSION"));
     info!("Keyboard-Driven Web Environment");
     info!("OS: {} {}", std::env::consts::OS, std::env::consts::ARCH);
     info!("PID: {}", std::process::id());
