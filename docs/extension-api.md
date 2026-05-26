@@ -274,6 +274,239 @@ Requires `scripting` permission.
 
 Injections are queued and drained by the frame task system during navigation. `executeScript` returns a placeholder `InjectionResult` — actual return values require JS runtime evaluation.
 
+## chrome.alarms
+
+Requires `alarms` permission. Provides timed callbacks for background tasks.
+
+### Methods
+
+| Method | Signature | Returns |
+|---|---|---|
+| `create` | `create(AlarmCreateParams)` | — |
+| `get` | `get(name?) → AlarmInfo?` | Named alarm (default `""`) |
+| `getAll` | `getAll() → AlarmInfo[]` | All active alarms |
+| `clear` | `clear(name?) → boolean` | Whether alarm existed |
+| `clearAll` | `clearAll() → boolean` | Whether any alarms were cleared |
+
+### AlarmCreateParams
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string?` | Alarm name; defaults to `""` |
+| `when` | `double?` | Fire time in ms since epoch (mutually exclusive with `delayInMinutes`) |
+| `delayInMinutes` | `double?` | Delay from now in minutes (mutually exclusive with `when`) |
+| `periodInMinutes` | `double?` | Repeat period in minutes after first fire |
+
+Either `when` or `delayInMinutes` must be provided. Creating an alarm with an existing name replaces it.
+
+### AlarmInfo
+
+`name`, `scheduledTime` (ms since epoch), `periodInMinutes?`
+
+### Events
+
+| Event | Callback Signature |
+|---|---|
+| `onAlarm` | `(AlarmInfo)` |
+
+One-shot alarms are removed after firing. Periodic alarms are rescheduled by `periodInMinutes * 60_000` ms.
+
+## chrome.cookies
+
+Requires `cookies` permission (plus host permissions for the target domains). Read, write, and observe browser cookies.
+
+### Methods
+
+| Method | Signature | Returns |
+|---|---|---|
+| `get` | `get(CookieGetParams) → Cookie?` | Matching cookie |
+| `getAll` | `getAll(CookieGetAllParams) → Cookie[]` | Filtered list |
+| `set` | `set(CookieSetParams) → Cookie?` | Created/updated cookie |
+| `remove` | `remove(CookieRemoveParams) → Cookie?` | Removed cookie |
+
+### CookieGetParams
+
+`url` (required), `name` (required), `storeId?`
+
+### CookieGetAllParams
+
+`url?`, `name?`, `domain?`, `path?`, `secure?`, `session?`, `storeId?` — all filters optional; only matching cookies returned.
+
+### CookieSetParams
+
+`url` (required), `name?`, `value?`, `domain?`, `path?` (default `"/"`), `secure?`, `httpOnly?`, `sameSite?`, `expirationDate?`, `storeId?`
+
+Setting a cookie with the same name/domain/path overwrites the existing one. Domain defaults to the URL host (with leading dot) if omitted. `session` is automatically `true` when `expirationDate` is absent.
+
+### CookieRemoveParams
+
+`url` (required), `name` (required), `storeId?`
+
+### Cookie object
+
+`name`, `value`, `domain`, `hostOnly`, `path`, `secure`, `httpOnly`, `sameSite`, `session`, `expirationDate?`, `storeId?`
+
+### SameSiteStatus
+
+`no_restriction`, `lax`, `strict`
+
+### Events
+
+| Event | Callback Signature |
+|---|---|
+| `onChanged` | `(CookieChangeInfo)` |
+
+### CookieChangeInfo
+
+`removed` (boolean), `cookie` (Cookie), `cause` (CookieChangeCause)
+
+### CookieChangeCause
+
+| Cause | Description |
+|---|---|
+| `explicit` | Changed by a `cookies.set()` call |
+| `overwritten` | Overwritten by a new cookie with same key |
+| `expired` | Automatically removed due to expiry |
+| `evicted` | Evicted because the cookie jar was full |
+| `webRequest` | Modified by a network request (not tracked) |
+
+## chrome.contextMenus
+
+Requires `contextMenus` permission. Create and manage items in the browser context menu.
+
+### Methods
+
+| Method | Signature | Returns |
+|---|---|---|
+| `create` | `create(MenuCreateParams) → string` | Item ID (auto-generated if not provided) |
+| `update` | `update(id, MenuCreateParams) → boolean` | Whether item existed |
+| `remove` | `remove(id) → boolean` | Whether item existed |
+| `removeAll` | `removeAll() → boolean` | Whether any items were removed |
+
+### MenuCreateParams
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `string?` | Unique ID; auto-generated (`ctx-menu-<n>`) if omitted |
+| `title` | `string?` | Display text |
+| `contexts` | `ContextType[]?` | Defaults to `["page"]` |
+| `type` | `MenuItemType?` | Defaults to `"normal"` |
+| `checked` | `boolean?` | Initial checked state (checkbox/radio) |
+| `enabled` | `boolean?` | Defaults to `true` |
+| `parentId` | `string?` | Parent item ID for sub-menus |
+| `documentUrlPatterns` | `string[]?` | URL patterns for showing the item |
+| `visible` | `boolean?` | Visibility |
+| `selector` | `string?` | CSS selector for target element matching |
+
+### ContextType
+
+`all`, `page`, `frame`, `selection`, `link`, `editable`, `image`, `video`, `audio`, `launcher`, `browser_action`, `page_action`, `tab`
+
+### MenuItemType
+
+`normal`, `checkbox`, `radio`, `separator`
+
+### MenuItem object
+
+`id`, `extensionId`, `title?`, `contexts`, `checked?`, `enabled`, `parentId?`, `item_type`, `documentUrlPatterns?`
+
+### Events
+
+| Event | Callback Signature |
+|---|---|
+| `onClicked` | `(MenuClickInfo)` |
+
+### MenuClickInfo
+
+`menuItemId`, `parentMenuItemId?`, `context` (ContextType), `checked?`, `pageUrl?`, `linkUrl?`, `srcUrl?`, `selectionText?`
+
+## chrome.declarativeNetRequest
+
+Requires `declarativeNetRequest` permission. Declarative network request modification — the MV3 replacement for `webRequest` blocking. Rules are defined in JSON and loaded from static rulesets or added dynamically.
+
+### Methods
+
+| Method | Signature | Returns |
+|---|---|---|
+| `updateStaticRuleset` | `updateStaticRuleset(rulesetId, enabled)` | — |
+| `getEnabledRulesets` | `getEnabledRulesets() → DnrRuleset[]` | Enabled static rulesets |
+| `loadStaticRuleset` | `loadStaticRuleset(DnrRuleset)` | — |
+| `addDynamicRules` | `addDynamicRules(DnrRule[])` | — |
+| `removeDynamicRules` | `removeDynamicRules(ruleIds[])` | — |
+
+Static rulesets are loaded from `declarative_net_request.rule_resources` in the manifest. Dynamic rules are session-scoped. Rules with duplicate IDs are replaced on add.
+
+### Evaluation
+
+Rules are evaluated by priority (descending). The first matching rule's action produces a `DnrVerdict`. `allow` / `allowAllRequests` override matching `block` rules at lower priority.
+
+### DnrRule
+
+`id` (u32), `priority?` (u32, default 1), `action` (DnrAction), `condition` (DnrCondition)
+
+### DnrAction
+
+| Type | Fields | Description |
+|---|---|---|
+| `block` | — | Block the request |
+| `redirect` | `url?`, `extensionPath?`, `transform?` | Redirect the request |
+| `modifyHeaders` | `requestHeaders?`, `responseHeaders?` | Modify request/response headers |
+| `allow` | — | Override a matching block at lower priority |
+| `allowAllRequests` | — | Allow all requests from this extension |
+
+### DnrCondition
+
+| Field | Type | Description |
+|---|---|---|
+| `urlFilter` | `string?` | URL filter pattern (`*` wildcard, `\|\|` domain anchor, `^` separator) |
+| `regexFilter` | `string?` | Regex (alternative to `urlFilter`) |
+| `resourceTypes` | `DnrResourceType[]?` | Only match these types |
+| `excludedResourceTypes` | `DnrResourceType[]?` | Exclude these types |
+| `domains` | `string[]?` | Only match from these initiator domains |
+| `excludedDomains` | `string[]?` | Exclude these initiator domains |
+| `isUrlFilterCaseSensitive` | `boolean?` | Default `false` |
+
+### DnrResourceType
+
+`main_frame`, `sub_frame`, `stylesheet`, `script`, `image`, `font`, `object`, `xmlhttprequest`, `ping`, `csp_report`, `media`, `websocket`, `webtransport`, `webbundle`, `other`
+
+### URL filter syntax
+
+| Token | Meaning |
+|---|---|
+| `*` | Matches any sequence of characters |
+| `\|\|` | Domain anchor — matches beginning of host |
+| `^` | Separator — end of URL or path separator |
+
+### DnrHeaderOperation
+
+`header` (string), `operation` (`append` \| `set` \| `remove`), `value?`
+
+### DnrUrlTransform
+
+`scheme?`, `host?`, `port?`, `path?`, `query?`, `queryTransform?` (DnrQueryTransform), `fragment?`
+
+### DnrQueryTransform
+
+`removeParams?` (string[]), `addOrReplaceParams?` (DnrQueryParameter[])
+
+### DnrQueryParameter
+
+`key` (string), `value?`, `replaceOnly?`
+
+### DnrVerdict (internal result)
+
+| Variant | Description |
+|---|---|
+| `Block` | Request is blocked |
+| `Redirect(url)` | Request redirected to URL or extension path |
+| `ModifyHeaders` | Request/response headers modified |
+| `Allow` | Override matching block rule |
+
+### DnrRuleset
+
+`id` (string), `enabled` (boolean), `rules` (DnrRule[])
+
 ## chrome.runtime
 
 No permission required (intrinsic).

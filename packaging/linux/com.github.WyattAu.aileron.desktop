@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Aileron
+Comment=Keyboard-driven web browser
+Exec=aileron %u
+Icon=aileron
+Type=Application
+Categories=Network;WebBrowser;GTK;
+Terminal=false
+MimeType=x-scheme-handler/http;x-scheme-handler/https;text/html;
+StartupNotify=true
+StartupWMClass=aileron
+Keywords=browser;web;keyboard;vim;

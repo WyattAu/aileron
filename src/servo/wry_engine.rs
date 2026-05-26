@@ -109,7 +109,7 @@ impl WryPane {
         initial_url: Url,
         bounds: Rect,
         blocked_domains: Vec<String>,
-        https_safe_list: std::collections::HashSet<String>,
+        https_safe_list: std::sync::Arc<std::collections::HashSet<String>>,
         devtools: bool,
         popup_blocker: bool,
         interceptor_registry: Option<
@@ -204,7 +204,7 @@ impl WryPane {
         bounds: Rect,
         event_tx: mpsc::Sender<WryEvent>,
         event_rx: mpsc::Receiver<WryEvent>,
-        https_safe_list: std::collections::HashSet<String>,
+        https_safe_list: std::sync::Arc<std::collections::HashSet<String>>,
         devtools: bool,
         popup_blocker: bool,
         interceptor_registry: Option<
@@ -280,7 +280,7 @@ impl WryPane {
         pid: Uuid,
         event_tx: mpsc::Sender<WryEvent>,
         blocked_domains: Vec<String>,
-        https_safe_list: std::collections::HashSet<String>,
+        https_safe_list: std::sync::Arc<std::collections::HashSet<String>>,
         https_upgrade_enabled: bool,
         tracking_protection_enabled: bool,
         devtools: bool,
@@ -409,8 +409,7 @@ a {{ color: #4db4ff; }}
                         let host_lower = host.to_lowercase();
 
                         if blocked_domains.iter().any(|d: &String| {
-                            let d_lower = d.to_lowercase();
-                            host_lower == d_lower || host_lower.ends_with(&format!(".{d_lower}"))
+                            &host_lower == d || host_lower.ends_with(&format!(".{d}"))
                         }) {
                             return false;
                         }
@@ -751,7 +750,7 @@ impl WryPaneManager {
         initial_url: Url,
         bounds: Rect,
         blocked_domains: Vec<String>,
-        https_safe_list: std::collections::HashSet<String>,
+        https_safe_list: std::sync::Arc<std::collections::HashSet<String>>,
         devtools: bool,
         popup_blocker: bool,
         interceptor_registry: Option<

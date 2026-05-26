@@ -351,7 +351,7 @@ impl AileronApp {
                 .map(|s| s.get_cached_https_safe_list())
                 .unwrap_or_default()
         } else {
-            std::collections::HashSet::new()
+            std::sync::Arc::new(std::collections::HashSet::new())
         };
 
         let interceptor_registry = self
@@ -469,7 +469,7 @@ impl AileronApp {
                 .map(|s| s.get_cached_https_safe_list())
                 .unwrap_or_default()
         } else {
-            std::collections::HashSet::new()
+            std::sync::Arc::new(std::collections::HashSet::new())
         };
 
         let interceptor_registry = self
@@ -567,7 +567,7 @@ impl AileronApp {
                 .map(|s| s.get_cached_https_safe_list())
                 .unwrap_or_default()
         } else {
-            std::collections::HashSet::new()
+            std::sync::Arc::new(std::collections::HashSet::new())
         };
 
         self.popup.init_popup_window(

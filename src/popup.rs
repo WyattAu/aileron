@@ -36,7 +36,7 @@ impl PopupManager {
         window: Arc<Window>,
         url: url::Url,
         blocked_domains: Vec<String>,
-        https_safe_list: std::collections::HashSet<String>,
+        https_safe_list: std::sync::Arc<std::collections::HashSet<String>>,
         devtools: bool,
     ) {
         let size = window.inner_size();

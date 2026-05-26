@@ -450,8 +450,9 @@ impl ApplicationHandler for AileronApp {
                         if is_terminal {
                             // Native terminal: write directly to PTY
                             if let aileron::input::Key::Character(c) = &key {
-                                self.terminal_manager
-                                    .write_input(&active_pane_id, &c.to_string());
+                                let mut buf = [0u8; 4];
+                                let s = c.encode_utf8(&mut buf);
+                                self.terminal_manager.write_input(&active_pane_id, s);
                             } else {
                                 // Convert special keys to escape sequences
                                 let escape_seq = key_to_escape_sequence(&key, mods);
@@ -472,7 +473,9 @@ impl ApplicationHandler for AileronApp {
                         {
                             // Web content: forward via JS
                             if let aileron::input::Key::Character(c) = &key {
-                                pane.insert_text(&c.to_string());
+                                let mut buf = [0u8; 4];
+                                let s = c.encode_utf8(&mut buf);
+                                pane.insert_text(s);
                             } else if matches!(
                                 &key,
                                 aileron::input::Key::Backspace

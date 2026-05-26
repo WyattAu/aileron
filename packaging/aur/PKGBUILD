@@ -42,4 +42,5 @@ package() {
   cd "$pkgname"
   install -Dm755 "target/release/aileron" "$pkgdir/usr/bin/aileron"
   install -Dm644 "man/aileron.1" "$pkgdir/usr/share/man/man1/aileron.1"
+  install -Dm644 "packaging/linux/com.github.WyattAu.aileron.desktop" "$pkgdir/usr/share/applications/com.github.WyattAu.aileron.desktop"
 }

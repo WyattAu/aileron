@@ -633,7 +633,8 @@ impl AdBlocker {
             }
         }
 
-        let result: Vec<String> = domains.into_iter().collect();
+        // Pre-lowercase all domains so navigation handler avoids per-check allocation
+        let result: Vec<String> = domains.into_iter().map(|d| d.to_lowercase()).collect();
         self.blocked_domains_cache = Some(result.clone());
         result
     }

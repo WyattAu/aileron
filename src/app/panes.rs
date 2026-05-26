@@ -70,10 +70,11 @@ impl AileronApp {
                 .map(|s| s.get_cached_https_safe_list())
                 .unwrap_or_default()
         } else {
-            std::collections::HashSet::new()
+            std::sync::Arc::new(std::collections::HashSet::new())
         };
         #[cfg(not(target_os = "linux"))]
-        let https_safe_list: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let https_safe_list: std::sync::Arc<std::collections::HashSet<String>> =
+            std::sync::Arc::new(std::collections::HashSet::new());
 
         let interceptor_registry = self
             .app_state
@@ -188,10 +189,11 @@ impl AileronApp {
                 .map(|s| s.get_cached_https_safe_list())
                 .unwrap_or_default()
         } else {
-            std::collections::HashSet::new()
+            std::sync::Arc::new(std::collections::HashSet::new())
         };
         #[cfg(not(target_os = "linux"))]
-        let https_safe_list: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let https_safe_list: std::sync::Arc<std::collections::HashSet<String>> =
+            std::sync::Arc::new(std::collections::HashSet::new());
 
         let interceptor_registry = self
             .app_state

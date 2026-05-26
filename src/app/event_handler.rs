@@ -427,8 +427,9 @@ impl ApplicationHandler for AileronApp {
                         #[cfg(all(target_os = "linux", feature = "terminal"))]
                         if is_terminal {
                             if let crate::input::Key::Character(c) = &key {
-                                self.terminal_manager
-                                    .write_input(&active_pane_id, &c.to_string());
+                                let mut buf = [0u8; 4];
+                                let s = c.encode_utf8(&mut buf);
+                                self.terminal_manager.write_input(&active_pane_id, s);
                             } else {
                                 let escape_seq = key_to_escape_sequence(&key, mods);
                                 if !escape_seq.is_empty() {
@@ -443,7 +444,9 @@ impl ApplicationHandler for AileronApp {
                             && let Some(pane) = self.offscreen_panes.get_mut(&active_pane_id)
                         {
                             if let crate::input::Key::Character(c) = &key {
-                                pane.insert_text(&c.to_string());
+                                let mut buf = [0u8; 4];
+                                let s = c.encode_utf8(&mut buf);
+                                pane.insert_text(s);
                             } else {
                                 let (js_key, js_code) = key_to_js(&key);
                                 let mods = crate::offscreen_webview::modifiers_js(
@@ -459,7 +462,9 @@ impl ApplicationHandler for AileronApp {
                         {
                             if let Some(pane) = self.offscreen_panes.get_mut(&active_pane_id) {
                                 if let crate::input::Key::Character(c) = &key {
-                                    pane.insert_text(&c.to_string());
+                                    let mut buf = [0u8; 4];
+                                    let s = c.encode_utf8(&mut buf);
+                                    pane.insert_text(s);
                                 } else {
                                     let (js_key, js_code) = key_to_js(&key);
                                     let mods = crate::offscreen_webview::modifiers_js(

@@ -230,7 +230,7 @@ pub struct CacheState {
     pub pane_count_dirty: bool,
     pub config_json_cache: String,
     pub config_json_dirty: bool,
-    pub https_safe_list_cache: Option<HashSet<String>>,
+    pub https_safe_list_cache: Option<std::sync::Arc<HashSet<String>>>,
     https_safe_list_debug_flag: bool,
 }
 
@@ -638,7 +638,7 @@ impl AppState {
         }
     }
 
-    pub fn get_cached_https_safe_list(&mut self) -> HashSet<String> {
+    pub fn get_cached_https_safe_list(&mut self) -> std::sync::Arc<HashSet<String>> {
         let current_debug = std::env::var("AILERON_DEBUG").is_ok();
         if self.cache.https_safe_list_cache.is_some()
             && self.cache.https_safe_list_debug_flag == current_debug
@@ -651,8 +651,8 @@ impl AppState {
         }
         let list = crate::net::privacy::load_https_safe_list();
         self.cache.https_safe_list_debug_flag = current_debug;
-        self.cache.https_safe_list_cache = Some(list.clone());
-        list
+        self.cache.https_safe_list_cache = Some(std::sync::Arc::new(list));
+        self.cache.https_safe_list_cache.clone().unwrap()
     }
 
     /// Store a scroll mark fraction for a pane. Called from the IPC handler
