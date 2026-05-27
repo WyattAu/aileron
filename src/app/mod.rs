@@ -377,6 +377,9 @@ pub struct AppState {
     /// Pending URL to open in a new tab (set by `:g <url>` command).
     pub pending_new_tab_url: Option<url::Url>,
 
+    /// Set to true when the UI requests a new tab (e.g., "+" button).
+    pub pending_new_tab: bool,
+
     /// Per-pane tracking of already-injected content script IDs.
     /// Keys are pane IDs, values are sets of "extension_id:script_id" strings.
     /// Cleared on each LoadStarted to allow re-injection on new navigations.
@@ -607,6 +610,7 @@ impl AppState {
             arp_cmd_receiver: None,
             pending_import: None,
             pending_new_tab_url: None,
+            pending_new_tab: false,
             injected_content_script_ids: HashMap::new(),
             ui: UiState::default(),
             panels: PanelState::default(),

@@ -608,9 +608,13 @@ impl AppState {
                         .root_mut()
                         .and_then(|root| crate::wm::BspTree::find_pane_mut(root, active_id))
                     {
-                        let new_tab_id = pane.tabs.add(new_url);
+                        let new_tab_id = pane.tabs.add(new_url.clone());
                         self.engines
                             .create_pane(new_tab_id, pane.tabs.active().url.clone(), None);
+                        // Navigate the existing webview to the new tab's URL.
+                        self.pending_wry_actions
+                            .push_back(WryAction::Navigate(new_url));
+                        self.tabs.tab_display_dirty = true;
                         self.ui.status_message =
                             format!("Tab {}/{}", pane.tabs.active_index() + 1, pane.tabs.len());
                     }
@@ -651,6 +655,8 @@ impl AppState {
                         .and_then(|root| crate::wm::BspTree::find_pane_mut(root, active_id))
                     {
                         pane.tabs.next();
+                        let url = pane.tabs.active().url.clone();
+                        self.pending_wry_actions.push_back(WryAction::Navigate(url));
                         self.ui.status_message =
                             format!("Tab {}/{}", pane.tabs.active_index() + 1, pane.tabs.len());
                     }
@@ -663,6 +669,8 @@ impl AppState {
                         .and_then(|root| crate::wm::BspTree::find_pane_mut(root, active_id))
                     {
                         pane.tabs.prev();
+                        let url = pane.tabs.active().url.clone();
+                        self.pending_wry_actions.push_back(WryAction::Navigate(url));
                         self.ui.status_message =
                             format!("Tab {}/{}", pane.tabs.active_index() + 1, pane.tabs.len());
                     }

@@ -488,9 +488,14 @@ fn process_wry_events_inner(
                     }
                 }
             }
-            WryEvent::TitleChanged { title, .. } => {
+            WryEvent::TitleChanged { pane_id, title, .. } => {
                 app_state.update_a11y(&title[..title.len().min(60)]);
                 app_state.tabs.tab_display_dirty = true;
+                let url = wry_panes
+                    .get(&pane_id)
+                    .map(|p| p.url().to_string())
+                    .unwrap_or_default();
+                sync_tab_url_title(app_state, pane_id, &url, &title);
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
                 // Use the download manager for actual downloading with progress
@@ -570,6 +575,23 @@ pub fn process_wry_events(
     );
 }
 
+/// Update the active tab's URL/title in the BSP tree pane's TabList
+/// to match the webview's current state. This keeps tab data in sync
+/// so that tab switching navigates to the correct URL.
+fn sync_tab_url_title(app_state: &mut AppState, pane_id: uuid::Uuid, url: &str, title: &str) {
+    if let Some(pane) = app_state
+        .wm
+        .root_mut()
+        .and_then(|root| crate::wm::BspTree::find_pane_mut(root, pane_id))
+    {
+        let active_tab = pane.tabs.active_mut();
+        if let Ok(parsed) = url::Url::parse(url) {
+            active_tab.url = parsed;
+        }
+        active_tab.title = title.to_string();
+    }
+}
+
 fn process_offscreen_events_inner(
     app_state: &mut AppState,
     offscreen_panes: &mut OffscreenWebViewManager,
@@ -578,15 +600,22 @@ fn process_offscreen_events_inner(
     interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
 ) {
     let events = offscreen_panes.drain_all_events();
-    for (_pane_id, event) in events {
+    for (pane_id, event) in events {
         match event {
-            WryEvent::LoadComplete { pane_id, url, .. } => {
+            WryEvent::LoadComplete { url, .. } => {
                 app_state.session.session_dirty = true;
                 app_state.tabs.tab_display_dirty = true;
                 app_state.cache.pane_count_dirty = true;
                 if let Ok(parsed) = url::Url::parse(&url) {
                     app_state.record_visit(&parsed, &url);
                 }
+                // Sync the tab's stored URL/title with the webview's
+                // current state so tab switching navigates correctly.
+                let title = offscreen_panes
+                    .get(&pane_id)
+                    .map(|p| p.title())
+                    .unwrap_or_default();
+                sync_tab_url_title(app_state, pane_id, &url, title);
                 app_state.update_a11y(&format!("Loaded: {}", &url[..url.len().min(60)]));
 
                 // Fire extension onCompleted lifecycle event
@@ -854,6 +883,11 @@ fn process_offscreen_events_inner(
             WryEvent::TitleChanged { title, .. } => {
                 app_state.update_a11y(&title[..title.len().min(60)]);
                 app_state.tabs.tab_display_dirty = true;
+                let url = offscreen_panes
+                    .get(&pane_id)
+                    .map(|p| p.url().to_string())
+                    .unwrap_or_default();
+                sync_tab_url_title(app_state, pane_id, &url, &title);
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
                 // Use the download manager for actual downloading with progress
@@ -886,7 +920,7 @@ fn process_offscreen_events_inner(
             }
             WryEvent::HttpsUpgraded { to, .. } => {
                 app_state.ui.status_message = format!("HTTPS upgrade: {to}");
-                if let Some(pane) = offscreen_panes.get_mut(&_pane_id) {
+                if let Some(pane) = offscreen_panes.get_mut(&pane_id) {
                     pane.mark_dirty();
                 }
             }
@@ -933,13 +967,15 @@ pub fn process_offscreen_events(
 }
 
 /// Check all offscreen panes for crash detection.
-/// A pane is considered crashed if it has been loading for >15 seconds
-/// with no activity (no events, no frame updates).
+/// A pane is considered crashed if it has been loading for >60 seconds
+/// with no activity (no events, no frame captures). HTTPS pages with DNS,
+/// TLS, and redirects can take 15-20 seconds, so the timeout must be
+/// generous. Successful frame capture resets the activity timer.
 pub fn check_offscreen_crashes(
     app_state: &mut AppState,
     offscreen_panes: &mut OffscreenWebViewManager,
 ) {
-    let crash_timeout = std::time::Duration::from_secs(15);
+    let crash_timeout = std::time::Duration::from_secs(60);
 
     for (pane_id, pane) in offscreen_panes.iter_mut() {
         if pane.is_crashed(crash_timeout) && !app_state.crash.webview_crash_detected {

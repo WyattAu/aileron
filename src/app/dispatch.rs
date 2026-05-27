@@ -183,8 +183,13 @@ pub fn dispatch_action(action: &Action) -> Vec<ActionEffect> {
 
         // ─── New tab ──────────────────────────────────────────────
         Action::NewTab => {
-            // Ctrl+T now creates a new tab within the active pane
-            vec![ActionEffect::RequestNewTab]
+            let url = url::Url::parse("aileron://new")
+                .unwrap_or_else(|_| url::Url::parse("aileron://welcome").unwrap());
+            vec![
+                ActionEffect::RequestNewTab,
+                ActionEffect::Wry(WryAction::Navigate(url)),
+                ActionEffect::Status("New tab".into()),
+            ]
         }
 
         // ─── External browser (state-dependent) ───────────────────
@@ -632,8 +637,15 @@ mod tests {
     #[test]
     fn test_new_tab_requests_new_tab_effect() {
         let effects = dispatch_action(&Action::NewTab);
-        assert_eq!(effects.len(), 1);
+        assert_eq!(effects.len(), 3);
         assert_eq!(effects[0], ActionEffect::RequestNewTab);
+        // Must include navigation to aileron://new (like NewTabInPane).
+        let wry = wry_effects(&effects);
+        assert!(
+            wry.iter()
+                .any(|a| matches!(a, WryAction::Navigate(u) if u.scheme() == "aileron"))
+        );
+        assert_eq!(status_msg(&effects), Some("New tab"));
     }
 
     // ─── External browser ─────────────────────────────────────────

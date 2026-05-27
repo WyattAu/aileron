@@ -664,6 +664,14 @@ impl BspTree {
         }
     }
 
+    /// Get an immutable reference to a pane by ID.
+    #[must_use]
+    pub fn find_pane(&self, pane_id: Uuid) -> Option<&Pane> {
+        self.root
+            .as_ref()
+            .and_then(|node| Self::find_pane_by_id(node, pane_id))
+    }
+
     /// Get a mutable reference to the root node (for tab operations).
     #[must_use]
     pub fn root_mut(&mut self) -> Option<&mut BspNode> {
