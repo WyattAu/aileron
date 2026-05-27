@@ -393,6 +393,17 @@ fn build_ui_inner(
                     ui.label(&msg)
                         .widget_info(|| a11y_info(WidgetType::Label, format!("Status: {msg}")));
                 }
+
+                // Version + build hash (far right)
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let ver = format!(
+                        "v{} ({})",
+                        env!("CARGO_PKG_VERSION"),
+                        env!("AILERON_GIT_HASH"),
+                    );
+                    ui.colored_label(egui::Color32::from_rgb(120, 120, 120), &ver)
+                        .widget_info(|| a11y_info(WidgetType::Label, format!("Version: {ver}")));
+                });
             });
         });
     });
@@ -1247,7 +1258,7 @@ fn build_ui_inner(
                             app_state.current_workspace_name = name.clone();
                             app_state.ui.status_message = format!("Saving workspace: {name}...");
                         }
-                        if ui.button("New Tab").clicked() {
+                        if ui.button("Split Pane").clicked() {
                             let active = app_state.wm.active_pane_id();
                             if let Err(e) =
                                 app_state
