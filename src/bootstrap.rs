@@ -240,13 +240,13 @@ pub fn run() -> anyhow::Result<()> {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
             info!("NVIDIA GPU detected -- disabled DMA-BUF renderer (shared GL fallback)");
         }
-        // In offscreen mode, WebKitGTK's GL compositor renders to textures
-        // that can't be captured via snapshot() or pixbuf() in an
-        // OffscreenWindow — both return blank surfaces. Disable compositing
-        // to force software rendering, which is capture-compatible.
+        // WEBKIT_DISABLE_COMPOSITING_MODE was previously set here to force
+        // software rendering for pixbuf capture. This prevented HTTPS pages
+        // from rendering (composited content never reached the OffscreenWindow
+        // surface). The snapshot() API (WebKitGTK 2.38+) correctly captures
+        // GL-composited content, so compositing must remain enabled.
         if config.render_mode == "offscreen" {
-            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-            info!("Offscreen mode -- disabled WebKitGTK compositing for capture compatibility");
+            info!("Offscreen mode -- WebKitGTK compositing enabled (snapshot capture)");
         }
     }
 

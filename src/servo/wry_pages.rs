@@ -401,8 +401,8 @@ pub(crate) fn aileron_welcome_page() -> String {
 <meta charset="utf-8">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #141414; color: #aaa; font-family: 'SF Mono', 'Fira Code', monospace;
-         display: flex; align-items: center; justify-content: center; height: 100vh; }
+   body { background: #141414; color: #aaa; font-family: 'SF Mono', 'Fira Code', monospace;
+          display: flex; align-items: center; justify-content: center; min-height: 100vh; }
   .container { text-align: center; max-width: 680px; padding: 2em; }
   h1 { color: #4db4ff; font-size: 2.5em; margin-bottom: 0.3em; letter-spacing: 0.05em; }
   .subtitle { color: #888; font-size: 1.1em; margin-bottom: 1.5em; }

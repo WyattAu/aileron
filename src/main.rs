@@ -924,9 +924,10 @@ impl AileronApp {
                         buf[..copy_len].copy_from_slice(&rgba[..copy_len]);
                     }
                     captured.push((*id, fw, fh));
+                    // Only reset the capture timer when a frame was actually produced.
+                    self.offscreen_last_capture
+                        .insert(*id, std::time::Instant::now());
                 }
-                self.offscreen_last_capture
-                    .insert(*id, std::time::Instant::now());
             }
         }
 
@@ -936,6 +937,21 @@ impl AileronApp {
             let Some(rgba) = rgba else {
                 continue;
             };
+            let expected = (width as usize) * (height as usize) * 4;
+            if rgba.len() != expected {
+                // Buffer size mismatch can occur during window resize when
+                // the offscreen webview is resized between capture and upload.
+                // Skip this frame rather than panicking in epaint.
+                tracing::warn!(
+                    "Texture upload skipped for pane {}: buffer {} != expected {} ({}x{})",
+                    &pane_id.to_string()[..8],
+                    rgba.len(),
+                    expected,
+                    width,
+                    height,
+                );
+                continue;
+            }
             let color_image =
                 egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], rgba);
 
