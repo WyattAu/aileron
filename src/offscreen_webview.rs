@@ -173,9 +173,16 @@ impl OffscreenWebView {
         let privacy_script =
             crate::net::privacy::privacy_initialization_script(tracking_protection_enabled);
 
+        let version = env!("CARGO_PKG_VERSION");
+        let user_agent = format!(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 Aileron/{}",
+            version,
+        );
+
         let builder = WebViewBuilder::new()
             .with_url(&url_str)
             .with_devtools(devtools)
+            .with_user_agent(&user_agent)
             .with_bounds(wry::Rect {
                 position: wry::dpi::Position::Logical(wry::dpi::LogicalPosition::new(0.0, 0.0)),
                 size: wry::dpi::Size::Logical(wry::dpi::LogicalSize::new(

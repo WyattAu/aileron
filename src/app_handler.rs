@@ -476,11 +476,17 @@ impl ApplicationHandler for AileronApp {
                                 let mut buf = [0u8; 4];
                                 let s = c.encode_utf8(&mut buf);
                                 pane.insert_text(s);
+                            } else if let aileron::input::Key::Backspace = &key {
+                                // Use execCommand('delete') for backspace — it
+                                // operates on the focused input/textarea regardless of
+                                // React/virtual-DOM event handling. Dispatching a
+                                // synthetic KeyboardEvent on document often gets ignored
+                                // by SPA frameworks like Google's React-based search.
+                                pane.execute_js("document.execCommand('delete', false, null)");
+                                pane.mark_dirty();
                             } else if matches!(
                                 &key,
-                                aileron::input::Key::Backspace
-                                    | aileron::input::Key::Enter
-                                    | aileron::input::Key::Tab
+                                aileron::input::Key::Enter | aileron::input::Key::Tab
                             ) {
                                 let (js_key, js_code) = key_to_js(&key);
                                 let mods = aileron::offscreen_webview::modifiers_js(
