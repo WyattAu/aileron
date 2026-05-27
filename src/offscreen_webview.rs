@@ -80,6 +80,11 @@ pub struct OffscreenWebView {
     /// Set when a snapshot is requested, cleared when the result is consumed.
     #[cfg(target_os = "linux")]
     snapshot_rx: Option<mpsc::Receiver<Result<cairo::Surface, gtk::glib::Error>>>,
+    /// Whether a snapshot has been requested but not yet collected.
+    /// When true, capture_frame should NOT fall through to pixbuf (which
+    /// would produce a frame with different colors, causing visual flashing).
+    #[cfg(target_os = "linux")]
+    snapshot_in_flight: bool,
     /// How many times we've requested a snapshot (diagnostic counter).
     #[cfg(target_os = "linux")]
     snapshot_request_count: u64,
@@ -401,6 +406,7 @@ a {{ color: #4db4ff; }}
             height,
             dirty: true,
             snapshot_rx: None,
+            snapshot_in_flight: false,
             snapshot_request_count: 0,
             event_rx,
             last_activity_time: std::time::Instant::now(),
@@ -422,6 +428,7 @@ a {{ color: #4db4ff; }}
                 WryEvent::LoadComplete { .. } => {
                     self.loading = false;
                     self.last_activity_time = std::time::Instant::now();
+                    self.dirty = true;
                 }
                 WryEvent::TitleChanged { .. } => {
                     self.last_activity_time = std::time::Instant::now();
@@ -516,22 +523,36 @@ a {{ color: #4db4ff; }}
             self.url.scheme(),
         );
 
-        // Strategy: try pixbuf first (synchronous, always works with
-        // WEBKIT_DISABLE_COMPOSITING_MODE=1). Only fall back to snapshot
-        // if pixbuf returns nothing (e.g., widget not realized yet).
-        if self.capture_frame_pixbuf().is_some() {
-            return self.frame.as_ref();
-        }
+        // Strategy: aileron:// pages are software-rendered by GTK, so pixbuf
+        // captures them correctly and synchronously. HTTPS/HTTP pages use
+        // WebKitGTK's GL compositor, which only the snapshot API can capture.
+        let use_pixbuf = self.url.scheme() == "aileron";
 
-        // Pixbuf failed — try snapshot for GL-composited content.
-        warn!(
-            "capture_frame: pixbuf failed for pane {}, trying snapshot fallback",
-            &self.pane_id.to_string()[..8],
-        );
-        if let Some(frame) = self.capture_frame_snapshot() {
-            self.frame = Some(frame);
-            self.dirty = false;
-            return self.frame.as_ref();
+        if use_pixbuf {
+            if self.capture_frame_pixbuf().is_some() {
+                return self.frame.as_ref();
+            }
+        } else {
+            // Try snapshot for GL-composited content (https:// pages).
+            if let Some(frame) = self.capture_frame_snapshot() {
+                self.frame = Some(frame);
+                self.dirty = false;
+                self.last_activity_time = std::time::Instant::now();
+                return self.frame.as_ref();
+            }
+
+            // Snapshot in flight but not ready — return None so the
+            // caller does NOT reset the capture timer. This ensures the
+            // next frame re-attempts capture immediately instead of being
+            // throttled by the interval timer.
+            if self.snapshot_in_flight {
+                return None;
+            }
+
+            // Snapshot failed or unavailable — try pixbuf as last resort.
+            if self.capture_frame_pixbuf().is_some() {
+                return self.frame.as_ref();
+            }
         }
 
         warn!(
@@ -593,6 +614,7 @@ a {{ color: #4db4ff; }}
                 },
             );
             self.snapshot_rx = Some(rx);
+            self.snapshot_in_flight = true;
             // Pump a few GTK events to start the snapshot pipeline.
             for _ in 0..5 {
                 if gtk::events_pending() {
@@ -611,11 +633,13 @@ a {{ color: #4db4ff; }}
                     &self.pane_id.to_string()[..8],
                 );
                 self.snapshot_rx = None;
+                self.snapshot_in_flight = false;
                 self.process_snapshot_surface(surface)
             }
             Ok(Err(e)) => {
                 warn!("capture_frame_snapshot: error: {}", e);
                 self.snapshot_rx = None;
+                self.snapshot_in_flight = false;
                 None
             }
             Err(_) => {
@@ -765,6 +789,8 @@ a {{ color: #4db4ff; }}
             pixels,
         });
         self.dirty = false;
+        // A webview producing pixel output is definitively not crashed.
+        self.last_activity_time = std::time::Instant::now();
         self.frame.as_ref()
     }
 
@@ -941,7 +967,7 @@ a {{ color: #4db4ff; }}
 
     /// Scroll the webview by the given delta with smooth animation.
     pub fn scroll_by(&mut self, dx: f64, dy: f64) {
-        let js = format!("window.scrollBy({{top: {dy}, left: {dx}, behavior: 'smooth'}})");
+        let js = format!("window.scrollBy({{top: {dy}, left: {dx}, behavior: 'instant'}})");
         self.execute_js(&js);
         self.mark_dirty();
     }

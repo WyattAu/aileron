@@ -521,9 +521,7 @@ impl ApplicationHandler for AileronApp {
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                if let Some(app_state) = &self.app_state
-                    && app_state.mode == Mode::Insert
-                {
+                if let Some(app_state) = &self.app_state {
                     let active_id = app_state.wm.active_pane_id();
                     let (dx, dy) = match delta {
                         winit::event::MouseScrollDelta::LineDelta(x, y) => {

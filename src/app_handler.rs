@@ -549,9 +549,7 @@ impl ApplicationHandler for AileronApp {
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                if let Some(app_state) = &self.app_state
-                    && app_state.mode == aileron::input::Mode::Insert
-                {
+                if let Some(app_state) = &self.app_state {
                     let active_id = app_state.wm.active_pane_id();
                     let (dx, dy) = match delta {
                         winit::event::MouseScrollDelta::LineDelta(x, y) => {
@@ -587,14 +585,15 @@ impl ApplicationHandler for AileronApp {
                         if !is_terminal && !self.config.is_offscreen() {
                             if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                 let js = format!(
-                                    "window.scrollBy({{top: {dy}, left: {dx}, behavior: 'smooth'}})"
+                                    "window.scrollBy({{top: {}, left: {}, behavior: 'instant'}})",
+                                    -dy, -dx
                                 );
                                 wry_pane.execute_js(&js);
                             }
                         } else if !is_terminal
                             && let Some(pane) = self.offscreen_panes.get_mut(&active_id)
                         {
-                            pane.scroll_by(dx, dy);
+                            pane.scroll_by(-dx, -dy);
                         }
                     }
                 }
@@ -617,7 +616,7 @@ impl ApplicationHandler for AileronApp {
                             let pos = ctx.pointer_latest_pos()?;
                             let panes = app_state.wm.panes_ref();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            let top_offset = URL_BAR_HEIGHT as f32;
+                            let top_offset = STATUS_BAR_HEIGHT as f32;
                             let sidebar_offset = if app_state.config.tab_layout == "sidebar"
                                 && !app_state.config.tab_sidebar_right
                             {
@@ -699,7 +698,7 @@ impl ApplicationHandler for AileronApp {
                             let panes = app_state.wm.panes_ref();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
                             let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
-                            let top_offset = URL_BAR_HEIGHT as f32;
+                            let top_offset = STATUS_BAR_HEIGHT as f32;
                             let sidebar_offset = if app_state.config.tab_layout == "sidebar"
                                 && !app_state.config.tab_sidebar_right
                             {
@@ -763,6 +762,14 @@ impl ApplicationHandler for AileronApp {
                                     pane.forward_mouse_event(
                                         event_type, local_x, local_y, btn, &mods,
                                     );
+                                    // Dispatch a click event after mouseup so that
+                                    // website button handlers (which listen for 'click')
+                                    // fire correctly.
+                                    if *state == winit::event::ElementState::Released {
+                                        pane.forward_mouse_event(
+                                            "click", local_x, local_y, btn, &mods,
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -784,7 +791,7 @@ impl ApplicationHandler for AileronApp {
                         let terminal_info = (|| {
                             let panes = app_state.wm.panes_ref();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            let top_offset = URL_BAR_HEIGHT as f32;
+                            let top_offset = STATUS_BAR_HEIGHT as f32;
                             let sidebar_offset = if app_state.config.tab_layout == "sidebar"
                                 && !app_state.config.tab_sidebar_right
                             {
@@ -829,7 +836,7 @@ impl ApplicationHandler for AileronApp {
                             let panes = app_state.wm.panes_ref();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
                             let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
-                            let top_offset = URL_BAR_HEIGHT as f32;
+                            let top_offset = STATUS_BAR_HEIGHT as f32;
                             let sidebar_offset = if app_state.config.tab_layout == "sidebar"
                                 && !app_state.config.tab_sidebar_right
                             {
@@ -1010,6 +1017,13 @@ impl ApplicationHandler for AileronApp {
 
         // Defer pane repositioning to end-of-frame (single call).
         let mut layout_dirty = self.resize_pending;
+        if self.resize_pending {
+            // Reset capture timers so the first frame after resize is captured
+            // immediately rather than being throttled by the interval timer.
+            for (_, ts) in self.offscreen_last_capture.iter_mut() {
+                *ts = std::time::Instant::now() - std::time::Duration::from_secs(10);
+            }
+        }
         self.resize_pending = false;
 
         if self.first_frame {
@@ -1022,6 +1036,31 @@ impl ApplicationHandler for AileronApp {
         {
             app_state.pending_new_window = false;
             self.popup.pending_new_window = true;
+        }
+
+        // Handle pending new tab request from UI ("+" button).
+        if let Some(app_state) = &mut self.app_state
+            && app_state.pending_new_tab
+        {
+            app_state.pending_new_tab = false;
+            let new_url = url::Url::parse("aileron://new").unwrap();
+            let active_id = app_state.wm.active_pane_id();
+            if let Some(pane) = app_state
+                .wm
+                .root_mut()
+                .and_then(|root| aileron::wm::BspTree::find_pane_mut(root, active_id))
+            {
+                let new_tab_id = pane.tabs.add(new_url.clone());
+                app_state
+                    .engines
+                    .create_pane(new_tab_id, pane.tabs.active().url.clone(), None);
+                app_state
+                    .pending_wry_actions
+                    .push_back(aileron::app::WryAction::Navigate(new_url));
+                app_state.tabs.tab_display_dirty = true;
+                app_state.ui.status_message =
+                    format!("Tab {}/{}", pane.tabs.active_index() + 1, pane.tabs.len());
+            }
         }
 
         frame_tasks::poll_git_status(&mut self.git_status, &self.git_poller);

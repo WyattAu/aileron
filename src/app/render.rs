@@ -183,9 +183,10 @@ impl AileronApp {
                         buf[..copy_len].copy_from_slice(&rgba[..copy_len]);
                     }
                     captured.push((*id, fw, fh));
+                    // Only reset the capture timer when a frame was actually produced.
+                    self.offscreen_last_capture
+                        .insert(*id, std::time::Instant::now());
                 }
-                self.offscreen_last_capture
-                    .insert(*id, std::time::Instant::now());
             }
         }
 
