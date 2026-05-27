@@ -622,11 +622,40 @@ a {{ color: #4db4ff; }}
             );
             self.snapshot_rx = Some(rx);
             self.snapshot_in_flight = true;
-            // Pump a few GTK events to start the snapshot pipeline.
-            for _ in 0..5 {
+            // Pump GTK events aggressively to let the snapshot pipeline
+            // complete. The callback needs the GL thread to finish, which
+            // requires processing many GTK/Weyland events. We pump for up
+            // 50ms (enough for a frame at 20fps) but yield periodically
+            // to avoid blocking the main thread too long.
+            let snap_deadline = std::time::Instant::now() + std::time::Duration::from_millis(50);
+            while self.snapshot_in_flight && std::time::Instant::now() < snap_deadline {
                 if gtk::events_pending() {
                     gtk::main_iteration_do(false);
                 }
+                // Try to collect the result immediately
+                if let Some(snap_rx) = self.snapshot_rx.as_mut() {
+                    match snap_rx.try_recv() {
+                        Ok(Ok(surface)) => {
+                            info!(
+                                "capture_frame_snapshot: pane {} collected snapshot inline",
+                                &self.pane_id.to_string()[..8],
+                            );
+                            self.snapshot_rx = None;
+                            self.snapshot_in_flight = false;
+                            self.snapshot_request_count = 0;
+                            return self.process_snapshot_surface(surface);
+                        }
+                        Ok(Err(e)) => {
+                            warn!("capture_frame_snapshot: inline error: {}", e);
+                            self.snapshot_rx = None;
+                            self.snapshot_in_flight = false;
+                            self.snapshot_request_count = 0;
+                            return None;
+                        }
+                        Err(_) => continue,
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
             }
             return None;
         }

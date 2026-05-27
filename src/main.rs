@@ -924,13 +924,10 @@ impl AileronApp {
                         buf[..copy_len].copy_from_slice(&rgba[..copy_len]);
                     }
                     captured.push((*id, fw, fh));
+                    // Only reset the capture timer when a frame was actually produced.
+                    self.offscreen_last_capture
+                        .insert(*id, std::time::Instant::now());
                 }
-                // Always reset the capture timer when we attempt capture for a
-                // dirty pane, even if the snapshot is still in flight. This
-                // ensures we keep polling at the capture interval instead of
-                // stalling indefinitely.
-                self.offscreen_last_capture
-                    .insert(*id, std::time::Instant::now());
             }
         }
 
