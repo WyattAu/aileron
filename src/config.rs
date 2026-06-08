@@ -200,29 +200,31 @@ pub struct ThemeColors {
 
 impl ThemeColors {
     /// Resolve a color field, falling back to the provided default.
-    pub fn resolve(field: &Option<String>, default: &str) -> egui::Color32 {
+    pub fn resolve(field: &Option<String>, default: &str) -> crate::terminal::grid::Color {
         field
             .as_deref()
             .and_then(parse_hex_color)
-            .unwrap_or_else(|| parse_hex_color(default).unwrap_or(egui::Color32::WHITE))
+            .unwrap_or_else(|| {
+                parse_hex_color(default).unwrap_or(crate::terminal::grid::Color::WHITE)
+            })
     }
 }
 
-/// Pre-resolved theme colors (egui::Color32) — cached to avoid per-frame String parsing.
+/// Pre-resolved theme colors — cached to avoid per-frame String parsing.
 #[derive(Debug, Clone)]
 pub struct CachedThemeColors {
     /// The theme name these colors were resolved from.
     pub theme_name: String,
-    pub tab_bar_bg: egui::Color32,
-    pub tab_bar_fg: egui::Color32,
-    pub status_bar_bg: egui::Color32,
-    pub status_bar_fg: egui::Color32,
-    pub url_bar_bg: egui::Color32,
-    pub url_bar_fg: egui::Color32,
-    pub accent: egui::Color32,
-    pub bg: egui::Color32,
-    pub fg: egui::Color32,
-    pub border: egui::Color32,
+    pub tab_bar_bg: crate::terminal::grid::Color,
+    pub tab_bar_fg: crate::terminal::grid::Color,
+    pub status_bar_bg: crate::terminal::grid::Color,
+    pub status_bar_fg: crate::terminal::grid::Color,
+    pub url_bar_bg: crate::terminal::grid::Color,
+    pub url_bar_fg: crate::terminal::grid::Color,
+    pub accent: crate::terminal::grid::Color,
+    pub bg: crate::terminal::grid::Color,
+    pub fg: crate::terminal::grid::Color,
+    pub border: crate::terminal::grid::Color,
 }
 
 impl CachedThemeColors {
@@ -249,8 +251,8 @@ impl CachedThemeColors {
     }
 }
 
-/// Parse a hex color string like "#1a1a2e" into egui::Color32.
-fn parse_hex_color(s: &str) -> Option<egui::Color32> {
+/// Parse a hex color string like "#1a1a2e" into a Color.
+fn parse_hex_color(s: &str) -> Option<crate::terminal::grid::Color> {
     let s = s.trim().trim_start_matches('#');
     if s.len() != 6 {
         return None;
@@ -258,7 +260,7 @@ fn parse_hex_color(s: &str) -> Option<egui::Color32> {
     let r = u8::from_str_radix(&s[0..2], 16).ok()?;
     let g = u8::from_str_radix(&s[2..4], 16).ok()?;
     let b = u8::from_str_radix(&s[4..6], 16).ok()?;
-    Some(egui::Color32::from_rgb(r, g, b))
+    Some(crate::terminal::grid::Color::from_rgb(r, g, b))
 }
 
 fn built_in_themes() -> std::collections::HashMap<String, ThemeColors> {

@@ -1,25 +1,6 @@
 #[cfg(feature = "terminal")]
 use aileron::input::Modifiers;
 
-pub(crate) fn key_to_js(key: &aileron::input::Key) -> (String, String) {
-    match key {
-        aileron::input::Key::Enter => ("Enter".into(), "Enter".into()),
-        aileron::input::Key::Backspace => ("Backspace".into(), "Backspace".into()),
-        aileron::input::Key::Tab => ("Tab".into(), "Tab".into()),
-        aileron::input::Key::Escape => ("Escape".into(), "Escape".into()),
-        aileron::input::Key::Up => ("ArrowUp".into(), "ArrowUp".into()),
-        aileron::input::Key::Down => ("ArrowDown".into(), "ArrowDown".into()),
-        aileron::input::Key::Left => ("ArrowLeft".into(), "ArrowLeft".into()),
-        aileron::input::Key::Right => ("ArrowRight".into(), "ArrowRight".into()),
-        aileron::input::Key::Home => ("Home".into(), "Home".into()),
-        aileron::input::Key::End => ("End".into(), "End".into()),
-        aileron::input::Key::PageUp => ("PageUp".into(), "PageUp".into()),
-        aileron::input::Key::PageDown => ("PageDown".into(), "PageDown".into()),
-        aileron::input::Key::F(n) => (format!("F{n}"), format!("F{n}")),
-        _ => ("".into(), "".into()),
-    }
-}
-
 /// Convert an aileron Key + modifiers to a terminal escape sequence.
 /// This is the native terminal equivalent of key_to_js — it sends
 /// the appropriate VT100/xterm escape sequence to the PTY.
@@ -116,8 +97,9 @@ pub(crate) fn is_nvidia_gpu() -> bool {
     false
 }
 
+#[allow(dead_code)]
 pub(crate) fn screen_to_pane_local(
-    pos: egui::Pos2,
+    pos: (f32, f32),
     rect: &aileron::wm::Rect,
     tab_sidebar_right: bool,
     tab_layout_is_sidebar: bool,
@@ -132,8 +114,8 @@ pub(crate) fn screen_to_pane_local(
     } else {
         0.0
     };
-    let local_x = pos.x - rect.x as f32 - sidebar_offset as f32;
-    let local_y = pos.y - rect.y as f32 - top_offset;
+    let local_x = pos.0 - rect.x as f32 - sidebar_offset as f32;
+    let local_y = pos.1 - rect.y as f32 - top_offset;
     if local_x >= 0.0
         && local_y >= 0.0
         && local_x < pane_width as f32

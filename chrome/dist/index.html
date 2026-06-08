@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aileron Chrome</title>
+    
+<script type="module">
+import init, * as bindings from '/aileron-chrome-d5ac6d41d4b90ead.js';
+const wasm = await init({ module_or_path: '/aileron-chrome-d5ac6d41d4b90ead_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+    <style>
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: transparent;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 13px;
+            color: #cdd6f4;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Layout: chrome-root covers entire window but passes events through
+           to the content webview underneath in the content area. */
+        .chrome-root {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            pointer-events: none; /* pass events through by default */
+        }
+
+        /* Status bar: top, full width, 32px */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            height: 32px;
+            padding: 0 8px;
+            background: #1e1e2e;
+            border-bottom: 1px solid #313244;
+            flex-shrink: 0;
+            gap: 12px;
+            pointer-events: auto; /* capture events in chrome area */
+        }
+
+        .mode-NORMAL {
+            color: #89b4fa;
+            font-weight: bold;
+        }
+        .mode-INSERT {
+            color: #a6e3a1;
+            font-weight: bold;
+        }
+        .mode-COMMAND {
+            color: #f9e2af;
+            font-weight: bold;
+        }
+
+        .status-url {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #a6adc8;
+        }
+
+        .status-msg {
+            color: #6c7086;
+            font-size: 12px;
+        }
+
+        /* URL bar: below status bar, full width, 32px */
+        .url-bar {
+            display: flex;
+            align-items: center;
+            height: 32px;
+            padding: 0 8px;
+            background: #181825;
+            border-bottom: 1px solid #313244;
+            flex-shrink: 0;
+            pointer-events: auto;
+        }
+
+        .url-input {
+            width: 100%;
+            height: 24px;
+            padding: 0 8px;
+            background: #313244;
+            border: 1px solid #45475a;
+            border-radius: 4px;
+            color: #cdd6f4;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .url-input:focus {
+            border-color: #89b4fa;
+        }
+
+        .url-input:disabled {
+            opacity: 0.7;
+            cursor: default;
+        }
+
+        /* Tab sidebar: fills remaining space below status+url */
+        .tab-sidebar {
+            display: flex;
+            flex-direction: column;
+            width: 180px;
+            min-width: 120px;
+            background: #1e1e2e;
+            overflow-y: auto;
+            flex-shrink: 0;
+            pointer-events: auto;
+        }
+
+        .tab-sidebar.sidebar-right {
+            margin-left: auto;
+        }
+
+        .tab-item {
+            display: flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-bottom: 1px solid #313244;
+            cursor: pointer;
+        }
+
+        .tab-item:hover {
+            background: #313244;
+        }
+
+        .tab-item.tab-active {
+            background: #313244;
+            border-left: 2px solid #89b4fa;
+        }
+
+        .tab-title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .tab-close {
+            color: #6c7086;
+            cursor: pointer;
+            padding: 0 2px;
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .tab-close:hover {
+            color: #f38ba8;
+        }
+
+        .tab-new {
+            padding: 4px 8px;
+            color: #6c7086;
+            cursor: pointer;
+            text-align: center;
+        }
+
+        .tab-new:hover {
+            color: #89b4fa;
+            background: #313244;
+        }
+
+        /* Content area: transparent, lets events pass through to content webview below */
+        .chrome-content {
+            flex: 1;
+            pointer-events: none;
+        }
+
+        /* Find bar: anchored to bottom-left, above status bar area.
+           When chrome renders the status bar, the find bar sits just above it. */
+        .find-bar {
+            display: flex;
+            align-items: center;
+            height: 28px;
+            padding: 0 8px;
+            background: #1e1e2e;
+            border: 1px solid #45475a;
+            border-radius: 0 4px 0 0;
+            gap: 4px;
+            pointer-events: auto;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+        }
+
+        .find-label {
+            color: #89b4fa;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .find-input {
+            width: 280px;
+            height: 22px;
+            padding: 0 6px;
+            background: #313244;
+            border: 1px solid #45475a;
+            border-radius: 3px;
+            color: #cdd6f4;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .find-input:focus {
+            border-color: #89b4fa;
+        }
+
+        .find-btn {
+            width: 24px;
+            height: 22px;
+            background: #313244;
+            border: 1px solid #45475a;
+            border-radius: 3px;
+            color: #cdd6f4;
+            cursor: pointer;
+            font-size: 12px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .find-btn:hover {
+            background: #45475a;
+        }
+
+        .find-close {
+            color: #6c7086;
+        }
+
+        .find-close:hover {
+            color: #f38ba8;
+        }
+
+        /* Command palette: centered overlay with backdrop.
+           Pointer events are handled entirely by the palette. */
+        .palette-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 15vh;
+            pointer-events: auto;
+            z-index: 200;
+        }
+
+        .palette-container {
+            width: 520px;
+            max-height: 340px;
+            background: #1e1e2e;
+            border: 1px solid #45475a;
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .palette-input-row {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #313244;
+            gap: 4px;
+        }
+
+        .palette-prompt {
+            color: #89b4fa;
+            font-size: 13px;
+            font-weight: bold;
+        }
+
+        .palette-input {
+            flex: 1;
+            height: 24px;
+            padding: 0 6px;
+            background: #313244;
+            border: 1px solid #45475a;
+            border-radius: 3px;
+            color: #cdd6f4;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .palette-input:focus {
+            border-color: #89b4fa;
+        }
+
+        .palette-results {
+            overflow-y: auto;
+            max-height: 280px;
+        }
+
+        .palette-item {
+            display: flex;
+            align-items: center;
+            padding: 4px 8px;
+            cursor: pointer;
+            gap: 8px;
+        }
+
+        .palette-item:hover {
+            background: #313244;
+        }
+
+        .palette-item.palette-selected {
+            background: #313244;
+            border-left: 2px solid #89b4fa;
+        }
+
+        .palette-cat {
+            color: #6c7086;
+            font-size: 12px;
+            min-width: 32px;
+        }
+
+        .palette-label {
+            flex: 1;
+            color: #cdd6f4;
+            font-size: 13px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .palette-desc {
+            color: #585b70;
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 200px;
+        }
+    </style>
+<link rel="modulepreload" href="/aileron-chrome-d5ac6d41d4b90ead.js" crossorigin="anonymous" integrity="sha384-gep3gXqPvlPaHNea6gTupxIEBH5zFyspR3rVvfU20SEXlTUg5B6E0YYzUC66LU58"><link rel="preload" href="/aileron-chrome-d5ac6d41d4b90ead_bg.wasm" crossorigin="anonymous" integrity="sha384-6m3egHnw5lN0LZeRE5wS+L25DX5vw6j/D0K/7SZFWJriurlgGFobyxfZm3ZBqocw" as="fetch" type="application/wasm"></head>
+<body></body>
+</html>

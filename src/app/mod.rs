@@ -14,7 +14,6 @@ pub mod omnibox;
 pub mod palette;
 pub mod panes;
 pub mod popup;
-pub mod render;
 
 use crate::config::Config;
 use crate::db::bookmarks;

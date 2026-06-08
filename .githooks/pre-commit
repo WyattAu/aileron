@@ -22,33 +22,45 @@ if ! cargo fmt --all -- --check 2>&1; then
 fi
 echo -e "${GREEN}[PASS] Formatting${NC}"
 
-# 2. Check compilation
-echo -e "${YELLOW}[2/5] Checking compilation (cargo check)...${NC}"
-if ! cargo check 2>&1; then
+# 2. Check compilation (native workspace only; chrome is wasm32)
+echo -e "${YELLOW}[2/6] Checking compilation (cargo check -p aileron)...${NC}"
+if ! cargo check -p aileron --all-targets 2>&1; then
     echo -e "${RED}[FAIL] Compilation failed.${NC}"
     exit 1
 fi
 echo -e "${GREEN}[PASS] Compilation${NC}"
 
-# 3. Clippy (deny warnings)
-echo -e "${YELLOW}[3/5] Running clippy (all-targets, -D warnings)...${NC}"
-if ! cargo clippy --all-targets -- -D warnings 2>&1; then
+# 3. Check chrome WASM (only if wasm target installed)
+if rustup target list --installed 2>/dev/null | grep -q wasm32-unknown-unknown; then
+    echo -e "${YELLOW}[3/6] Checking chrome WASM target...${NC}"
+    if ! cargo check -p aileron-chrome --target wasm32-unknown-unknown 2>&1; then
+        echo -e "${RED}[FAIL] Chrome WASM check failed.${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}[PASS] Chrome WASM${NC}"
+else
+    echo -e "${YELLOW}[3/6] Skipping chrome WASM check (wasm32 target not installed)${NC}"
+fi
+
+# 4. Clippy (deny warnings, native only)
+echo -e "${YELLOW}[4/6] Running clippy (all-targets, -D warnings)...${NC}"
+if ! cargo clippy -p aileron --all-targets -- -D warnings 2>&1; then
     echo -e "${RED}[FAIL] Clippy found warnings. Fix them before committing.${NC}"
     exit 1
 fi
 echo -e "${GREEN}[PASS] Clippy${NC}"
 
-# 4. Lib tests
-echo -e "${YELLOW}[4/5] Running lib tests...${NC}"
-if ! cargo test --lib -- --test-threads=4 2>&1; then
+# 5. Lib tests
+echo -e "${YELLOW}[5/6] Running lib tests...${NC}"
+if ! cargo test -p aileron --lib -- --test-threads=4 2>&1; then
     echo -e "${RED}[FAIL] Lib tests failed.${NC}"
     exit 1
 fi
 echo -e "${GREEN}[PASS] Lib tests${NC}"
 
-# 5. Doc tests
-echo -e "${YELLOW}[5/5] Running doc tests...${NC}"
-if ! cargo test --doc 2>&1; then
+# 6. Doc tests
+echo -e "${YELLOW}[6/6] Running doc tests...${NC}"
+if ! cargo test -p aileron --doc 2>&1; then
     echo -e "${RED}[FAIL] Doc tests failed.${NC}"
     exit 1
 fi

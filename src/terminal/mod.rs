@@ -1,18 +1,16 @@
-//! Native terminal emulator using alacritty_terminal + egui rendering.
+//! Native terminal emulator using alacritty_terminal.
 //!
 //! Replaces the xterm.js-in-webview approach with a pure Rust terminal:
 //! - PTY managed by portable_pty (existing)
 //! - VT sequence parsing by alacritty_terminal::Term + vte::ansi::Processor
-//! - Rendering via egui::Painter (direct text drawing)
 //!
 //! Architecture:
-//!   winit key event → write_input() → PTY master
-//!   PTY slave output → read thread → vte Processor → Term grid
-//!   Term grid → egui Painter (each frame, dirty cells only)
+//!   winit key event -> write_input() -> PTY master
+//!   PTY slave output -> read thread -> vte Processor -> Term grid
+//!   Term grid -> rendered in webview via terminal/content integration
 
 pub mod grid;
 pub mod pty;
-pub mod render;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};

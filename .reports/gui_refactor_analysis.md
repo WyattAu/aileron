@@ -563,27 +563,83 @@ Phase 5: Feature Parity & Release
 3. **Release:**
    - v0.22.0 with Tauri-based GUI
 
-### Timeline Summary
+### ARCHITECTURE PIVOT (2026-06-08): Tauri Migration Cancelled
 
-| Phase | Duration | Effort | Risk |
-|-------|----------|--------|------|
-| Phase 1: Architecture Decomposition | 2-3 weeks | Low | Low |
-| Phase 2: Tauri Migration | 3-4 weeks | High | Medium |
-| Phase 3: Chrome Web Migration | 4-6 weeks | Very High | High |
-| Phase 4: Integration & Polish | 2-3 weeks | Medium | Medium |
-| Phase 5: Feature Parity & Release | 2-3 weeks | Medium | Low |
-| **Total** | **13-19 weeks** | | |
+**Critical finding: Tauri v2 is NOT viable for our architecture.**
 
-### Risk Mitigation
+Research into the Tauri v2 API revealed:
+
+1. **Tauri owns the event loop.** Tauri v2 uses `tao` (a winit fork) internally and does NOT expose the event loop for hooking. We lose all control over keyboard event routing, frame timing, and rendering.
+
+2. **Tauri assumes the webview IS the renderer.** No documented pattern exists for "Tauri with custom wgpu rendering pipeline." Adopting Tauri means giving up our wgpu pipeline entirely.
+
+3. **Child webview API is permanently unstable.** `Window::add_child()`, `WebviewBuilder`, and `WindowBuilder` all require `feature = "unstable"` with no stabilization timeline since Tauri v2.0 GA (2.5+ years).
+
+4. **tauri-runtime-wry is not practical.** 4.59% documentation coverage, explicitly unstable API, couples us to tao instead of winit, adds complexity for no benefit over direct wry usage.
+
+5. **Wry version alignment is perfect.** Tauri v2.11.2 depends on `wry ^0.55.0` -- same version we already use. We don't need Tauri to get wry benefits.
+
+6. **Our current architecture (winit + wgpu + wry) is the correct foundation.** It gives us full rendering control, event routing, and child window embedding.
+
+### Revised Plan: Direct Leptos Chrome via wry (No Tauri)
+
+Instead of adopting Tauri, we keep the current winit + wry architecture and replace only the egui chrome with a Leptos WASM webview:
+
+```
+winit Window (native X11 window, owned by our event loop)
+├── Chrome WebView (wry build_as_child, full-window, transparent, z-order: bottom)
+│   ├── Loads: file:///path/to/dist/index.html (Leptos WASM via trunk)
+│   ├── Renders: status bar, URL bar, sidebar, command palette
+│   ├── Content area: CSS pointer-events: none (events pass through)
+│   └── Communicates: evaluate_script() + IPC handler
+├── Content WebView 1 (wry build_as_child, z-order: top)
+│   ├── Position: (sidebar_width, chrome_height, width-sidebar_width, height-chrome_height)
+│   ├── Renders: actual web content via WebKitGTK
+│   └── Events: receive directly in content area (top z-order)
+└── Content WebView 2... (same pattern)
+```
+
+**Why this works:**
+- GTK `Fixed` container allows multiple child widgets at absolute positions
+- Chrome webview is added first (bottom z-order), content webview second (top z-order)
+- In chrome area: only chrome webview exists → receives events
+- In content area: content webview is on top → receives events; chrome webview is transparent below → no interference
+- CSS `pointer-events: none` on chrome's content area provides additional safety
+
+**Communication (no Tauri needed):**
+- Rust → Chrome: `chrome_webview.evaluate_script("window.updateMode('INSERT')")`
+- Chrome → Rust: `window.ipc.postMessage(JSON.stringify({...}))` via wry's IPC handler
+- Leptos WASM exports functions callable from JS: `#[wasm_bindgen] pub fn update_mode(mode: &str)`
+- Rust calls them via `evaluate_script()` wrapping JS
+
+**Benefits over Tauri approach:**
+- Keep full event loop control (critical for vim-style keybindings)
+- No unstable API dependency
+- No tao/winit fork confusion
+- Simpler dependency tree (remove Tauri, add only trunk)
+- Same wry version (0.55.0) we already use
+
+### Revised Timeline
+
+| Phase | Duration | What | Risk |
+|-------|----------|------|------|
+| Phase 2a: Shared crate + Chrome skeleton | 1 week | aileron-shared, chrome/ Leptos, trunk build, basic IPC | Low |
+| Phase 2b: Dual-rendering transition | 1-2 weeks | Chrome webview alongside egui, state sync validation | Medium |
+| Phase 3: Replace egui with Leptos | 2-3 weeks | Port all chrome components, remove egui+wgpu | Medium |
+| Phase 4: Polish + Remove offscreen | 1-2 weeks | Drop offscreen mode, final cleanup, feature parity | Low |
+| Phase 5: Release v0.22 | 1 week | Ship | Low |
+| **Total** | **6-10 weeks** | | |
+
+### Risk Mitigation (Revised)
 
 | Risk | Mitigation |
 |------|-----------|
-| Tauri v2 child window embedding breaks | Phase 2 validates early; fallback to offscreen-only |
+| GTK event pass-through fails in content area | CSS `pointer-events: none` + z-order testing; fallback: split chrome into non-overlapping regions |
 | leptos-hotkeys needs patches for current Leptos version | Fork + patch; scope API is ~500 LOC |
 | Thaw missing command palette | Build custom with Popover + Input + fuzzy list |
-| Focus management still platform-specific | Use Tauri's `Webview::set_focus()` API |
-| Long WASM compile times in dev | trunk --watch with incremental builds |
-| Tauri `unstable` feature for child webviews | Pin tauri version; track stabilization |
+| Leptos WASM load latency at startup | Cache compiled WASM; splash screen during load |
+| evaluate_script() IPC latency for state sync | Batch updates; only send on state change, not every frame |
+| Offscreen mode removal loses a rendering path | Offscreen was already superseded by native mode as default; Wayland may need re-evaluation |
 
 ---
 

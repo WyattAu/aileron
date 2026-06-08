@@ -1,13 +1,13 @@
 pub mod app;
 #[cfg(feature = "arp")]
 pub mod arp;
+pub mod chrome_bridge;
 pub mod config;
 pub mod db;
 pub mod debug_capturer;
 pub mod downloads;
 pub mod extensions;
 pub mod frame_tasks;
-pub mod gfx;
 pub mod git;
 pub mod i18n;
 pub mod input;

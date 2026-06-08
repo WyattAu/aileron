@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-aileron = { path = ".." }
+aileron = { path = "../src" }
 libfuzzer-sys = "0.4"
 
 [[bin]]

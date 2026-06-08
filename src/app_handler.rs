@@ -27,7 +27,12 @@ impl ApplicationHandler for AileronApp {
             window.inner_size().width,
             window.inner_size().height
         );
-        self.init_graphics(window);
+        self.init_app_state(window);
+
+        // Initialize Leptos WASM chrome webview BEFORE content panes.
+        // GTK Fixed container z-order: first child = bottom, last child = top.
+        // Chrome must be bottom so content webviews render on top.
+        self.init_chrome_webview();
 
         // Create initial wry pane for the root BSP leaf
         if let Some(app_state) = &self.app_state {
@@ -116,17 +121,9 @@ impl ApplicationHandler for AileronApp {
             self.popup.pending_popup_window = Some((popup_id, popup_window));
         }
 
-        let window = match &self.window {
-            Some(w) => Arc::clone(w),
-            None => return,
-        };
-        let winit_state = match &mut self.egui_winit {
-            Some(s) => s,
-            None => return,
-        };
-
-        // Feed event to egui first
-        let egui_response = winit_state.on_window_event(&window, &event);
+        if self.window.is_none() {
+            return;
+        }
 
         // Track modifiers
         if let WindowEvent::ModifiersChanged(state) = &event {
@@ -170,28 +167,15 @@ impl ApplicationHandler for AileronApp {
             }
 
             WindowEvent::RedrawRequested => {
-                let frame_start = std::time::Instant::now();
+                let _frame_start = std::time::Instant::now();
                 self.frame_count += 1;
                 if self.frame_count <= 3 || self.frame_count.is_multiple_of(300) {
-                    info!("Render frame #{}", self.frame_count);
+                    info!("Frame #{}", self.frame_count);
                 }
-                self.render();
-                let frame_time = frame_start.elapsed();
-                let frame_time_ms = frame_time.as_secs_f64() * 1000.0;
-                if frame_time.as_millis() > 17 {
-                    tracing::debug!("Frame over budget: {:.1}ms", frame_time_ms);
-                }
-                self.adaptive_quality.update(frame_time_ms);
             }
 
-            WindowEvent::Resized(physical_size) => {
-                if physical_size.width > 0
-                    && physical_size.height > 0
-                    && let Some(gfx) = &mut self.gfx
-                {
-                    gfx.resize(physical_size.width, physical_size.height);
-                    self.resize_pending = true;
-                }
+            WindowEvent::Resized(_) => {
+                self.resize_pending = true;
             }
 
             WindowEvent::KeyboardInput {
@@ -219,43 +203,6 @@ impl ApplicationHandler for AileronApp {
                 // KeyboardInput if we already handled the IME commit.
                 if self.ime_just_committed {
                     self.ime_just_committed = false;
-                    return;
-                }
-
-                // Let egui consume the event first, UNLESS the command
-                // palette is open or we're in Insert mode (where keys
-                // must reach the offscreen webview, not be swallowed by egui).
-                //
-                // In Normal mode, egui should NOT consume character key events
-                // because there is no TextEdit focused. However, egui may
-                // retain stale focus from a previous TextEdit interaction,
-                // causing it to swallow j/k/q/etc before we can process them
-                // as keybindings. The UI render pass surrenders focus, but
-                // that happens AFTER event processing — too late for the
-                // current frame. So we also skip the consumed check for
-                // character keys in Normal mode.
-                let palette_open = self
-                    .app_state
-                    .as_ref()
-                    .map(|s| s.palette.open)
-                    .unwrap_or(false);
-                let insert_mode = self
-                    .app_state
-                    .as_ref()
-                    .map(|s| s.mode == aileron::input::Mode::Insert)
-                    .unwrap_or(false);
-                let normal_mode = self
-                    .app_state
-                    .as_ref()
-                    .map(|s| s.mode == aileron::input::Mode::Normal)
-                    .unwrap_or(false);
-                // Only skip egui consumption for character keys in Normal mode.
-                // Modifier combos (Ctrl, Alt) and special keys should still
-                // respect egui consumption (e.g., Ctrl+C for copy in TextEdit).
-                let is_char_key = matches!(logical_key, winit::keyboard::Key::Character(_));
-                let skip_egui =
-                    normal_mode && is_char_key && !self.modifiers.ctrl && !self.modifiers.alt;
-                if egui_response.consumed && !palette_open && !insert_mode && !skip_egui {
                     return;
                 }
 
@@ -289,10 +236,6 @@ impl ApplicationHandler for AileronApp {
                                 let active_id = app_state.wm.active_pane_id();
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                     wry_pane.execute_js(&js);
-                                } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id)
-                                {
-                                    pane.execute_js(&js);
-                                    pane.mark_dirty();
                                 }
                                 return;
                             }
@@ -306,10 +249,6 @@ impl ApplicationHandler for AileronApp {
                                 let clear_js = clear_hints_js();
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                     wry_pane.execute_js(clear_js);
-                                } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id)
-                                {
-                                    pane.execute_js(clear_js);
-                                    pane.mark_dirty();
                                 }
                                 return;
                             }
@@ -436,11 +375,7 @@ impl ApplicationHandler for AileronApp {
                         }
                     }
 
-                    // Offscreen mode: forward keyboard to webview via JS or native terminal.
-                    // This is the SOLE forwarding point for offscreen panes — all key
-                    // forwarding (character, backspace, enter, tab, arrows, etc.) happens
-                    // here. The earlier process_key_event() routes to a Servo stub; the
-                    // actual delivery is done in this block.
+                    // Offscreen mode: forward keyboard to native terminal only.
                     if is_insert_mode && self.config.is_offscreen() {
                         #[cfg(feature = "terminal")]
                         let is_terminal = self.terminal_manager.is_terminal(&active_pane_id);
@@ -461,93 +396,19 @@ impl ApplicationHandler for AileronApp {
                                 }
                             }
                         }
-
-                        #[cfg(feature = "terminal")]
-                        let forward_to_webview = !is_terminal;
-                        #[cfg(not(feature = "terminal"))]
-                        let forward_to_webview = true;
-
-                        if forward_to_webview
-                            && let Some(pane) = self.offscreen_panes.get_mut(&active_pane_id)
-                        {
-                            // Web content: forward via JS
-                            if let aileron::input::Key::Character(c) = &key {
-                                let mut buf = [0u8; 4];
-                                let s = c.encode_utf8(&mut buf);
-                                pane.insert_text(s);
-                            } else if let aileron::input::Key::Backspace = &key {
-                                // Use execCommand('delete') for backspace — it
-                                // operates on the focused input/textarea regardless of
-                                // React/virtual-DOM event handling. Dispatching a
-                                // synthetic KeyboardEvent on document often gets ignored
-                                // by SPA frameworks like Google's React-based search.
-                                pane.execute_js("document.execCommand('delete', false, null)");
-                                pane.mark_dirty();
-                            } else if matches!(
-                                &key,
-                                aileron::input::Key::Enter | aileron::input::Key::Tab
-                            ) {
-                                let (js_key, js_code) = key_to_js(&key);
-                                let mods = aileron::offscreen_webview::modifiers_js(
-                                    mods.ctrl,
-                                    mods.alt,
-                                    mods.shift,
-                                    mods.super_key,
-                                );
-                                pane.forward_key_event("keydown", &js_key, &js_code, &mods);
-                            } else {
-                                // Arrow keys, F-keys, Home/End, etc.
-                                let (js_key, js_code) = key_to_js(&key);
-                                let mods = aileron::offscreen_webview::modifiers_js(
-                                    mods.ctrl,
-                                    mods.alt,
-                                    mods.shift,
-                                    mods.super_key,
-                                );
-                                pane.forward_key_event("keydown", &js_key, &js_code, &mods);
-                            }
-                        }
                     }
                 }
             }
 
-            // Forward keyup events to the active offscreen webview (needed for
-            // proper key state tracking in web content — e.g., shift-release
-            // ending text selection).
+            // Keyup forwarding to offscreen webviews removed.
             WindowEvent::KeyboardInput {
                 event:
                     winit::event::KeyEvent {
-                        physical_key,
-                        logical_key,
                         state: winit::event::ElementState::Released,
                         ..
                     },
                 ..
-            } => {
-                if let Some(app_state) = &self.app_state
-                    && app_state.mode == aileron::input::Mode::Insert
-                {
-                    let active_id = app_state.wm.active_pane_id();
-                    #[cfg(feature = "terminal")]
-                    let is_terminal = self.terminal_manager.is_terminal(&active_id);
-                    #[cfg(not(feature = "terminal"))]
-                    let is_terminal = false;
-
-                    if !is_terminal {
-                        let key = aileron::input::map_key(*physical_key, logical_key);
-                        if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                            let (js_key, js_code) = key_to_js(&key);
-                            let mods = aileron::offscreen_webview::modifiers_js(
-                                self.modifiers.ctrl,
-                                self.modifiers.alt,
-                                self.modifiers.shift,
-                                self.modifiers.super_key,
-                            );
-                            pane.forward_key_event("keyup", &js_key, &js_code, &mods);
-                        }
-                    }
-                }
-            }
+            } => {}
 
             WindowEvent::DroppedFile(path) => {
                 info!("File dropped: {:?}", path);
@@ -587,262 +448,15 @@ impl ApplicationHandler for AileronApp {
                             }
                         };
 
-                        if !is_terminal && !self.config.is_offscreen() {
-                            if let Some(wry_pane) = self.wry_panes.get(&active_id) {
-                                let js = format!(
-                                    "window.scrollBy({{top: {}, left: {}, behavior: 'instant'}})",
-                                    -dy, -dx
-                                );
-                                wry_pane.execute_js(&js);
-                            }
-                        } else if !is_terminal
-                            && let Some(pane) = self.offscreen_panes.get_mut(&active_id)
+                        if !is_terminal
+                            && !self.config.is_offscreen()
+                            && let Some(wry_pane) = self.wry_panes.get(&active_id)
                         {
-                            pane.scroll_by(-dx, -dy);
-                        }
-                    }
-                }
-            }
-
-            WindowEvent::MouseInput { state, button, .. } => {
-                if self.config.is_offscreen()
-                    && let Some(app_state) = &self.app_state
-                    && app_state.mode == aileron::input::Mode::Insert
-                {
-                    self.offscreen_mouse_pressed = *state == winit::event::ElementState::Pressed;
-
-                    let active_id = app_state.wm.active_pane_id();
-
-                    #[cfg(feature = "terminal")]
-                    if self.terminal_manager.is_terminal(&active_id) {
-                        let terminal_info = (|| {
-                            let ws = self.egui_winit.as_ref()?;
-                            let pos = ws.egui_ctx().pointer_latest_pos()?;
-                            let panes = app_state.wm.panes_ref();
-                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            screen_to_pane_local(
-                                pos,
-                                rect,
-                                app_state.config.tab_sidebar_right,
-                                app_state.config.tab_layout == "sidebar",
-                                app_state.config.tab_sidebar_width as f64,
-                                f64::MAX,
-                                f64::MAX,
-                            )
-                            .map(|(x, y)| (x as f32, y as f32))
-                        })();
-
-                        if let Some((local_x, local_y)) = terminal_info {
-                            use aileron::terminal::grid::CellMetrics;
-                            if let Some(ws) = self.egui_winit.as_ref() {
-                                let metrics = CellMetrics::from_egui(ws.egui_ctx(), 14.0);
-                                if let Some(pane) = self.terminal_manager.get_mut(&active_id) {
-                                    let (line, col) = pane.pixel_to_grid(
-                                        local_x,
-                                        local_y,
-                                        metrics.cell_width,
-                                        metrics.cell_height,
-                                    );
-                                    match (state, button) {
-                                        (
-                                            winit::event::ElementState::Pressed,
-                                            winit::event::MouseButton::Left,
-                                        ) => {
-                                            pane.start_selection(line, col);
-                                        }
-                                        (
-                                            winit::event::ElementState::Released,
-                                            winit::event::MouseButton::Left,
-                                        ) => {
-                                            pane.end_selection();
-                                            if let Some(text) = pane.selection_text() {
-                                                ws.egui_ctx().copy_text(text);
-                                            }
-                                        }
-                                        (
-                                            winit::event::ElementState::Pressed,
-                                            winit::event::MouseButton::Right,
-                                        ) => {
-                                            pane.clear_selection();
-                                        }
-                                        (
-                                            winit::event::ElementState::Pressed,
-                                            winit::event::MouseButton::Middle,
-                                        ) => {
-                                            if let Some(pane_ref) =
-                                                self.terminal_manager.get(&active_id)
-                                                && let Some(text) = pane_ref.selection_text()
-                                            {
-                                                self.terminal_manager
-                                                    .write_input(&active_id, &text);
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    #[cfg(feature = "terminal")]
-                    let is_terminal = self.terminal_manager.is_terminal(&active_id);
-                    #[cfg(not(feature = "terminal"))]
-                    let is_terminal = false;
-
-                    if !is_terminal {
-                        let forward_info = (|| {
-                            let ws = self.egui_winit.as_ref()?;
-                            let pos = ws.egui_ctx().pointer_latest_pos()?;
-                            let panes = app_state.wm.panes_ref();
-                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
-                            let local = screen_to_pane_local(
-                                pos,
-                                rect,
-                                app_state.config.tab_sidebar_right,
-                                app_state.config.tab_layout == "sidebar",
-                                app_state.config.tab_sidebar_width as f64,
-                                pw as f64,
-                                ph as f64,
-                            )?;
-                            let event_type = match state {
-                                winit::event::ElementState::Pressed => "mousedown",
-                                winit::event::ElementState::Released => "mouseup",
-                            };
-                            let btn = match button {
-                                winit::event::MouseButton::Left => "0",
-                                winit::event::MouseButton::Middle => "1",
-                                winit::event::MouseButton::Right => "2",
-                                winit::event::MouseButton::Back => "3",
-                                winit::event::MouseButton::Forward => "4",
-                                _ => "0",
-                            };
-                            Some((event_type, local.0, local.1, btn))
-                        })();
-
-                        if let Some((event_type, local_x, local_y, btn)) = forward_info {
-                            // Ctrl+Click or Middle-click opens links in new tab
-                            if (*button == winit::event::MouseButton::Left
-                                && *state == winit::event::ElementState::Pressed
-                                && self.modifiers.ctrl)
-                                || (*button == winit::event::MouseButton::Middle
-                                    && *state == winit::event::ElementState::Pressed)
-                            {
-                                let js = format!(
-                                    r#"(function() {{
-                                        var el = document.elementFromPoint({local_x}, {local_y});
-                                        while (el && el.tagName !== 'A') {{ el = el.parentElement; }}
-                                        if (el && el.href) {{
-                                            window.open(el.href, '_blank');
-                                        }}
-                                    }})();"#
-                                );
-                                if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                                    pane.execute_js(&js);
-                                }
-                            } else {
-                                let mods = aileron::offscreen_webview::modifiers_js(
-                                    self.modifiers.ctrl,
-                                    self.modifiers.alt,
-                                    self.modifiers.shift,
-                                    self.modifiers.super_key,
-                                );
-                                if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                                    pane.forward_mouse_event(
-                                        event_type, local_x, local_y, btn, &mods,
-                                    );
-                                    // Dispatch a click event after mouseup so that
-                                    // website button handlers (which listen for 'click')
-                                    // fire correctly.
-                                    if *state == winit::event::ElementState::Released {
-                                        pane.forward_mouse_event(
-                                            "click", local_x, local_y, btn, &mods,
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            WindowEvent::CursorMoved { position, .. } if self.config.is_offscreen() => {
-                let scale = window.scale_factor() as f32;
-                let logical_pos = egui::pos2(position.x as f32 / scale, position.y as f32 / scale);
-
-                if let Some(app_state) = &self.app_state
-                    && app_state.mode == aileron::input::Mode::Insert
-                {
-                    let active_id = app_state.wm.active_pane_id();
-
-                    #[cfg(feature = "terminal")]
-                    if self.terminal_manager.is_terminal(&active_id) {
-                        let terminal_info = (|| {
-                            let panes = app_state.wm.panes_ref();
-                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            screen_to_pane_local(
-                                logical_pos,
-                                rect,
-                                app_state.config.tab_sidebar_right,
-                                app_state.config.tab_layout == "sidebar",
-                                app_state.config.tab_sidebar_width as f64,
-                                f64::MAX,
-                                f64::MAX,
-                            )
-                            .map(|(x, y)| (x as f32, y as f32))
-                        })();
-
-                        if let Some((local_x, local_y)) = terminal_info {
-                            use aileron::terminal::grid::CellMetrics;
-                            if let Some(ws) = self.egui_winit.as_ref()
-                                && let Some(pane) = self.terminal_manager.get_mut(&active_id)
-                                && pane.is_selecting()
-                            {
-                                let metrics = CellMetrics::from_egui(ws.egui_ctx(), 14.0);
-                                let (line, col) = pane.pixel_to_grid(
-                                    local_x,
-                                    local_y,
-                                    metrics.cell_width,
-                                    metrics.cell_height,
-                                );
-                                pane.extend_selection(line, col);
-                            }
-                        }
-                    }
-
-                    #[cfg(feature = "terminal")]
-                    let is_terminal = self.terminal_manager.is_terminal(&active_id);
-                    #[cfg(not(feature = "terminal"))]
-                    let is_terminal = false;
-
-                    if !is_terminal {
-                        let forward_info = (|| {
-                            let panes = app_state.wm.panes_ref();
-                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
-                            screen_to_pane_local(
-                                logical_pos,
-                                rect,
-                                app_state.config.tab_sidebar_right,
-                                app_state.config.tab_layout == "sidebar",
-                                app_state.config.tab_sidebar_width as f64,
-                                pw as f64,
-                                ph as f64,
-                            )
-                        })();
-
-                        if let Some((local_x, local_y)) = forward_info
-                            && self.offscreen_mouse_pressed
-                        {
-                            let mods = aileron::offscreen_webview::modifiers_js(
-                                self.modifiers.ctrl,
-                                self.modifiers.alt,
-                                self.modifiers.shift,
-                                self.modifiers.super_key,
+                            let js = format!(
+                                "window.scrollBy({{top: {}, left: {}, behavior: 'instant'}})",
+                                -dy, -dx
                             );
-                            if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                                pane.forward_mouse_event("mousemove", local_x, local_y, "0", &mods);
-                            }
+                            wry_pane.execute_js(&js);
                         }
                     }
                 }
@@ -859,25 +473,12 @@ impl ApplicationHandler for AileronApp {
                             let chars: Vec<char> = text.chars().collect();
                             if chars.len() != 1 {
                                 // Multi-char IME results (emoji pickers, etc.)
-                                // — let egui handle them in Insert mode.
-                                if app_state.mode == aileron::input::Mode::Insert
-                                    && self.config.is_offscreen()
-                                {
+                                if app_state.mode == aileron::input::Mode::Insert {
                                     let active_id = app_state.wm.active_pane_id();
                                     let text_owned = text.clone();
                                     #[cfg(feature = "terminal")]
                                     if self.terminal_manager.is_terminal(&active_id) {
                                         self.terminal_manager.write_input(&active_id, &text_owned);
-                                    }
-                                    #[cfg(feature = "terminal")]
-                                    if !self.terminal_manager.is_terminal(&active_id)
-                                        && let Some(pane) = self.offscreen_panes.get_mut(&active_id)
-                                    {
-                                        pane.insert_text(&text_owned);
-                                    }
-                                    #[cfg(not(feature = "terminal"))]
-                                    if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                                        pane.insert_text(&text_owned);
                                     }
                                 }
                                 return;
@@ -887,8 +488,8 @@ impl ApplicationHandler for AileronApp {
                             let is_newline = c == '\r' || c == '\n';
 
                             if app_state.palette.open {
-                                // When the palette is open, egui's TextEdit
-                                // receives the IME commit and updates palette.query
+                                // When the palette is open, the chrome webview's
+                                // TextEdit receives the IME commit and updates palette.query
                                 // automatically. We only need to intercept Enter
                                 // (submit) and Escape (close) ourselves.
                                 if is_newline {
@@ -902,8 +503,8 @@ impl ApplicationHandler for AileronApp {
                                     app_state.palette.close();
                                     app_state.ui.command_palette_input.clear();
                                 }
-                                // For regular characters, let egui's TextEdit
-                                // handle them — no action needed here.
+                                // For regular characters, the chrome TextEdit
+                                // handles them — no action needed here.
                                 self.ime_just_committed = true;
                             } else {
                                 match app_state.mode {
@@ -926,25 +527,10 @@ impl ApplicationHandler for AileronApp {
                                         let active_id = app_state.wm.active_pane_id();
                                         let text_owned = text.clone();
 
-                                        if self.config.is_offscreen() {
-                                            #[cfg(feature = "terminal")]
-                                            if self.terminal_manager.is_terminal(&active_id) {
-                                                self.terminal_manager
-                                                    .write_input(&active_id, &text_owned);
-                                            }
-                                            #[cfg(feature = "terminal")]
-                                            if !self.terminal_manager.is_terminal(&active_id)
-                                                && let Some(pane) =
-                                                    self.offscreen_panes.get_mut(&active_id)
-                                            {
-                                                pane.insert_text(&text_owned);
-                                            }
-                                            #[cfg(not(feature = "terminal"))]
-                                            if let Some(pane) =
-                                                self.offscreen_panes.get_mut(&active_id)
-                                            {
-                                                pane.insert_text(&text_owned);
-                                            }
+                                        #[cfg(feature = "terminal")]
+                                        if self.terminal_manager.is_terminal(&active_id) {
+                                            self.terminal_manager
+                                                .write_input(&active_id, &text_owned);
                                         }
                                     }
                                 }
@@ -989,14 +575,189 @@ impl ApplicationHandler for AileronApp {
             app_state.profiler.start_frame();
         }
 
+        // Poll chrome webview IPC messages (Phase 2b).
+        if let Some(ref rx) = self.chrome_ipc_rx {
+            while let Ok(msg) = rx.try_recv() {
+                let cmd = aileron::chrome_bridge::parse_chrome_ipc(&msg);
+                match cmd {
+                    aileron::chrome_bridge::ChromeCommand::Navigate(url) => {
+                        if let Some(app_state) = &self.app_state {
+                            let active_id = app_state.wm.active_pane_id();
+                            if let Some(pane) = self.wry_panes.get_mut(&active_id) {
+                                pane.navigate(&url);
+                            }
+                        }
+                    }
+                    aileron::chrome_bridge::ChromeCommand::Action(name) => {
+                        if let Some(app_state) = &mut self.app_state {
+                            app_state.ui.status_message = format!(" [chrome:{name}]");
+                        }
+                    }
+                    aileron::chrome_bridge::ChromeCommand::FindSubmit(query) => {
+                        if let Some(app_state) = &mut self.app_state {
+                            app_state.ui.find_query = query.clone();
+                            let active_id = app_state.wm.active_pane_id();
+                            if let Some(wry_pane) = self.wry_panes.get_mut(&active_id) {
+                                let q = query.replace('\'', "\\'");
+                                wry_pane.execute_js(&format!("window._aileronFindQuery='{q}'"));
+                                wry_pane.execute_js(&format!(
+                                    "window.find('{q}', false, false, true, true, false)"
+                                ));
+                            }
+                        }
+                    }
+                    aileron::chrome_bridge::ChromeCommand::FindNext => {
+                        if let Some(wry_pane) = self.wry_panes.get_mut(
+                            &self
+                                .app_state
+                                .as_ref()
+                                .map(|s| s.wm.active_pane_id())
+                                .unwrap_or_default(),
+                        ) {
+                            wry_pane.execute_js(
+                                "window.find(window._aileronFindQuery||'',false,false,true,true,false)",
+                            );
+                        }
+                    }
+                    aileron::chrome_bridge::ChromeCommand::FindPrev => {
+                        if let Some(wry_pane) = self.wry_panes.get_mut(
+                            &self
+                                .app_state
+                                .as_ref()
+                                .map(|s| s.wm.active_pane_id())
+                                .unwrap_or_default(),
+                        ) {
+                            wry_pane.execute_js(
+                                "window.find(window._aileronFindQuery||'',false,true,false,true,false)",
+                            );
+                        }
+                    }
+                    aileron::chrome_bridge::ChromeCommand::FindClose => {
+                        if let Some(app_state) = &mut self.app_state {
+                            app_state.ui.find_bar_open = false;
+                            app_state.ui.find_query.clear();
+                            let active_id = app_state.wm.active_pane_id();
+                            if let Some(wry_pane) = self.wry_panes.get_mut(&active_id) {
+                                wry_pane.execute_js("window.getSelection().removeAllRanges()");
+                            }
+                        }
+                    }
+                    aileron::chrome_bridge::ChromeCommand::PaletteInput(query) => {
+                        if let Some(app_state) = &mut self.app_state {
+                            app_state.palette.update_query(&query);
+                            app_state.ui.command_palette_input = query;
+                        }
+                    }
+                    aileron::chrome_bridge::ChromeCommand::PaletteSelect => {
+                        if let Some(app_state) = &mut self.app_state {
+                            if let Some(item) = app_state.palette.confirm_selection() {
+                                app_state.ui.command_palette_input.clear();
+                                app_state.execute_palette_selection(&item);
+                            } else if !app_state.palette.query.trim().is_empty() {
+                                let query = app_state.palette.query.trim().to_string();
+                                app_state.palette.close();
+                                app_state.ui.command_palette_input.clear();
+                                app_state.execute_command_pub(&query);
+                            }
+                        }
+                    }
+                    aileron::chrome_bridge::ChromeCommand::PaletteClose => {
+                        if let Some(app_state) = &mut self.app_state {
+                            app_state.palette.close();
+                            app_state.ui.command_palette_input.clear();
+                        }
+                    }
+                    aileron::chrome_bridge::ChromeCommand::StatusMessage(msg) => {
+                        if let Some(app_state) = &mut self.app_state {
+                            app_state.ui.status_message.push_str(&msg);
+                        }
+                    }
+                    aileron::chrome_bridge::ChromeCommand::None => {}
+                }
+            }
+        }
+
+        // Push state to chrome webview every frame (debounced by frame rate).
+        if let Some(app_state) = &self.app_state
+            && let Some(ref webview) = self.chrome_webview
+        {
+            let active_id = app_state.wm.active_pane_id();
+            let panes_ref = app_state.wm.panes_ref();
+
+            let panes: Vec<aileron_shared::PaneInfo> = panes_ref
+                .iter()
+                .map(|(pid, _)| {
+                    let title = self
+                        .wry_panes
+                        .get(pid)
+                        .map(|p| p.title().to_string())
+                        .unwrap_or_default();
+                    let pane_url = self
+                        .wry_panes
+                        .get(pid)
+                        .map(|p| p.url().to_string())
+                        .unwrap_or_default();
+                    aileron_shared::PaneInfo {
+                        id: pid.to_string(),
+                        url: pane_url,
+                        title,
+                        active: *pid == active_id,
+                        loading: false,
+                        zoom: 1.0,
+                    }
+                })
+                .collect();
+
+            let snapshot = aileron::chrome_bridge::ChromeSnapshotInput {
+                mode: app_state.mode,
+                active_pane_id: active_id,
+                pane_count: panes_ref.len(),
+                panes,
+                status_message: &app_state.ui.status_message,
+                find_bar_open: app_state.ui.find_bar_open,
+                find_query: &app_state.ui.find_query,
+                command_palette_open: app_state.palette.open,
+                palette_results: app_state
+                    .palette
+                    .results()
+                    .iter()
+                    .map(|item| aileron_shared::PaletteItem {
+                        id: item.id.clone(),
+                        label: item.label.clone(),
+                        description: item.description.clone(),
+                        category: aileron::chrome_bridge::to_shared_category(item.category),
+                    })
+                    .collect(),
+                palette_selected: app_state.palette.selected_item().map_or(0, |s| {
+                    app_state
+                        .palette
+                        .results()
+                        .iter()
+                        .position(|r| r.id == s.id)
+                        .unwrap_or(0)
+                }),
+                url_bar_focused: app_state.ui.url_bar_focused,
+                tab_layout: &app_state.config.tab_layout,
+                tab_sidebar_width: app_state.config.tab_sidebar_width as f64,
+                tab_sidebar_right: app_state.config.tab_sidebar_right,
+                version: format!(
+                    "v{} ({})",
+                    env!("CARGO_PKG_VERSION"),
+                    option_env!("AILERON_GIT_HASH").unwrap_or("unknown")
+                ),
+            };
+
+            let state = aileron::chrome_bridge::build_chrome_state(snapshot);
+            if let Ok(json) = serde_json::to_string(&state) {
+                let escaped = json.replace('\\', "\\\\").replace('\'', "\\'");
+                let _ = webview.evaluate_script(&format!("window.updateChromeState('{escaped}')"));
+            }
+        }
+
         // Defer pane repositioning to end-of-frame (single call).
         let mut layout_dirty = self.resize_pending;
         if self.resize_pending {
-            // Reset capture timers so the first frame after resize is captured
-            // immediately rather than being throttled by the interval timer.
-            for (_, ts) in self.offscreen_last_capture.iter_mut() {
-                *ts = std::time::Instant::now() - std::time::Duration::from_secs(10);
-            }
+            // Reposition all panes to match the new window size.
         }
         self.resize_pending = false;
 
@@ -1107,23 +868,6 @@ impl ApplicationHandler for AileronApp {
             &self.content_scripts,
         );
 
-        if self.config.is_offscreen()
-            && let Some(app_state) = &mut self.app_state
-            && let Some(registry) = &interceptor_registry
-        {
-            frame_tasks::process_offscreen_events(
-                app_state,
-                &mut self.offscreen_panes,
-                &self.content_scripts,
-                #[cfg(feature = "mcp")]
-                &mut self.mcp_bridge,
-                &self.adblocker,
-                registry,
-            );
-            // Check for webview crashes (stalled loading panes)
-            frame_tasks::check_offscreen_crashes(app_state, &mut self.offscreen_panes);
-        }
-
         let ws_name = self
             .app_state
             .as_mut()
@@ -1156,9 +900,6 @@ impl ApplicationHandler for AileronApp {
 
             self.wry_panes.remove_all();
             self.offscreen_panes = OffscreenWebViewManager::new();
-            self.webview_textures.clear();
-            self.webview_texture_handles.clear();
-            self.offscreen_last_capture.clear();
             self.pending_pane_creates.clear();
 
             let app_state = match &mut self.app_state {
@@ -1180,15 +921,8 @@ impl ApplicationHandler for AileronApp {
 
             match outcome {
                 aileron::workspace_restore::RestoreOutcome::Restored(result) => {
-                    let active_id = app_state.wm.active_pane_id();
                     for (pid, url) in result.panes_to_create {
-                        if pid == active_id {
-                            self.create_wry_pane_for(pid, &url);
-                        } else if self.config.is_offscreen() {
-                            self.pending_pane_creates.push_back((pid, url));
-                        } else {
-                            self.create_wry_pane_for(pid, &url);
-                        }
+                        self.create_wry_pane_for(pid, &url);
                     }
                     if let Some(s) = self.app_state.as_mut() {
                         s.ui.status_message = format!(
@@ -1258,12 +992,7 @@ impl ApplicationHandler for AileronApp {
             && let Some(frac) = app_state.session.pending_mark_jump.take()
         {
             let active_id = app_state.wm.active_pane_id();
-            if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                let js =
-                    format!("window.scrollTo(0, document.documentElement.scrollHeight * {frac})");
-                pane.execute_js(&js);
-                pane.mark_dirty();
-            } else if let Some(wry_pane) = self.wry_panes.get_mut(&active_id) {
+            if let Some(wry_pane) = self.wry_panes.get_mut(&active_id) {
                 let js =
                     format!("window.scrollTo(0, document.documentElement.scrollHeight * {frac})");
                 wry_pane.execute_js(&js);
@@ -1322,13 +1051,7 @@ impl ApplicationHandler for AileronApp {
         #[cfg(target_os = "linux")]
         frame_tasks::pump_gtk_loop();
 
-        // TASK-K27: create at most one deferred offscreen pane per frame.
-        self.drain_pending_pane_creates();
-
-        // Architecture B: capture dirty offscreen frames and update egui textures.
-        #[cfg(target_os = "linux")]
-        let textures_updated = self.update_webview_textures();
-        #[cfg(not(target_os = "linux"))]
+        // Architecture B: capture dirty offscreen frames and update textures.
         let textures_updated: bool = false;
 
         // Record frame end for input latency measurement.
@@ -1337,20 +1060,11 @@ impl ApplicationHandler for AileronApp {
             app_state.profiler.end_frame("about_to_wait");
         }
 
-        // Request redraw if:
-        // 1. egui explicitly requested a repaint (UI interaction), OR
-        // 2. A webview texture was updated (new frame from offscreen webview), OR
-        // 3. We have offscreen panes (continuous repaint for async web content), OR
-        // 4. We have native wry panes (continuous repaint for egui event processing)
-        if let Some(winit_state) = &self.egui_winit {
-            let egui_ctx = winit_state.egui_ctx();
-            let needs_repaint = egui_ctx.has_requested_repaint()
-                || textures_updated
-                || !self.offscreen_panes.is_empty()
-                || !self.wry_panes.is_empty();
-            if needs_repaint && let Some(window) = &self.window {
-                window.request_redraw();
-            }
+        // Request redraw if we have native wry panes (continuous repaint
+        // for event processing) or a texture was updated.
+        let needs_repaint = textures_updated || !self.wry_panes.is_empty();
+        if needs_repaint && let Some(window) = &self.window {
+            window.request_redraw();
         }
     }
 
@@ -1377,15 +1091,5 @@ impl ApplicationHandler for AileronApp {
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         info!("Clean shutdown — clearing session-active flag");
         Config::clear_session_active();
-
-        // Drop GPU state while the Wayland display is still alive.
-        // NVIDIA's libnvidia-egl-wayland2.so crashes in eglTerminate()
-        // if called after the wl_surface has been destroyed. The implicit
-        // Drop of AileronApp drops `window` (field 1) before `gfx` (field 3),
-        // so the wl_surface is gone before EGL cleanup runs. By dropping
-        // gfx and egui_winit here, the EGL teardown happens while the
-        // Wayland connection and surface are still valid.
-        self.gfx = None;
-        self.egui_winit = None;
     }
 }

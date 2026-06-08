@@ -5,19 +5,11 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{WindowAttributes, WindowId};
 
-use super::instance::{AileronApp, URL_BAR_HEIGHT};
+use super::instance::AileronApp;
 use crate::config::Config;
 use crate::frame_tasks;
 use crate::input::{KeyEvent as AileronKeyEvent, Mode};
-use crate::offscreen_webview::OffscreenWebViewManager;
 use crate::wm::Rect;
-
-#[cfg(all(target_os = "linux", feature = "terminal"))]
-use crate::input::key_conversion::key_to_escape_sequence;
-#[cfg(not(target_os = "linux"))]
-use crate::input::key_conversion::key_to_js;
-#[cfg(target_os = "linux")]
-use crate::input::key_conversion::key_to_js;
 
 impl ApplicationHandler for AileronApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -44,7 +36,6 @@ impl ApplicationHandler for AileronApp {
             window.inner_size().width,
             window.inner_size().height
         );
-        self.init_graphics(window);
 
         if let Some(app_state) = &self.app_state {
             let root_pane_id = app_state.wm.active_pane_id();
@@ -123,17 +114,6 @@ impl ApplicationHandler for AileronApp {
             self.popup.pending_popup_window = Some((popup_id, popup_window));
         }
 
-        let window = match &self.window {
-            Some(w) => Arc::clone(w),
-            None => return,
-        };
-        let winit_state = match &mut self.egui_winit {
-            Some(s) => s,
-            None => return,
-        };
-
-        let egui_response = winit_state.on_window_event(&window, &event);
-
         if let WindowEvent::ModifiersChanged(state) = &event {
             let ms = state.state();
             self.modifiers = crate::input::Modifiers {
@@ -175,7 +155,6 @@ impl ApplicationHandler for AileronApp {
                 if self.frame_count <= 3 || self.frame_count.is_multiple_of(300) {
                     info!("Render frame #{}", self.frame_count);
                 }
-                self.render();
                 let frame_time = frame_start.elapsed();
                 let frame_time_ms = frame_time.as_secs_f64() * 1000.0;
                 if frame_time.as_millis() > 17 {
@@ -185,11 +164,7 @@ impl ApplicationHandler for AileronApp {
             }
 
             WindowEvent::Resized(physical_size) => {
-                if physical_size.width > 0
-                    && physical_size.height > 0
-                    && let Some(gfx) = &mut self.gfx
-                {
-                    gfx.resize(physical_size.width, physical_size.height);
+                if physical_size.width > 0 && physical_size.height > 0 {
                     self.resize_pending = true;
                 }
             }
@@ -216,20 +191,6 @@ impl ApplicationHandler for AileronApp {
 
                 if self.ime_just_committed {
                     self.ime_just_committed = false;
-                    return;
-                }
-
-                let palette_open = self
-                    .app_state
-                    .as_ref()
-                    .map(|s| s.palette.open)
-                    .unwrap_or(false);
-                let insert_mode = self
-                    .app_state
-                    .as_ref()
-                    .map(|s| s.mode == Mode::Insert)
-                    .unwrap_or(false);
-                if egui_response.consumed && !palette_open && !insert_mode {
                     return;
                 }
 
@@ -281,10 +242,6 @@ impl ApplicationHandler for AileronApp {
                                 let active_id = app_state.wm.active_pane_id();
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                     wry_pane.execute_js(&js);
-                                } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id)
-                                {
-                                    pane.execute_js(&js);
-                                    pane.mark_dirty();
                                 }
                                 return;
                             }
@@ -305,10 +262,6 @@ impl ApplicationHandler for AileronApp {
                                 "#;
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                     wry_pane.execute_js(clear_js);
-                                } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id)
-                                {
-                                    pane.execute_js(clear_js);
-                                    pane.mark_dirty();
                                 }
                                 return;
                             }
@@ -380,11 +333,7 @@ impl ApplicationHandler for AileronApp {
 
                     for pid in &new_pane_ids {
                         let new_url = url::Url::parse("aileron://new").unwrap();
-                        if *pid == active_pane_id || !self.config.is_offscreen() {
-                            self.create_wry_pane_for(*pid, &new_url);
-                        } else {
-                            self.pending_pane_creates.push_back((*pid, new_url));
-                        }
+                        self.create_wry_pane_for(*pid, &new_url);
                     }
 
                     for pid in &closed_pane_ids {
@@ -413,105 +362,8 @@ impl ApplicationHandler for AileronApp {
                         self.reposition_all_panes();
                     }
 
-                    if is_insert_mode
-                        && !self.config.is_offscreen()
-                        && let Some(wry_pane) = self.wry_panes.get(&active_pane_id)
-                    {
+                    if is_insert_mode && let Some(wry_pane) = self.wry_panes.get(&active_pane_id) {
                         wry_pane.focus();
-                    }
-
-                    if is_insert_mode && self.config.is_offscreen() {
-                        #[cfg(all(target_os = "linux", feature = "terminal"))]
-                        let is_terminal = self.terminal_manager.is_terminal(&active_pane_id);
-
-                        #[cfg(all(target_os = "linux", feature = "terminal"))]
-                        if is_terminal {
-                            if let crate::input::Key::Character(c) = &key {
-                                let mut buf = [0u8; 4];
-                                let s = c.encode_utf8(&mut buf);
-                                self.terminal_manager.write_input(&active_pane_id, s);
-                            } else {
-                                let escape_seq = key_to_escape_sequence(&key, mods);
-                                if !escape_seq.is_empty() {
-                                    self.terminal_manager
-                                        .write_input(&active_pane_id, &escape_seq);
-                                }
-                            }
-                        }
-
-                        #[cfg(all(target_os = "linux", feature = "terminal"))]
-                        if !is_terminal
-                            && let Some(pane) = self.offscreen_panes.get_mut(&active_pane_id)
-                        {
-                            if let crate::input::Key::Character(c) = &key {
-                                let mut buf = [0u8; 4];
-                                let s = c.encode_utf8(&mut buf);
-                                pane.insert_text(s);
-                            } else {
-                                let (js_key, js_code) = key_to_js(&key);
-                                let mods = crate::offscreen_webview::modifiers_js(
-                                    mods.ctrl,
-                                    mods.alt,
-                                    mods.shift,
-                                    mods.super_key,
-                                );
-                                pane.forward_key_event("keydown", &js_key, &js_code, &mods);
-                            }
-                        }
-                        #[cfg(not(feature = "terminal"))]
-                        {
-                            if let Some(pane) = self.offscreen_panes.get_mut(&active_pane_id) {
-                                if let crate::input::Key::Character(c) = &key {
-                                    let mut buf = [0u8; 4];
-                                    let s = c.encode_utf8(&mut buf);
-                                    pane.insert_text(s);
-                                } else {
-                                    let (js_key, js_code) = key_to_js(&key);
-                                    let mods = crate::offscreen_webview::modifiers_js(
-                                        mods.ctrl,
-                                        mods.alt,
-                                        mods.shift,
-                                        mods.super_key,
-                                    );
-                                    pane.forward_key_event("keydown", &js_key, &js_code, &mods);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            WindowEvent::KeyboardInput {
-                event:
-                    winit::event::KeyEvent {
-                        physical_key,
-                        logical_key,
-                        state: winit::event::ElementState::Released,
-                        ..
-                    },
-                ..
-            } => {
-                if let Some(app_state) = &self.app_state
-                    && app_state.mode == Mode::Insert
-                {
-                    let active_id = app_state.wm.active_pane_id();
-                    #[cfg(feature = "terminal")]
-                    let is_terminal = self.terminal_manager.is_terminal(&active_id);
-                    #[cfg(not(feature = "terminal"))]
-                    let is_terminal = false;
-
-                    if !is_terminal {
-                        let key = crate::input::map_key(*physical_key, logical_key);
-                        if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                            let (js_key, js_code) = key_to_js(&key);
-                            let mods = crate::offscreen_webview::modifiers_js(
-                                self.modifiers.ctrl,
-                                self.modifiers.alt,
-                                self.modifiers.shift,
-                                self.modifiers.super_key,
-                            );
-                            pane.forward_key_event("keyup", &js_key, &js_code, &mods);
-                        }
                     }
                 }
             }
@@ -552,283 +404,11 @@ impl ApplicationHandler for AileronApp {
                             }
                         };
 
-                        if !is_terminal && !self.config.is_offscreen() {
-                            if let Some(wry_pane) = self.wry_panes.get(&active_id) {
-                                let js = format!(
-                                    "window.scrollBy({{top: {dy}, left: {dx}, behavior: 'smooth'}})"
-                                );
-                                wry_pane.execute_js(&js);
-                            }
-                        } else if !is_terminal
-                            && let Some(pane) = self.offscreen_panes.get_mut(&active_id)
-                        {
-                            pane.scroll_by(dx, dy);
-                        }
-                    }
-                }
-            }
-
-            WindowEvent::MouseInput { state, button, .. } => {
-                if self.config.is_offscreen()
-                    && let Some(app_state) = &self.app_state
-                    && app_state.mode == Mode::Insert
-                {
-                    self.offscreen_mouse_pressed = *state == winit::event::ElementState::Pressed;
-
-                    let active_id = app_state.wm.active_pane_id();
-
-                    #[cfg(feature = "terminal")]
-                    if self.terminal_manager.is_terminal(&active_id) {
-                        let terminal_info = (|| {
-                            let ws = self.egui_winit.as_ref()?;
-                            let ctx = ws.egui_ctx();
-                            let pos = ctx.pointer_latest_pos()?;
-                            let panes = app_state.wm.panes_ref();
-                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            let top_offset = URL_BAR_HEIGHT as f32;
-                            let sidebar_offset = if app_state.config.tab_layout == "sidebar"
-                                && !app_state.config.tab_sidebar_right
-                            {
-                                app_state.config.tab_sidebar_width
-                            } else {
-                                0.0
-                            };
-                            let local_x = pos.x - rect.x as f32 - sidebar_offset;
-                            let local_y = pos.y - rect.y as f32 - top_offset;
-                            if local_x >= 0.0 && local_y >= 0.0 {
-                                Some((local_x, local_y))
-                            } else {
-                                None
-                            }
-                        })();
-
-                        if let Some((local_x, local_y)) = terminal_info {
-                            use crate::terminal::grid::CellMetrics;
-                            if let Some(ws) = self.egui_winit.as_ref() {
-                                let metrics = CellMetrics::from_egui(ws.egui_ctx(), 14.0);
-                                if let Some(pane) = self.terminal_manager.get_mut(&active_id) {
-                                    let (line, col) = pane.pixel_to_grid(
-                                        local_x,
-                                        local_y,
-                                        metrics.cell_width,
-                                        metrics.cell_height,
-                                    );
-                                    match (state, button) {
-                                        (
-                                            winit::event::ElementState::Pressed,
-                                            winit::event::MouseButton::Left,
-                                        ) => {
-                                            pane.start_selection(line, col);
-                                        }
-                                        (
-                                            winit::event::ElementState::Released,
-                                            winit::event::MouseButton::Left,
-                                        ) => {
-                                            pane.end_selection();
-                                            if let Some(text) = pane.selection_text() {
-                                                ws.egui_ctx().copy_text(text);
-                                            }
-                                        }
-                                        (
-                                            winit::event::ElementState::Pressed,
-                                            winit::event::MouseButton::Right,
-                                        ) => {
-                                            pane.clear_selection();
-                                        }
-                                        (
-                                            winit::event::ElementState::Pressed,
-                                            winit::event::MouseButton::Middle,
-                                        ) => {
-                                            if let Some(pane_ref) =
-                                                self.terminal_manager.get(&active_id)
-                                                && let Some(text) = pane_ref.selection_text()
-                                            {
-                                                self.terminal_manager
-                                                    .write_input(&active_id, &text);
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    #[cfg(feature = "terminal")]
-                    let is_terminal = self.terminal_manager.is_terminal(&active_id);
-                    #[cfg(not(feature = "terminal"))]
-                    let is_terminal = false;
-
-                    if !is_terminal {
-                        let forward_info = (|| {
-                            let ws = self.egui_winit.as_ref()?;
-                            let ctx = ws.egui_ctx();
-                            let pos = ctx.pointer_latest_pos()?;
-                            let panes = app_state.wm.panes_ref();
-                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
-                            let top_offset = URL_BAR_HEIGHT as f32;
-                            let sidebar_offset = if app_state.config.tab_layout == "sidebar"
-                                && !app_state.config.tab_sidebar_right
-                            {
-                                app_state.config.tab_sidebar_width
-                            } else {
-                                0.0
-                            };
-                            let local_x = pos.x - rect.x as f32 - sidebar_offset;
-                            let local_y = pos.y - rect.y as f32 - top_offset;
-                            if local_x >= 0.0
-                                && local_y >= 0.0
-                                && local_x < pw as f32
-                                && local_y < ph as f32
-                            {
-                                let event_type = match state {
-                                    winit::event::ElementState::Pressed => "mousedown",
-                                    winit::event::ElementState::Released => "mouseup",
-                                };
-                                let btn = match button {
-                                    winit::event::MouseButton::Left => "0",
-                                    winit::event::MouseButton::Middle => "1",
-                                    winit::event::MouseButton::Right => "2",
-                                    winit::event::MouseButton::Back => "3",
-                                    winit::event::MouseButton::Forward => "4",
-                                    _ => "0",
-                                };
-                                Some((event_type, local_x as f64, local_y as f64, btn))
-                            } else {
-                                None
-                            }
-                        })();
-
-                        if let Some((event_type, local_x, local_y, btn)) = forward_info {
-                            if (*button == winit::event::MouseButton::Left
-                                && *state == winit::event::ElementState::Pressed
-                                && self.modifiers.ctrl)
-                                || (*button == winit::event::MouseButton::Middle
-                                    && *state == winit::event::ElementState::Pressed)
-                            {
-                                let js = format!(
-                                    r#"(function() {{
-                                        var el = document.elementFromPoint({local_x}, {local_y});
-                                        while (el && el.tagName !== 'A') {{ el = el.parentElement; }}
-                                        if (el && el.href) {{
-                                            window.open(el.href, '_blank');
-                                        }}
-                                    }})();"#
-                                );
-                                if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                                    pane.execute_js(&js);
-                                }
-                            } else {
-                                let mods = crate::offscreen_webview::modifiers_js(
-                                    self.modifiers.ctrl,
-                                    self.modifiers.alt,
-                                    self.modifiers.shift,
-                                    self.modifiers.super_key,
-                                );
-                                if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                                    pane.forward_mouse_event(
-                                        event_type, local_x, local_y, btn, &mods,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            WindowEvent::CursorMoved { position, .. } if self.config.is_offscreen() => {
-                let scale = window.scale_factor() as f32;
-                let logical_pos = egui::pos2(position.x as f32 / scale, position.y as f32 / scale);
-
-                if let Some(app_state) = &self.app_state
-                    && app_state.mode == Mode::Insert
-                {
-                    let active_id = app_state.wm.active_pane_id();
-
-                    #[cfg(feature = "terminal")]
-                    if self.terminal_manager.is_terminal(&active_id) {
-                        let terminal_info = (|| {
-                            let panes = app_state.wm.panes_ref();
-                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            let top_offset = URL_BAR_HEIGHT as f32;
-                            let sidebar_offset = if app_state.config.tab_layout == "sidebar"
-                                && !app_state.config.tab_sidebar_right
-                            {
-                                app_state.config.tab_sidebar_width
-                            } else {
-                                0.0
-                            };
-                            let local_x = logical_pos.x - rect.x as f32 - sidebar_offset;
-                            let local_y = logical_pos.y - rect.y as f32 - top_offset;
-                            if local_x >= 0.0 && local_y >= 0.0 {
-                                Some((local_x, local_y))
-                            } else {
-                                None
-                            }
-                        })();
-
-                        if let Some((local_x, local_y)) = terminal_info {
-                            use crate::terminal::grid::CellMetrics;
-                            if let Some(ws) = self.egui_winit.as_ref()
-                                && let Some(pane) = self.terminal_manager.get_mut(&active_id)
-                                && pane.is_selecting()
-                            {
-                                let metrics = CellMetrics::from_egui(ws.egui_ctx(), 14.0);
-                                let (line, col) = pane.pixel_to_grid(
-                                    local_x,
-                                    local_y,
-                                    metrics.cell_width,
-                                    metrics.cell_height,
-                                );
-                                pane.extend_selection(line, col);
-                            }
-                        }
-                    }
-
-                    #[cfg(feature = "terminal")]
-                    let is_terminal = self.terminal_manager.is_terminal(&active_id);
-                    #[cfg(not(feature = "terminal"))]
-                    let is_terminal = false;
-
-                    if !is_terminal {
-                        let forward_info = (|| {
-                            let panes = app_state.wm.panes_ref();
-                            let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
-                            let top_offset = URL_BAR_HEIGHT as f32;
-                            let sidebar_offset = if app_state.config.tab_layout == "sidebar"
-                                && !app_state.config.tab_sidebar_right
-                            {
-                                app_state.config.tab_sidebar_width
-                            } else {
-                                0.0
-                            };
-                            let local_x = logical_pos.x - rect.x as f32 - sidebar_offset;
-                            let local_y = logical_pos.y - rect.y as f32 - top_offset;
-                            if local_x >= 0.0
-                                && local_y >= 0.0
-                                && local_x < pw as f32
-                                && local_y < ph as f32
-                            {
-                                Some((local_x as f64, local_y as f64))
-                            } else {
-                                None
-                            }
-                        })();
-
-                        if let Some((local_x, local_y)) = forward_info
-                            && self.offscreen_mouse_pressed
-                        {
-                            let mods = crate::offscreen_webview::modifiers_js(
-                                self.modifiers.ctrl,
-                                self.modifiers.alt,
-                                self.modifiers.shift,
-                                self.modifiers.super_key,
+                        if !is_terminal && let Some(wry_pane) = self.wry_panes.get(&active_id) {
+                            let js = format!(
+                                "window.scrollBy({{top: {dy}, left: {dx}, behavior: 'smooth'}})"
                             );
-                            if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                                pane.forward_mouse_event("mousemove", local_x, local_y, "0", &mods);
-                            }
+                            wry_pane.execute_js(&js);
                         }
                     }
                 }
@@ -840,20 +420,6 @@ impl ApplicationHandler for AileronApp {
                         winit::event::Ime::Commit(text) => {
                             let chars: Vec<char> = text.chars().collect();
                             if chars.len() != 1 {
-                                if app_state.mode == Mode::Insert && self.config.is_offscreen() {
-                                    let active_id = app_state.wm.active_pane_id();
-                                    let text_owned = text.clone();
-                                    #[cfg(feature = "terminal")]
-                                    if !self.terminal_manager.is_terminal(&active_id)
-                                        && let Some(pane) = self.offscreen_panes.get_mut(&active_id)
-                                    {
-                                        pane.insert_text(&text_owned);
-                                    }
-                                    #[cfg(not(feature = "terminal"))]
-                                    if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                                        pane.insert_text(&text_owned);
-                                    }
-                                }
                                 return;
                             }
 
@@ -887,31 +453,7 @@ impl ApplicationHandler for AileronApp {
                                         app_state.process_key_event(aileron_event);
                                         self.ime_just_committed = true;
                                     }
-                                    crate::input::Mode::Insert => {
-                                        let active_id = app_state.wm.active_pane_id();
-                                        let text_owned = text.clone();
-
-                                        if self.config.is_offscreen() {
-                                            #[cfg(feature = "terminal")]
-                                            if self.terminal_manager.is_terminal(&active_id) {
-                                                self.terminal_manager
-                                                    .write_input(&active_id, &text_owned);
-                                            }
-                                            #[cfg(feature = "terminal")]
-                                            if !self.terminal_manager.is_terminal(&active_id)
-                                                && let Some(pane) =
-                                                    self.offscreen_panes.get_mut(&active_id)
-                                            {
-                                                pane.insert_text(&text_owned);
-                                            }
-                                            #[cfg(not(feature = "terminal"))]
-                                            if let Some(pane) =
-                                                self.offscreen_panes.get_mut(&active_id)
-                                            {
-                                                pane.insert_text(&text_owned);
-                                            }
-                                        }
-                                    }
+                                    crate::input::Mode::Insert => {}
                                 }
                             }
                         }
@@ -1034,25 +576,9 @@ impl ApplicationHandler for AileronApp {
         frame_tasks::process_pending_wry_actions(
             &mut self.app_state,
             &mut self.wry_panes,
-            &mut self.offscreen_panes,
+            &mut crate::offscreen_webview::OffscreenWebViewManager::new(),
             &self.content_scripts,
         );
-
-        if self.config.is_offscreen()
-            && let Some(app_state) = &mut self.app_state
-            && let Some(registry) = &interceptor_registry
-        {
-            frame_tasks::process_offscreen_events(
-                app_state,
-                &mut self.offscreen_panes,
-                &self.content_scripts,
-                #[cfg(feature = "mcp")]
-                &mut self.mcp_bridge,
-                &self.adblocker,
-                registry,
-            );
-            frame_tasks::check_offscreen_crashes(app_state, &mut self.offscreen_panes);
-        }
 
         let ws_name = self
             .app_state
@@ -1085,11 +611,6 @@ impl ApplicationHandler for AileronApp {
             };
 
             self.wry_panes.remove_all();
-            self.offscreen_panes = OffscreenWebViewManager::new();
-            self.webview_textures.clear();
-            self.webview_texture_handles.clear();
-            self.offscreen_last_capture.clear();
-            self.pending_pane_creates.clear();
 
             let app_state = match &mut self.app_state {
                 Some(s) => s,
@@ -1110,15 +631,8 @@ impl ApplicationHandler for AileronApp {
 
             match outcome {
                 crate::workspace_restore::RestoreOutcome::Restored(result) => {
-                    let active_id = app_state.wm.active_pane_id();
                     for (pid, url) in result.panes_to_create {
-                        if pid == active_id {
-                            self.create_wry_pane_for(pid, &url);
-                        } else if self.config.is_offscreen() {
-                            self.pending_pane_creates.push_back((pid, url));
-                        } else {
-                            self.create_wry_pane_for(pid, &url);
-                        }
+                        self.create_wry_pane_for(pid, &url);
                     }
                     if let Some(s) = self.app_state.as_mut() {
                         s.ui.status_message = format!(
@@ -1158,7 +672,7 @@ impl ApplicationHandler for AileronApp {
                     &mut self.wry_panes,
                     active_id,
                     app_state,
-                    &mut self.offscreen_panes,
+                    &mut crate::offscreen_webview::OffscreenWebViewManager::new(),
                 );
             }
         }
@@ -1186,12 +700,7 @@ impl ApplicationHandler for AileronApp {
             && let Some(frac) = app_state.session.pending_mark_jump.take()
         {
             let active_id = app_state.wm.active_pane_id();
-            if let Some(pane) = self.offscreen_panes.get_mut(&active_id) {
-                let js =
-                    format!("window.scrollTo(0, document.documentElement.scrollHeight * {frac})");
-                pane.execute_js(&js);
-                pane.mark_dirty();
-            } else if let Some(wry_pane) = self.wry_panes.get_mut(&active_id) {
+            if let Some(wry_pane) = self.wry_panes.get_mut(&active_id) {
                 let js =
                     format!("window.scrollTo(0, document.documentElement.scrollHeight * {frac})");
                 wry_pane.execute_js(&js);
@@ -1250,11 +759,6 @@ impl ApplicationHandler for AileronApp {
         #[cfg(target_os = "linux")]
         frame_tasks::pump_gtk_loop();
 
-        self.drain_pending_pane_creates();
-
-        #[cfg(target_os = "linux")]
-        let textures_updated = self.update_webview_textures();
-        #[cfg(not(target_os = "linux"))]
         let textures_updated = false;
 
         if let Some(app_state) = &mut self.app_state {
@@ -1262,14 +766,10 @@ impl ApplicationHandler for AileronApp {
             app_state.profiler.end_frame("about_to_wait");
         }
 
-        if let Some(winit_state) = &self.egui_winit {
-            let egui_ctx = winit_state.egui_ctx();
-            let needs_repaint = egui_ctx.has_requested_repaint()
-                || textures_updated
-                || !self.offscreen_panes.is_empty();
-            if needs_repaint && let Some(window) = &self.window {
-                window.request_redraw();
-            }
+        if (textures_updated || !self.wry_panes.is_empty())
+            && let Some(window) = &self.window
+        {
+            window.request_redraw();
         }
     }
 
@@ -1296,8 +796,5 @@ impl ApplicationHandler for AileronApp {
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         info!("Clean shutdown — clearing session-active flag");
         Config::clear_session_active();
-
-        self.gfx = None;
-        self.egui_winit = None;
     }
 }
