@@ -1191,6 +1191,10 @@ impl ApplicationHandler for AileronApp {
                     format!("window.scrollTo(0, document.documentElement.scrollHeight * {frac})");
                 pane.execute_js(&js);
                 pane.mark_dirty();
+            } else if let Some(wry_pane) = self.wry_panes.get_mut(&active_id) {
+                let js =
+                    format!("window.scrollTo(0, document.documentElement.scrollHeight * {frac})");
+                wry_pane.execute_js(&js);
             }
         }
 

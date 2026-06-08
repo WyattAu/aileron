@@ -19,7 +19,7 @@ use tracing::{info, warn};
 /// use aileron::config::Config;
 ///
 /// let config = Config::default();
-/// assert_eq!(config.homepage, "aileron://welcome");
+/// assert_eq!(config.homepage, "aileron://new");
 /// assert!(config.adblock_enabled);
 /// ```
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -389,7 +389,7 @@ pub struct PaletteConfig {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            homepage: "aileron://welcome".into(),
+            homepage: "aileron://new".into(),
             window_width: 1280,
             window_height: 800,
             devtools: false,
@@ -429,7 +429,7 @@ impl Default for Config {
             tab_layout: "sidebar".into(),
             tab_sidebar_width: 180.0,
             tab_sidebar_right: false,
-            render_mode: "offscreen".into(),
+            render_mode: "native".into(),
             adaptive_quality: true,
             https_upgrade_enabled: true,
             tracking_protection_enabled: true,
@@ -588,7 +588,7 @@ impl Config {
 # Location: ~/.config/aileron/config.toml
 
 # Homepage URL (loaded on startup)
-homepage = "aileron://welcome"
+homepage = "aileron://new"
 
 # Window size (logical pixels)
 window_width = 1280
@@ -634,8 +634,8 @@ tab_sidebar_width = 180.0
 # Show tab sidebar on the right instead of left
 tab_sidebar_right = false
 
-# Webview rendering mode: "offscreen" (Architecture B, default) or "native" (XWayland on Wayland)
-render_mode = "offscreen"
+# Webview rendering mode: "native" (default, X11 child window) or "offscreen" (Architecture B, texture capture)
+render_mode = "native"
 
 [palette]
 # Maximum search results in command palette
@@ -709,7 +709,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.homepage, "aileron://welcome");
+        assert_eq!(config.homepage, "aileron://new");
         assert_eq!(config.window_width, 1280);
         assert_eq!(config.window_height, 800);
         assert!(!config.devtools);
@@ -724,7 +724,7 @@ mod tests {
     #[test]
     fn test_parse_empty_config() {
         let config: Config = toml::from_str("").unwrap();
-        assert_eq!(config.homepage, "aileron://welcome");
+        assert_eq!(config.homepage, "aileron://new");
     }
 
     #[test]
@@ -759,7 +759,7 @@ mod tests {
     fn test_sample_config_parses() {
         let sample = Config::sample();
         let config: Config = toml::from_str(&sample).unwrap();
-        assert_eq!(config.homepage, "aileron://welcome");
+        assert_eq!(config.homepage, "aileron://new");
         assert_eq!(config.palette.max_results, 20);
     }
 
@@ -845,10 +845,10 @@ mod tests {
     }
 
     #[test]
-    fn test_render_mode_default_offscreen() {
+    fn test_render_mode_default_native() {
         let config = Config::default();
-        assert_eq!(config.render_mode, "offscreen");
-        assert!(config.is_offscreen());
+        assert_eq!(config.render_mode, "native");
+        assert!(!config.is_offscreen());
     }
 
     #[test]

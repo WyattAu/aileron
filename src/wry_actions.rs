@@ -210,12 +210,17 @@ pub fn process_wry_action(
         }
         crate::app::WryAction::SmoothScroll { x, y } => {
             if let Some(pane) = offscreen_panes.get_mut(&active_id) {
+                // Use 'instant' instead of 'smooth' — smooth scrolling
+                // requires continuous re-capture of animation frames which
+                // is expensive for offscreen rendering. Instant scrolling
+                // gives immediate visual feedback with a single re-capture.
                 pane.execute_js(&format!(
-                    "window.scrollBy({{top: {y}, left: {x}, behavior: 'smooth'}})"
+                    "window.scrollBy({{top: {y}, left: {x}, behavior: 'instant'}})"
                 ));
+                pane.mark_dirty();
             }
             if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
-                let js = format!("window.scrollBy({{top: {y}, left: {x}, behavior: 'smooth'}})");
+                let js = format!("window.scrollBy({{top: {y}, left: {x}, behavior: 'instant'}})");
                 wry_pane.execute_js(&js);
             }
         }

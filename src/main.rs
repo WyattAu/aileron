@@ -29,6 +29,7 @@ mod event_handlers;
 #[cfg(feature = "terminal")]
 use event_handlers::key_to_escape_sequence;
 use event_handlers::key_to_js;
+use event_handlers::{clear_hints_js, hint_click_js, screen_to_pane_local};
 
 /// Heights (in logical pixels) for the egui panels.
 const STATUS_BAR_HEIGHT: f64 = 32.0;
@@ -124,6 +125,9 @@ struct AileronApp {
     /// Set to true after handling an Ime::Commit in Normal/Command mode,
     /// then cleared after the corresponding KeyboardInput is skipped.
     ime_just_committed: bool,
+    /// Whether the wry webview currently has X11 focus (native mode only).
+    /// Used to detect mode transitions and avoid spamming focus calls.
+    webview_has_focus: bool,
 }
 
 impl AileronApp {
@@ -177,6 +181,7 @@ impl AileronApp {
             resize_pending: false,
             last_filter_update: std::time::Instant::now(),
             ime_just_committed: false,
+            webview_has_focus: false,
         }
     }
 
@@ -914,11 +919,7 @@ impl AileronApp {
                         .capture_buffers
                         .entry(*id)
                         .or_insert_with(|| Vec::with_capacity(needed));
-                    if buf.len() < needed {
-                        buf.resize(needed, 0);
-                    } else {
-                        buf[..needed].fill(0);
-                    }
+                    buf.resize(needed, 0);
                     if let Some(rgba) = pane.frame_rgba() {
                         let copy_len = rgba.len().min(needed);
                         buf[..copy_len].copy_from_slice(&rgba[..copy_len]);

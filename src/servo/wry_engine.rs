@@ -20,9 +20,26 @@ use glib_sys;
 #[cfg(target_os = "linux")]
 use gtk::prelude::{ContainerExt, GtkWindowExt, WidgetExt};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use tracing::{info, warn};
 use url::Url;
+
+/// Global flag: when true, the wry webview is allowed to receive X11 focus
+/// (Insert mode). When false, focus events targeting the wry child window
+/// are blocked and redirected back to the winit parent window.
+#[cfg(target_os = "linux")]
+static WEBVIEW_ACCEPTS_FOCUS: AtomicBool = AtomicBool::new(false);
+
+/// Set whether the wry webview should accept X11 keyboard focus.
+/// Call with `true` when entering Insert mode, `false` when leaving.
+#[cfg(target_os = "linux")]
+pub fn set_webview_focus_allowed(allowed: bool) {
+    WEBVIEW_ACCEPTS_FOCUS.store(allowed, Ordering::SeqCst);
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn set_webview_focus_allowed(_allowed: bool) {}
 use uuid::Uuid;
 #[cfg(target_os = "linux")]
 use wry::WebViewBuilderExtUnix;
@@ -126,48 +143,74 @@ impl WryPane {
         let interceptor = interceptor_registry.clone();
 
         // === Path 1: Try build_as_child (X11) ===
-        // Builder is built inline so event_tx isn't lost if this path fails.
-        match Self::make_builder_with_privacy(
-            &url_str,
-            pid,
-            event_tx.clone(),
-            blocked_domains.clone(),
-            https_safe_list.clone(),
-            true,
-            true,
-            devtools,
-            popup_blocker,
-            interceptor,
-        )
-        .with_bounds(bounds)
-        .build_as_child(parent)
-        {
-            Ok(webview) => {
-                info!(
-                    "WryPane {} created as child window -> {}",
-                    &pane_id.to_string()[..8],
-                    url_str
-                );
-                return Ok(Self {
-                    webview,
-                    pane_id,
-                    url: initial_url,
-                    title: String::new(),
-                    event_rx,
-                    embed_mode: EmbedMode::ChildWindow,
-                    #[cfg(target_os = "linux")]
-                    gtk_window: None,
-                    #[cfg(target_os = "linux")]
-                    gtk_fixed: None,
-                });
+        // Only attempt X11 child window embedding when GDK is backed by X11.
+        // On Wayland, wry's build_as_child panics at
+        //   gdk_display.downcast_ref::<X11Display>().unwrap()
+        // instead of returning Err. Detect this before calling it.
+        #[cfg(target_os = "linux")]
+        let is_x11_display: bool = {
+            use webkit2gtk::glib::Cast;
+            gtk::gdk::Display::default()
+                .and_then(|d| d.downcast::<gdkx11::X11Display>().ok())
+                .is_some()
+        };
+        #[cfg(not(target_os = "linux"))]
+        let is_x11_display: bool = true;
+
+        if is_x11_display {
+            // Builder is built inline so event_tx isn't lost if this path fails.
+            match Self::make_builder_with_privacy(
+                &url_str,
+                pid,
+                event_tx.clone(),
+                blocked_domains.clone(),
+                https_safe_list.clone(),
+                true,
+                true,
+                devtools,
+                popup_blocker,
+                interceptor,
+            )
+            .with_bounds(bounds)
+            .build_as_child(parent)
+            {
+                Ok(webview) => {
+                    info!(
+                        "WryPane {} created as child window -> {}",
+                        &pane_id.to_string()[..8],
+                        url_str
+                    );
+                    let pane = Self {
+                        webview,
+                        pane_id,
+                        url: initial_url,
+                        title: String::new(),
+                        event_rx,
+                        embed_mode: EmbedMode::ChildWindow,
+                        #[cfg(target_os = "linux")]
+                        gtk_window: None,
+                        #[cfg(target_os = "linux")]
+                        gtk_fixed: None,
+                    };
+                    // build_as_child internally calls gtk_window.show_all() which
+                    // causes GTK to assign focus to the WebKit widget. Immediately
+                    // return focus to the parent (winit) window so keybindings work.
+                    pane.focus_parent();
+                    return Ok(pane);
+                }
+                Err(e) => {
+                    warn!(
+                        "build_as_child failed for pane {}: {} — trying GTK fallback",
+                        &pane_id.to_string()[..8],
+                        e
+                    );
+                }
             }
-            Err(e) => {
-                warn!(
-                    "build_as_child failed for pane {}: {} — trying GTK fallback",
-                    &pane_id.to_string()[..8],
-                    e
-                );
-            }
+        } else {
+            warn!(
+                "GDK display is not X11 — skipping build_as_child for pane {}",
+                &pane_id.to_string()[..8],
+            );
         }
 
         // === Path 2: GTK window fallback (Wayland) ===
@@ -306,14 +349,12 @@ impl WryPane {
             // Custom protocol for aileron:// internal pages
             .with_custom_protocol("aileron".into(), {
                 let open_tx = event_tx.clone();
-                move |_webview_id, req| {
-                    // Extract the path from the request URI to serve different pages
-                    let path = req.uri().path().trim_start_matches('/');
-                    let html = match path {
+                super::protocol::aileron_protocol_handler(Box::new(move |page_name, uri| {
+                    let html = match page_name {
                         "new" => aileron_new_tab_page(),
                         "terminal" => aileron_terminal_page(),
                         "open" => {
-                            if let Some(query) = req.uri().query()
+                            if let Some(query) = uri.query()
                                 && let Some(path_param) = query.split('&')
                                     .find(|p| p.starts_with("path="))
                                     .map(|p| &p[5..])
@@ -325,9 +366,9 @@ impl WryPane {
                             }
                             "<!DOCTYPE html><html><body style='background:#141414;color:#4db4ff;font-family:monospace;padding:2em'>Opening file...</body></html>".into()
                         }
-                        "files" => file_browser_page(req.uri()),
+                        "files" => file_browser_page(uri),
                         "error" => {
-                            let msg = req.uri().query()
+                            let msg = uri.query()
                                 .and_then(|q| q.split('&')
                                     .find(|p| p.starts_with("msg="))
                                     .map(|p| percent_decode(&p[4..])))
@@ -349,13 +390,10 @@ a {{ color: #4db4ff; }}
                         }
                         "settings" => aileron_settings_page(),
                         "reader" => aileron_reader_page(),
-                        _ => aileron_404_page(&req.uri().to_string()), // "welcome" and anything else
+                        _ => return None,
                     };
-                    wry::http::Response::builder()
-                        .header("Content-Type", "text/html")
-                        .body(html.into_bytes().into())
-                        .expect("valid http response builder with known header and body")
-                }
+                    Some(html)
+                }))
             })
             .with_ipc_handler({
                 let ipc_tx = event_tx.clone();

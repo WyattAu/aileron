@@ -115,3 +115,76 @@ pub(crate) fn is_nvidia_gpu() -> bool {
 pub(crate) fn is_nvidia_gpu() -> bool {
     false
 }
+
+pub(crate) fn screen_to_pane_local(
+    pos: egui::Pos2,
+    rect: &aileron::wm::Rect,
+    tab_sidebar_right: bool,
+    tab_layout_is_sidebar: bool,
+    tab_sidebar_width: f64,
+    pane_width: f64,
+    pane_height: f64,
+) -> Option<(f64, f64)> {
+    const STATUS_BAR_HEIGHT: f32 = 32.0;
+    let top_offset = STATUS_BAR_HEIGHT;
+    let sidebar_offset = if tab_layout_is_sidebar && !tab_sidebar_right {
+        tab_sidebar_width
+    } else {
+        0.0
+    };
+    let local_x = pos.x - rect.x as f32 - sidebar_offset as f32;
+    let local_y = pos.y - rect.y as f32 - top_offset;
+    if local_x >= 0.0
+        && local_y >= 0.0
+        && local_x < pane_width as f32
+        && local_y < pane_height as f32
+    {
+        Some((local_x as f64, local_y as f64))
+    } else {
+        None
+    }
+}
+
+pub(crate) fn clear_hints_js() -> &'static str {
+    r#"
+        (function() {
+            var style = document.getElementById('__aileron_hints');
+            if (style) style.remove();
+            document.querySelectorAll('[data-aileron-hint]').forEach(el => {
+                el.removeAttribute('data-aileron-hint');
+            });
+        })();
+    "#
+}
+
+pub(crate) fn hint_click_js(hint_buf: &str, new_tab: bool) -> String {
+    if new_tab {
+        format!(
+            "(function() {{ \
+                var el = document.querySelector('[data-aileron-hint=\"{hint_buf}\"]'); \
+                if (el && el.href) {{ window.open(el.href, '_blank'); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
+                if (el) {{ el.click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
+                var all = document.querySelectorAll('[data-aileron-hint]'); \
+                var matches = []; \
+                all.forEach(function(e) {{ \
+                    if (e.getAttribute('data-aileron-hint').startsWith('{hint_buf}')) matches.push(e); \
+                }}); \
+                if (matches.length === 1 && matches[0].href) {{ window.open(matches[0].href, '_blank'); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
+                if (matches.length === 1) {{ matches[0].click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
+            }})()"
+        )
+    } else {
+        format!(
+            "(function() {{ \
+                var el = document.querySelector('[data-aileron-hint=\"{hint_buf}\"]'); \
+                if (el) {{ el.click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
+                var all = document.querySelectorAll('[data-aileron-hint]'); \
+                var matches = []; \
+                all.forEach(function(e) {{ \
+                    if (e.getAttribute('data-aileron-hint').startsWith('{hint_buf}')) matches.push(e); \
+                }}); \
+                if (matches.length === 1) {{ matches[0].click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
+            }})()"
+        )
+    }
+}

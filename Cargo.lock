@@ -120,6 +120,7 @@ dependencies = [
  "egui-winit",
  "fastcdc",
  "futures-util",
+ "gdkx11",
  "glib-sys 0.20.10",
  "gtk",
  "image",

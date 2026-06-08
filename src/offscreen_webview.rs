@@ -85,6 +85,8 @@ pub struct OffscreenWebView {
     /// would produce a frame with different colors, causing visual flashing).
     #[cfg(target_os = "linux")]
     snapshot_in_flight: bool,
+    /// Whether a micro-resize redraw is needed after page load.
+    needs_force_redraw: bool,
     /// How many times we've requested a snapshot (diagnostic counter).
     #[cfg(target_os = "linux")]
     snapshot_request_count: u64,
@@ -194,13 +196,12 @@ impl OffscreenWebView {
             .with_initialization_script(ERROR_MONITOR_JS)
             .with_custom_protocol("aileron".into(), {
                 let open_tx = event_tx.clone();
-                move |_webview_id, req| {
-                    let path = req.uri().path().trim_start_matches('/');
-                    let html = match path {
+                crate::servo::protocol::aileron_protocol_handler(Box::new(move |page_name, uri| {
+                    let html = match page_name {
                         "new" => aileron_new_tab_page(),
                         "terminal" => r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Terminal</title><style>body{background:#141414;color:#4db4ff;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}</style></head><body><p>Native terminal active</p></body></html>"#.into(),
                         "open" => {
-                            if let Some(query) = req.uri().query()
+                            if let Some(query) = uri.query()
                                 && let Some(path_param) = query.split('&')
                                     .find(|p| p.starts_with("path="))
                                     .map(|p| &p[5..])
@@ -212,9 +213,9 @@ impl OffscreenWebView {
                             }
                             "<!DOCTYPE html><html><body style='background:#141414;color:#4db4ff;font-family:monospace;padding:2em'>Opening file...</body></html>".into()
                         }
-                        "files" => file_browser_page(req.uri()),
+                        "files" => file_browser_page(uri),
                         "error" => {
-                            let msg = req.uri().query()
+                            let msg = uri.query()
                                 .and_then(|q| q.split('&')
                                     .find(|p| p.starts_with("msg="))
                                     .map(|p| percent_decode(&p[4..])))
@@ -238,11 +239,8 @@ a {{ color: #4db4ff; }}
                         "reader" => aileron_reader_page(),
                         _ => aileron_welcome_page(),
                     };
-                    wry::http::Response::builder()
-                        .header("Content-Type", "text/html")
-                        .body(html.into_bytes().into())
-                        .expect("valid http response builder with known header and body")
-                }
+                    Some(html)
+                }))
             })
             .with_ipc_handler({
                 let ipc_tx = event_tx.clone();
@@ -414,6 +412,7 @@ a {{ color: #4db4ff; }}
             dirty: true,
             snapshot_rx: None,
             snapshot_in_flight: false,
+            needs_force_redraw: false,
             snapshot_request_count: 0,
             event_rx,
             last_activity_time: std::time::Instant::now(),
@@ -436,6 +435,10 @@ a {{ color: #4db4ff; }}
                     self.loading = false;
                     self.last_activity_time = std::time::Instant::now();
                     self.dirty = true;
+                    // Mark that we need to force a redraw. The actual
+                    // micro-resize happens in capture_frame() to avoid
+                    // blocking the event loop during drain_events().
+                    self.needs_force_redraw = true;
                 }
                 WryEvent::TitleChanged { .. } => {
                     self.last_activity_time = std::time::Instant::now();
@@ -582,6 +585,15 @@ a {{ color: #4db4ff; }}
         // Step 1: If no pending snapshot, request one and return None.
         //         The snapshot callback will fire during a future pump_gtk().
         if self.snapshot_rx.is_none() {
+            // Force a GL paint cycle before requesting the snapshot.
+            // This ensures the web content is actually rendered into the
+            // GL texture before we capture it. Without this, the first
+            // snapshot after page load returns a blank surface.
+            if self.needs_force_redraw {
+                self.force_redraw();
+                self.needs_force_redraw = false;
+            }
+
             let children = self.gtk_fixed.children();
             let webview: webkit2gtk::WebView = match children
                 .into_iter()
@@ -632,7 +644,6 @@ a {{ color: #4db4ff; }}
                 if gtk::events_pending() {
                     gtk::main_iteration_do(false);
                 }
-                // Try to collect the result immediately
                 if let Some(snap_rx) = self.snapshot_rx.as_mut() {
                     match snap_rx.try_recv() {
                         Ok(Ok(surface)) => {
@@ -652,10 +663,10 @@ a {{ color: #4db4ff; }}
                             self.snapshot_request_count = 0;
                             return None;
                         }
-                        Err(_) => continue,
+                        Err(_) => {}
                     }
                 }
-                std::thread::sleep(std::time::Duration::from_millis(1));
+                std::thread::yield_now();
             }
             return None;
         }
@@ -866,6 +877,56 @@ a {{ color: #4db4ff; }}
             self.rgba_buffer.as_slice()
         })
     }
+
+    /// Force a redraw by doing a micro-resize (shrink then restore).
+    /// This triggers WebKitGTK's GL paint cycle which is required for
+    /// snapshot/pixbuf capture to work on GL-composited content.
+    #[cfg(target_os = "linux")]
+    pub fn force_redraw(&mut self) {
+        let w = self.width;
+        let h = self.height;
+        if w > 20 && h > 20 {
+            // Shrink by a visible amount to force a full layout reflow.
+            let shrink_w = (w as f64 * 0.95) as i32;
+            let shrink_h = (h as f64 * 0.95) as i32;
+            self.gtk_fixed.set_size_request(shrink_w, shrink_h);
+            let children = self.gtk_fixed.children();
+            if let Some(child) = children.into_iter().next() {
+                child.set_size_request(shrink_w, shrink_h);
+                self.gtk_fixed.move_(&child, 0, 0);
+            }
+            self.offscreen.queue_resize();
+            for _ in 0..50 {
+                if gtk::events_pending() {
+                    gtk::main_iteration_do(false);
+                } else {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+            // Restore original size.
+            self.gtk_fixed.set_size_request(w, h);
+            let children = self.gtk_fixed.children();
+            if let Some(child) = children.into_iter().next() {
+                child.set_size_request(w, h);
+                self.gtk_fixed.move_(&child, 0, 0);
+            }
+            self.offscreen.queue_resize();
+            for _ in 0..50 {
+                if gtk::events_pending() {
+                    gtk::main_iteration_do(false);
+                } else {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+            // Restore internal dimensions (resize() guards against same-size).
+            self.width = w;
+            self.height = h;
+            self.dirty = true;
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn force_redraw(&mut self) {}
 
     /// Resize the offscreen window and webview.
     #[cfg(target_os = "linux")]

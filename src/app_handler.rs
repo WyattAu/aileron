@@ -225,6 +225,15 @@ impl ApplicationHandler for AileronApp {
                 // Let egui consume the event first, UNLESS the command
                 // palette is open or we're in Insert mode (where keys
                 // must reach the offscreen webview, not be swallowed by egui).
+                //
+                // In Normal mode, egui should NOT consume character key events
+                // because there is no TextEdit focused. However, egui may
+                // retain stale focus from a previous TextEdit interaction,
+                // causing it to swallow j/k/q/etc before we can process them
+                // as keybindings. The UI render pass surrenders focus, but
+                // that happens AFTER event processing — too late for the
+                // current frame. So we also skip the consumed check for
+                // character keys in Normal mode.
                 let palette_open = self
                     .app_state
                     .as_ref()
@@ -235,7 +244,18 @@ impl ApplicationHandler for AileronApp {
                     .as_ref()
                     .map(|s| s.mode == aileron::input::Mode::Insert)
                     .unwrap_or(false);
-                if egui_response.consumed && !palette_open && !insert_mode {
+                let normal_mode = self
+                    .app_state
+                    .as_ref()
+                    .map(|s| s.mode == aileron::input::Mode::Normal)
+                    .unwrap_or(false);
+                // Only skip egui consumption for character keys in Normal mode.
+                // Modifier combos (Ctrl, Alt) and special keys should still
+                // respect egui consumption (e.g., Ctrl+C for copy in TextEdit).
+                let is_char_key = matches!(logical_key, winit::keyboard::Key::Character(_));
+                let skip_egui =
+                    normal_mode && is_char_key && !self.modifiers.ctrl && !self.modifiers.alt;
+                if egui_response.consumed && !palette_open && !insert_mode && !skip_egui {
                     return;
                 }
 
@@ -249,6 +269,14 @@ impl ApplicationHandler for AileronApp {
                     physical_key: None,
                 };
 
+                // Snapshot pane IDs BEFORE processing key events, so we can
+                // detect panes closed/opened by process_key_event().
+                let pane_ids_before: std::collections::HashSet<uuid::Uuid> = self
+                    .app_state
+                    .as_ref()
+                    .map(|s| s.wm.panes_ref().iter().map(|(id, _)| *id).collect())
+                    .unwrap_or_default();
+
                 if let Some(app_state) = &mut self.app_state {
                     // ─── Hint mode: intercept letter keys to follow hinted links ───
                     if app_state.ui.hint_mode {
@@ -257,36 +285,7 @@ impl ApplicationHandler for AileronApp {
                                 app_state.ui.hint_buffer.push(*c);
                                 let hint_buf = app_state.ui.hint_buffer.clone();
                                 let new_tab = app_state.ui.hint_new_tab;
-                                // Use IPC to get click feedback for auto-exit
-                                let js = if new_tab {
-                                    format!(
-                                        "(function() {{ \
-                                            var el = document.querySelector('[data-aileron-hint=\"{hint_buf}\"]'); \
-                                            if (el && el.href) {{ window.open(el.href, '_blank'); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
-                                            if (el) {{ el.click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
-                                            var all = document.querySelectorAll('[data-aileron-hint]'); \
-                                            var matches = []; \
-                                            all.forEach(function(e) {{ \
-                                                if (e.getAttribute('data-aileron-hint').startsWith('{hint_buf}')) matches.push(e); \
-                                            }}); \
-                                            if (matches.length === 1 && matches[0].href) {{ window.open(matches[0].href, '_blank'); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
-                                            if (matches.length === 1) {{ matches[0].click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
-                                        }})()"
-                                    )
-                                } else {
-                                    format!(
-                                        "(function() {{ \
-                                            var el = document.querySelector('[data-aileron-hint=\"{hint_buf}\"]'); \
-                                            if (el) {{ el.click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
-                                            var all = document.querySelectorAll('[data-aileron-hint]'); \
-                                            var matches = []; \
-                                            all.forEach(function(e) {{ \
-                                                if (e.getAttribute('data-aileron-hint').startsWith('{hint_buf}')) matches.push(e); \
-                                            }}); \
-                                            if (matches.length === 1) {{ matches[0].click(); window.ipc.postMessage(JSON.stringify({{t:'hint-clicked'}})); return; }} \
-                                        }})()"
-                                    )
-                                };
+                                let js = hint_click_js(&hint_buf, new_tab);
                                 let active_id = app_state.wm.active_pane_id();
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                     wry_pane.execute_js(&js);
@@ -304,15 +303,7 @@ impl ApplicationHandler for AileronApp {
                                 app_state.ui.hint_new_tab = false;
                                 app_state.ui.hint_buffer.clear();
                                 app_state.ui.status_message.clear();
-                                let clear_js = r#"
-                                    (function() {
-                                        var style = document.getElementById('__aileron_hints');
-                                        if (style) style.remove();
-                                        document.querySelectorAll('[data-aileron-hint]').forEach(el => {
-                                            el.removeAttribute('data-aileron-hint');
-                                        });
-                                    })();
-                                "#;
+                                let clear_js = clear_hints_js();
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                     wry_pane.execute_js(clear_js);
                                 } else if let Some(pane) = self.offscreen_panes.get_mut(&active_id)
@@ -359,7 +350,6 @@ impl ApplicationHandler for AileronApp {
                         return;
                     }
                     // Track pane count before processing key.
-                    // Only construct HashSets if pane count actually changed.
                     let pane_count_before = app_state.wm.leaf_count();
 
                     app_state.process_key_event(aileron_event);
@@ -371,8 +361,6 @@ impl ApplicationHandler for AileronApp {
                         if pane_count_before == pane_count_after {
                             (Vec::new(), Vec::new())
                         } else {
-                            let pane_ids_before: std::collections::HashSet<uuid::Uuid> =
-                                app_state.wm.panes_ref().iter().map(|(id, _)| *id).collect();
                             let pane_ids_after: std::collections::HashSet<uuid::Uuid> =
                                 app_state.wm.panes_ref().iter().map(|(id, _)| *id).collect();
                             (
@@ -430,11 +418,22 @@ impl ApplicationHandler for AileronApp {
                     }
 
                     // Handle Insert mode: focus the wry webview (native mode only)
-                    if is_insert_mode
-                        && !self.config.is_offscreen()
-                        && let Some(wry_pane) = self.wry_panes.get(&active_pane_id)
-                    {
-                        wry_pane.focus();
+                    // Track mode changes to avoid spamming focus calls every frame.
+                    if !self.config.is_offscreen() {
+                        let was_insert = self.webview_has_focus;
+                        if is_insert_mode && !was_insert {
+                            if let Some(wry_pane) = self.wry_panes.get(&active_pane_id) {
+                                aileron::servo::wry_engine::set_webview_focus_allowed(true);
+                                wry_pane.focus();
+                                self.webview_has_focus = true;
+                            }
+                        } else if !is_insert_mode && was_insert {
+                            aileron::servo::wry_engine::set_webview_focus_allowed(false);
+                            if let Some(window) = &self.window {
+                                window.focus_window();
+                            }
+                            self.webview_has_focus = false;
+                        }
                     }
 
                     // Offscreen mode: forward keyboard to webview via JS or native terminal.
@@ -618,25 +617,19 @@ impl ApplicationHandler for AileronApp {
                     if self.terminal_manager.is_terminal(&active_id) {
                         let terminal_info = (|| {
                             let ws = self.egui_winit.as_ref()?;
-                            let ctx = ws.egui_ctx();
-                            let pos = ctx.pointer_latest_pos()?;
+                            let pos = ws.egui_ctx().pointer_latest_pos()?;
                             let panes = app_state.wm.panes_ref();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            let top_offset = STATUS_BAR_HEIGHT as f32;
-                            let sidebar_offset = if app_state.config.tab_layout == "sidebar"
-                                && !app_state.config.tab_sidebar_right
-                            {
-                                app_state.config.tab_sidebar_width
-                            } else {
-                                0.0
-                            };
-                            let local_x = pos.x - rect.x as f32 - sidebar_offset;
-                            let local_y = pos.y - rect.y as f32 - top_offset;
-                            if local_x >= 0.0 && local_y >= 0.0 {
-                                Some((local_x, local_y))
-                            } else {
-                                None
-                            }
+                            screen_to_pane_local(
+                                pos,
+                                rect,
+                                app_state.config.tab_sidebar_right,
+                                app_state.config.tab_layout == "sidebar",
+                                app_state.config.tab_sidebar_width as f64,
+                                f64::MAX,
+                                f64::MAX,
+                            )
+                            .map(|(x, y)| (x as f32, y as f32))
                         })();
 
                         if let Some((local_x, local_y)) = terminal_info {
@@ -699,42 +692,32 @@ impl ApplicationHandler for AileronApp {
                     if !is_terminal {
                         let forward_info = (|| {
                             let ws = self.egui_winit.as_ref()?;
-                            let ctx = ws.egui_ctx();
-                            let pos = ctx.pointer_latest_pos()?;
+                            let pos = ws.egui_ctx().pointer_latest_pos()?;
                             let panes = app_state.wm.panes_ref();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
                             let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
-                            let top_offset = STATUS_BAR_HEIGHT as f32;
-                            let sidebar_offset = if app_state.config.tab_layout == "sidebar"
-                                && !app_state.config.tab_sidebar_right
-                            {
-                                app_state.config.tab_sidebar_width
-                            } else {
-                                0.0
+                            let local = screen_to_pane_local(
+                                pos,
+                                rect,
+                                app_state.config.tab_sidebar_right,
+                                app_state.config.tab_layout == "sidebar",
+                                app_state.config.tab_sidebar_width as f64,
+                                pw as f64,
+                                ph as f64,
+                            )?;
+                            let event_type = match state {
+                                winit::event::ElementState::Pressed => "mousedown",
+                                winit::event::ElementState::Released => "mouseup",
                             };
-                            let local_x = pos.x - rect.x as f32 - sidebar_offset;
-                            let local_y = pos.y - rect.y as f32 - top_offset;
-                            if local_x >= 0.0
-                                && local_y >= 0.0
-                                && local_x < pw as f32
-                                && local_y < ph as f32
-                            {
-                                let event_type = match state {
-                                    winit::event::ElementState::Pressed => "mousedown",
-                                    winit::event::ElementState::Released => "mouseup",
-                                };
-                                let btn = match button {
-                                    winit::event::MouseButton::Left => "0",
-                                    winit::event::MouseButton::Middle => "1",
-                                    winit::event::MouseButton::Right => "2",
-                                    winit::event::MouseButton::Back => "3",
-                                    winit::event::MouseButton::Forward => "4",
-                                    _ => "0",
-                                };
-                                Some((event_type, local_x as f64, local_y as f64, btn))
-                            } else {
-                                None
-                            }
+                            let btn = match button {
+                                winit::event::MouseButton::Left => "0",
+                                winit::event::MouseButton::Middle => "1",
+                                winit::event::MouseButton::Right => "2",
+                                winit::event::MouseButton::Back => "3",
+                                winit::event::MouseButton::Forward => "4",
+                                _ => "0",
+                            };
+                            Some((event_type, local.0, local.1, btn))
                         })();
 
                         if let Some((event_type, local_x, local_y, btn)) = forward_info {
@@ -797,21 +780,16 @@ impl ApplicationHandler for AileronApp {
                         let terminal_info = (|| {
                             let panes = app_state.wm.panes_ref();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
-                            let top_offset = STATUS_BAR_HEIGHT as f32;
-                            let sidebar_offset = if app_state.config.tab_layout == "sidebar"
-                                && !app_state.config.tab_sidebar_right
-                            {
-                                app_state.config.tab_sidebar_width
-                            } else {
-                                0.0
-                            };
-                            let local_x = logical_pos.x - rect.x as f32 - sidebar_offset;
-                            let local_y = logical_pos.y - rect.y as f32 - top_offset;
-                            if local_x >= 0.0 && local_y >= 0.0 {
-                                Some((local_x, local_y))
-                            } else {
-                                None
-                            }
+                            screen_to_pane_local(
+                                logical_pos,
+                                rect,
+                                app_state.config.tab_sidebar_right,
+                                app_state.config.tab_layout == "sidebar",
+                                app_state.config.tab_sidebar_width as f64,
+                                f64::MAX,
+                                f64::MAX,
+                            )
+                            .map(|(x, y)| (x as f32, y as f32))
                         })();
 
                         if let Some((local_x, local_y)) = terminal_info {
@@ -842,25 +820,15 @@ impl ApplicationHandler for AileronApp {
                             let panes = app_state.wm.panes_ref();
                             let (_, rect) = panes.iter().find(|(id, _)| *id == active_id)?;
                             let (pw, ph) = self.offscreen_panes.get(&active_id)?.dimensions();
-                            let top_offset = STATUS_BAR_HEIGHT as f32;
-                            let sidebar_offset = if app_state.config.tab_layout == "sidebar"
-                                && !app_state.config.tab_sidebar_right
-                            {
-                                app_state.config.tab_sidebar_width
-                            } else {
-                                0.0
-                            };
-                            let local_x = logical_pos.x - rect.x as f32 - sidebar_offset;
-                            let local_y = logical_pos.y - rect.y as f32 - top_offset;
-                            if local_x >= 0.0
-                                && local_y >= 0.0
-                                && local_x < pw as f32
-                                && local_y < ph as f32
-                            {
-                                Some((local_x as f64, local_y as f64))
-                            } else {
-                                None
-                            }
+                            screen_to_pane_local(
+                                logical_pos,
+                                rect,
+                                app_state.config.tab_sidebar_right,
+                                app_state.config.tab_layout == "sidebar",
+                                app_state.config.tab_sidebar_width as f64,
+                                pw as f64,
+                                ph as f64,
+                            )
                         })();
 
                         if let Some((local_x, local_y)) = forward_info
@@ -1295,6 +1263,10 @@ impl ApplicationHandler for AileronApp {
                     format!("window.scrollTo(0, document.documentElement.scrollHeight * {frac})");
                 pane.execute_js(&js);
                 pane.mark_dirty();
+            } else if let Some(wry_pane) = self.wry_panes.get_mut(&active_id) {
+                let js =
+                    format!("window.scrollTo(0, document.documentElement.scrollHeight * {frac})");
+                wry_pane.execute_js(&js);
             }
         }
 
@@ -1368,12 +1340,14 @@ impl ApplicationHandler for AileronApp {
         // Request redraw if:
         // 1. egui explicitly requested a repaint (UI interaction), OR
         // 2. A webview texture was updated (new frame from offscreen webview), OR
-        // 3. We have offscreen panes (continuous repaint for async web content)
+        // 3. We have offscreen panes (continuous repaint for async web content), OR
+        // 4. We have native wry panes (continuous repaint for egui event processing)
         if let Some(winit_state) = &self.egui_winit {
             let egui_ctx = winit_state.egui_ctx();
             let needs_repaint = egui_ctx.has_requested_repaint()
                 || textures_updated
-                || !self.offscreen_panes.is_empty();
+                || !self.offscreen_panes.is_empty()
+                || !self.wry_panes.is_empty();
             if needs_repaint && let Some(window) = &self.window {
                 window.request_redraw();
             }
