@@ -5,7 +5,7 @@
 | Metric | Value |
 |--------|-------|
 | Version | 0.21.0 |
-| Tests | 1130 lib, 253 integration (13 suites), 4 doc = 1387 total |
+| Tests | 1151 lib, 253 integration (13 suites), 4 doc = 1408 total |
 | Clippy | Zero warnings (all-targets, -D warnings) |
 | Formatting | Zero issues (cargo fmt) |
 | Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck -- SAFETY commented) |
@@ -37,7 +37,7 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | P1-01 | Pre-allocate frame capture buffer (eliminate ~8MB/frame alloc in render.rs) | 2h | Done |
 | P1-02 | Refactor tab display cache in panels.rs (eliminate 3-4 String clones per tab per frame) | 3h | Done |
 | P1-03 | Change `panes()` to return iterator instead of cloned Vec (wm/tree.rs) | 2h | Done |
-| P1-04 | Texture pooling for multi-pane scenarios (avoid per-frame texture creation) | 4h | Pending |
+| P1-04 | Texture pooling for multi-pane scenarios (avoid per-frame texture creation) | 4h | Done |
 | P1-05 | Pre-lowercase blocked_domains into HashSet at construction (navigation handler O(n)->O(1)) | 3h | Done |
 | P1-06 | Wrap https_safe_list in Arc<HashSet> to avoid cloning ~1000 entries per pane creation | 2h | Done |
 | P1-07 | Wrap blocked_domains in Arc<HashSet> to avoid Vec<String> clone per pane creation | 2h | Done |
@@ -50,13 +50,13 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | P2-01 | Add frame-time percentile tracking to profiling module | 3h | Done |
 | P2-02 | Create startup latency benchmark (cold start to first paint) | 2h | Pending |
 | P2-03 | Expand frame_bench.rs with multi-pane render benchmarks | 3h | Done |
-| P2-04 | Implement tab-unload LRU with actual RSS memory measurement | 4h | Pending |
+| P2-04 | Implement tab-unload LRU with actual RSS memory measurement | 4h | Done |
 
 ### Priority 3: Build and CI
 
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
-| P3-01 | Profile compile times with `cargo build --timings`, optimize split | 2h | Pending |
+| P3-01 | Profile compile times with `cargo build --timings`, optimize split | 2h | Done |
 | P3-02 | Evaluate cranelift codegen backend for faster debug builds | 2h | Pending |
 | P3-03 | Store benchmark baselines in CI, fail on >10% regression | 4h | Done |
 | P3-04 | Feature gate `terminal` module behind `terminal` feature (reduce cold compile) | 3h | Done |
@@ -135,7 +135,7 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | E1-04 | Implement `alarms` API | 4h | Done |
 | E1-05 | Implement `contextMenus` API | 6h | Done |
 | E1-06 | Background script JS runtime (quick-js or v8 isolate) | 16h | Done |
-| E1-07 | Port messaging between background and content scripts | 8h | Pending |
+| E1-07 | Port messaging between background and content scripts | 8h | Done |
 
 ### Blocked
 
@@ -162,21 +162,21 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
-| S1-01 | Implement WebDAV transport (PUT/GET/DELETE/PROPFIND via reqwest) | 12h | Pending |
-| S1-02 | WebDAV authentication (HTTP Basic, Bearer) | 4h | Pending |
-| S1-03 | WebDAV retry with exponential backoff | 3h | Pending |
-| S1-04 | Sync execution loop (manifest -> delta -> upload -> download -> merge) | 8h | Pending |
-| S1-05 | CRDT merge for bookmarks (last-write-wins + operational transform) | 8h | Pending |
-| S1-06 | CRDT merge for history (union with dedup) | 4h | Pending |
-| S1-07 | Sync status UI (`:sync-status`, status bar indicator) | 4h | Pending |
-| S1-08 | Conflict UI (`:sync-conflicts` panel) | 6h | Pending |
+| S1-01 | Implement WebDAV transport (PUT/GET/DELETE/PROPFIND via reqwest) | 12h | Done |
+| S1-02 | WebDAV authentication (HTTP Basic, Bearer) | 4h | Done |
+| S1-03 | WebDAV retry with exponential backoff | 3h | Done |
+| S1-04 | Sync execution loop (manifest -> delta -> upload -> download -> merge) | 8h | Done |
+| S1-05 | CRDT merge for bookmarks (last-write-wins + operational transform) | 8h | Done |
+| S1-06 | CRDT merge for history (union with dedup) | 4h | Done |
+| S1-07 | Sync status UI (`:sync-status`, status bar indicator) | 4h | Done |
+| S1-08 | Conflict UI (`:sync-conflicts` panel) | 6h | Done |
 
 ### Priority 2: Privacy
 
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
-| P1-01 | Fingerprint protection (canvas/WebGL/audio context override) | 8h | Pending |
-| P1-02 | Container/isolated tabs (per-pane cookie/storage partition) | 12h | Pending |
+| P1-01 | Fingerprint protection (canvas/WebGL/audio context override) | 8h | Done |
+| P1-02 | Container/isolated tabs (per-pane cookie/storage partition) | 12h | Done |
 | P1-03 | Form autofill expansion (Bitwarden identities, addresses, cards) | 8h | Pending |
 
 ### Success Criteria for v0.24
