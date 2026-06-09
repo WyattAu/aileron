@@ -144,6 +144,99 @@ impl AppState {
             return;
         }
 
+        // U1-06: Keyboard macro recording commands
+        if query == "macro-record" {
+            if self.macro_recorder.is_recording() {
+                let events = self.macro_recorder.stop_recording();
+                let count = events.len();
+                // Store the last recording temporarily for saving
+                self.last_macro_events = Some(events);
+                self.ui.status_message = format!(
+                    "Macro recording stopped ({count} events). Use :macro-save <name> to save."
+                );
+            } else {
+                self.macro_recorder.start_recording();
+                self.ui.status_message = "Macro recording started".into();
+            }
+            return;
+        }
+
+        if let Some(name) = query.strip_prefix("macro-save ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.ui.status_message = "Usage: :macro-save <name>".into();
+                return;
+            }
+            if let Some(events) = self.last_macro_events.take() {
+                let count = events.len();
+                self.macro_recorder.save_macro(name, events);
+                // Persist to disk
+                if let Err(e) = self.save_macros_to_disk() {
+                    tracing::warn!("Failed to save macros to disk: {}", e);
+                }
+                self.ui.status_message = format!("Macro saved: {name} ({count} events)");
+            } else {
+                self.ui.status_message =
+                    "No recorded macro to save. Use :macro-record first.".into();
+            }
+            return;
+        }
+
+        if let Some(name) = query.strip_prefix("macro-play ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.ui.status_message = "Usage: :macro-play <name>".into();
+                return;
+            }
+            if let Some(saved) = self.macro_recorder.get_macro(name).cloned() {
+                let count = saved.events.len();
+                self.macro_player.start_playback(saved.events);
+                self.ui.status_message = format!("Playing macro: {name} ({count} events)");
+            } else {
+                self.ui.status_message = format!("Macro not found: {name}");
+            }
+            return;
+        }
+
+        if query == "macro-list" {
+            let macros = self.macro_recorder.list_macros();
+            if macros.is_empty() {
+                self.ui.status_message = "No saved macros.".into();
+            } else {
+                self.ui.status_message = format!("Macros: {}", macros.join(", "));
+            }
+            return;
+        }
+
+        // D1-04: Auto-update check commands
+        if query == "update-check" {
+            self.update_checker.check_for_updates();
+            self.ui.status_message = "Checking for updates...".into();
+            return;
+        }
+
+        if query == "update-show" {
+            self.ui.status_message = self.update_checker.status_message();
+            return;
+        }
+
+        if let Some(name) = query.strip_prefix("macro-delete ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.ui.status_message = "Usage: :macro-delete <name>".into();
+                return;
+            }
+            if self.macro_recorder.delete_macro(name) {
+                if let Err(e) = self.save_macros_to_disk() {
+                    tracing::warn!("Failed to save macros to disk: {}", e);
+                }
+                self.ui.status_message = format!("Macro deleted: {name}");
+            } else {
+                self.ui.status_message = format!("Macro not found: {name}");
+            }
+            return;
+        }
+
         if query == "only" {
             self.execute_action(&crate::input::Action::CloseOtherPanes);
             return;
@@ -151,6 +244,38 @@ impl AppState {
 
         if query == "reader" {
             self.execute_action(&crate::input::Action::ToggleReaderMode);
+            return;
+        }
+
+        // U1-07: Reader mode enhancements
+        if let Some(path) = query.strip_prefix("reader-save ") {
+            let path = path.trim();
+            if path.is_empty() {
+                self.ui.status_message = "Usage: :reader-save <path>".into();
+                return;
+            }
+            // Request the page content via JS and save it
+            let js = r#"(function() {
+    var title = document.title || 'Untitled';
+    var article = document.querySelector('article') ||
+                  document.querySelector('[role="main"]') ||
+                  document.querySelector('main') ||
+                  document.body;
+    var text = article ? article.textContent.trim() : document.body.textContent.trim();
+    var wordCount = text.split(/\s+/).length;
+    var readTime = Math.max(1, Math.ceil(wordCount / 200));
+    window.ipc.postMessage(JSON.stringify({
+        t: 'reader-save-content',
+        title: title,
+        content: text,
+        word_count: wordCount,
+        read_time: readTime
+    }));
+    return 'Requesting content...';
+})()"#;
+            self.pending_wry_actions
+                .push_back(WryAction::RunJs(js.to_string()));
+            self.ui.status_message = format!("Saving to: {path}");
             return;
         }
 
@@ -1081,6 +1206,24 @@ impl AppState {
                 "sync-conflicts",
                 "sync-resolve-local",
                 "sync-resolve-remote",
+                // U1-01: Tab-within-pane commands
+                "tab-new-in-pane",
+                "tab-close-in-pane",
+                // U1-03: Tab search
+                "tabs-search",
+                // U1-05: Workspace templates
+                "layout-template-save",
+                "layout-template-load",
+                "layout-template-list",
+                "layout-template-delete",
+                // U1-06: Keyboard macro recording
+                "macro-record",
+                "macro-save",
+                "macro-play",
+                "macro-list",
+                "macro-delete",
+                // U1-07: Reader mode
+                "reader-save",
             ];
             let cmd = query;
             let suggestion = known_commands

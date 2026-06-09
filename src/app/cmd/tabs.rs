@@ -1,7 +1,96 @@
 use super::super::AppState;
+use crate::ui::search::{FuzzySearch, SearchCategory, SearchItem};
 
 #[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
+    // U1-03: Tab search across all open tabs
+    if let Some(search_query) = query.strip_prefix("tabs-search ") {
+        let search_query = search_query.trim();
+        if search_query.is_empty() {
+            state.ui.status_message = "Usage: :tabs-search <query>".into();
+            return Some(());
+        }
+
+        // Collect all open tabs from all panes
+        let mut search = FuzzySearch::new();
+        for (pane_id, _) in state.wm.panes_ref().iter() {
+            if let Some(pane_data) = state.wm.find_pane(*pane_id) {
+                for tab in pane_data.tabs.iter() {
+                    let pane_short = &pane_id.to_string()[..8];
+                    search.upsert(SearchItem {
+                        id: tab.id.to_string(),
+                        label: tab.title.clone(),
+                        description: format!("{} - Pane {}", tab.url, pane_short),
+                        category: SearchCategory::OpenTab,
+                    });
+                }
+            }
+        }
+
+        let results = search.search(search_query, 10);
+        if results.is_empty() {
+            state.ui.status_message = format!("No tabs matching: {search_query}");
+        } else {
+            let mut messages: Vec<String> = results
+                .iter()
+                .take(5)
+                .map(|item| format!("{} ({})", item.label, item.description))
+                .collect();
+            if results.len() > 5 {
+                messages.push(format!("+{} more", results.len() - 5));
+            }
+            state.ui.status_message = messages.join(" │ ");
+        }
+        return Some(());
+    }
+
+    // U1-01: Tab-within-pane commands
+    if query == "tab-new-in-pane" {
+        let active_id = state.wm.active_pane_id();
+        if let Some(root) = state.wm.root_mut() {
+            if let Some(pane) = crate::wm::BspTree::find_pane_mut(root, active_id) {
+                let new_url = url::Url::parse("aileron://new").unwrap();
+                let tab_id = pane.tabs.add(new_url.clone());
+                state
+                    .pending_wry_actions
+                    .push_back(crate::app::WryAction::Navigate(new_url));
+                state.ui.status_message = format!(
+                    "New tab {} in pane {}",
+                    &tab_id.to_string()[..8],
+                    &active_id.to_string()[..8]
+                );
+            } else {
+                state.ui.status_message = "No active pane".into();
+            }
+        }
+        return Some(());
+    }
+
+    if query == "tab-close-in-pane" {
+        let active_id = state.wm.active_pane_id();
+        if let Some(root) = state.wm.root_mut() {
+            if let Some(pane) = crate::wm::BspTree::find_pane_mut(root, active_id) {
+                if pane.tabs.is_single() {
+                    state.ui.status_message =
+                        "Cannot close last tab in pane (use :q to close pane)".into();
+                } else {
+                    let closed_tab = pane.tabs.close_active();
+                    if let Some(tab) = closed_tab {
+                        // Navigate to the new active tab
+                        let new_active_url = pane.url().clone();
+                        state
+                            .pending_wry_actions
+                            .push_back(crate::app::WryAction::Navigate(new_active_url.clone()));
+                        state.ui.status_message = format!("Closed tab: {}", tab.title);
+                    }
+                }
+            } else {
+                state.ui.status_message = "No active pane".into();
+            }
+        }
+        return Some(());
+    }
+
     if query == "tab-restore" {
         if let Some((url, _title)) = state.tabs.closed_tab_stack.pop_back() {
             if let Ok(parsed) = url::Url::parse(&url) {

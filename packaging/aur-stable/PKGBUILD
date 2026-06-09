@@ -1,5 +1,5 @@
 # Maintainer: WyattAu
-pkgname=aileron-git
+pkgname=aileron
 pkgver=0.21.0
 pkgrel=1
 pkgdesc="A keyboard-driven, tiling web environment with an embedded terminal, built in Rust"
@@ -15,32 +15,31 @@ depends=(
   'gcc-libs'
   'glibc'
 )
-makedepends=('cargo' 'git' 'clang' 'pkgconf')
+makedepends=('cargo' 'clang' 'pkgconf')
 provides=('aileron')
-conflicts=('aileron')
-source=("$pkgname::git+https://github.com/WyattAu/aileron.git")
+conflicts=('aileron-git')
+source=("$url/archive/v$pkgver/$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')
 
-pkgver() {
-  cd "$pkgname"
-  # Strip leading 'v' from tag, convert - to .r and . for pkgver format
-  git describe --long --tags 2>/dev/null | sed 's/^v//;s/-/.r/;s/-/./' || \
-    printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+prepare() {
+  cd "$pkgname-$pkgver"
+  cargo fetch --locked --target "$(rustc -vV | grep host | awk '{print $2}')"
 }
 
 build() {
-  cd "$pkgname"
+  cd "$pkgname-$pkgver"
   cargo build --release --locked
 }
 
 check() {
-  cd "$pkgname"
+  cd "$pkgname-$pkgver"
   cargo test --lib -- --test-threads="$(nproc)"
 }
 
 package() {
-  cd "$pkgname"
+  cd "$pkgname-$pkgver"
   install -Dm755 "target/release/aileron" "$pkgdir/usr/bin/aileron"
   install -Dm644 "man/aileron.1" "$pkgdir/usr/share/man/man1/aileron.1"
   install -Dm644 "packaging/linux/com.github.WyattAu.aileron.desktop" "$pkgdir/usr/share/applications/com.github.WyattAu.aileron.desktop"
+  install -Dm644 "resources/aileron.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/aileron.svg"
 }

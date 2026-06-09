@@ -290,6 +290,18 @@ pub struct AppState {
     /// Command palette state.
     pub palette: CommandPalette,
 
+    /// U1-06: Keyboard macro recorder.
+    pub macro_recorder: crate::input::macro_recorder::MacroRecorder,
+
+    /// U1-06: Keyboard macro player.
+    pub macro_player: crate::input::macro_recorder::MacroPlayer,
+
+    /// U1-06: Last recorded macro events (pending save).
+    pub last_macro_events: Option<Vec<crate::input::macro_recorder::RecordedEvent>>,
+
+    /// D1-04: Update checker state.
+    pub update_checker: crate::update_check::UpdateChecker,
+
     /// Lua scripting engine (for init.lua and custom keybindings).
     #[cfg(feature = "lua")]
     lua_engine: Option<LuaEngine>,
@@ -572,6 +584,10 @@ impl AppState {
             db,
             engines,
             palette,
+            macro_recorder: crate::input::macro_recorder::MacroRecorder::new(),
+            macro_player: crate::input::macro_recorder::MacroPlayer::new(),
+            last_macro_events: None,
+            update_checker: crate::update_check::UpdateChecker::new(),
             #[cfg(feature = "lua")]
             lua_engine,
             config,
@@ -871,6 +887,41 @@ impl AppState {
         directories::ProjectDirs::from("com", "aileron", "Aileron")
             .map(|dirs| dirs.data_dir().join("extensions"))
             .unwrap_or_else(|| PathBuf::from("./extensions"))
+    }
+
+    /// U1-06: Save macros to disk as JSON.
+    pub fn save_macros_to_disk(&self) -> Result<()> {
+        let macros_dir = directories::ProjectDirs::from("com", "aileron", "Aileron")
+            .map(|dirs| dirs.data_dir().join("macros"))
+            .unwrap_or_else(|| PathBuf::from("./macros"));
+        std::fs::create_dir_all(&macros_dir)?;
+
+        let macros: Vec<&crate::input::macro_recorder::SavedMacro> = self
+            .macro_recorder
+            .list_macros()
+            .iter()
+            .filter_map(|name| self.macro_recorder.get_macro(name))
+            .collect();
+
+        let json = serde_json::to_string_pretty(&macros)?;
+        std::fs::write(macros_dir.join("macros.json"), json)?;
+        Ok(())
+    }
+
+    /// U1-06: Load macros from disk.
+    pub fn load_macros_from_disk(&mut self) {
+        let macros_path = directories::ProjectDirs::from("com", "aileron", "Aileron")
+            .map(|dirs| dirs.data_dir().join("macros").join("macros.json"))
+            .unwrap_or_else(|| PathBuf::from("./macros/macros.json"));
+
+        if let Ok(json) = std::fs::read_to_string(&macros_path)
+            && let Ok(macros) =
+                serde_json::from_str::<Vec<crate::input::macro_recorder::SavedMacro>>(&json)
+        {
+            for saved in macros {
+                self.macro_recorder.save_macro(&saved.name, saved.events);
+            }
+        }
     }
 }
 

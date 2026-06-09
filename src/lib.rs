@@ -29,6 +29,7 @@ pub mod sync;
 #[cfg(feature = "terminal")]
 pub mod terminal;
 pub mod ui;
+pub mod update_check;
 pub mod wm;
 pub mod workspace_restore;
 pub mod wry_actions;

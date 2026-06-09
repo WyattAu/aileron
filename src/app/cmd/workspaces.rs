@@ -1,5 +1,80 @@
 use super::super::AppState;
 
+/// U1-05: Workspace templates - save and load named layout templates
+pub fn handle_layout_template_commands(state: &mut AppState, query: &str) -> Option<()> {
+    if let Some(name) = query.strip_prefix("layout-template-save ") {
+        let name = name.trim();
+        if name.is_empty() {
+            state.ui.status_message = "Usage: :layout-template-save <name>".into();
+            return Some(());
+        }
+        // Templates are stored in the same workspace table with a "template:" prefix
+        let template_name = format!("template:{name}");
+        state
+            .pending_wry_actions
+            .push_back(crate::app::WryAction::SaveWorkspace {
+                name: template_name,
+                pane_urls: std::collections::HashMap::new(),
+            });
+        state.ui.status_message = format!("Saving layout template: {name}...");
+        return Some(());
+    }
+
+    if let Some(name) = query.strip_prefix("layout-template-load ") {
+        let name = name.trim();
+        if name.is_empty() {
+            state.ui.status_message = "Usage: :layout-template-load <name>".into();
+            return Some(());
+        }
+        let template_name = format!("template:{name}");
+        state.pending_workspace_restore = Some(template_name);
+        state.ui.status_message = format!("Loading layout template: {name}...");
+        return Some(());
+    }
+
+    if query == "layout-template-list" {
+        let workspaces = list_workspaces(state);
+        let templates: Vec<&str> = workspaces
+            .iter()
+            .filter(|w| w.name.starts_with("template:"))
+            .map(|w| w.name.strip_prefix("template:").unwrap_or(&w.name))
+            .collect();
+        if templates.is_empty() {
+            state.ui.status_message = "No saved layout templates.".into();
+        } else {
+            state.ui.status_message = format!("Templates: {}", templates.join(", "));
+        }
+        return Some(());
+    }
+
+    if let Some(name) = query.strip_prefix("layout-template-delete ") {
+        let name = name.trim();
+        if name.is_empty() {
+            state.ui.status_message = "Usage: :layout-template-delete <name>".into();
+            return Some(());
+        }
+        let template_name = format!("template:{name}");
+        if let Some(db) = state.db.as_ref() {
+            match crate::db::workspaces::delete_workspace(db, &template_name) {
+                Ok(true) => {
+                    state.ui.status_message = format!("Template deleted: {name}");
+                }
+                Ok(false) => {
+                    state.ui.status_message = format!("Template not found: {name}");
+                }
+                Err(e) => {
+                    state.ui.status_message = format!("Delete failed: {e}");
+                }
+            }
+        } else {
+            state.ui.status_message = "No database connection".into();
+        }
+        return Some(());
+    }
+
+    None
+}
+
 pub fn save_workspace_with_urls(
     state: &AppState,
     name: &str,
@@ -56,6 +131,11 @@ pub fn swap_panes(state: &mut AppState) {
 
 #[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()> {
+    // U1-05: Handle layout template commands first
+    if handle_layout_template_commands(state, query).is_some() {
+        return Some(());
+    }
+
     if let Some(name) = query.strip_prefix("ws-save ") {
         let name = name.trim();
         if name.is_empty() {

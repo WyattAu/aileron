@@ -1,6 +1,6 @@
 app-id: com.github.WyattAu.aileron
 runtime: org.freedesktop.Platform
-runtime-version: '23.08'
+runtime-version: '24.08'
 sdk: org.freedesktop.Sdk
 command: aileron
 finish-args:
@@ -10,6 +10,9 @@ finish-args:
   - --socket=fallback-x11
   - --socket=wayland
   - --filesystem=home
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.Notifications
+  - --env=WINIT_UNIX_BACKEND=wayland,x11
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
   - org.freedesktop.Sdk.Extension.llvm18
@@ -24,6 +27,9 @@ modules:
     build-commands:
       - cargo --offline build --release --locked
       - install -Dm755 target/release/aileron /app/bin/aileron
+      - install -Dm644 packaging/linux/com.github.WyattAu.aileron.desktop /app/share/applications/com.github.WyattAu.aileron.desktop
+      - install -Dm644 resources/aileron.svg /app/share/icons/hicolor/scalable/apps/aileron.svg
+      - install -Dm644 man/aileron.1 /app/share/man/man1/aileron.1
     sources:
       - type: dir
         path: .

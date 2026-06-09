@@ -1,5 +1,69 @@
 //! Application bootstrap and diagnostics utilities.
 
+use std::path::PathBuf;
+
+/// Command-line arguments parsed from std::env::args().
+pub struct CliArgs {
+    /// Enable debug logging (sets RUST_LOG=debug).
+    pub debug: bool,
+    /// Custom profiling output directory.
+    pub profile_dir: Option<PathBuf>,
+    /// Dump current config and exit.
+    pub dump_config: bool,
+}
+
+impl CliArgs {
+    /// Parse command-line arguments from std::env::args().
+    pub fn parse() -> Self {
+        let args: Vec<String> = std::env::args().collect();
+        let mut debug = false;
+        let mut profile_dir = None;
+        let mut dump_config = false;
+
+        let mut i = 1;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--debug" | "-d" => {
+                    debug = true;
+                }
+                "--profile" | "-p" => {
+                    i += 1;
+                    if let Some(dir) = args.get(i) {
+                        profile_dir = Some(PathBuf::from(dir));
+                    }
+                }
+                "--dump-config" => {
+                    dump_config = true;
+                }
+                "--help" | "-h" => {
+                    eprintln!("Usage: aileron [OPTIONS]");
+                    eprintln!();
+                    eprintln!("Options:");
+                    eprintln!("  --debug, -d         Enable debug logging");
+                    eprintln!("  --profile <dir>     Set profiling output directory");
+                    eprintln!("  --dump-config       Print current config and exit");
+                    eprintln!("  --help, -h          Show this help message");
+                    std::process::exit(0);
+                }
+                "--version" | "-V" => {
+                    eprintln!("aileron {}", env!("CARGO_PKG_VERSION"));
+                    std::process::exit(0);
+                }
+                _ => {
+                    // Ignore unknown arguments
+                }
+            }
+            i += 1;
+        }
+
+        Self {
+            debug,
+            profile_dir,
+            dump_config,
+        }
+    }
+}
+
 /// Install a panic hook that writes detailed crash info to a file.
 pub fn install_panic_hook() {
     let default_hook = std::panic::take_hook();
@@ -156,11 +220,29 @@ pub fn run() -> anyhow::Result<()> {
 
     use super::event_handlers::is_nvidia_gpu;
 
+    // D1-05: Parse CLI arguments
+    let cli_args = CliArgs::parse();
+
     // Install panic hook BEFORE anything else — writes crash report to file
     install_panic_hook();
 
     // Initialize debug capturer (no-op unless AILERON_DEBUG=1)
     aileron::debug_capturer::init();
+
+    // D1-05: If --dump-config, print config and exit
+    if cli_args.dump_config {
+        let config = Config::load();
+        match serde_json::to_string_pretty(&config) {
+            Ok(json) => {
+                println!("{json}");
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("Failed to serialize config: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
 
     // Initialize tracing to both stderr AND a log file
     let log_dir = directories::ProjectDirs::from("com", "aileron", "Aileron")
@@ -177,11 +259,20 @@ pub fn run() -> anyhow::Result<()> {
     }
 
     // Build subscriber writing to both stderr AND a log file
-    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        "aileron=debug,wgpu=warn,wry=debug,webkit2gtk=debug,gdk=debug,gtk=debug,egui=info"
-            .parse()
-            .expect("hardcoded fallback env filter is valid")
-    });
+    // D1-05: Use debug level if --debug flag is set
+    let env_filter = if cli_args.debug {
+        tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            "aileron=debug,wgpu=debug,wry=debug,webkit2gtk=debug,gdk=debug,gtk=debug,egui=debug"
+                .parse()
+                .expect("hardcoded fallback env filter is valid")
+        })
+    } else {
+        tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            "aileron=debug,wgpu=warn,wry=debug,webkit2gtk=debug,gdk=debug,gtk=debug,egui=info"
+                .parse()
+                .expect("hardcoded fallback env filter is valid")
+        })
+    };
 
     if let Some(file) = log_file {
         use std::sync::Arc;
@@ -214,6 +305,12 @@ pub fn run() -> anyhow::Result<()> {
     info!("Keyboard-Driven Web Environment");
     info!("OS: {} {}", std::env::consts::OS, std::env::consts::ARCH);
     info!("PID: {}", std::process::id());
+
+    // D1-05: Log profiling directory if set
+    if let Some(ref profile_dir) = cli_args.profile_dir {
+        info!("Profiling output directory: {}", profile_dir.display());
+        let _ = std::fs::create_dir_all(profile_dir);
+    }
 
     // Log environment info
     log_environment();

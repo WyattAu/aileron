@@ -1,6 +1,6 @@
 pkgbase = aileron-git
 	pkgdesc = A keyboard-driven, tiling web environment with an embedded terminal, built in Rust
-	pkgver = 0.20.0
+	pkgver = 0.21.0
 	pkgrel = 1
 	url = https://github.com/WyattAu/aileron
 	arch = x86_64

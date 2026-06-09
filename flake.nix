@@ -51,7 +51,7 @@
       # The aileron package: built with a wrapper that sets runtime env vars
       aileron-package = pkgs.rustPlatform.buildRustPackage {
         pname = "aileron";
-        version = "0.20.0";
+        version = "0.21.0";
 
         src = ./.;
 
