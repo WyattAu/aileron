@@ -7,7 +7,7 @@ path = "main.rs"
 
 [package]
 name = "aileron"
-version = "0.21.0"
+version = "1.0.0"
 edition = "2024"
 description = "A blazingly fast, keyboard-driven web environment for developers"
 license = "Apache-2.0"

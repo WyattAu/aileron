@@ -2,6 +2,61 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## v1.0.0 (2026-06-09) -- First Stable Release
+
+### Summary
+Aileron 1.0.0 is the first stable release of the keyboard-driven tiling web environment. This release represents the culmination of all development phases (A through Z, v5-v7 tracks) with 1178 lib tests, 253 integration tests, and 1435 total tests.
+
+### Major Features Implemented
+- **Extension API completion** — 9 WebExtensions API traits (tabs, storage, runtime, scripting, webRequest, alarms, cookies, contextMenus, declarativeNetRequest, permissions)
+- **Sync protocol** — WebDAV transport with E2EE encryption (Age), content-defined chunking (fastcdc), delta detection, real-time filesystem watcher
+- **MCP integration** — Built-in Model Context Protocol server with stdio transport for AI assistant browser control
+- **Lua scripting** — init.lua with custom keybindings, commands, URL redirect rules, content scripts with @match/@match-regexp patterns
+- **Native terminal** — alacritty_terminal + portable_pty, ~2-5MB/pane, SSH quick-connect, scrollback search
+- **Password manager** — Bitwarden integration via system keyring, OAuth detection, multi-step login flows
+
+### Platform Expansion
+- **macOS** — WebKit built-in, full native rendering support
+- **Windows** — WebView2 (Edge) integration, Flatpak parity
+- **Cross-platform traits** — PlatformOps abstraction for Linux/macOS/Windows
+
+### Privacy & Security
+- **Fingerprint protection** — Canvas/WebGL noise injection, AudioContext protection
+- **Container tabs** — Isolated cookie jars for multi-account browsing
+- **HTTPS upgrade** — Auto-upgrade HTTP for known-safe domains
+- **Tracking protection** — Domain blocking, DNT/GPC headers, strict referrer policy
+- **Ad blocking** — EasyList parser with cosmetic CSS rules, $redirect/$important/$badfilter support
+
+### UX Improvements
+- **Drag-drop** — Tab reordering, pane detachment via drag
+- **Session management** — Auto-save/restore, crash recovery
+- **Macros** — Record and replay key sequences
+- **Reader mode** — Article text extraction with clean display
+- **Link hints** — Vimium-style f-key hint following
+- **Workspace persistence** — Save/restore pane layouts with auto-save every 30s
+
+### Distribution
+- **AppImage** — Portable Linux binary distribution
+- **Flatpak** — Sandboxed Linux package
+- **AUR stable** — Arch User Repository stable package
+- **GitHub Actions CI** — Linux test, macOS/Windows check, fmt, clippy
+
+### Performance
+- **Adaptive quality** — Auto-reduces frame rate for background tabs
+- **Lazy initialization** — Background panes created one-per-frame
+- **Frame time profiling** — p50/p95/p99 stats with dropped frame counter
+- **Release profile** — LTO thin + strip + panic=abort + codegen-units=1
+
+### Internationalization
+- **9 languages** — EN, ZH, JA, KO, DE, FR, ES, PT, RU
+- **Runtime switching** — Instant language changes via :language command
+
+### Test Results
+- 1178 lib tests, 253 integration (13 suites), 4 doc tests = 1435 total
+- Zero clippy warnings (--all-targets -D warnings)
+- Zero rustfmt issues
+- Zero critical vulnerabilities (cargo audit)
+
 ## v0.20.0 (2026-05-14) -- Phase 2 Performance: Buffer Reuse & Feature Gates
 
 ### Frame Capture Buffer Reuse

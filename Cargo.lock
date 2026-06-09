@@ -101,7 +101,7 @@ dependencies = [
 
 [[package]]
 name = "aileron"
-version = "0.21.0"
+version = "1.0.0"
 dependencies = [
  "age",
  "aho-corasick",
@@ -157,7 +157,7 @@ dependencies = [
 
 [[package]]
 name = "aileron-chrome"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "aileron-shared",
  "console_error_panic_hook",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "aileron-shared"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",

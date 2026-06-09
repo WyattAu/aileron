@@ -1,0 +1,337 @@
+SPDXVersion: SPDX-2.3
+DataLicense: CC0-1.0
+SPDXID: SPDXRef-DOCUMENT
+DocumentName: Aileron v0.21.0
+DocumentNamespace: https://github.com/WyattAu/aileron
+Creator: Tool: aileron-release-verification
+Created: 2026-06-09T00:00:00Z
+
+PackageName: aileron
+SPDXID: SPDXRef-Package-aileron
+PackageVersion: 0.21.0
+PackageSupplier: Organization: Wyatt Au
+PackageDownloadLocation: https://github.com/WyattAu/aileron
+FilesAnalyzed: false
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: Copyright 2026 Wyatt Au
+
+PackageName: aileron-shared
+SPDXID: SPDXRef-Package-aileron-shared
+PackageVersion: 0.1.0
+PackageDownloadLocation: https://github.com/WyattAu/aileron
+FilesAnalyzed: false
+PackageLicenseDeclared: Apache-2.0
+
+PackageName: aileron-chrome
+SPDXID: SPDXRef-Package-aileron-chrome
+PackageVersion: 0.1.0
+PackageDownloadLocation: https://github.com/WyattAu/aileron
+FilesAnalyzed: false
+PackageLicenseDeclared: Apache-2.0
+
+PackageName: age
+SPDXID: SPDXRef-Package-age
+PackageVersion: 0.11.2
+PackageDownloadLocation: https://crates.io/crates/age
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:age_project:age:0.11.2:*:*:*:*:*:*:*
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: tokio
+SPDXID: SPDXRef-Package-tokio
+PackageVersion: 1.51.1
+PackageDownloadLocation: https://crates.io/crates/tokio
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:tokio_project:tokio:1.51.1:*:*:*:*:*:*:*
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT
+
+PackageName: wry
+SPDXID: SPDXRef-Package-wry
+PackageVersion: 0.55.0
+PackageDownloadLocation: https://crates.io/crates/wry
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: winit
+SPDXID: SPDXRef-Package-winit
+PackageVersion: 0.30.13
+PackageDownloadLocation: https://crates.io/crates/winit
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: leptos
+SPDXID: SPDXRef-Package-leptos
+PackageVersion: 0.9.0-alpha
+PackageDownloadLocation: https://crates.io/crates/leptos
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT
+
+PackageName: mlua
+SPDXID: SPDXRef-Package-mlua
+PackageVersion: 0.10.3
+PackageDownloadLocation: https://crates.io/crates/mlua
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT
+
+PackageName: rusqlite
+SPDXID: SPDXRef-Package-rusqlite
+PackageVersion: 0.32.1
+PackageDownloadLocation: https://crates.io/crates/rusqlite
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT
+
+PackageName: keyring
+SPDXID: SPDXRef-Package-keyring
+PackageVersion: 3.0.0
+PackageDownloadLocation: https://crates.io/crates/keyring
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: alacritty_terminal
+SPDXID: SPDXRef-Package-alacritty_terminal
+PackageVersion: 0.26.0
+PackageDownloadLocation: https://crates.io/crates/alacritty_terminal
+FilesAnalyzed: false
+PackageLicenseDeclared: Apache-2.0
+
+PackageName: rquickjs
+SPDXID: SPDXRef-Package-rquickjs
+PackageVersion: 0.11.0
+PackageDownloadLocation: https://crates.io/crates/rquickjs
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT
+
+PackageName: reqwest
+SPDXID: SPDXRef-Package-reqwest
+PackageVersion: 0.13.0
+PackageDownloadLocation: https://crates.io/crates/reqwest
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: attohttpc
+SPDXID: SPDXRef-Package-attohttpc
+PackageVersion: 0.28.0
+PackageDownloadLocation: https://crates.io/crates/attohttpc
+FilesAnalyzed: false
+PackageLicenseDeclared: Apache-2.0 OR MIT
+
+PackageName: nucleo
+SPDXID: SPDXRef-Package-nucleo
+PackageVersion: 0.5.0
+PackageDownloadLocation: https://crates.io/crates/nucleo
+FilesAnalyzed: false
+PackageLicenseDeclared: Apache-2.0
+
+PackageName: portable-pty
+SPDXID: SPDXRef-Package-portable-pty
+PackageVersion: 0.8.0
+PackageDownloadLocation: https://crates.io/crates/portable-pty
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT
+
+PackageName: fastcdc
+SPDXID: SPDXRef-Package-fastcdc
+PackageVersion: 4.0.0
+PackageDownloadLocation: https://crates.io/crates/fastcdc
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT
+
+PackageName: blake3
+SPDXID: SPDXRef-Package-blake3
+PackageVersion: 1.8.0
+PackageDownloadLocation: https://crates.io/crates/blake3
+FilesAnalyzed: false
+PackageLicenseDeclared: Apache-2.0 OR MIT OR CC0-1.0
+
+PackageName: notify
+SPDXID: SPDXRef-Package-notify
+PackageVersion: 8.2.0
+PackageDownloadLocation: https://crates.io/crates/notify
+FilesAnalyzed: false
+PackageLicenseDeclared: CC0-1.0
+
+PackageName: tokio-tungstenite
+SPDXID: SPDXRef-Package-tokio-tungstenite
+PackageVersion: 0.26.0
+PackageDownloadLocation: https://crates.io/crates/tokio-tungstenite
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT
+
+PackageName: gtk
+SPDXID: SPDXRef-Package-gtk
+PackageVersion: 0.18.0
+PackageDownloadLocation: https://crates.io/crates/gtk
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT
+
+PackageName: webkit2gtk
+SPDXID: SPDXRef-Package-webkit2gtk
+PackageVersion: 2.0.2
+PackageDownloadLocation: https://crates.io/crates/webkit2gtk
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT
+
+PackageName: image
+SPDXID: SPDXRef-Package-image
+PackageVersion: 0.25.0
+PackageDownloadLocation: https://crates.io/crates/image
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: base64
+SPDXID: SPDXRef-Package-base64
+PackageVersion: 0.22.0
+PackageDownloadLocation: https://crates.io/crates/base64
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: serde
+SPDXID: SPDXRef-Package-serde
+PackageVersion: 1.0.219
+PackageDownloadLocation: https://crates.io/crates/serde
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: serde_json
+SPDXID: SPDXRef-Package-serde_json
+PackageVersion: 1.0.140
+PackageDownloadLocation: https://crates.io/crates/serde_json
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: tracing
+SPDXID: SPDXRef-Package-tracing
+PackageVersion: 0.1.44
+PackageDownloadLocation: https://crates.io/crates/tracing
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT
+
+PackageName: regex
+SPDXID: SPDXRef-Package-regex
+PackageVersion: 1.0.0
+PackageDownloadLocation: https://crates.io/crates/regex
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: aho-corasick
+SPDXID: SPDXRef-Package-aho-corasick
+PackageVersion: 1.1.4
+PackageDownloadLocation: https://crates.io/crates/aho-corasick
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: url
+SPDXID: SPDXRef-Package-url
+PackageVersion: 2.5.4
+PackageDownloadLocation: https://crates.io/crates/url
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: zeroize
+SPDXID: SPDXRef-Package-zeroize
+PackageVersion: 1.8.1
+PackageDownloadLocation: https://crates.io/crates/zeroize
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: crossbeam-channel
+SPDXID: SPDXRef-Package-crossbeam-channel
+PackageVersion: 0.5.15
+PackageDownloadLocation: https://crates.io/crates/crossbeam-channel
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: parking_lot
+SPDXID: SPDXRef-Package-parking_lot
+PackageVersion: 0.12.0
+PackageDownloadLocation: https://crates.io/crates/parking_lot
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: chrono
+SPDXID: SPDXRef-Package-chrono
+PackageVersion: 0.4.0
+PackageDownloadLocation: https://crates.io/crates/chrono
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: uuid
+SPDXID: SPDXRef-Package-uuid
+PackageVersion: 1.16.0
+PackageDownloadLocation: https://crates.io/crates/uuid
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: anyhow
+SPDXID: SPDXRef-Package-anyhow
+PackageVersion: 1.0.102
+PackageDownloadLocation: https://crates.io/crates/anyhow
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: thiserror
+SPDXID: SPDXRef-Package-thiserror
+PackageVersion: 2.0.18
+PackageDownloadLocation: https://crates.io/crates/thiserror
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: directories
+SPDXID: SPDXRef-Package-directories
+PackageVersion: 6.0.0
+PackageDownloadLocation: https://crates.io/crates/directories
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: open
+SPDXID: SPDXRef-Package-open
+PackageVersion: 5.3.2
+PackageDownloadLocation: https://crates.io/crates/open
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT
+
+PackageName: futures-util
+SPDXID: SPDXRef-Package-futures-util
+PackageVersion: 0.3.0
+PackageDownloadLocation: https://crates.io/crates/futures-util
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: urlencoding
+SPDXID: SPDXRef-Package-urlencoding
+PackageVersion: 2.0.0
+PackageDownloadLocation: https://crates.io/crates/urlencoding
+PackageLicenseDeclared: MIT
+
+PackageName: smol_str
+SPDXID: SPDXRef-Package-smol_str
+PackageVersion: 0.2.0
+PackageDownloadLocation: https://crates.io/crates/smol_str
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+PackageName: pollster
+SPDXID: SPDXRef-Package-pollster
+PackageVersion: 0.4.0
+PackageDownloadLocation: https://crates.io/crates/pollster
+FilesAnalyzed: false
+PackageLicenseDeclared: Apache-2.0
+
+PackageName: criterion
+SPDXID: SPDXRef-Package-criterion
+PackageVersion: 0.5.0
+PackageDownloadLocation: https://crates.io/crates/criterion
+FilesAnalyzed: false
+PackageLicenseDeclared: Apache-2.0 OR MIT
+
+PackageName: tempfile
+SPDXID: SPDXRef-Package-tempfile
+PackageVersion: 3.19.1
+PackageDownloadLocation: https://crates.io/crates/tempfile
+FilesAnalyzed: false
+PackageLicenseDeclared: MIT OR Apache-2.0
+
+# Total: 715 packages (44 key dependencies listed above)
+# Full dependency list available in Cargo.lock
+# Generated from Cargo.lock at commit HEAD
+# SPDX document format: https://spdx.org/specifications

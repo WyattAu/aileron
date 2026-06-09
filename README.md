@@ -1,6 +1,6 @@
 # Aileron
 
-**v0.21.0** -- 1130 lib tests, 253 integration, 4 doc (1387 total), ~56,900 Rust LOC
+**v1.0.0** -- 1178 lib tests, 253 integration, 4 doc (1435 total), ~56,900 Rust LOC
 
 **The terminal for the web.** A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals. Written in Rust with wry (WebKitGTK) for web rendering and Leptos WASM for the browser chrome overlay.
 
@@ -107,7 +107,7 @@
 - **Linux** (x86_64) — tested on CachyOS (Wayland + NVIDIA), should work on any distro with WebKitGTK 4.1
 - **macOS** (aarch64, x86_64) — WebKit built-in; requires Xcode command line tools
 - **Windows** (x86_64) — WebView2 (Edge); experimental, see `com.github.WyattAu.aileron.yaml` for Flatpak parity
-- **Vulkan-capable GPU** — required by wgpu for egui rendering
+- **Vulkan-capable GPU** — required by wgpu for rendering
 - **Rust toolchain** — `rustc`, `cargo`, `pkg-config`
 
 ## Build
