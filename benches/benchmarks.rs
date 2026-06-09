@@ -17,6 +17,8 @@ criterion_group!(
     bench_keybinding_lookup,
     bench_fuzzy_search_10k,
     bench_adblock_100_domains,
+    bench_chrome_state_building,
+    bench_panes_iterator,
 );
 
 fn bench_bsp_tree_operations(c: &mut Criterion) {
@@ -312,5 +314,126 @@ fn bench_adblock_100_domains(c: &mut Criterion) {
     let url = url::Url::parse("https://safe.example.com/page").unwrap();
     c.bench_function("adblock_check_with_100_blocked", |b| {
         b.iter(|| blocker.should_block(&url, None, None))
+    });
+}
+
+fn bench_chrome_state_building(c: &mut Criterion) {
+    use aileron::chrome_bridge::{ChromeSnapshotInput, build_chrome_state};
+    use aileron::input::Mode;
+
+    c.bench_function("chrome_state_build_4panes", |b| {
+        b.iter_batched(
+            || {
+                // Setup: create fresh pane info each iteration.
+                let panes: Vec<aileron_shared::PaneInfo> = (0..4)
+                    .map(|i| aileron_shared::PaneInfo {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        url: format!("https://example{i}.com/page{i}"),
+                        title: format!("Example Page {i} - Site Name"),
+                        active: i == 0,
+                        loading: false,
+                        zoom: 1.0,
+                    })
+                    .collect();
+                panes
+            },
+            |panes| {
+                let snapshot = ChromeSnapshotInput {
+                    mode: Mode::Normal,
+                    active_pane_id: uuid::Uuid::new_v4(),
+                    pane_count: 4,
+                    panes,
+                    status_message: "Ready",
+                    find_bar_open: false,
+                    find_query: "",
+                    command_palette_open: false,
+                    palette_results: vec![],
+                    palette_selected: 0,
+                    url_bar_focused: false,
+                    tab_layout: "sidebar",
+                    tab_sidebar_width: 180.0,
+                    tab_sidebar_right: false,
+                    version: "v0.21.0 (test)".into(),
+                };
+                let _ = build_chrome_state(snapshot);
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+
+    // Benchmark JSON serialization + JS escape (the full pipeline).
+    c.bench_function("chrome_state_json_escape_4panes", |b| {
+        b.iter_batched(
+            || {
+                let panes: Vec<aileron_shared::PaneInfo> = (0..4)
+                    .map(|i| aileron_shared::PaneInfo {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        url: format!("https://example{i}.com/page{i}"),
+                        title: format!("Example Page {i} - Site Name"),
+                        active: i == 0,
+                        loading: false,
+                        zoom: 1.0,
+                    })
+                    .collect();
+                panes
+            },
+            |panes| {
+                let snapshot = ChromeSnapshotInput {
+                    mode: Mode::Normal,
+                    active_pane_id: uuid::Uuid::new_v4(),
+                    pane_count: 4,
+                    panes,
+                    status_message: "Ready",
+                    find_bar_open: false,
+                    find_query: "",
+                    command_palette_open: false,
+                    palette_results: vec![],
+                    palette_selected: 0,
+                    url_bar_focused: false,
+                    tab_layout: "sidebar",
+                    tab_sidebar_width: 180.0,
+                    tab_sidebar_right: false,
+                    version: "v0.21.0 (test)".into(),
+                };
+                let state = build_chrome_state(snapshot);
+                if let Ok(json) = serde_json::to_string(&state) {
+                    let escaped = json.replace('\\', "\\\\").replace('\'', "\\'");
+                    let _ = format!("window.updateChromeState('{escaped}')");
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_panes_iterator(c: &mut Criterion) {
+    use aileron::wm::{BspTree, Rect, SplitDirection};
+
+    let viewport = Rect::new(0.0, 0.0, 1920.0, 1080.0);
+    let initial_url = url::Url::parse("https://example.com").unwrap();
+
+    // Create a 4-pane grid.
+    let mut tree = BspTree::new(viewport, initial_url);
+    let id1 = tree.active_pane_id();
+    tree.split(id1, SplitDirection::Vertical, 0.5).unwrap();
+    let id2 = tree.active_pane_id();
+    tree.split(id2, SplitDirection::Horizontal, 0.5).unwrap();
+    // Navigate to first pane and split again.
+    tree.set_active_pane(id1);
+    tree.split(id1, SplitDirection::Horizontal, 0.5).unwrap();
+
+    c.bench_function("panes_clone_4panes", |b| {
+        b.iter(|| tree.panes());
+    });
+
+    c.bench_function("panes_ref_4panes", |b| {
+        b.iter(|| {
+            let r = tree.panes_ref();
+            let _ = r.len();
+        });
+    });
+
+    c.bench_function("iter_panes_4panes", |b| {
+        b.iter(|| for _ in tree.iter_panes() {});
     });
 }
