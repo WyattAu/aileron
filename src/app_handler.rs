@@ -1096,8 +1096,14 @@ impl ApplicationHandler for AileronApp {
         #[cfg(target_os = "linux")]
         frame_tasks::pump_gtk_loop();
 
-        // Architecture B: capture dirty offscreen frames and update textures.
-        let textures_updated: bool = false;
+        // Architecture B: capture dirty offscreen frames.
+        // NOTE: The egui rendering backend was removed when chrome was replaced
+        // with Leptos WASM. Frames are captured but not displayed on the main
+        // window. A rendering pipeline (egui/wgpu) is needed to display them.
+        let textures_updated = false;
+        if self.config.is_offscreen() {
+            self.offscreen_panes.capture_dirty_frames();
+        }
 
         // Record frame end for input latency measurement.
         if let Some(app_state) = &mut self.app_state {
