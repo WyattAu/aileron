@@ -914,6 +914,32 @@ impl AppState {
             self.ui.status_message = "Sync watcher stopped".into();
             return;
         }
+        #[cfg(feature = "sync")]
+        if let Some(path) = query.strip_prefix("sync-resolve-local ") {
+            let path = path.trim();
+            if path.is_empty() {
+                self.ui.status_message = "Usage: :sync-resolve-local <path>".into();
+                return;
+            }
+            match super::cmd::sync::resolve_conflict_keep_local(&self.config.sync_target, path) {
+                Ok(msg) => self.ui.status_message = msg,
+                Err(e) => self.ui.status_message = e,
+            }
+            return;
+        }
+        #[cfg(feature = "sync")]
+        if let Some(path) = query.strip_prefix("sync-resolve-remote ") {
+            let path = path.trim();
+            if path.is_empty() {
+                self.ui.status_message = "Usage: :sync-resolve-remote <path>".into();
+                return;
+            }
+            match super::cmd::sync::resolve_conflict_keep_remote(&self.config.sync_target, path) {
+                Ok(msg) => self.ui.status_message = msg,
+                Err(e) => self.ui.status_message = e,
+            }
+            return;
+        }
         if let Some(target) = query.strip_prefix("sync-target ") {
             let target = target.trim();
             if target.is_empty() {
@@ -1053,6 +1079,8 @@ impl AppState {
                 "sync-target",
                 "sync-status",
                 "sync-conflicts",
+                "sync-resolve-local",
+                "sync-resolve-remote",
             ];
             let cmd = query;
             let suggestion = known_commands

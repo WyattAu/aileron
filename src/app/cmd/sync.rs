@@ -82,6 +82,20 @@ pub fn execute_sync_status(
     let config_dir = crate::config::Config::config_dir();
     let sm = crate::sync::SyncManager::new(config_dir);
     let manifest = sm.compute_manifest().unwrap_or_default();
+
+    let last_sync = {
+        let manifest_lock = sm.manifest().read().unwrap_or_else(|e| e.into_inner());
+        manifest_lock.last_sync
+    };
+
+    let last_sync_str = if last_sync > 0 {
+        chrono::DateTime::from_timestamp(last_sync as i64, 0)
+            .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    } else {
+        "never".to_string()
+    };
+
     let parts = [
         format!("target: {sync_target}"),
         format!("encrypted: {sync_encrypted}"),
@@ -94,6 +108,7 @@ pub fn execute_sync_status(
             }
         ),
         format!("files: {}", manifest.files.len()),
+        format!("last_sync: {last_sync_str}"),
     ];
     format!("Sync: {}", parts.join(" | "))
 }
@@ -174,7 +189,81 @@ pub fn detect_sync_conflicts(
         }
     }
 
+    // Also report new files not in last sync
+    for (path, current_file) in &current.files {
+        if !last_synced.files.contains_key(path) {
+            conflicts.push(super::super::SyncConflictEntry {
+                path: path.clone(),
+                local_hash: current_file.blake3_hash.clone(),
+                remote_hash: String::new(),
+                local_size: current_file.size,
+                remote_size: 0,
+            });
+        }
+    }
+
     conflicts
+}
+
+/// Resolve a sync conflict by keeping the local version.
+pub fn resolve_conflict_keep_local(
+    sync_target: &str,
+    conflict_path: &str,
+) -> Result<String, String> {
+    if sync_target.is_empty() {
+        return Err("No sync target set".into());
+    }
+
+    let config_dir = crate::config::Config::config_dir();
+    let sm = crate::sync::SyncManager::new(config_dir);
+
+    // Mark the conflict as resolved by updating the manifest
+    let manifest_path = sm.state_dir().join("manifest.json");
+    if manifest_path.exists() {
+        let mut manifest = crate::sync::core::SyncManifest::load(&manifest_path)
+            .map_err(|e| format!("Failed to load manifest: {e}"))?;
+
+        // Remove the conflict entry from the manifest
+        manifest.files.remove(conflict_path);
+        manifest
+            .save(&manifest_path)
+            .map_err(|e| format!("Failed to save manifest: {e}"))?;
+    }
+
+    Ok(format!(
+        "Resolved conflict for {conflict_path} (kept local)"
+    ))
+}
+
+/// Resolve a sync conflict by keeping the remote version.
+pub fn resolve_conflict_keep_remote(
+    sync_target: &str,
+    conflict_path: &str,
+) -> Result<String, String> {
+    if sync_target.is_empty() {
+        return Err("No sync target set".into());
+    }
+
+    let config_dir = crate::config::Config::config_dir();
+    let sm = crate::sync::SyncManager::new(config_dir);
+
+    // Load the last-synced manifest to get the remote version
+    let manifest_path = sm.state_dir().join("manifest.json");
+    if manifest_path.exists() {
+        let last_synced = crate::sync::core::SyncManifest::load(&manifest_path)
+            .map_err(|e| format!("Failed to load manifest: {e}"))?;
+
+        // Remove the file from manifest so it gets re-downloaded on next sync
+        let mut manifest = last_synced;
+        manifest.files.remove(conflict_path);
+        manifest
+            .save(&manifest_path)
+            .map_err(|e| format!("Failed to save manifest: {e}"))?;
+    }
+
+    Ok(format!(
+        "Resolved conflict for {conflict_path} (will re-download remote)"
+    ))
 }
 
 #[cfg(test)]

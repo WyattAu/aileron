@@ -75,6 +75,10 @@ impl SyncManager {
         &self.local_dir
     }
 
+    pub fn manifest(&self) -> &RwLock<SyncManifest> {
+        &self.manifest
+    }
+
     #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn create_db_snapshots(&self) -> Result<HashMap<String, PathBuf>, anyhow::Error> {
         let mut snapshots = HashMap::new();

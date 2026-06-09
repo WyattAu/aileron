@@ -170,6 +170,11 @@ impl SyncLoop {
         // Step 7: Upload manifest to remote
         self.upload_manifest()?;
 
+        // Step 8: Sync CRDT state (bookmarks/history)
+        if let Err(e) = self.sync_crdt_state() {
+            warn!("CRDT sync failed (non-fatal): {e}");
+        }
+
         info!(
             "Sync complete: {} uploaded, {} downloaded, {} deleted",
             metrics.files_uploaded, metrics.files_downloaded, metrics.files_deleted
@@ -292,6 +297,58 @@ impl SyncLoop {
         }
 
         Ok(())
+    }
+
+    /// Sync CRDT state (bookmarks/history) with remote via WebDAV.
+    pub fn sync_crdt_state(&self) -> anyhow::Result<()> {
+        if let Some(ref webdav_config) = self.config.webdav_config {
+            let client = super::webdav::WebdavClient::new(webdav_config.clone());
+
+            // Try to fetch remote CRDT state
+            match client.get(".sync/crdt_state.json")? {
+                Some(data) => {
+                    let remote_json = String::from_utf8(data)?;
+                    self.import_and_merge_crdt_state(&remote_json)?;
+                    debug!("Merged remote CRDT state");
+                }
+                None => {
+                    debug!("No remote CRDT state found");
+                }
+            }
+
+            // Upload local CRDT state
+            let local_json = self.export_crdt_state();
+            client.ensure_collection(".sync")?;
+            client.put(".sync/crdt_state.json", local_json.as_bytes())?;
+            debug!("Uploaded local CRDT state");
+        }
+
+        Ok(())
+    }
+
+    /// Get the last sync timestamp from the manifest.
+    pub fn last_sync_time(&self) -> u64 {
+        let manifest = self
+            .manager
+            .manifest()
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        manifest.last_sync
+    }
+
+    /// Get count of pending changes (files to upload/download).
+    pub fn pending_changes(&self) -> usize {
+        let _local = match self.manager.compute_manifest() {
+            Ok(m) => m,
+            Err(_) => return 0,
+        };
+
+        let remote = match self.fetch_remote_manifest() {
+            Ok(Some(m)) => m,
+            _ => return 0,
+        };
+
+        self.manager.compute_delta(&remote).len()
     }
 }
 
@@ -435,5 +492,35 @@ mod tests {
         };
         assert!(config.webdav_config.is_some());
         assert_eq!(config.sync_interval_secs, 300);
+    }
+
+    #[test]
+    fn test_last_sync_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = SyncLoopConfig {
+            local_dir: dir.path().to_path_buf(),
+            webdav_config: None,
+            legacy_target: None,
+            passphrase: None,
+            sync_interval_secs: 0,
+        };
+        let sync_loop = SyncLoop::new(config);
+        // Default last_sync should be 0
+        assert_eq!(sync_loop.last_sync_time(), 0);
+    }
+
+    #[test]
+    fn test_pending_changes_no_remote() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = SyncLoopConfig {
+            local_dir: dir.path().to_path_buf(),
+            webdav_config: None,
+            legacy_target: None,
+            passphrase: None,
+            sync_interval_secs: 0,
+        };
+        let sync_loop = SyncLoop::new(config);
+        // No remote, so no pending changes
+        assert_eq!(sync_loop.pending_changes(), 0);
     }
 }

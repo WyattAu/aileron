@@ -6,6 +6,32 @@ members = [
     "chrome",
 ]
 
+# === Compile Timing Profile (2026-06-09, `cargo build --timings`) ===
+#
+# Total build: 142s | 729 crates | debug profile
+#
+# Top bottlenecks by crate compile time:
+#   1. aileron 0.21.0 (lib):  82.7s — the main crate dominates; large
+#      module tree + many conditional cfg(target_os/linux) blocks.
+#   2. tachys 0.3.0-alpha:    72.1s — leptos reactive template engine;
+#      pulls in proc-macro-heavy expansion. Only needed by aileron-chrome.
+#   3. winit 0.30.13:         25.5s — windowing event loop; unavoidable.
+#   4. zerocopy 0.8.48:       20.8s — transitive dep; compiles fast but
+#      instantiated many times across features.
+#   5. aileron (bin):          17.4s — thin binary, dominated by aileron lib.
+#   6. toml_edit 0.22.27:     17.4s — TOML parser; pulled in by mlua.
+#   7. reactive_graph:         16.4s — leptos reactive core.
+#   8. alacritty_terminal:      9.9s — terminal emulation; behind "terminal" feature.
+#
+# Recommendations:
+#   - Split large modules (especially offscreen_webview.rs) into smaller crates
+#     to improve incremental and parallel compilation.
+#   - Consider making leptos/leptos_hot_reload optional behind a "chrome" feature
+#     since only aileron-chrome uses it; currently it compiles unconditionally.
+#   - `cargo build --timings` reveals that the main bottleneck is aileron's own
+#     lib.rs (82.7s single-threaded). Breaking it into workspace sub-crates
+#     (e.g., aileron-app, aileron-servo, aileron-net) would enable parallelism.
+
 [profile.release]
 opt-level = 3
 lto = "thin"

@@ -118,6 +118,106 @@ pub fn detect_best_strategy() -> ShareStrategy {
     }
 }
 
+/// A pool of recycled RGBA pixel buffers for multi-pane scenarios.
+///
+/// Avoids per-frame heap allocation by reusing buffers across frames.
+/// Buffers are keyed by `(width, height)` so only same-dimension buffers
+/// are reused. The pool evicts oldest entries when it exceeds `max_pool_size`.
+pub struct TexturePool {
+    /// Recycled RGBA buffers indexed by `(width, height)`.
+    pool: std::collections::HashMap<(u32, u32), Vec<Vec<u8>>>,
+    /// Maximum number of buffers to retain across all dimensions.
+    max_pool_size: usize,
+}
+
+impl TexturePool {
+    /// Create a new texture pool with the default max size of 16 buffers.
+    pub fn new() -> Self {
+        Self {
+            pool: std::collections::HashMap::new(),
+            max_pool_size: 16,
+        }
+    }
+
+    /// Create a new texture pool with a custom max buffer count.
+    pub fn with_max_size(max_pool_size: usize) -> Self {
+        Self {
+            pool: std::collections::HashMap::new(),
+            max_pool_size,
+        }
+    }
+
+    /// Acquire a buffer suitable for the given dimensions.
+    ///
+    /// Returns a recycled buffer if one with matching dimensions exists,
+    /// otherwise allocates a new buffer. The returned buffer is cleared
+    /// but its underlying allocation is retained.
+    pub fn acquire(&mut self, width: u32, height: u32) -> Vec<u8> {
+        let needed = (width as usize) * (height as usize) * 4;
+        if let Some(buffers) = self.pool.get_mut(&(width, height))
+            && let Some(mut buf) = buffers.pop()
+            && buf.capacity() >= needed
+        {
+            buf.clear();
+            return buf;
+        }
+        Vec::with_capacity(needed)
+    }
+
+    /// Release a buffer back into the pool for later reuse.
+    ///
+    /// If the pool is at capacity, the oldest buffer (from the non-full
+    /// dimension bucket) is evicted first.
+    pub fn release(&mut self, width: u32, height: u32, mut buffer: Vec<u8>) {
+        let total: usize = self.pool.values().map(|v| v.len()).sum();
+        if total >= self.max_pool_size {
+            self.evict_oldest();
+        }
+        buffer.clear();
+        self.pool.entry((width, height)).or_default().push(buffer);
+    }
+
+    /// Evict one buffer to make room. Prefers the dimension bucket with
+    /// the fewest buffers (least likely to be reused soon).
+    fn evict_oldest(&mut self) {
+        if let Some(key) = self
+            .pool
+            .iter()
+            .min_by_key(|(_, v)| v.len())
+            .map(|(k, _)| *k)
+            && let Some(buffers) = self.pool.get_mut(&key)
+        {
+            buffers.pop();
+            if buffers.is_empty() {
+                self.pool.remove(&key);
+            }
+        }
+    }
+
+    /// Total number of buffers currently pooled.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.pool.values().map(|v| v.len()).sum()
+    }
+
+    /// Whether the pool is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.pool.values().all(|v| v.is_empty())
+    }
+
+    /// Clear all pooled buffers.
+    pub fn clear(&mut self) {
+        self.pool.clear();
+    }
+}
+
+impl Default for TexturePool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,5 +283,58 @@ mod tests {
         match strategy {
             ShareStrategy::CpuReadback | ShareStrategy::DirectWgpu | ShareStrategy::DmaBuf => {}
         }
+    }
+
+    #[test]
+    fn test_texture_pool_acquire_creates_buffer() {
+        let mut pool = TexturePool::new();
+        let buf = pool.acquire(100, 100);
+        assert_eq!(buf.len(), 0);
+        assert!(buf.capacity() >= 100 * 100 * 4);
+    }
+
+    #[test]
+    fn test_texture_pool_reuse() {
+        let mut pool = TexturePool::new();
+        let buf = pool.acquire(100, 100);
+        pool.release(100, 100, buf);
+        let buf2 = pool.acquire(100, 100);
+        // Reused buffer should have the same capacity
+        assert!(buf2.capacity() >= 100 * 100 * 4);
+    }
+
+    #[test]
+    fn test_texture_pool_eviction() {
+        let mut pool = TexturePool::with_max_size(2);
+        let b1 = pool.acquire(10, 10);
+        pool.release(10, 10, b1);
+        let b2 = pool.acquire(20, 20);
+        pool.release(20, 20, b2);
+        let b3 = pool.acquire(30, 30);
+        pool.release(30, 30, b3);
+        assert!(pool.len() <= 2);
+    }
+
+    #[test]
+    fn test_texture_pool_different_dimensions() {
+        let mut pool = TexturePool::new();
+        let b1 = pool.acquire(100, 100);
+        pool.release(100, 100, b1);
+        let b2 = pool.acquire(200, 200);
+        pool.release(200, 200, b2);
+        assert_eq!(pool.len(), 2);
+        // Acquiring different dimensions should not reuse
+        let buf = pool.acquire(100, 200);
+        assert_eq!(buf.len(), 0);
+    }
+
+    #[test]
+    fn test_texture_pool_clear() {
+        let mut pool = TexturePool::new();
+        let b1 = pool.acquire(10, 10);
+        pool.release(10, 10, b1);
+        assert!(!pool.is_empty());
+        pool.clear();
+        assert!(pool.is_empty());
     }
 }

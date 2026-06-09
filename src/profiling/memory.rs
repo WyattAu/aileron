@@ -61,6 +61,17 @@ pub fn estimate_pane_memory(num_web_panes: usize, num_terminal_panes: usize) -> 
     num_web_panes as u64 * web_per_pane + num_terminal_panes as u64 * term_per_pane
 }
 
+/// Estimate per-pane RSS by dividing total process RSS evenly among panes.
+///
+/// This gives a rough per-pane memory footprint when true per-process
+/// measurement is unavailable. Returns `None` if RSS cannot be read.
+pub fn estimate_per_pane_rss(total_panes: usize) -> Option<u64> {
+    if total_panes == 0 {
+        return None;
+    }
+    process_rss_bytes().map(|rss| rss / total_panes as u64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

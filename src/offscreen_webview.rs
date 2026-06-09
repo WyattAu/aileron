@@ -21,6 +21,7 @@ use wry::WebViewBuilderExtUnix;
 #[cfg(target_os = "linux")]
 use wry::{PageLoadEvent, WebViewBuilder};
 
+use crate::servo::texture_share::TexturePool;
 use crate::servo::wry_engine::WryEvent;
 #[cfg(target_os = "linux")]
 use crate::servo::wry_pages::{
@@ -1132,6 +1133,8 @@ fn bgra_to_rgba(bgra: &[u8], width: usize, height: usize, rowstride: u32) -> Vec
 /// Manages all offscreen webview panes.
 pub struct OffscreenWebViewManager {
     panes: HashMap<Uuid, OffscreenWebView>,
+    /// Shared texture pool for cross-pane RGBA buffer reuse.
+    texture_pool: TexturePool,
 }
 
 impl Default for OffscreenWebViewManager {
@@ -1144,6 +1147,7 @@ impl OffscreenWebViewManager {
     pub fn new() -> Self {
         Self {
             panes: HashMap::new(),
+            texture_pool: TexturePool::new(),
         }
     }
 
@@ -1288,6 +1292,41 @@ impl OffscreenWebViewManager {
     /// Iterate over all pane IDs and their immutable references.
     pub fn iter(&self) -> impl Iterator<Item = (&Uuid, &OffscreenWebView)> {
         self.panes.iter()
+    }
+
+    /// Get a mutable reference to the shared texture pool.
+    pub fn texture_pool_mut(&mut self) -> &mut TexturePool {
+        &mut self.texture_pool
+    }
+
+    /// Get the last captured frame as RGBA8 data, using the shared texture pool.
+    ///
+    /// This is the preferred method for multi-pane scenarios as it avoids
+    /// per-frame allocation by reusing pooled buffers across all panes.
+    #[must_use]
+    pub fn frame_rgba_pooled(&mut self, pane_id: &Uuid) -> Option<Vec<u8>> {
+        let pane = self.panes.get_mut(pane_id)?;
+        let frame = pane.frame()?;
+        let width = frame.width;
+        let height = frame.height;
+        let bgra = &frame.pixels;
+        let stride = frame.rowstride as usize;
+        let row_bytes = (width as usize) * 4;
+
+        let mut buf = self.texture_pool.acquire(width, height);
+        for row in 0..height as usize {
+            let src_start = row * stride;
+            buf.extend_from_slice(&bgra[src_start..src_start + row_bytes]);
+        }
+        for chunk in buf.chunks_exact_mut(4) {
+            chunk.swap(0, 2);
+        }
+        Some(buf)
+    }
+
+    /// Return a pooled buffer after use so it can be reused in future frames.
+    pub fn release_texture_buffer(&mut self, width: u32, height: u32, buffer: Vec<u8>) {
+        self.texture_pool.release(width, height, buffer);
     }
 }
 

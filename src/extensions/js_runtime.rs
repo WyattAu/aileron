@@ -4,6 +4,7 @@
 //! QuickJS context. The runtime exposes a `chrome` global shim that bridges
 //! API calls back into the Rust `AileronExtensionApi` implementation.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use rquickjs::context::Context;
@@ -13,6 +14,63 @@ use crate::extensions::impls::AileronExtensionApi;
 use crate::extensions::message_bus::MessageBus;
 use crate::extensions::types::{ExtensionId, RuntimeMessage};
 
+type PortMessageCallback = Box<dyn Fn(String) + Send + Sync>;
+type PortDisconnectCallback = Box<dyn Fn() + Send + Sync>;
+
+/// Tracks active JS port connections with their callback handlers.
+pub(crate) struct PortManager {
+    ports: Mutex<HashMap<u64, PortEntry>>,
+    next_id: Mutex<u64>,
+}
+
+struct PortEntry {
+    #[allow(dead_code)]
+    name: String,
+    #[allow(dead_code)]
+    message_callbacks: Vec<PortMessageCallback>,
+    #[allow(dead_code)]
+    disconnect_callbacks: Vec<PortDisconnectCallback>,
+}
+
+impl PortManager {
+    fn new() -> Self {
+        Self {
+            ports: Mutex::new(HashMap::new()),
+            next_id: Mutex::new(1),
+        }
+    }
+
+    fn add_port(
+        &self,
+        name: String,
+        message_callbacks: Vec<PortMessageCallback>,
+        disconnect_callbacks: Vec<PortDisconnectCallback>,
+    ) -> u64 {
+        let id = {
+            let mut next = self.next_id.lock().unwrap_or_else(|e| e.into_inner());
+            let id = *next;
+            *next += 1;
+            id
+        };
+        self.ports.lock().unwrap_or_else(|e| e.into_inner()).insert(
+            id,
+            PortEntry {
+                name,
+                message_callbacks,
+                disconnect_callbacks,
+            },
+        );
+        id
+    }
+
+    fn remove_port(&self, port_id: u64) -> Option<PortEntry> {
+        self.ports
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&port_id)
+    }
+}
+
 /// Handle to an initialised background-script QuickJS context.
 pub struct JsRuntime {
     #[allow(dead_code)]
@@ -20,6 +78,8 @@ pub struct JsRuntime {
     ctx: Context,
     /// Queue of messages received from the MessageBus since last drain.
     pending_messages: Arc<Mutex<Vec<String>>>,
+    /// Tracks active port connections.
+    port_manager: Arc<PortManager>,
 }
 
 impl std::fmt::Debug for JsRuntime {
@@ -48,10 +108,13 @@ impl JsRuntime {
                 .map_err(|e| format!("{filename}: {e}"))
         })?;
 
+        let port_manager = Arc::new(PortManager::new());
+
         Ok(Self {
             runtime,
             ctx,
             pending_messages: Arc::new(Mutex::new(Vec::new())),
+            port_manager,
         })
     }
 
@@ -136,6 +199,105 @@ impl JsRuntime {
             }
         });
     }
+
+    /// Create a new port in the JS context and register native callbacks.
+    /// Returns the port ID for use with `fire_incoming_port_message` and
+    /// `fire_port_disconnect`.
+    pub fn create_port_in_js_context(&self, port_name: &str, ext_id: &str) -> u64 {
+        let ext_id_escaped = ext_id.replace('\'', "\\'");
+        let name_escaped = port_name.replace('\'', "\\'");
+
+        // JS: register message/disconnect callbacks and invoke onConnect listeners.
+        // The callbacks are stored in __aileron_port_callbacks[portId] so Rust
+        // can later invoke them via fire_incoming_port_message / fire_port_disconnect.
+        let js_create = format!(
+            "(function() {{ \
+                var portId = __aileron_next_port_id++; \
+                var port = {{ \
+                    name: '{name_escaped}', \
+                    sender: {{ id: '{ext_id_escaped}' }}, \
+                    postMessage: function(data) {{ \
+                        __aileron_native_connect_postMessage(portId, JSON.stringify(data)); \
+                    }}, \
+                    disconnect: function() {{ \
+                        __aileron_native_connect_disconnect(portId); \
+                    }}, \
+                    onMessage: {{ addListener: function(fn) {{ \
+                        __aileron_port_callbacks[portId].message.push(fn); \
+                    }} }}, \
+                    onDisconnect: {{ addListener: function(fn) {{ \
+                        __aileron_port_callbacks[portId].disconnect.push(fn); \
+                    }} }} \
+                }}; \
+                __aileron_port_callbacks[portId] = {{ \
+                    message: [], \
+                    disconnect: [], \
+                    name: '{name_escaped}', \
+                    sender: {{ id: '{ext_id_escaped}' }} \
+                }}; \
+                if (typeof __aileron_listeners !== 'undefined' && \
+                    __aileron_listeners.onConnect) {{ \
+                    __aileron_listeners.onConnect.forEach(function(fn) {{ fn(port); }}); \
+                }} \
+                return portId; \
+            }})()"
+        );
+
+        let port_id: u64 = self.ctx.with(|cx| {
+            cx.eval::<u64, _>(js_create.as_bytes())
+                .catch(&cx)
+                .map_err(|e| format!("create_port_in_js_context: {e}"))
+                .unwrap_or(0)
+        });
+
+        // Register the port with the Rust PortManager so we can fire callbacks.
+        let pm = self.port_manager.clone();
+        pm.add_port(port_name.to_string(), vec![], vec![]);
+
+        port_id
+    }
+
+    /// Deliver an incoming message to a port's JS callbacks.
+    pub fn fire_incoming_port_message(&self, port_id: u64, json_data: &str) {
+        let escaped = json_data.replace('\\', "\\\\").replace('\'', "\\'");
+        let js = format!(
+            "(function() {{ \
+                var cb = __aileron_port_callbacks[{port_id}]; \
+                if (cb && cb.message) {{ \
+                    cb.message.forEach(function(fn) {{ \
+                        fn(JSON.parse('{escaped}')); \
+                    }}); \
+                }} \
+            }})()"
+        );
+        self.ctx.with(|cx| {
+            let _ = cx.eval::<(), _>(js.as_bytes());
+        });
+    }
+
+    /// Fire the disconnect handlers for a port and clean up.
+    pub fn fire_port_disconnect(&self, port_id: u64) {
+        let js = format!(
+            "(function() {{ \
+                var cb = __aileron_port_callbacks[{port_id}]; \
+                if (cb && cb.disconnect) {{ \
+                    cb.disconnect.forEach(function(fn) {{ fn(); }}); \
+                }} \
+                delete __aileron_port_callbacks[{port_id}]; \
+            }})()"
+        );
+        self.ctx.with(|cx| {
+            let _ = cx.eval::<(), _>(js.as_bytes());
+        });
+
+        self.port_manager.remove_port(port_id);
+    }
+
+    /// Get a reference to the port manager (test-only).
+    #[cfg(test)]
+    pub(crate) fn port_manager(&self) -> &Arc<PortManager> {
+        &self.port_manager
+    }
 }
 
 /// Inject a minimal `chrome` global object with API stubs.
@@ -148,7 +310,10 @@ fn inject_chrome_shim(ctx: &Context, _ext_id: &ExtensionId) -> Result<(), String
                 onInstalled: [],
                 onStartup: [],
                 onMessage: [],
+                onConnect: [],
             };
+            var __aileron_port_callbacks = {};
+            var __aileron_next_port_id = 1;
             chrome.runtime.onInstalled = {
                 addListener: function(fn) {
                     __aileron_listeners.onInstalled.push(fn);
@@ -163,6 +328,43 @@ fn inject_chrome_shim(ctx: &Context, _ext_id: &ExtensionId) -> Result<(), String
                 addListener: function(fn) {
                     __aileron_listeners.onMessage.push(fn);
                 }
+            };
+            chrome.runtime.onConnect = {
+                addListener: function(fn) {
+                    __aileron_listeners.onConnect.push(fn);
+                }
+            };
+            chrome.runtime.connect = function(connectInfo) {
+                var info = connectInfo || {};
+                var portId = __aileron_native_connect_create(info.name || '');
+                var name = info.name || '';
+                var port = {
+                    name: name,
+                    sender: { id: '' },
+                    postMessage: function(data) {
+                        __aileron_native_connect_postMessage(portId, JSON.stringify(data));
+                    },
+                    disconnect: function() {
+                        __aileron_native_connect_disconnect(portId);
+                    },
+                    onMessage: { addListener: function(fn) {
+                        __aileron_port_callbacks[portId].message.push(fn);
+                    } },
+                    onDisconnect: { addListener: function(fn) {
+                        __aileron_port_callbacks[portId].disconnect.push(fn);
+                    } }
+                };
+                __aileron_port_callbacks[portId] = {
+                    message: [],
+                    disconnect: [],
+                    name: name,
+                    sender: { id: '' }
+                };
+                // Fire onConnect listeners so background scripts can receive the port.
+                if (__aileron_listeners && __aileron_listeners.onConnect) {
+                    __aileron_listeners.onConnect.forEach(function(fn) { fn(port); });
+                }
+                return port;
             };
             chrome.runtime.sendMessage = function(msg, cb) {
                 if (typeof __aileron_native_sendMessage === 'function') {
@@ -222,6 +424,13 @@ fn inject_chrome_shim(ctx: &Context, _ext_id: &ExtensionId) -> Result<(), String
                     cb({});
                 }
             };
+            function __aileron_native_connect_create(name) {
+                return 0;
+            }
+            function __aileron_native_connect_postMessage(portId, data) {
+            }
+            function __aileron_native_connect_disconnect(portId) {
+            }
         "#;
         cx.eval::<(), _>(shim)
             .catch(&cx)
@@ -410,6 +619,226 @@ mod tests {
                 json_str.contains("ping"),
                 "Should contain ping message, got: {json_str}"
             );
+        });
+    }
+
+    #[test]
+    fn test_js_runtime_connect_creates_port() {
+        let api = make_api(r#"{"manifest_version": 3, "name": "Test", "version": "1.0.0"}"#);
+        let rt = JsRuntime::new(&api, "").unwrap();
+
+        let port_id = rt.create_port_in_js_context("my-port", "test-ext");
+        assert!(port_id > 0, "Port ID should be positive, got {port_id}");
+
+        // Verify port exists in JS context
+        rt.ctx.with(|cx| {
+            let exists: bool = cx
+                .eval::<bool, _>("typeof __aileron_port_callbacks[1] !== 'undefined'")
+                .unwrap_or(false);
+            assert!(exists, "Port should exist in __aileron_port_callbacks");
+        });
+    }
+
+    #[test]
+    fn test_js_runtime_connect_shim_creates_port() {
+        let api = make_api(r#"{"manifest_version": 3, "name": "Test", "version": "1.0.0"}"#);
+        let rt = JsRuntime::new(
+            &api,
+            "var __port_result = null; \
+             chrome.runtime.onConnect.addListener(function(port) { \
+                 __port_result = port.name; \
+             }); \
+             chrome.runtime.connect({name: 'test-port'});",
+        )
+        .unwrap();
+
+        rt.ctx.with(|cx| {
+            let name: String = cx.eval::<String, _>("__port_result").unwrap_or_default();
+            assert_eq!(name, "test-port", "Port name should be 'test-port'");
+        });
+    }
+
+    #[test]
+    fn test_js_runtime_connect_port_postmessage() {
+        let api = make_api(r#"{"manifest_version": 3, "name": "Test", "version": "1.0.0"}"#);
+        let rt = JsRuntime::new(
+            &api,
+            "var __sent_data = null; \
+             var __port = chrome.runtime.connect({name: 'msg-port'});",
+        )
+        .unwrap();
+
+        // The native function is a no-op in the shim, but verify port.postMessage is callable
+        rt.ctx.with(|cx| {
+            let result: String = cx
+                .eval::<String, _>(
+                    "try { __port.postMessage({type: 'hello'}); 'ok' } catch(e) { e.message }",
+                )
+                .unwrap_or_default();
+            assert_eq!(result, "ok", "postMessage should not throw");
+        });
+    }
+
+    #[test]
+    fn test_js_runtime_connect_port_disconnect() {
+        let api = make_api(r#"{"manifest_version": 3, "name": "Test", "version": "1.0.0"}"#);
+        let rt = JsRuntime::new(&api, "").unwrap();
+
+        // Create port via Rust API (gives a real portId).
+        let port_id = rt.create_port_in_js_context("disc-port", "test-ext");
+        assert!(port_id > 0);
+
+        // Register disconnect callback via Rust API.
+        let js_code = format!(
+            "var __disconnect_fired = false; \
+             if (__aileron_port_callbacks[{port_id}]) {{ \
+                 __aileron_port_callbacks[{port_id}].disconnect.push(function() {{ \
+                     __disconnect_fired = true; \
+                 }}); \
+             }}"
+        );
+        rt.ctx.with(|cx| {
+            cx.eval::<(), _>(js_code.as_str()).unwrap();
+        });
+
+        rt.fire_port_disconnect(port_id);
+
+        rt.ctx.with(|cx| {
+            let fired: bool = cx.eval::<bool, _>("__disconnect_fired").unwrap_or(false);
+            assert!(fired, "onDisconnect should have fired");
+        });
+    }
+
+    #[test]
+    fn test_js_runtime_fire_incoming_port_message() {
+        let api = make_api(r#"{"manifest_version": 3, "name": "Test", "version": "1.0.0"}"#);
+        let rt = JsRuntime::new(
+            &api,
+            "var __port_msgs = []; \
+             chrome.runtime.onConnect.addListener(function(port) { \
+                 port.onMessage.addListener(function(msg) { \
+                     __port_msgs.push(msg); \
+                 }); \
+             }); \
+             chrome.runtime.connect({name: 'listener-port'});",
+        )
+        .unwrap();
+
+        let port_id = rt.create_port_in_js_context("listener-port", "test-ext");
+
+        rt.fire_incoming_port_message(port_id, r#"{"type":"ping"}"#);
+
+        rt.ctx.with(|cx| {
+            let json_str: String = cx
+                .eval::<String, _>("JSON.stringify(__port_msgs)")
+                .unwrap_or_default();
+            assert!(
+                json_str.contains("ping"),
+                "Port should have received message, got: {json_str}"
+            );
+        });
+    }
+
+    #[test]
+    fn test_js_runtime_fire_incoming_port_message_no_port() {
+        let api = make_api(r#"{"manifest_version": 3, "name": "Test", "version": "1.0.0"}"#);
+        let rt = JsRuntime::new(&api, "").unwrap();
+
+        // Should not panic when port doesn't exist
+        rt.fire_incoming_port_message(999, r#"{"type":"orphan"}"#);
+    }
+
+    #[test]
+    fn test_js_runtime_port_disconnect_cleans_up() {
+        let api = make_api(r#"{"manifest_version": 3, "name": "Test", "version": "1.0.0"}"#);
+        let rt = JsRuntime::new(
+            &api,
+            "var __port = chrome.runtime.connect({name: 'cleanup-port'});",
+        )
+        .unwrap();
+
+        let port_id = rt.create_port_in_js_context("cleanup-port", "test-ext");
+
+        rt.fire_port_disconnect(port_id);
+
+        // Port should be removed from JS context
+        rt.ctx.with(|cx| {
+            let exists: bool = cx
+                .eval::<bool, _>("typeof __aileron_port_callbacks[2] !== 'undefined' && __aileron_port_callbacks[2] !== null")
+                .unwrap_or(true);
+            assert!(!exists, "Port should be removed after disconnect");
+        });
+
+        // Port should be removed from Rust PortManager
+        assert!(
+            rt.port_manager().remove_port(port_id).is_none(),
+            "Port should be removed from PortManager"
+        );
+    }
+
+    #[test]
+    fn test_js_runtime_port_sender() {
+        let api = make_api(r#"{"manifest_version": 3, "name": "Test", "version": "1.0.0"}"#);
+        let rt = JsRuntime::new(&api, "").unwrap();
+
+        rt.create_port_in_js_context("sender-port", "my-extension");
+
+        rt.ctx.with(|cx| {
+            let ext_id: String = cx
+                .eval::<String, _>("__aileron_port_callbacks[1].sender.id")
+                .unwrap_or_default();
+            assert_eq!(
+                ext_id, "my-extension",
+                "Port sender should have extension ID"
+            );
+        });
+    }
+
+    #[test]
+    fn test_js_runtime_onconnect_listener() {
+        let api = make_api(r#"{"manifest_version": 3, "name": "Test", "version": "1.0.0"}"#);
+        let rt = JsRuntime::new(
+            &api,
+            "var __connect_count = 0; \
+             chrome.runtime.onConnect.addListener(function(port) { \
+                 __connect_count++; \
+             });",
+        )
+        .unwrap();
+
+        rt.create_port_in_js_context("port-a", "ext-a");
+        rt.create_port_in_js_context("port-b", "ext-b");
+
+        rt.ctx.with(|cx| {
+            let count: i32 = cx.eval::<i32, _>("__connect_count").unwrap_or(0);
+            assert_eq!(count, 2, "onConnect should fire for each connection");
+        });
+    }
+
+    #[test]
+    fn test_js_runtime_multiple_port_messages() {
+        let api = make_api(r#"{"manifest_version": 3, "name": "Test", "version": "1.0.0"}"#);
+        let rt = JsRuntime::new(
+            &api,
+            "var __msgs = []; \
+             chrome.runtime.onConnect.addListener(function(port) { \
+                 port.onMessage.addListener(function(msg) { \
+                     __msgs.push(msg); \
+                 }); \
+             }); \
+             chrome.runtime.connect({name: 'multi-port'});",
+        )
+        .unwrap();
+
+        let port_id = rt.create_port_in_js_context("multi-port", "test-ext");
+
+        rt.fire_incoming_port_message(port_id, r#"{"n":1}"#);
+        rt.fire_incoming_port_message(port_id, r#"{"n":2}"#);
+        rt.fire_incoming_port_message(port_id, r#"{"n":3}"#);
+
+        rt.ctx.with(|cx| {
+            let count: i32 = cx.eval::<i32, _>("__msgs.length").unwrap_or(0);
+            assert_eq!(count, 3, "Should receive all 3 messages");
         });
     }
 }
