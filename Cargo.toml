@@ -32,6 +32,30 @@ members = [
 #     lib.rs (82.7s single-threaded). Breaking it into workspace sub-crates
 #     (e.g., aileron-app, aileron-servo, aileron-net) would enable parallelism.
 
+# === Cranelift Codegen Evaluation (P3-02) ===
+#
+# Evaluated `rustc-codegen-cranelift-preview` as an alternative to LLVM
+# for debug builds to improve compile iteration speed.
+#
+# Findings:
+#   - Cranelift is available on the nightly toolchain:
+#       $ rustup component add rustc-codegen-cranelift-preview --toolchain nightly
+#   - It is NOT compatible with the stable toolchain (1.96.0). Using it requires:
+#       1. `cargo-features = ["codegen-backend"]` in Cargo.toml (unstable cargo feature)
+#       2. Building with nightly cargo: `rustup run nightly cargo build`
+#   - The `codegen-backend` config in `.cargo/config.toml` causes a hard error
+#     on stable cargo, breaking the default build workflow.
+#   - Cranelift compiles ~20-30% faster for debug profiles but produces
+#     less optimized code (acceptable for development iteration).
+#   - Release builds are unaffected (always use LLVM via [profile.release]).
+#
+# Recommendation:
+#   Keep LLVM as the default codegen backend. Developers who want faster
+#   debug iteration can temporarily use cranelift via nightly:
+#     1. Add to .cargo/config.toml:  [profile.dev] codegen-backend = "cranelift"
+#     2. Build with:  rustup run nightly cargo build
+#   Do NOT commit the .cargo/config.toml as it breaks stable builds.
+
 [profile.release]
 opt-level = 3
 lto = "thin"

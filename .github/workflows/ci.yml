@@ -156,6 +156,12 @@ jobs:
       - name: Clippy (zero warnings)
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Run library tests
+        run: AILERON_TESTING=1 cargo test --lib -- --test-threads=4
+
+      - name: Run integration tests
+        run: AILERON_TESTING=1 cargo test --tests -- --test-threads=4
+
   cross-compile:
     name: Cross-compile (${{ matrix.target }})
     runs-on: ${{ matrix.os }}

@@ -165,6 +165,13 @@ pub enum ChromeCommand {
     PaletteSelect,
     /// Command palette: close without selection.
     PaletteClose,
+    /// Tab reorder: swap two panes by their IDs.
+    TabReorder {
+        /// ID of the pane being dragged.
+        from_id: String,
+        /// ID of the pane being dropped onto.
+        to_id: String,
+    },
     /// No action needed.
     None,
 }
@@ -249,6 +256,26 @@ pub fn parse_chrome_ipc(json_str: &str) -> ChromeCommand {
                     tracing::warn!("Unknown palette sub-command: {sub}");
                     ChromeCommand::None
                 }
+            }
+        }
+        "reorder" => {
+            let from_id = request
+                .payload
+                .get("from_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let to_id = request
+                .payload
+                .get("to_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if from_id.is_empty() || to_id.is_empty() {
+                tracing::warn!("Reorder missing from_id or to_id");
+                ChromeCommand::None
+            } else {
+                ChromeCommand::TabReorder { from_id, to_id }
             }
         }
         _ => {
@@ -378,6 +405,24 @@ mod tests {
             parse_chrome_ipc(json),
             ChromeCommand::PaletteClose
         ));
+    }
+
+    #[test]
+    fn test_parse_chrome_ipc_reorder() {
+        let json = r#"{"kind":"reorder","payload":{"from_id":"550e8400-e29b-41d4-a716-446655440000","to_id":"6ba7b810-9dad-11d1-80b4-00c04fd430c8"}}"#;
+        match parse_chrome_ipc(json) {
+            ChromeCommand::TabReorder { from_id, to_id } => {
+                assert_eq!(from_id, "550e8400-e29b-41d4-a716-446655440000");
+                assert_eq!(to_id, "6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+            }
+            other => panic!("Expected TabReorder, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_chrome_ipc_reorder_empty_ids() {
+        let json = r#"{"kind":"reorder","payload":{"from_id":"","to_id":"6ba7b810-9dad-11d1-80b4-00c04fd430c8"}}"#;
+        assert!(matches!(parse_chrome_ipc(json), ChromeCommand::None));
     }
 
     #[test]

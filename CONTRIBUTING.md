@@ -39,37 +39,90 @@ LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH" ./target/debug/aileron
 
 Aileron compiles on macOS using WKWebView (via wry). No Nix shell is required.
 
+#### Prerequisites
+
+- **Xcode Command Line Tools** — required for the system linker and headers:
+  ```bash
+  xcode-select --install
+  ```
+- **Rust** (stable) — install via [rustup](https://rustup.rs):
+  ```bash
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  ```
+- **WebKit** — built into macOS, no additional install needed
+
+#### Build & Install
+
 ```bash
-# Build
+# Build (debug)
 cargo build
+
+# Build (release, optimized)
+cargo build --release
+
+# Install to ~/.cargo/bin
+cargo install --path .
 
 # Run
 ./target/debug/aileron
+# or, if installed:
+aileron
 ```
 
-**macOS notes:**
-- Requires Xcode Command Line Tools (`xcode-select --install`)
+#### macOS-Specific Notes
+
 - Offscreen rendering is the default (`render_mode = "offscreen"`)
 - Tab sidebar defaults to right side (`tab_sidebar_right = true`)
+- Cmd is the primary modifier (instead of Ctrl on Linux/Windows)
+- Standard macOS shortcuts work: Cmd+T (new tab), Cmd+W (close tab), Cmd+Q (quit)
 - CI verifies compilation on both x86_64 and aarch64
+
+#### Troubleshooting
+
+- **"xcode-select: note: no developer tools are found"** — Run `xcode-select --install`
+- **Linker errors about missing frameworks** — Ensure Xcode CLT is installed, not just Xcode.app
+- **WKWebView not rendering** — Check that `WEBKIT_DISABLE_COMPOSITING_MODE` is not set
 
 ### Build & Run (Windows)
 
 Aileron compiles on Windows using WebView2 (via wry).
 
-```bash
-# Build
+#### Prerequisites
+
+- **WebView2 Runtime** — pre-installed on Windows 11; for Windows 10, download from [Microsoft](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
+- **Rust** (stable) — install via [rustup](https://rustup.rs)
+- **Visual Studio Build Tools** — required for the MSVC linker
+
+#### Build & Install
+
+```powershell
+# Build (debug)
 cargo build
+
+# Build (release, optimized)
+cargo build --release
+
+# Install to ~/.cargo/bin
+cargo install --path .
 
 # Run
 .\target\debug\aileron.exe
+# or, if installed:
+aileron
 ```
 
-**Windows notes:**
-- Requires WebView2 Runtime (pre-installed on Windows 11, downloadable for Windows 10)
+#### Windows-Specific Notes
+
 - Native rendering is the default (`render_mode = "native"`)
 - Some features (adblock cosmetic filtering, offscreen mode) may behave differently
+- Standard Windows shortcuts work: Ctrl+T (new tab), Ctrl+W (close tab), Alt+F4 (quit)
 - CI verifies compilation on x86_64-pc-windows-msvc
+
+#### Troubleshooting
+
+- **"WebView2 is not installed"** — Download and install the WebView2 Runtime from Microsoft
+- **Linker errors** — Ensure Visual Studio Build Tools with the "Desktop development with C++" workload are installed
+- **Antivirus blocking** — Some antivirus software may block the WebView2 loader DLL
 
 ### Test
 

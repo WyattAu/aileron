@@ -170,6 +170,58 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
         return Some(());
     }
 
+    if query == "tab-move-left" {
+        let panes = state.wm.panes();
+        if panes.len() < 2 {
+            state.ui.status_message = "Only one pane, nowhere to move.".into();
+            return Some(());
+        }
+        let active_id = state.wm.active_pane_id();
+        let positions: Vec<_> = panes.iter().map(|(id, _)| *id).collect();
+        let current_idx = positions
+            .iter()
+            .position(|&id| id == active_id)
+            .unwrap_or(0);
+        if current_idx == 0 {
+            state.ui.status_message = "Already at first position.".into();
+        } else {
+            let target_id = positions[current_idx - 1];
+            if state.wm.swap_pane_ids(active_id, target_id) {
+                state.ui.status_message =
+                    format!("Moved left: {} → {}", current_idx + 1, current_idx);
+            } else {
+                state.ui.status_message = "Failed to move pane.".into();
+            }
+        }
+        return Some(());
+    }
+
+    if query == "tab-move-right" {
+        let panes = state.wm.panes();
+        if panes.len() < 2 {
+            state.ui.status_message = "Only one pane, nowhere to move.".into();
+            return Some(());
+        }
+        let active_id = state.wm.active_pane_id();
+        let positions: Vec<_> = panes.iter().map(|(id, _)| *id).collect();
+        let current_idx = positions
+            .iter()
+            .position(|&id| id == active_id)
+            .unwrap_or(0);
+        if current_idx >= positions.len() - 1 {
+            state.ui.status_message = "Already at last position.".into();
+        } else {
+            let target_id = positions[current_idx + 1];
+            if state.wm.swap_pane_ids(active_id, target_id) {
+                state.ui.status_message =
+                    format!("Moved right: {} → {}", current_idx + 1, current_idx + 2);
+            } else {
+                state.ui.status_message = "Failed to move pane.".into();
+            }
+        }
+        return Some(());
+    }
+
     if let Some(dir) = query.strip_prefix("tab-move ") {
         let panes = state.wm.panes();
         if panes.len() < 2 {

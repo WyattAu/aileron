@@ -7,6 +7,17 @@
 //!
 //! This eliminates the winit+GTK toolkit conflict that caused crashes
 //! on Wayland and required XWayland workarounds.
+//!
+//! # Platform rendering paths
+//!
+//! - **Linux**: GTK `OffscreenWindow` + WebKitGTK `snapshot()` API for
+//!   GL-composited content, `pixbuf()` fallback for `aileron://` pages.
+//! - **macOS**: WKWebView via wry. The `capture_frame()` method is a no-op
+//!   stub — macOS uses native WKWebView compositing and does not require
+//!   offscreen pixel capture. Rendering is handled by WebKit's built-in
+//!   layer-backed views.
+//! - **Windows**: WebView2 via wry. Similar to macOS, rendering is handled
+//!   by the native Edge/Chromium compositor. `capture_frame()` is a no-op.
 
 use std::collections::HashMap;
 #[cfg(target_os = "linux")]
@@ -780,6 +791,10 @@ a {{ color: #4db4ff; }}
     }
 
     /// Non-Linux stub: capture is a no-op on platforms without offscreen rendering.
+    ///
+    /// On macOS (WKWebView) and Windows (WebView2), rendering is handled by the
+    /// native platform compositor. Pixel capture is not needed because the webview
+    /// renders directly into the window surface.
     #[cfg(not(target_os = "linux"))]
     #[must_use]
     pub fn capture_frame(&mut self) -> Option<&FrameData> {

@@ -340,6 +340,140 @@ impl KeybindingRegistry {
             KeyCombo::new(Mode::Normal, ctrl_alt, Key::Character('k')),
             Action::ResizePane(crate::wm::Direction::Up),
         );
+
+        // ─── macOS Cmd-based shortcuts ───────────────────────────────
+        // On macOS, Cmd is the primary modifier for application shortcuts.
+        // These mirror the Ctrl-based shortcuts so macOS users get native
+        // Cmd+key behavior.
+        #[cfg(target_os = "macos")]
+        {
+            let cmd = Modifiers {
+                ctrl: false,
+                alt: false,
+                shift: false,
+                super_key: true,
+            };
+
+            // Cmd+T → New tab
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd, Key::Character('t')),
+                Action::NewTab,
+            );
+            // Cmd+W → Close tab
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd, Key::Character('w')),
+                Action::CloseTab,
+            );
+            // Cmd+Q → Quit
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd, Key::Character('q')),
+                Action::Quit,
+            );
+            // Cmd+R → Reload
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd, Key::Character('r')),
+                Action::Reload,
+            );
+            // Cmd+L → Focus address bar (OpenCommandPalette as proxy)
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd, Key::Character('l')),
+                Action::OpenCommandPalette,
+            );
+            // Cmd+F → Find
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd, Key::Character('f')),
+                Action::Find,
+            );
+            // Cmd+E → Open external browser
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd, Key::Character('e')),
+                Action::OpenExternalBrowser,
+            );
+            // Cmd+D → Bookmark toggle
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd, Key::Character('d')),
+                Action::BookmarkToggle,
+            );
+            // Cmd+N → New window
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd, Key::Character('n')),
+                Action::NewWindow,
+            );
+            // Cmd+P → Command palette
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd, Key::Character('p')),
+                Action::OpenCommandPalette,
+            );
+
+            let cmd_shift = Modifiers {
+                ctrl: false,
+                alt: false,
+                shift: true,
+                super_key: true,
+            };
+
+            // Cmd+Shift+T → Reopen closed tab (CloseOtherPanes as closest proxy)
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd_shift, Key::Character('T')),
+                Action::CloseOtherPanes,
+            );
+            // Cmd+Shift+W → Close tab
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd_shift, Key::Character('W')),
+                Action::CloseTab,
+            );
+            // Cmd+Shift+R → Toggle reader mode
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd_shift, Key::Character('R')),
+                Action::ToggleReaderMode,
+            );
+            // Cmd+Shift+D → Detach pane
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd_shift, Key::Character('D')),
+                Action::DetachPane,
+            );
+            // Cmd+Shift+P → Pin pane
+            self.register(
+                KeyCombo::new(Mode::Normal, cmd_shift, Key::Character('P')),
+                Action::PinPane,
+            );
+        }
+
+        // ─── Windows Ctrl-based shortcuts ─────────────────────────────
+        // On Windows, Ctrl is the primary modifier. The existing defaults
+        // already use Ctrl for most shortcuts, but we add the standard
+        // Windows application shortcuts explicitly.
+        #[cfg(target_os = "windows")]
+        {
+            // Ctrl+Shift+T → Reopen closed tab (CloseOtherPanes as closest proxy)
+            self.register(
+                KeyCombo::new(
+                    Mode::Normal,
+                    Modifiers {
+                        ctrl: true,
+                        shift: true,
+                        alt: false,
+                        super_key: false,
+                    },
+                    Key::Character('T'),
+                ),
+                Action::CloseOtherPanes,
+            );
+            // Ctrl+Shift+W → Close tab
+            self.register(
+                KeyCombo::new(
+                    Mode::Normal,
+                    Modifiers {
+                        ctrl: true,
+                        shift: true,
+                        alt: false,
+                        super_key: false,
+                    },
+                    Key::Character('W'),
+                ),
+                Action::CloseTab,
+            );
+        }
     }
 
     /// Register a keybinding. Overwrites any existing binding for the same combo.

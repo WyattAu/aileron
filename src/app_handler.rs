@@ -669,6 +669,23 @@ impl ApplicationHandler for AileronApp {
                             app_state.ui.command_palette_input.clear();
                         }
                     }
+                    aileron::chrome_bridge::ChromeCommand::TabReorder { from_id, to_id } => {
+                        if let Some(app_state) = &mut self.app_state {
+                            if let (Ok(from_uuid), Ok(to_uuid)) = (
+                                uuid::Uuid::parse_str(&from_id),
+                                uuid::Uuid::parse_str(&to_id),
+                            ) {
+                                if app_state.wm.swap_pane_ids(from_uuid, to_uuid) {
+                                    app_state.ui.status_message = "Tab reordered".into();
+                                    self.chrome_dirty = true;
+                                } else {
+                                    app_state.ui.status_message = "Failed to reorder tab".into();
+                                }
+                            } else {
+                                app_state.ui.status_message = "Invalid tab ID for reorder".into();
+                            }
+                        }
+                    }
                     aileron::chrome_bridge::ChromeCommand::StatusMessage(msg) => {
                         if let Some(app_state) = &mut self.app_state {
                             app_state.ui.status_message.push_str(&msg);

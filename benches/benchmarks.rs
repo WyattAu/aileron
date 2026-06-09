@@ -19,6 +19,7 @@ criterion_group!(
     bench_adblock_100_domains,
     bench_chrome_state_building,
     bench_panes_iterator,
+    bench_startup_latency,
 );
 
 fn bench_bsp_tree_operations(c: &mut Criterion) {
@@ -436,4 +437,22 @@ fn bench_panes_iterator(c: &mut Criterion) {
     c.bench_function("iter_panes_4panes", |b| {
         b.iter(|| for _ in tree.iter_panes() {});
     });
+}
+
+fn bench_startup_latency(c: &mut Criterion) {
+    let mut group = c.benchmark_group("startup_latency");
+
+    group.bench_function("config_load", |b| {
+        b.iter(aileron::config::Config::load);
+    });
+
+    group.bench_function("app_state_init", |b| {
+        let config = aileron::config::Config::default();
+        let viewport = aileron::wm::Rect::new(0.0, 0.0, 1280.0, 800.0);
+        b.iter(|| {
+            let _ = aileron::app::AppState::new(viewport, config.clone());
+        });
+    });
+
+    group.finish();
 }

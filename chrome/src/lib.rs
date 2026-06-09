@@ -110,6 +110,34 @@ fn TabSidebar() -> impl IntoView {
     let panes = move || store.state.read().panes.clone();
     let sidebar_right = move || store.state.read().tab_sidebar_right;
 
+    let on_drag_start = move |ev: web_sys::DragEvent, pane_id: String| {
+        if let Some(data_transfer) = ev.data_transfer() {
+            let _ = data_transfer.set_data("text/plain", &pane_id);
+            let _ = data_transfer.set_effect_allowed("move");
+        }
+    };
+
+    let on_drag_over = move |ev: web_sys::DragEvent| {
+        ev.prevent_default();
+        if let Some(data_transfer) = ev.data_transfer() {
+            let _ = data_transfer.set_drop_effect("move");
+        }
+    };
+
+    let on_drop = move |ev: web_sys::DragEvent, target_id: String| {
+        ev.prevent_default();
+        if let Some(data_transfer) = ev.data_transfer()
+            && let Ok(from_id) = data_transfer.get_data("text/plain")
+            && !from_id.is_empty()
+            && from_id != target_id
+        {
+            let json = format!(
+                r#"{{"kind":"reorder","payload":{{"from_id":"{from_id}","to_id":"{target_id}"}}}}"#
+            );
+            send_ipc_message(json);
+        }
+    };
+
     view! {
         <div class="tab-sidebar" class:sidebar-right=sidebar_right role="tablist" aria-label="Open tabs">
             <For
@@ -117,9 +145,21 @@ fn TabSidebar() -> impl IntoView {
                 key=|p| p.id.clone()
                 let(pane)
             >
-                {let title_for_aria = pane.title.clone();
+                {let pane_id_for_drag = pane.id.clone();
+                let pane_id_for_drop = pane.id.clone();
+                let title_for_aria = pane.title.clone();
                 view! {
-                    <div class="tab-item" class:tab-active=pane.active role="tab" aria-selected=move || pane.active aria-label=move || title_for_aria.clone()>
+                    <div
+                        class="tab-item"
+                        class:tab-active=pane.active
+                        role="tab"
+                        aria-selected=move || pane.active
+                        aria-label=move || title_for_aria.clone()
+                        draggable="true"
+                        on:dragstart=move |ev| on_drag_start(ev, pane_id_for_drag.clone())
+                        on:dragover=on_drag_over
+                        on:drop=move |ev| on_drop(ev, pane_id_for_drop.clone())
+                    >
                         <span class="tab-title">{pane.title}</span>
                         <span class="tab-close" role="button" aria-label="Close tab">&times;</span>
                     </div>

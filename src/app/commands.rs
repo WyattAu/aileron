@@ -438,6 +438,11 @@ impl AppState {
             return;
         }
 
+        // U1-04: Session manager commands
+        if super::cmd::session::handle_session_commands(self, query).is_some() {
+            return;
+        }
+
         if query == "help" || query == "?" {
             self.panels.help_panel_open = true;
             return;
@@ -1224,6 +1229,14 @@ impl AppState {
                 "macro-delete",
                 // U1-07: Reader mode
                 "reader-save",
+                // U1-02: Tab reorder
+                "tab-move-left",
+                "tab-move-right",
+                // U1-04: Session manager
+                "session-save",
+                "session-load",
+                "session-list",
+                "session-delete",
             ];
             let cmd = query;
             let suggestion = known_commands

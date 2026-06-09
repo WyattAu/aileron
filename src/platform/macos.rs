@@ -42,11 +42,68 @@ impl PlatformOps for MacOSPlatform {
         vec![("tab_sidebar_right", "true".into())]
     }
 
-    fn file_open_dialog(&self, _title: &str, _filters: &[(&str, &str)]) -> Option<PathBuf> {
-        None
+    fn file_open_dialog(&self, title: &str, filters: &[(&str, &str)]) -> Option<PathBuf> {
+        if std::env::var("AILERON_TESTING").is_ok() {
+            return None;
+        }
+
+        // Build an AppleScript that opens NSOpenPanel via osascript.
+        // NSOpenPanel is accessed through Cocoa's Objective-C bridge.
+        let filter_list: Vec<String> = filters
+            .iter()
+            .map(|(name, exts)| format!("\"{name}\": \"{exts}\""))
+            .collect();
+        let filter_json = if filter_list.is_empty() {
+            String::new()
+        } else {
+            format!(", allowedFileTypes: [{}]", filter_list.join(", "))
+        };
+
+        let script = format!(
+            r#"
+            use framework "AppKit"
+            set panel to current application's NSOpenPanel's openPanel()
+            panel's setAllowsMultipleSelection:false
+            panel's setCanChooseFiles:true
+            panel's setCanChooseDirectories:false{}
+            if (panel's runModal()) as integer = 1 then
+                set filePath to (panel's |URL|'s |path|()) as text
+                return filePath
+            else
+                return ""
+            end if
+            "#,
+            filter_json
+        );
+
+        std::process::Command::new("osascript")
+            .args(["-e", &script])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .and_then(|output| {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if path.is_empty() {
+                    None
+                } else {
+                    Some(PathBuf::from(path))
+                }
+            })
     }
 
-    fn show_notification(&self, _title: &str, _body: &str) {}
+    fn show_notification(&self, title: &str, body: &str) {
+        let script = format!(
+            r#"display notification "{}" with title "{}""#,
+            body.replace('\\', "\\\\").replace('"', "\\\""),
+            title.replace('\\', "\\\\").replace('"', "\\\""),
+        );
+        let _ = std::process::Command::new("osascript")
+            .args(["-e", &script])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }
 
     fn super_key_name(&self) -> &'static str {
         "Cmd"

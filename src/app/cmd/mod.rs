@@ -8,6 +8,7 @@ pub mod extensions_cmd;
 pub mod history;
 pub mod import;
 pub mod privacy;
+pub mod session;
 pub mod settings;
 pub mod site_settings;
 #[cfg(feature = "sync")]
