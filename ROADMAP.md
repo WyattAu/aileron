@@ -5,7 +5,7 @@
 | Metric | Value |
 |--------|-------|
 | Version | 0.21.0 |
-| Tests | 1168 lib, 253 integration (13 suites), 4 doc = 1425 total |
+| Tests | 1178 lib, 253 integration (13 suites), 4 doc = 1435 total |
 | Clippy | Zero warnings (all-targets, -D warnings) |
 | Formatting | Zero issues (cargo fmt) |
 | Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck -- SAFETY commented) |
@@ -48,7 +48,7 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
 | P2-01 | Add frame-time percentile tracking to profiling module | 3h | Done |
-| P2-02 | Create startup latency benchmark (cold start to first paint) | 2h | Pending |
+| P2-02 | Create startup latency benchmark (cold start to first paint) | 2h | Done |
 | P2-03 | Expand frame_bench.rs with multi-pane render benchmarks | 3h | Done |
 | P2-04 | Implement tab-unload LRU with actual RSS memory measurement | 4h | Done |
 
@@ -57,7 +57,7 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
 | P3-01 | Profile compile times with `cargo build --timings`, optimize split | 2h | Done |
-| P3-02 | Evaluate cranelift codegen backend for faster debug builds | 2h | Pending |
+| P3-02 | Evaluate cranelift codegen backend for faster debug builds | 2h | Done |
 | P3-03 | Store benchmark baselines in CI, fail on >10% regression | 4h | Done |
 | P3-04 | Feature gate `terminal` module behind `terminal` feature (reduce cold compile) | 3h | Done |
 | P3-05 | Feature gate `lua` module behind `lua` feature | 2h | Done |
@@ -81,10 +81,10 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
-| M1-01 | Verify WebKit rendering on macOS (WKWebView via wry) | 4h | Pending |
-| M1-02 | Implement macOS-native file dialog (NSOpenPanel via objc FFI) | 6h | Pending |
-| M1-03 | macOS-specific keymap (Cmd vs Ctrl, system shortcuts) | 4h | Pending |
-| M1-04 | Verify offscreen rendering path on macOS | 4h | Pending |
+| M1-01 | Verify WebKit rendering on macOS (WKWebView via wry) | 4h | Done |
+| M1-02 | Implement macOS-native file dialog (NSOpenPanel via objc FFI) | 6h | Done |
+| M1-03 | macOS-specific keymap (Cmd vs Ctrl, system shortcuts) | 4h | Done |
+| M1-04 | Verify offscreen rendering path on macOS | 4h | Done |
 
 ### Priority 2: macOS CI and Distribution
 
@@ -92,8 +92,8 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 |----|------|----------|--------|
 | M2-01 | Run integration tests on macOS CI (xvfb not needed) | 2h | Done |
 | M2-02 | Run clippy on macOS CI (catch platform-specific warnings) | 1h | Done |
-| M2-03 | Create macOS install guide in CONTRIBUTING.md | 2h | Pending |
-| M2-04 | Test AUR-equivalent install path (cargo install, Homebrew formula) | 2h | Pending |
+| M2-03 | Create macOS install guide in CONTRIBUTING.md | 2h | Done |
+| M2-04 | Test AUR-equivalent install path (cargo install, Homebrew formula) | 2h | Done |
 
 ### Blocked
 
@@ -119,10 +119,10 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
-| W1-01 | Verify WebView2 rendering on Windows | 4h | Pending |
-| W1-02 | Windows-native file dialog (COM IFileDialog) | 6h | Pending |
-| W1-03 | Windows-specific keymap (Alt vs Ctrl) | 4h | Pending |
-| W1-04 | Run integration tests on Windows CI | 2h | Pending |
+| W1-01 | Verify WebView2 rendering on Windows | 4h | Done |
+| W1-02 | Windows-native file dialog (COM IFileDialog) | 6h | Done |
+| W1-03 | Windows-specific keymap (Alt vs Ctrl) | 4h | Done |
+| W1-04 | Run integration tests on Windows CI | 2h | Done |
 | W1-05 | Run clippy on Windows CI | 1h | Done |
 
 ### Priority 2: Extension Infrastructure
@@ -198,9 +198,9 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
 | U1-01 | Tab-within-pane (multiple tabs per BSP leaf node) | 12h | Done |
-| U1-02 | Drag-and-drop tab reorder | 6h | Pending |
+| U1-02 | Drag-and-drop tab reorder | 6h | Done |
 | U1-03 | Tab search (fuzzy search across open tabs) | 3h | Done |
-| U1-04 | Session manager (visual session list with preview) | 8h | Pending |
+| U1-04 | Session manager (visual session list with preview) | 8h | Done |
 | U1-05 | Workspace templates (predefined pane layouts) | 4h | Done |
 | U1-06 | Keyboard macro recording (`:macro-record`, `:macro-play`) | 8h | Done |
 | U1-07 | Reader mode enhancement (reading time, font controls, save-to-markdown) | 6h | Done |
