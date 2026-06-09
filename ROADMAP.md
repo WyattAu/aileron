@@ -34,9 +34,9 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
-| P1-01 | Pre-allocate frame capture buffer (eliminate ~8MB/frame alloc in render.rs) | 2h | Pending |
-| P1-02 | Refactor tab display cache in panels.rs (eliminate 3-4 String clones per tab per frame) | 3h | Pending |
-| P1-03 | Change `panes()` to return iterator instead of cloned Vec (wm/tree.rs) | 2h | Pending |
+| P1-01 | Pre-allocate frame capture buffer (eliminate ~8MB/frame alloc in render.rs) | 2h | Done |
+| P1-02 | Refactor tab display cache in panels.rs (eliminate 3-4 String clones per tab per frame) | 3h | Done |
+| P1-03 | Change `panes()` to return iterator instead of cloned Vec (wm/tree.rs) | 2h | Done |
 | P1-04 | Texture pooling for multi-pane scenarios (avoid per-frame texture creation) | 4h | Pending |
 | P1-05 | Pre-lowercase blocked_domains into HashSet at construction (navigation handler O(n)->O(1)) | 3h | Done |
 | P1-06 | Wrap https_safe_list in Arc<HashSet> to avoid cloning ~1000 entries per pane creation | 2h | Done |
@@ -47,9 +47,9 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
-| P2-01 | Add frame-time percentile tracking to profiling module | 3h | Pending |
+| P2-01 | Add frame-time percentile tracking to profiling module | 3h | Done |
 | P2-02 | Create startup latency benchmark (cold start to first paint) | 2h | Pending |
-| P2-03 | Expand frame_bench.rs with multi-pane render benchmarks | 3h | Pending |
+| P2-03 | Expand frame_bench.rs with multi-pane render benchmarks | 3h | Done |
 | P2-04 | Implement tab-unload LRU with actual RSS memory measurement | 4h | Pending |
 
 ### Priority 3: Build and CI
@@ -58,7 +58,7 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 |----|------|----------|--------|
 | P3-01 | Profile compile times with `cargo build --timings`, optimize split | 2h | Pending |
 | P3-02 | Evaluate cranelift codegen backend for faster debug builds | 2h | Pending |
-| P3-03 | Store benchmark baselines in CI, fail on >10% regression | 4h | Pending |
+| P3-03 | Store benchmark baselines in CI, fail on >10% regression | 4h | Done |
 | P3-04 | Feature gate `terminal` module behind `terminal` feature (reduce cold compile) | 3h | Done |
 | P3-05 | Feature gate `lua` module behind `lua` feature | 2h | Done |
 | P3-06 | Further split large files (frame_tasks.rs, ui/panels.rs -> target <2000 lines each) | 3h | Done |
@@ -90,8 +90,8 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
-| M2-01 | Run integration tests on macOS CI (xvfb not needed) | 2h | Pending |
-| M2-02 | Run clippy on macOS CI (catch platform-specific warnings) | 1h | Pending |
+| M2-01 | Run integration tests on macOS CI (xvfb not needed) | 2h | Done |
+| M2-02 | Run clippy on macOS CI (catch platform-specific warnings) | 1h | Done |
 | M2-03 | Create macOS install guide in CONTRIBUTING.md | 2h | Pending |
 | M2-04 | Test AUR-equivalent install path (cargo install, Homebrew formula) | 2h | Pending |
 
@@ -123,18 +123,18 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | W1-02 | Windows-native file dialog (COM IFileDialog) | 6h | Pending |
 | W1-03 | Windows-specific keymap (Alt vs Ctrl) | 4h | Pending |
 | W1-04 | Run integration tests on Windows CI | 2h | Pending |
-| W1-05 | Run clippy on Windows CI | 1h | Pending |
+| W1-05 | Run clippy on Windows CI | 1h | Done |
 
 ### Priority 2: Extension Infrastructure
 
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
-| E1-01 | Implement `cookies` API (get, set, remove, onChanged) | 8h | Pending |
-| E1-02 | Implement `declarativeNetRequest` rule engine | 12h | Pending |
-| E1-03 | Implement `permissions.request()` prompt | 4h | Pending |
-| E1-04 | Implement `alarms` API | 4h | Pending |
-| E1-05 | Implement `contextMenus` API | 6h | Pending |
-| E1-06 | Background script JS runtime (quick-js or v8 isolate) | 16h | Pending |
+| E1-01 | Implement `cookies` API (get, set, remove, onChanged) | 8h | Done |
+| E1-02 | Implement `declarativeNetRequest` rule engine | 12h | Done |
+| E1-03 | Implement `permissions.request()` prompt | 4h | Done |
+| E1-04 | Implement `alarms` API | 4h | Done |
+| E1-05 | Implement `contextMenus` API | 6h | Done |
+| E1-06 | Background script JS runtime (quick-js or v8 isolate) | 16h | Done |
 | E1-07 | Port messaging between background and content scripts | 8h | Pending |
 
 ### Blocked
