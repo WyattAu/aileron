@@ -248,13 +248,20 @@ impl TestHarness {
 
         let panes: Vec<aileron_shared::PaneInfo> = panes_ref
             .iter()
-            .map(|(pid, _)| aileron_shared::PaneInfo {
-                id: pid.to_string(),
-                url: String::new(),
-                title: String::new(),
-                active: *pid == active_id,
-                loading: false,
-                zoom: 1.0,
+            .map(|(pid, _)| {
+                let (url, title) = if let Some(pane) = app_state.wm.find_pane(*pid) {
+                    (pane.url().to_string(), pane.title().to_string())
+                } else {
+                    (String::new(), String::new())
+                };
+                aileron_shared::PaneInfo {
+                    id: pid.to_string(),
+                    url,
+                    title,
+                    active: *pid == active_id,
+                    loading: false,
+                    zoom: 1.0,
+                }
             })
             .collect();
 
@@ -408,40 +415,42 @@ pub fn default_route() -> Vec<TestState> {
     vec![
         // 1. Default (empty new tab)
         TestState::wait_only("01_default", 500),
-        // 2. Enter Command mode via `:`
-        TestState::new("02_command_mode", TestAction::key(Key::Character(':')), 300),
-        // 3. Return to Normal, enter Insert mode via `i`
-        TestState::new("03_insert_mode", TestAction::key(Key::Character('i')), 300),
-        // 4. Return to Normal, open Command Palette (Ctrl+P)
+        // 2. Open Command palette via `:`
         TestState::new(
-            "04_command_palette",
-            TestAction::key_with_mods(Key::Character('p'), true, false, false),
+            "02_command_palette",
+            TestAction::key(Key::Character(':')),
             500,
         ),
-        // 5. Type "git" into palette
-        TestState::new("05_palette_type_git", TestAction::cmd("git"), 500),
-        // 6. Close palette (Escape)
-        TestState::new("06_palette_close", TestAction::key(Key::Escape), 200),
-        // 7. Open Find bar (Ctrl+F)
+        // 3. Type "open https://example.com" into palette
         TestState::new(
-            "07_find_bar",
-            TestAction::key_with_mods(Key::Character('f'), true, false, false),
-            300,
-        ),
-        // 8. Close Find bar (Escape)
-        TestState::new("08_find_close", TestAction::key(Key::Escape), 200),
-        // 9. Split horizontal
-        TestState::new("09_hsplit", TestAction::cmd("hsplit"), 500),
-        // 10. Navigate to example.com
-        TestState::new(
-            "10_open_example",
+            "03_open_example",
             TestAction::cmd("open https://example.com"),
             3000,
         ),
-        // 11. Split vertical
-        TestState::new("11_vsplit", TestAction::cmd("vsplit"), 500),
-        // 12. Capture final state
-        TestState::wait_only("12_final_state", 500),
+        // 4. Return to Normal (Escape)
+        TestState::new("04_normal_mode", TestAction::key(Key::Escape), 300),
+        // 5. Open Command Palette again (Ctrl+P)
+        TestState::new(
+            "05_palette_ctrl_p",
+            TestAction::key_with_mods(Key::Character('p'), true, false, false),
+            500,
+        ),
+        // 6. Split horizontal via palette command
+        TestState::new("06_split_h", TestAction::cmd("sp"), 500),
+        // 7. Split vertical via palette command
+        TestState::new("07_split_v", TestAction::cmd("vs"), 500),
+        // 8. Close palette (Escape)
+        TestState::new("08_close_palette", TestAction::key(Key::Escape), 300),
+        // 9. Open Find bar (Ctrl+F)
+        TestState::new(
+            "09_find_bar",
+            TestAction::key_with_mods(Key::Character('f'), true, false, false),
+            300,
+        ),
+        // 10. Close Find bar (Escape)
+        TestState::new("10_find_close", TestAction::key(Key::Escape), 200),
+        // 11. Capture final state
+        TestState::wait_only("11_final_state", 500),
     ]
 }
 
@@ -590,7 +599,7 @@ mod tests {
     #[test]
     fn test_default_route_length() {
         let route = default_route();
-        assert_eq!(route.len(), 12);
+        assert_eq!(route.len(), 11);
     }
 
     #[test]
