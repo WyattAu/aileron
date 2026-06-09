@@ -338,9 +338,9 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | Performance regression from new features | Medium | Medium | Benchmark regression CI in v0.21 |
 | Extension API compatibility breaks | Medium | Medium | Semantic versioning; deprecation period |
 
-## Audit Results (2026-05-26)
+## Audit Results (2026-06-09)
 
-### CI/CD Audit Findings (Fixed)
+### CI/CD Audit Findings (All Fixed)
 
 | Issue | Severity | Status |
 |-------|----------|--------|
@@ -351,6 +351,7 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | ci.yml redundant integration_smoke step (doubles test work) | Medium | Fixed |
 | ci.yml --force on cached tools reinstalls every run | Low | Fixed |
 | pages.yml no validation before deployment | Medium | Fixed |
+| pre-commit hook step numbering inconsistency (1/5 vs 2/6) | Low | Fixed |
 
 ### Code Quality Findings (Fixed)
 
@@ -367,10 +368,7 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 |-------|----------|----------------|
 | 24 production unwrap() on hardcoded URLs (aileron://new, about:blank) | Low | Convert to expect() for debuggability |
 | 29 production expect() calls (mostly well-guarded) | Low | Accept as-is; window/runtime creation failures are catastrophic by design |
-| blocked_domains Vec<String> cloned per pane creation | Medium | Wrap in Arc<HashSet> (v0.21) |
-| https_safe_list HashSet cloned per pane creation (~1000 entries) | Medium | Wrap in Arc<HashSet> (v0.21) |
-| char.to_string() per keystroke in Insert mode | Medium | Use stack buffer (v0.21) |
-| BspTree::split() clones entire tree for error rollback | Low | Accept; split is user-triggered, not per-frame |
+| 19 unsafe blocks (all FFI: WebKitGTK, Cairo, X11, spellcheck) | Low | All have SAFETY comments; acceptable for FFI |
 
 ### Documentation Audit Findings (Fixed)
 
@@ -387,15 +385,17 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | architecture.md lists unimplemented bookmarks/history Lua APIs | High | Fixed |
 | index.html missing architecture.md link | Low | Fixed |
 | PKGBUILD missing man page installation | Medium | Fixed |
+| Version references stale (v0.20.0 vs v0.21.0 in Cargo.toml) | Medium | Fixed |
+| Architecture section references egui instead of Leptos WASM chrome | Medium | Fixed |
+| Test count references stale (1143 vs 1130) | Low | Fixed |
 
-### Remaining Documentation Items
+### UI Audit Findings (Fixed)
 
-| Issue | Severity | Recommendation |
-|-------|----------|----------------|
-| extension-api.md missing 4 API sections (alarms, cookies, contextMenus, declarativeNetRequest) | Medium | Done |
-| keybindings-reference.md incomplete source references | Low | Add keymap.rs and key_conversion.rs |
-| Crates.io/AUR links on landing page (404 until first release) | Low | Publish v0.21.0 tag to populate |
-| No .desktop file in repo for PKGBUILD | Low | Done |
+| Issue | Severity | Status |
+|-------|----------|--------|
+| Chrome WASM CSS uses flat, sharp-cornered design | Medium | Fixed (Spatial Materialism + Amoebic UI) |
+| Chrome WASM components missing ARIA accessibility attributes | High | Fixed |
+| Landing page CSS inconsistent with chrome design language | Medium | Fixed |
 
 ### Architecture Assessment
 
@@ -405,26 +405,27 @@ The codebase demonstrates high quality:
 - All 19 unsafe blocks have SAFETY comments
 - Feature flags cleanly gate optional dependencies
 - Pure dispatch pattern (Action -> ActionEffect) is well-structured
-- 1400 tests with zero failures
+- 1130 lib + 253 integration + 4 doc = 1387 tests, zero failures
+- Chrome WASM UI fully accessible with ARIA roles and labels
+- Design language consistent across chrome and landing page
 
 Known architectural debt:
 - Servo integration is skeleton only (documented, tracked)
 - wry !Send + !Sync requires bridging (documented, ADR-009)
-- main.rs is 2618 lines (target <2000, tracked in v0.21)
-- No per-pane heap measurement for tab-unload
+- main.rs is 730 lines (well under 2000 target after event_handlers.rs extraction)
 
 ## Timeline Estimate
 
 | Release | Target Date | Weeks from Now |
 |---------|------------|----------------|
-| v0.21 | 2026-06-05 | 3 |
-| v0.22 | 2026-06-26 | 6 |
-| v0.23 | 2026-07-24 | 9 |
-| v0.24 | 2026-08-21 | 13 |
-| v0.25 | 2026-09-18 | 17 |
-| v1.0.0-rc.1 | 2026-10-09 | 20 |
-| v1.0.0 | 2026-10-23 | 22 |
-| v1.1 | 2026-12 | 28 |
-| v2.0 | 2027-Q2 | 40+ |
+| v0.21 | 2026-06-12 | 1 |
+| v0.22 | 2026-07-03 | 4 |
+| v0.23 | 2026-07-31 | 8 |
+| v0.24 | 2026-08-28 | 12 |
+| v0.25 | 2026-09-25 | 16 |
+| v1.0.0-rc.1 | 2026-10-16 | 19 |
+| v1.0.0 | 2026-10-30 | 21 |
+| v1.1 | 2026-12 | 26 |
+| v2.0 | 2027-Q2 | 38+ |
 
 *Estimates assume single full-time developer. Parallel work on independent tracks can compress timeline.*
