@@ -588,10 +588,16 @@ impl AileronApp {
             let scale = window.scale_factor();
             let w = size.width as f64 / scale;
             let h = size.height as f64 / scale;
+            info!(
+                "reposition: chrome webview set to {}x{} (window {}x{}, scale {})",
+                w, h, size.width, size.height, scale
+            );
             let _ = webview.set_bounds(wry::Rect {
                 position: wry::dpi::Position::Logical(wry::dpi::LogicalPosition::new(0.0, 0.0)),
                 size: wry::dpi::Size::Logical(wry::dpi::LogicalSize::new(w, h)),
             });
+        } else {
+            info!("reposition: no window or chrome_webview available");
         }
 
         let tab_layout = app_state.config.tab_layout.as_str();
@@ -612,7 +618,26 @@ impl AileronApp {
                     sidebar_width,
                     sidebar_on_right,
                 );
-                wry_pane.set_bounds(wry_rect);
+                // Get parent window screen position for GTK window offset
+                let (parent_x, parent_y) = if let Some(window) = &self.window {
+                    let pos = window.outer_position().unwrap_or_default();
+                    (pos.x, pos.y)
+                } else {
+                    (0, 0)
+                };
+                info!(
+                    "reposition: pane {} -> wry_rect {:?} (parent screen {}x{})",
+                    &pane_id.to_string()[..8],
+                    wry_rect,
+                    parent_x,
+                    parent_y
+                );
+                wry_pane.set_bounds_with_parent_offset(wry_rect, parent_x, parent_y);
+            } else {
+                info!(
+                    "reposition: pane {} NOT found in wry_panes",
+                    &pane_id.to_string()[..8]
+                );
             }
         }
 

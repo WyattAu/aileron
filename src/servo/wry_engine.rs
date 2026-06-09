@@ -147,12 +147,21 @@ impl WryPane {
         // On Wayland, wry's build_as_child panics at
         //   gdk_display.downcast_ref::<X11Display>().unwrap()
         // instead of returning Err. Detect this before calling it.
+        //
+        // NOTE: On XWayland (Wayland compositor with X11 fallback), build_as_child
+        // creates child windows that don't render properly. We skip Path 1 on
+        // XWayland by checking if the session is Wayland even when GDK_BACKEND=x11.
         #[cfg(target_os = "linux")]
         let is_x11_display: bool = {
             use webkit2gtk::glib::Cast;
-            gtk::gdk::Display::default()
+            let gdk_is_x11 = gtk::gdk::Display::default()
                 .and_then(|d| d.downcast::<gdkx11::X11Display>().ok())
-                .is_some()
+                .is_some();
+            // Also check if we're actually on Wayland (XWayland case)
+            let is_wayland_session = std::env::var("XDG_SESSION_TYPE")
+                .map(|v| v == "wayland")
+                .unwrap_or(false);
+            gdk_is_x11 && !is_wayland_session
         };
         #[cfg(not(target_os = "linux"))]
         let is_x11_display: bool = true;
@@ -587,7 +596,10 @@ a {{ color: #4db4ff; }}
     }
 
     /// Update the position and size of this pane.
-    pub fn set_bounds(&self, bounds: Rect) {
+    ///
+    /// For GTK windows (Wayland fallback), the position is relative to the
+    /// parent winit window, so we need to add the parent window's screen position.
+    pub fn set_bounds_with_parent_offset(&self, bounds: Rect, parent_x: i32, parent_y: i32) {
         if let Err(e) = self.webview.set_bounds(bounds) {
             warn!(
                 "Failed to set bounds for pane {}: {}",
@@ -595,19 +607,29 @@ a {{ color: #4db4ff; }}
                 e
             );
         }
-        // Also resize the GTK window + Fixed container on Wayland
+        // Also resize and position the GTK window + Fixed container
         #[cfg(target_os = "linux")]
         if let Some(ref win) = self.gtk_window {
             let (w, h) = match bounds.size {
                 Size::Logical(s) => (s.width as i32, s.height as i32),
                 Size::Physical(s) => (s.width as i32, s.height as i32),
             };
+            let (bx, by) = match bounds.position {
+                Position::Logical(lp) => (lp.x as i32, lp.y as i32),
+                Position::Physical(pp) => (pp.x, pp.y),
+            };
             win.set_default_size(w, h);
-            // Resize the Fixed container to match
             if let Some(ref fixed) = self.gtk_fixed {
                 fixed.set_size_request(w, h);
             }
+            // Position relative to parent window on screen
+            win.move_(parent_x + bx, parent_y + by);
         }
+    }
+
+    /// Update the position and size of this pane (no parent offset).
+    pub fn set_bounds(&self, bounds: Rect) {
+        self.set_bounds_with_parent_offset(bounds, 0, 0);
     }
 
     /// Show or hide the webview.

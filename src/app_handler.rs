@@ -801,10 +801,7 @@ impl ApplicationHandler for AileronApp {
         }
 
         // Defer pane repositioning to end-of-frame (single call).
-        let mut layout_dirty = self.resize_pending;
-        if self.resize_pending {
-            // Reposition all panes to match the new window size.
-        }
+        let mut layout_dirty = self.resize_pending || self.first_frame;
         self.resize_pending = false;
 
         if self.first_frame {
