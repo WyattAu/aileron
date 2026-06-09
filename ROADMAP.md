@@ -5,7 +5,7 @@
 | Metric | Value |
 |--------|-------|
 | Version | 0.21.0 |
-| Tests | 1151 lib, 253 integration (13 suites), 4 doc = 1408 total |
+| Tests | 1168 lib, 253 integration (13 suites), 4 doc = 1425 total |
 | Clippy | Zero warnings (all-targets, -D warnings) |
 | Formatting | Zero issues (cargo fmt) |
 | Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck -- SAFETY commented) |
@@ -177,7 +177,7 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 |----|------|----------|--------|
 | P1-01 | Fingerprint protection (canvas/WebGL/audio context override) | 8h | Done |
 | P1-02 | Container/isolated tabs (per-pane cookie/storage partition) | 12h | Done |
-| P1-03 | Form autofill expansion (Bitwarden identities, addresses, cards) | 8h | Pending |
+| P1-03 | Form autofill expansion (Bitwarden identities, addresses, cards) | 8h | Done |
 
 ### Success Criteria for v0.24
 
@@ -197,23 +197,23 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
-| U1-01 | Tab-within-pane (multiple tabs per BSP leaf node) | 12h | Pending |
+| U1-01 | Tab-within-pane (multiple tabs per BSP leaf node) | 12h | Done |
 | U1-02 | Drag-and-drop tab reorder | 6h | Pending |
-| U1-03 | Tab search (fuzzy search across open tabs) | 3h | Pending |
+| U1-03 | Tab search (fuzzy search across open tabs) | 3h | Done |
 | U1-04 | Session manager (visual session list with preview) | 8h | Pending |
-| U1-05 | Workspace templates (predefined pane layouts) | 4h | Pending |
-| U1-06 | Keyboard macro recording (`:macro-record`, `:macro-play`) | 8h | Pending |
-| U1-07 | Reader mode enhancement (reading time, font controls, save-to-markdown) | 6h | Pending |
+| U1-05 | Workspace templates (predefined pane layouts) | 4h | Done |
+| U1-06 | Keyboard macro recording (`:macro-record`, `:macro-play`) | 8h | Done |
+| U1-07 | Reader mode enhancement (reading time, font controls, save-to-markdown) | 6h | Done |
 
 ### Priority 2: Distribution
 
 | ID | Task | Estimate | Status |
 |----|------|----------|--------|
-| D1-01 | Linux: AppImage build (via cargo-bundle) | 4h | Pending |
-| D1-02 | Linux: Flatpak build (manifest already exists, needs verification) | 6h | Pending |
-| D1-03 | Linux: AUR stable package (non-git) | 2h | Pending |
-| D1-04 | Auto-update check (GitHub API version comparison on startup) | 4h | Pending |
-| D1-05 | CLI flags: `--debug`, `--profile <dir>`, `--dump-config` | 3h | Pending |
+| D1-01 | Linux: AppImage build (via cargo-bundle) | 4h | Done |
+| D1-02 | Linux: Flatpak build (manifest already exists, needs verification) | 6h | Done |
+| D1-03 | Linux: AUR stable package (non-git) | 2h | Done |
+| D1-04 | Auto-update check (GitHub API version comparison on startup) | 4h | Done |
+| D1-05 | CLI flags: `--debug`, `--profile <dir>`, `--dump-config` | 3h | Done |
 
 ### Success Criteria for v0.25
 
