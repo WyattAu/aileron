@@ -1,20 +1,20 @@
 # Aileron — Version & State Tracking
 
 ## Current State
-- **Phase:** v0.20.0 Performance
-- **Version:** 0.20.0
-- **Status:** Shipped
-- **Last Updated:** 2026-05-14
-- **Test Count:** 1143 lib tests, 253 integration (13 suites), 4 doc = 1400 total
+- **Phase:** v0.21.0 Post-Audit
+- **Version:** 0.21.0
+- **Status:** In Development
+- **Last Updated:** 2026-06-09
+- **Test Count:** 1130 lib tests, 253 integration (13 suites), 4 doc = 1387 total
 - **Zero clippy warnings** (all-targets -D warnings)
-- **Zero vulnerabilities** (cargo audit)
+- **Zero vulnerabilities** (cargo audit -- only unmaintained GTK3 binding advisories)
 - **19 unsafe blocks** (FFI: WebKitGTK, Cairo, X11, spellcheck -- all with SAFETY comments)
 - **~56,865 lines of Rust** across 148 source files
-- **Clean build time:** 7m 14s (dev, 6-core x86_64); ~2.5m incremental
+- **Clean build time:** ~5m 30s (dev, 6-core x86_64); ~2.5m incremental
 - **Release profile:** LTO thin + strip + panic=abort + codegen-units=1
 - **Feature flags:** mcp, arp, sync, passwords, lua, terminal (with dependency-level gating)
 
-## Quality Audit Summary (2026-05-14)
+## Quality Audit Summary (2026-06-09)
 - **Unsafe:** 19 blocks (FFI: env vars, WebKitGTK, Cairo, X11, spellcheck)
 - **Panics:** 0 CRITICAL in production, 10 MODERATE (startup fail-fast), 6 LOW
 - **Concurrency:** 18 PASS, 12 WARN, 0 FAIL, 0 deadlocks
@@ -22,15 +22,17 @@
 - **Determinism:** BTreeMap for sync manifest, cached pane lists
 - **Error handling:** 11 silent swallows converted to tracing::warn
 - **Cross-file consistency:** 0 orphaned imports, 0 version mismatches
-- **Feature flags:** `lua` and `terminal` feature-gated in v0.20.0 (always-on via default features); extensions always compiled
-- **Test count:** 1143 lib, 253 integration (13 suites), 4 doc = 1400 total
+- **Feature flags:** `lua` and `terminal` feature-gated (always-on via default features); extensions always compiled
+- **Test count:** 1130 lib, 253 integration (13 suites), 4 doc = 1387 total
 - **Duplicate code:** X11 error handler consolidated, spellcheck FFI deduplicated
 - **Data race fix:** proxy set_var removed from post-spawn command handler
 - **#[must_use]:** 49 attributes across 21 files (all public Result/Option returns; 8 added in v0.18.1)
 - **unwrap() audit:** 0 risky unwrap() in production code (all on compile-time constants)
-- **File splits:** wry_engine.rs 2550->1166 lines (extracted wry_pages.rs), main.rs 2529->2618 lines (extracted event_handlers.rs)
+- **File splits:** wry_engine.rs 2550->1166 lines (extracted wry_pages.rs), main.rs 2529->730 lines (extracted event_handlers.rs, chrome_bridge.rs)
 - **i18n test fix:** Eliminated flaky env var race in locale detection tests (pure parse_lang_env function)
 - **New integration tests:** input routing (34), lua scripting (51), frame_tasks (20), key_conversion unit (14)
+- **UI audit:** Chrome WASM updated with Spatial Materialism + Amoebic UI design language, full ARIA accessibility
+- **Documentation:** Architecture references updated for Leptos WASM chrome, version numbers synchronized
 
 ## Implementation Phases
 

@@ -1,8 +1,8 @@
 # Aileron
 
-**v0.20.0** — 1143 lib tests, 253 integration, 4 doc (1400 total), ~56,900 Rust LOC
+**v0.21.0** -- 1130 lib tests, 253 integration, 4 doc (1387 total), ~56,900 Rust LOC
 
-**The terminal for the web.** A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals. Written in Rust with wry (WebKitGTK) for web rendering and egui for the UI overlay.
+**The terminal for the web.** A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals. Written in Rust with wry (WebKitGTK) for web rendering and Leptos WASM for the browser chrome overlay.
 
 ## Features
 
@@ -122,7 +122,7 @@ LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH" ./target/debug/aileron
 ## Test
 
 ```bash
-# Unit tests (1143 tests)
+# Unit tests (1130 tests)
 cargo test --lib -- --test-threads=4
 
 # Integration tests (253 tests, 13 suites)
@@ -421,50 +421,54 @@ Use `:scripts` to list loaded scripts.
 
 ```
 src/
-  main.rs              — Event loop, wry pane management, egui UI
-  app/mod.rs           — AppState (mode machine, palette, keybindings, dispatch bridge)
-  app/dispatch.rs      — Pure action dispatch (Action → ActionEffect)
-  app/commands.rs      — Ex-command handler (60+ commands)
-  app/events.rs        — Key event routing, panel keyboard navigation
-  input/               — Key mapping, mode transitions, keybinding registry with config overrides
-  wm/                  — BSP tree (tiling), rectangle math, pane metadata
-  servo/               — PaneStateManager, PaneRenderer trait, WryPaneManager, ServoPane (skeleton)
-  terminal/            — Native terminal (alacritty_terminal + portable_pty + egui painter)
-  ui/                  — Command palette (Nucleo fuzzy search), panels, omnibox, find bar, help panel
-  db/                  — SQLite: history, bookmarks, workspaces, downloads, site_settings
-  lua/                 — Lua sandbox, API bindings (cmd, keymap, theme, url)
-  arp/                 — Aileron Remote Protocol (WebSocket server, tab sync, clipboard sharing)
-  mcp/                 — MCP JSON-RPC server, tools, stdio transport
-  net/                 — AdBlocker (EasyList parser), filter_list (network/cosmetic), privacy (HTTPS upgrade, tracking protection)
-  downloads/           — Download manager (async, resume, progress tracking)
-  extensions/          — WebExtensions support (9 API traits, extension loading, lifecycle)
-  i18n/                — Internationalization (9 languages, locale resolution, message catalog)
-  passwords/           — Password manager (credential storage, OAuth detection, multi-step login flows, Bitwarden client)
-  platform/            — PlatformOps trait, Linux/macOS/Windows platform implementations
-  scripts.rs           — Content script manager (Lua to JS injection, @match/@match-regexp, @run-at)
-  gfx/                 — wgpu surface + egui renderer setup
-  git.rs               — Git repo detection, status bar integration
-  popup.rs             — Standalone popup window management
-  frame_tasks.rs       — Frame-level task execution, auto-save, ARP sync
-  offscreen_webview.rs — Offscreen webview texture compositing
-  wry_actions.rs       — WryAction queue utilities
-  sync/                — Sync protocol (delta sync, E2EE via Age, transports)
-  profiling/           — Memory profiling, performance monitoring
-  event_handlers.rs    — Shared key-to-JS event conversion
-  workspace_restore.rs — Workspace save/restore with crash recovery
-  bootstrap.rs         — Application bootstrap, panic hook, environment diagnostics
+  main.rs              -- Event loop, wry pane management, Leptos WASM chrome bridge
+  app/mod.rs           -- AppState (mode machine, palette, keybindings, dispatch bridge)
+  app/dispatch.rs      -- Pure action dispatch (Action -> ActionEffect)
+  app/commands.rs      -- Ex-command handler (60+ commands)
+  app/events.rs        -- Key event routing, panel keyboard navigation
+  input/               -- Key mapping, mode transitions, keybinding registry with config overrides
+  wm/                  -- BSP tree (tiling), rectangle math, pane metadata
+  servo/               -- PaneStateManager, PaneRenderer trait, WryPaneManager, ServoPane (skeleton)
+  terminal/            -- Native terminal (alacritty_terminal + portable_pty + egui painter)
+  ui/                  -- Command palette (Nucleo fuzzy search), panels, omnibox, find bar, help panel
+  db/                  -- SQLite: history, bookmarks, workspaces, downloads, site_settings
+  lua/                 -- Lua sandbox, API bindings (cmd, keymap, theme, url)
+  arp/                 -- Aileron Remote Protocol (WebSocket server, tab sync, clipboard sharing)
+  mcp/                 -- MCP JSON-RPC server, tools, stdio transport
+  net/                 -- AdBlocker (EasyList parser), filter_list (network/cosmetic), privacy (HTTPS upgrade, tracking protection)
+  downloads/           -- Download manager (async, resume, progress tracking)
+  extensions/          -- WebExtensions support (9 API traits, extension loading, lifecycle)
+  i18n/                -- Internationalization (9 languages, locale resolution, message catalog)
+  passwords/           -- Password manager (credential storage, OAuth detection, multi-step login flows, Bitwarden client)
+  platform/            -- PlatformOps trait, Linux/macOS/Windows platform implementations
+  scripts.rs           -- Content script manager (Lua to JS injection, @match/@match-regexp, @run-at)
+  gfx/                 -- wgpu surface + renderer setup
+  git.rs               -- Git repo detection, status bar integration
+  popup.rs             -- Standalone popup window management
+  frame_tasks.rs       -- Frame-level task execution, auto-save, ARP sync
+  offscreen_webview.rs -- Offscreen webview texture compositing
+  wry_actions.rs       -- WryAction queue utilities
+  sync/                -- Sync protocol (delta sync, E2EE via Age, transports)
+  profiling/           -- Memory profiling, performance monitoring
+  event_handlers.rs    -- Shared key-to-JS event conversion
+  workspace_restore.rs -- Workspace save/restore with crash recovery
+  bootstrap.rs         -- Application bootstrap, panic hook, environment diagnostics
+chrome/
+  src/lib.rs           -- Leptos WASM chrome UI (StatusBar, UrlBar, TabSidebar, FindBar, CommandPalette)
+shared/
+  src/lib.rs           -- Shared types for Rust <-> WASM IPC (Mode, Action, KeyEvent, PaneInfo)
 tests/
-  integration_smoke.rs — Cross-module integration tests
+  integration_smoke.rs -- Cross-module integration tests
 ```
 
 ### Action Dispatch Pattern
 
 ```
-Key event → AppState.process_key_event()
-         → KeybindingRegistry.lookup() → Action
-         → dispatch_action(Action) → Vec<ActionEffect>
-         → execute_action() applies effects to AppState
-         → WryAction queue consumed by main.rs
+Key event -> AppState.process_key_event()
+         -> KeybindingRegistry.lookup() -> Action
+         -> dispatch_action(Action) -> Vec<ActionEffect>
+         -> execute_action() applies effects to AppState
+         -> WryAction queue consumed by main.rs
 ```
 
 ## License

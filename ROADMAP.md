@@ -1,11 +1,11 @@
 # Aileron Roadmap: v0.21 to v2.0 and Beyond
 
-## Current State (v0.20.0, post-audit 2026-05-26)
+## Current State (v0.21.0-dev, post-audit 2026-06-09)
 
 | Metric | Value |
 |--------|-------|
-| Version | 0.20.0 |
-| Tests | 1143 lib, 253 integration (13 suites), 4 doc = 1400 total |
+| Version | 0.21.0 |
+| Tests | 1130 lib, 253 integration (13 suites), 4 doc = 1387 total |
 | Clippy | Zero warnings (all-targets, -D warnings) |
 | Formatting | Zero issues (cargo fmt) |
 | Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck -- SAFETY commented) |
@@ -17,7 +17,7 @@
 | Pre-commit | fmt, check, clippy, lib tests, doc tests; pre-push: integration tests, doc gen |
 | GitHub Pages | Deployed at https://wyattau.github.io/aileron/ |
 | Platforms | Linux (primary), macOS (compile), Windows (compile) |
-| Audit (2026-05-26) | Zero code stubs, zero TODO/FIXME, zero emojis in docs, CI/CD hardened, Lua version fixed, per-keypress allocation reduced, docs accuracy verified |
+| Audit (2026-06-09) | Zero code stubs, zero TODO/FIXME, zero emojis in docs, CI/CD hardened, Lua version fixed, per-keypress allocation reduced, docs accuracy verified, UI updated with Spatial Materialism + Amoebic UI, ARIA accessibility added |
 
 ## Execution Model
 

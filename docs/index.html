@@ -7,19 +7,31 @@
 <title>Aileron — The keyboard-driven web environment for developers</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#1a1a2e;--bg2:#16213e;--text:#e0e0e0;--text2:#a0a8b8;--accent:#4db4ff;--accent2:#3a8fd4;--code-bg:#0f1629;--border:#2a2a4a;--max-w:960px}
+:root{
+  --bg:#11111b;--bg2:#1e1e2e;--bg3:#313244;
+  --text:#cdd6f4;--text2:#a6adc8;--text3:#6c7086;
+  --accent:#89b4ff;--accent2:#74a8f7;
+  --code-bg:#181825;--border:#313244;
+  --max-w:960px;
+  --radius-sm:8px;--radius-md:12px;--radius-lg:16px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.3);
+  --shadow-md:0 4px 16px rgba(0,0,0,.4);
+  --shadow-lg:0 8px 32px rgba(0,0,0,.5);
+  --shadow-glow:0 0 24px rgba(137,180,250,.06);
+  --transition:200ms cubic-bezier(.25,.46,.45,.94)
+}
 html{scroll-behavior:smooth}
 body{background:var(--bg);color:var(--text);font-family:"Inter",system-ui,-apple-system,sans-serif;line-height:1.7;-webkit-font-smoothing:antialiased}
-a{color:var(--accent);text-decoration:none}
+a{color:var(--accent);text-decoration:none;transition:color var(--transition)}
 a:hover,a:focus-visible{text-decoration:underline;text-underline-offset:3px}
-a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--radius-sm)}
 .container{max-width:var(--max-w);margin:0 auto;padding:0 1.5rem}
-nav{padding:1rem 0;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(26,26,46,.92);backdrop-filter:blur(12px);z-index:10}
+nav{padding:1rem 0;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(17,17,27,.92);backdrop-filter:blur(16px);z-index:10}
 nav .container{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem}
 nav .logo{font-weight:700;font-size:1.1rem;letter-spacing:-.02em}
 nav .logo span{color:var(--accent)}
 nav ul{list-style:none;display:flex;gap:1.25rem;font-size:.875rem}
-nav ul a{color:var(--text2)}
+nav ul a{color:var(--text3)}
 nav ul a:hover,nav ul a:focus{color:var(--text)}
 h1,h2,h3{letter-spacing:-.03em;line-height:1.2}
 h1{font-size:clamp(2.5rem,6vw,3.75rem);font-weight:800;color:#fff}
@@ -29,46 +41,47 @@ h2{font-size:1.75rem;font-weight:700;color:#fff;margin-bottom:1rem}
 .hero p{color:var(--text2);max-width:600px;margin:1rem auto 2rem}
 .hero .tagline span{display:block;font-size:clamp(.875rem,1.8vw,1rem);color:var(--text2);font-weight:400;margin-top:.25rem}
 .buttons{display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap}
-.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.55rem 1.1rem;border-radius:6px;font-size:.85rem;font-weight:600;transition:background .15s,border-color .15s}
+.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1.2rem;border-radius:var(--radius-md);font-size:.85rem;font-weight:600;transition:background var(--transition),box-shadow var(--transition),transform var(--transition)}
 .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.btn-primary{background:var(--accent);color:#0a0a1a}
-.btn-primary:hover{background:var(--accent2)}
+.btn-primary{background:var(--accent);color:#0a0a1a;box-shadow:var(--shadow-sm)}
+.btn-primary:hover{background:var(--accent2);box-shadow:var(--shadow-md);transform:translateY(-1px)}
 .btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}
-.btn-outline:hover{border-color:var(--accent);color:var(--accent)}
+.btn-outline:hover{border-color:var(--accent);color:var(--accent);box-shadow:var(--shadow-glow)}
 section{padding:3.5rem 0}
 section:nth-of-type(even){background:var(--bg2)}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.25rem}
-.card{background:var(--code-bg);border:1px solid var(--border);border-radius:8px;padding:1.5rem;transition:border-color .2s}
-.card:hover{border-color:var(--accent)}
+.card{background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius-md);padding:1.5rem;transition:border-color var(--transition),box-shadow var(--transition),transform var(--transition)}
+.card:hover{border-color:var(--accent);box-shadow:var(--shadow-md);transform:translateY(-2px)}
 .card h3{font-size:1.05rem;margin-bottom:.5rem;color:var(--accent)}
 .card p{color:var(--text2);font-size:.875rem}
 .arch{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1.5rem;text-align:center}
-.arch-item{padding:1.25rem}
+.arch-item{padding:1.25rem;background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius-md);transition:border-color var(--transition)}
+.arch-item:hover{border-color:var(--accent)}
 .arch-item strong{display:block;font-size:1rem;color:#fff;margin-bottom:.25rem}
 .arch-item p{font-size:.8rem;color:var(--text2)}
 .dl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.75rem;max-width:680px;margin:0 auto}
-.dl-btn{display:flex;flex-direction:column;align-items:center;gap:.2rem;padding:.75rem .5rem;background:var(--code-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:.85rem;font-weight:600;transition:border-color .15s,background .15s}
-.dl-btn:hover{border-color:var(--accent);background:var(--bg2);text-decoration:none}
+.dl-btn{display:flex;flex-direction:column;align-items:center;gap:.2rem;padding:.75rem .5rem;background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text);font-size:.85rem;font-weight:600;transition:border-color var(--transition),background var(--transition),box-shadow var(--transition),transform var(--transition)}
+.dl-btn:hover{border-color:var(--accent);background:var(--bg2);box-shadow:var(--shadow-md);transform:translateY(-1px);text-decoration:none}
 .dl-btn .dl-icon{font-size:1.4rem;line-height:1}
 .dl-btn .dl-arch{font-weight:400;font-size:.75rem;color:var(--text2)}
 .dl-btn .dl-ext{font-size:.65rem;color:var(--text2);opacity:.7}
-pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px;padding:1.25rem;overflow-x:auto;font-size:.85rem;line-height:1.6;color:var(--text2)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1.25rem;overflow-x:auto;font-size:.85rem;line-height:1.6;color:var(--text2)}
 pre code{font-family:"JetBrains Mono","Fira Code",monospace}
 pre .prompt{color:var(--accent);user-select:none}
 pre .comment{color:#546178}
 .quickstart{max-width:600px;margin:0 auto}
 .quickstart p{color:var(--text2);font-size:.9rem;margin-bottom:1rem}
 .install-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:0}
-.install-tab{padding:.5rem 1rem;font-size:.8rem;font-weight:600;color:var(--text2);background:transparent;border:1px solid transparent;border-bottom:none;border-radius:6px 6px 0 0;cursor:pointer;transition:color .15s,background .15s}
+.install-tab{padding:.5rem 1rem;font-size:.8rem;font-weight:600;color:var(--text3);background:transparent;border:1px solid transparent;border-bottom:none;border-radius:var(--radius-sm) var(--radius-sm) 0 0;cursor:pointer;transition:color var(--transition),background var(--transition)}
 .install-tab:hover{color:var(--text)}
 .install-tab.active{color:var(--accent);background:var(--code-bg);border-color:var(--border)}
 .install-panel{display:none}
 .install-panel.active{display:block}
-.install-panel pre{border-radius:0 0 6px 6px;margin-top:0}
+.install-panel pre{border-radius:0 0 var(--radius-sm) var(--radius-sm);margin-top:0}
 .links{display:flex;gap:1.5rem;flex-wrap:wrap;justify-content:center;padding-bottom:4rem}
 .links a{color:var(--text2);font-size:.9rem}
 .links a:hover{color:var(--accent)}
-footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;border-top:1px solid var(--border)}
+footer{text-align:center;padding:2rem 0;color:var(--text3);font-size:.8rem;border-top:1px solid var(--border)}
 @media(max-width:600px){.hero{padding:3rem 0 2.5rem}section{padding:2.5rem 0}.grid{grid-template-columns:1fr}.dl-grid{grid-template-columns:1fr 1fr}nav ul{gap:.75rem}}
 </style>
 </head>
@@ -182,19 +195,19 @@ footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;borde
   <section id="architecture" aria-labelledby="arch-heading">
     <div class="container">
       <h2 id="arch-heading">Architecture</h2>
-      <div class="arch">
-        <div class="arch-item">
-          <strong>WebKitGTK + future Servo</strong>
+      <div class="grid">
+        <article class="card">
+          <h3>WebKitGTK + Servo</h3>
           <p>WebKitGTK for stable rendering today. Servo integration is in early development (experimental skeleton). Switch engines per-site with <code>:engine</code>.</p>
-        </div>
-        <div class="arch-item">
-          <strong>Offscreen rendering</strong>
-          <p>Web content renders to textures, composited by egui. No native widget chrome&mdash;full control over every pixel.</p>
-        </div>
-        <div class="arch-item">
-          <strong>Rust + egui</strong>
-          <p>The entire UI is Rust. egui provides immediate-mode rendering with native performance and zero DOM dependencies.</p>
-        </div>
+        </article>
+        <article class="card">
+          <h3>Offscreen Rendering</h3>
+          <p>Web content renders to textures, composited by the native backend. No native widget chrome -- full control over every pixel.</p>
+        </article>
+        <article class="card">
+          <h3>Rust + Leptos WASM</h3>
+          <p>The entire UI is Rust. Browser chrome (tabs, URL bar, status bar) renders as a WASM overlay via Leptos, with native performance and zero DOM dependencies on the host.</p>
+        </article>
       </div>
     </div>
   </section>
@@ -258,7 +271,7 @@ footer{text-align:center;padding:2rem 0;color:var(--text2);font-size:.8rem;borde
 </main>
 
 <footer role="contentinfo">
-  <p>Aileron v0.20.0 &mdash; written in Rust, built for developers. <a href="https://github.com/WyattAu/aileron/blob/main/LICENSE">Apache-2.0</a></p>
+  <p>Aileron v0.21.0 &mdash; written in Rust, built for developers. <a href="https://github.com/WyattAu/aileron/blob/main/LICENSE">Apache-2.0</a></p>
 </footer>
 
 <script>
