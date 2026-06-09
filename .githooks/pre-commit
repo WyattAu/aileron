@@ -15,7 +15,7 @@ echo -e "${YELLOW}[pre-commit] Aileron quality gates (fast)${NC}"
 export AILERON_TESTING=1
 
 # 1. Check formatting
-echo -e "${YELLOW}[1/5] Checking formatting (cargo fmt)...${NC}"
+echo -e "${YELLOW}[1/6] Checking formatting (cargo fmt)...${NC}"
 if ! cargo fmt --all -- --check 2>&1; then
     echo -e "${RED}[FAIL] Code is not formatted. Run: cargo fmt${NC}"
     exit 1
