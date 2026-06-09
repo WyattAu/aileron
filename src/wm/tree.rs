@@ -327,6 +327,9 @@ impl BspTree {
     }
 
     /// Collect all panes with their rectangles.
+    ///
+    /// Returns a cloned Vec. For hot paths that only iterate, prefer
+    /// `panes_ref()` or `iter_panes()` which avoid the clone.
     pub fn panes(&self) -> Vec<(Uuid, Rect)> {
         if !self.cache_dirty.get() {
             return self.panes_cache.borrow().clone();
@@ -339,10 +342,12 @@ impl BspTree {
                 result
             }
         };
-        *self.panes_cache.borrow_mut() = result.clone();
+        // Store directly in cache (no extra clone on rebuild).
+        *self.panes_cache.borrow_mut() = result;
         self.pane_ids_cache.borrow_mut().clear();
         self.cache_dirty.set(false);
-        result
+        // Return a clone of the freshly stored cache.
+        self.panes_cache.borrow().clone()
     }
 
     /// Borrow all panes with their rectangles without cloning.
@@ -401,10 +406,12 @@ impl BspTree {
                 result
             }
         };
-        *self.pane_ids_cache.borrow_mut() = result.clone();
+        // Store directly in cache (no extra clone on rebuild).
+        *self.pane_ids_cache.borrow_mut() = result;
         self.panes_cache.borrow_mut().clear();
         self.cache_dirty.set(false);
-        result
+        // Return a clone of the freshly stored cache.
+        self.pane_ids_cache.borrow().clone()
     }
 
     /// Iterate over all pane IDs without cloning the underlying Vec.

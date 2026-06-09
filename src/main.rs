@@ -100,6 +100,13 @@ struct AileronApp {
     /// Whether the chrome webview has been initialized.
     chrome_initialized: bool,
 
+    /// Cached version string (computed once at startup, avoids per-frame format!).
+    version_string: String,
+
+    /// Whether the chrome state needs to be pushed to the WASM overlay.
+    /// Set to true whenever mode, URL, tabs, or other visible state changes.
+    chrome_dirty: bool,
+
     /// Deferred pane creation queue (TASK-K27).
     pending_pane_creates: std::collections::VecDeque<(uuid::Uuid, url::Url)>,
 }
@@ -147,6 +154,12 @@ impl AileronApp {
             chrome_webview: None,
             chrome_ipc_rx: None,
             chrome_initialized: false,
+            version_string: format!(
+                "v{} ({})",
+                env!("CARGO_PKG_VERSION"),
+                option_env!("AILERON_GIT_HASH").unwrap_or("unknown")
+            ),
+            chrome_dirty: true,
             pending_pane_creates: std::collections::VecDeque::new(),
         }
     }

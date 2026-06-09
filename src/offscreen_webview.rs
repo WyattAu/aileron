@@ -701,6 +701,10 @@ a {{ color: #4db4ff; }}
     }
 
     /// Convert a cairo surface from snapshot() into FrameData.
+    ///
+    /// Uses the reusable `bgra_buffer` to avoid per-frame heap allocation.
+    /// On steady-state (same dimensions), the buffer capacity is retained
+    /// across frames and only `clear()` + `extend_from_slice()` run.
     #[cfg(target_os = "linux")]
     fn process_snapshot_surface(&mut self, surface: cairo::Surface) -> Option<FrameData> {
         // Convert the cairo surface to raw pixel data.
@@ -734,25 +738,26 @@ a {{ color: #4db4ff; }}
             return None;
         }
 
-        // Copy pixel data from the cairo surface.
-        // ARGB32 on little-endian = BGRA byte order, matching our FrameData format.
+        let len = (stride as usize) * (height as usize);
+
+        // Reuse bgra_buffer capacity across frames. Only reallocates when
+        // the surface grows beyond the current capacity.
+        if self.bgra_buffer.capacity() < len {
+            self.bgra_buffer = Vec::with_capacity(len);
+        }
+        self.bgra_buffer.clear();
+
         // SAFETY: FFI call to cairo_image_surface_get_data returns pointer into valid Image surface.
-        // Null-checked below. Slice length computed from stride*height matches the surface's pixel buffer.
-        let pixels = unsafe {
+        // Null-checked. Slice length computed from stride*height matches the surface's pixel buffer.
+        unsafe {
             let data_ptr = cairo::ffi::cairo_image_surface_get_data(raw);
             if data_ptr.is_null() {
                 warn!("capture_frame_snapshot: null pixel data");
                 return None;
             }
-            let len = (stride as usize) * (height as usize);
-            if self.bgra_buffer.capacity() < len {
-                self.bgra_buffer = Vec::with_capacity(len);
-            }
-            self.bgra_buffer.clear();
             self.bgra_buffer
                 .extend_from_slice(std::slice::from_raw_parts(data_ptr, len));
-            std::mem::take(&mut self.bgra_buffer)
-        };
+        }
 
         info!(
             "capture_frame_snapshot: pane {} ok: {}x{} stride={} pixels={}",
@@ -760,14 +765,16 @@ a {{ color: #4db4ff; }}
             width,
             height,
             stride,
-            pixels.len(),
+            len,
         );
 
+        // Move the buffer into FrameData. On the next frame, bgra_buffer
+        // will be empty but retain its capacity, avoiding reallocation.
         Some(FrameData {
             width,
             height,
             rowstride: stride,
-            pixels,
+            pixels: std::mem::take(&mut self.bgra_buffer),
         })
     }
 
@@ -783,6 +790,8 @@ a {{ color: #4db4ff; }}
     /// Only captures GTK widget-level cairo drawing. Does NOT capture
     /// GL-composited WebKitGTK content. Suitable for aileron:// internal pages
     /// which are rendered through GTK's software path.
+    ///
+    /// Reuses `bgra_buffer` capacity across frames to avoid per-frame allocation.
     #[cfg(target_os = "linux")]
     fn capture_frame_pixbuf(&mut self) -> Option<&FrameData> {
         let pixbuf = match self.offscreen.pixbuf() {
@@ -798,25 +807,27 @@ a {{ color: #4db4ff; }}
         let width = pixbuf.width() as u32;
         let height = pixbuf.height() as u32;
         let rowstride = pixbuf.rowstride() as u32;
+        let needed = (width as usize) * (height as usize) * 4;
+
+        // Reuse bgra_buffer capacity across frames.
+        if self.bgra_buffer.capacity() < needed {
+            self.bgra_buffer = Vec::with_capacity(needed);
+        }
+        self.bgra_buffer.clear();
         // SAFETY: pixbuf is a valid, non-null GdkPixbuf obtained from
         // OffscreenWindow::pixbuf() (null-checked above). pixels() returns a
         // raw pointer into the pixbuf's internal buffer, valid for pixbuf's
-        // lifetime, which spans this to_vec() call.
-        let pixels = unsafe {
-            let needed = (width as usize) * (height as usize) * 4;
-            if self.bgra_buffer.capacity() < needed {
-                self.bgra_buffer = Vec::with_capacity(needed);
-            }
-            self.bgra_buffer.clear();
+        // lifetime, which spans this extend_from_slice() call.
+        unsafe {
             self.bgra_buffer.extend_from_slice(pixbuf.pixels());
-            std::mem::take(&mut self.bgra_buffer)
-        };
-        if width == 0 || height == 0 || pixels.is_empty() {
+        }
+
+        if width == 0 || height == 0 || self.bgra_buffer.is_empty() {
             warn!(
                 "capture_frame: empty pixbuf {}x{} ({} bytes) for pane {}",
                 width,
                 height,
-                pixels.len(),
+                self.bgra_buffer.len(),
                 &self.pane_id.to_string()[..8]
             );
             return None;
@@ -827,13 +838,13 @@ a {{ color: #4db4ff; }}
             width,
             height,
             rowstride,
-            pixels.len(),
+            self.bgra_buffer.len(),
         );
         self.frame = Some(FrameData {
             width,
             height,
             rowstride,
-            pixels,
+            pixels: std::mem::take(&mut self.bgra_buffer),
         });
         self.dirty = false;
         // A webview producing pixel output is definitively not crashed.

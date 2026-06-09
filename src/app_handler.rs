@@ -293,6 +293,7 @@ impl ApplicationHandler for AileronApp {
 
                     app_state.process_key_event(aileron_event);
                     app_state.input_latency.record_key_press();
+                    self.chrome_dirty = true;
 
                     let pane_count_after = app_state.wm.leaf_count();
 
@@ -522,6 +523,7 @@ impl ApplicationHandler for AileronApp {
                                         };
                                         app_state.process_key_event(aileron_event);
                                         self.ime_just_committed = true;
+                                        self.chrome_dirty = true;
                                     }
                                     aileron::input::Mode::Insert => {
                                         let active_id = app_state.wm.active_pane_id();
@@ -677,8 +679,10 @@ impl ApplicationHandler for AileronApp {
             }
         }
 
-        // Push state to chrome webview every frame (debounced by frame rate).
-        if let Some(app_state) = &self.app_state
+        // Push state to chrome webview only when dirty (mode, URL, tabs, etc. changed).
+        // Avoids per-frame String allocations and JS injection when nothing changed.
+        if self.chrome_dirty
+            && let Some(app_state) = &self.app_state
             && let Some(ref webview) = self.chrome_webview
         {
             let active_id = app_state.wm.active_pane_id();
@@ -740,11 +744,7 @@ impl ApplicationHandler for AileronApp {
                 tab_layout: &app_state.config.tab_layout,
                 tab_sidebar_width: app_state.config.tab_sidebar_width as f64,
                 tab_sidebar_right: app_state.config.tab_sidebar_right,
-                version: format!(
-                    "v{} ({})",
-                    env!("CARGO_PKG_VERSION"),
-                    option_env!("AILERON_GIT_HASH").unwrap_or("unknown")
-                ),
+                version: self.version_string.clone(),
             };
 
             let state = aileron::chrome_bridge::build_chrome_state(snapshot);
@@ -752,6 +752,7 @@ impl ApplicationHandler for AileronApp {
                 let escaped = json.replace('\\', "\\\\").replace('\'', "\\'");
                 let _ = webview.evaluate_script(&format!("window.updateChromeState('{escaped}')"));
             }
+            self.chrome_dirty = false;
         }
 
         // Defer pane repositioning to end-of-frame (single call).
@@ -867,6 +868,8 @@ impl ApplicationHandler for AileronApp {
             &mut self.offscreen_panes,
             &self.content_scripts,
         );
+        // Wry actions (navigation, title changes, etc.) may have changed visible state.
+        self.chrome_dirty = true;
 
         let ws_name = self
             .app_state
