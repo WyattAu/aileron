@@ -28,6 +28,7 @@ pub mod servo;
 pub mod sync;
 #[cfg(feature = "terminal")]
 pub mod terminal;
+pub mod test_harness;
 pub mod ui;
 pub mod update_check;
 pub mod wm;

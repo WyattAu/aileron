@@ -577,6 +577,34 @@ impl ApplicationHandler for AileronApp {
             app_state.profiler.start_frame();
         }
 
+        // Test harness: execute next step's action and capture state
+        if let Some(ref mut harness) = self.test_harness
+            && !harness.is_done()
+            && let Some(app_state) = &mut self.app_state
+        {
+            let done = harness.tick(app_state);
+            if done {
+                tracing::info!("Test harness completed all steps");
+                _event_loop.exit();
+                return;
+            }
+
+            // Capture screenshot from active pane (offscreen mode only)
+            let active_id = app_state.wm.active_pane_id();
+            if self.config.is_offscreen()
+                && let Some(offscreen_pane) = self.offscreen_panes.get_mut(&active_id)
+            {
+                let frame_info = offscreen_pane.frame().map(|f| (f.width, f.height));
+                if let Some((width, height)) = frame_info
+                    && let Some(rgba) = offscreen_pane.frame_rgba()
+                {
+                    let rgba_owned = rgba.to_vec();
+                    let step_name = harness.current_step_name().to_string();
+                    harness.capture_screenshot(&rgba_owned, width, height, &step_name);
+                }
+            }
+        }
+
         // Poll chrome webview IPC messages (Phase 2b).
         if let Some(ref rx) = self.chrome_ipc_rx {
             while let Ok(msg) = rx.try_recv() {

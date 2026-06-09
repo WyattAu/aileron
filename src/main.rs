@@ -17,6 +17,7 @@ use aileron::popup::PopupManager;
 use aileron::servo::{WryPaneManager, bsp_rect_to_wry_rect};
 #[cfg(feature = "terminal")]
 use aileron::terminal::NativeTerminalManager;
+use aileron::test_harness::TestHarness;
 use aileron::wm::Rect;
 
 mod app_handler;
@@ -109,6 +110,9 @@ struct AileronApp {
 
     /// Deferred pane creation queue (TASK-K27).
     pending_pane_creates: std::collections::VecDeque<(uuid::Uuid, url::Url)>,
+
+    /// Internal test harness for automated UI state traversal.
+    test_harness: Option<TestHarness>,
 }
 
 impl AileronApp {
@@ -161,6 +165,7 @@ impl AileronApp {
             ),
             chrome_dirty: true,
             pending_pane_creates: std::collections::VecDeque::new(),
+            test_harness: None,
         }
     }
 
@@ -559,6 +564,15 @@ impl AileronApp {
 
     fn handle_popup_event(&mut self, window_id: WindowId, event: &WindowEvent) {
         self.popup.handle_popup_event(window_id, event);
+    }
+
+    /// Initialize the test harness if `--test-harness` was specified.
+    pub fn init_test_harness(&mut self, output_dir: &std::path::Path, dump_dom: bool) {
+        use aileron::test_harness::default_route;
+        let mut harness = TestHarness::new(output_dir, dump_dom);
+        harness.define_route(default_route());
+        self.test_harness = Some(harness);
+        tracing::info!("Test harness activated: {}", output_dir.display());
     }
 
     fn reposition_all_panes(&mut self) {

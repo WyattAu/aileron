@@ -1,0 +1,615 @@
+//! Internal test harness for automated UI state traversal.
+//!
+//! Routes through a predefined sequence of UI states, capturing DOM JSON
+//! and screenshots from within the app's own rendering pipeline. No
+//! xdotool or system-level permissions required.
+//!
+//! Usage: `aileron --test-harness [output_dir] [--dump-dom]`
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use tracing::info;
+
+use crate::app::AppState;
+use crate::chrome_bridge::{ChromeSnapshotInput, build_chrome_state};
+use crate::input::{Key, KeyEvent, Modifiers};
+
+/// An action to perform at a test step.
+#[derive(Debug, Clone)]
+pub enum TestAction {
+    /// Simulate a key press.
+    Key(KeyEvent),
+    /// Execute a command string via AppState.
+    Command(String),
+    /// No action — just wait for the UI to settle.
+    None,
+}
+
+impl TestAction {
+    /// A key press with no modifiers.
+    pub fn key(key: Key) -> Self {
+        TestAction::Key(KeyEvent {
+            key,
+            modifiers: Modifiers::none(),
+            physical_key: None,
+        })
+    }
+
+    /// A key press with modifiers (e.g., Ctrl+P).
+    pub fn key_with_mods(key: Key, ctrl: bool, shift: bool, alt: bool) -> Self {
+        TestAction::Key(KeyEvent {
+            key,
+            modifiers: Modifiers {
+                ctrl,
+                shift,
+                alt,
+                super_key: false,
+            },
+            physical_key: None,
+        })
+    }
+
+    /// A command string.
+    pub fn cmd(cmd: &str) -> Self {
+        TestAction::Command(cmd.to_string())
+    }
+
+    /// No action.
+    pub fn none() -> Self {
+        TestAction::None
+    }
+}
+
+/// A single step in the test route.
+#[derive(Debug, Clone)]
+pub struct TestState {
+    /// Human-readable name for this step.
+    pub name: String,
+    /// Action to perform before capture.
+    pub action: TestAction,
+    /// Milliseconds to wait after action before capturing.
+    pub wait_ms: u64,
+}
+
+impl TestState {
+    pub fn new(name: &str, action: TestAction, wait_ms: u64) -> Self {
+        Self {
+            name: name.to_string(),
+            action,
+            wait_ms,
+        }
+    }
+
+    /// A step that only waits (no action).
+    pub fn wait_only(name: &str, wait_ms: u64) -> Self {
+        Self::new(name, TestAction::none(), wait_ms)
+    }
+}
+
+/// Internal test runner that drives the app through a sequence of UI states.
+pub struct TestHarness {
+    /// Directory for this session's output.
+    session_dir: PathBuf,
+    /// The route to traverse.
+    states: Vec<TestState>,
+    /// Index of the next step to execute.
+    current_step: usize,
+    /// When the current step started (for wait timing).
+    step_start: Instant,
+    /// Whether the current step's action has been performed.
+    action_executed: bool,
+    /// Whether the harness is done.
+    done: bool,
+    /// Whether to print DOM JSON to stdout after each capture.
+    dump_dom: bool,
+    /// Capture counter (for sequential file naming).
+    capture_count: usize,
+}
+
+impl TestHarness {
+    /// Create a new test harness with the given output directory.
+    pub fn new(output_dir: &Path, dump_dom: bool) -> Self {
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let session_dir = output_dir.join(format!("session_{timestamp}"));
+        let dom_dir = session_dir.join("dom");
+        let screens_dir = session_dir.join("screens");
+
+        std::fs::create_dir_all(&dom_dir).expect("Failed to create dom/ directory");
+        std::fs::create_dir_all(&screens_dir).expect("Failed to create screens/ directory");
+
+        info!("Test harness initialized: output={}", session_dir.display());
+
+        Self {
+            session_dir,
+            states: Vec::new(),
+            current_step: 0,
+            step_start: Instant::now(),
+            action_executed: false,
+            done: false,
+            dump_dom,
+            capture_count: 0,
+        }
+    }
+
+    /// Define the route of UI states to traverse.
+    pub fn define_route(&mut self, states: Vec<TestState>) {
+        self.states = states;
+        self.current_step = 0;
+        self.step_start = Instant::now();
+        self.action_executed = false;
+        info!("Test route defined: {} steps", self.states.len());
+    }
+
+    /// Called each frame. Returns `true` when the route is complete.
+    ///
+    /// - Executes the current step's action on first call after wait expires
+    /// - Waits the specified duration for the UI to settle
+    /// - Returns `false` while the route is still in progress
+    /// - Returns `true` after the final capture
+    pub fn tick(&mut self, app_state: &mut AppState) -> bool {
+        if self.done {
+            return true;
+        }
+
+        if self.current_step >= self.states.len() {
+            info!("Test harness: all {} steps complete", self.capture_count);
+            self.done = true;
+            return true;
+        }
+
+        let elapsed = self.step_start.elapsed();
+
+        // Execute action once when the step starts
+        if !self.action_executed {
+            let state = &self.states[self.current_step];
+            match &state.action {
+                TestAction::Key(key_event) => {
+                    info!(
+                        "Step {}/{}: key event {:?}",
+                        self.current_step + 1,
+                        self.states.len(),
+                        key_event.key
+                    );
+                    app_state.process_key_event(key_event.clone());
+                }
+                TestAction::Command(cmd) => {
+                    if !cmd.is_empty() {
+                        info!(
+                            "Step {}/{}: command '{}'",
+                            self.current_step + 1,
+                            self.states.len(),
+                            cmd
+                        );
+                        app_state.execute_command_pub(cmd);
+                    }
+                }
+                TestAction::None => {
+                    info!(
+                        "Step {}/{}: waiting (no action)",
+                        self.current_step + 1,
+                        self.states.len()
+                    );
+                }
+            }
+            self.action_executed = true;
+        }
+
+        // Wait for the UI to settle after action execution
+        let wait_duration = Duration::from_millis(self.states[self.current_step].wait_ms);
+        if elapsed >= wait_duration {
+            // Capture DOM before advancing step counter
+            self.capture_step(app_state);
+            self.current_step += 1;
+            self.action_executed = false;
+            self.step_start = Instant::now();
+            self.capture_count += 1;
+
+            // If all steps are done, mark complete and return true
+            if self.current_step >= self.states.len() {
+                info!("Test harness: all {} steps complete", self.capture_count);
+                self.done = true;
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Capture DOM state for the current step.
+    fn capture_step(&mut self, app_state: &AppState) {
+        let step_name = &self.states[self.current_step].name;
+        let index = self.capture_count;
+        let padded = format!("{index:03}");
+
+        // Capture DOM
+        let dom_json = self.capture_dom(app_state);
+        let dom_path = self
+            .session_dir
+            .join("dom")
+            .join(format!("{padded}_{step_name}.json"));
+        if let Err(e) = std::fs::write(&dom_path, &dom_json) {
+            tracing::error!("Failed to write DOM capture: {e}");
+        } else {
+            info!("DOM saved: {}", dom_path.display());
+        }
+
+        if self.dump_dom {
+            println!("=== DOM [{padded}_{step_name}] ===");
+            println!("{dom_json}");
+            println!("=== END DOM ===");
+        }
+    }
+
+    /// Serialize the current ChromeState to JSON.
+    pub fn capture_dom(&self, app_state: &AppState) -> String {
+        let active_id = app_state.wm.active_pane_id();
+        let panes_ref = app_state.wm.panes_ref();
+
+        let panes: Vec<aileron_shared::PaneInfo> = panes_ref
+            .iter()
+            .map(|(pid, _)| aileron_shared::PaneInfo {
+                id: pid.to_string(),
+                url: String::new(),
+                title: String::new(),
+                active: *pid == active_id,
+                loading: false,
+                zoom: 1.0,
+            })
+            .collect();
+
+        let snapshot = ChromeSnapshotInput {
+            mode: app_state.mode,
+            active_pane_id: active_id,
+            pane_count: panes_ref.len(),
+            panes,
+            status_message: &app_state.ui.status_message,
+            find_bar_open: app_state.ui.find_bar_open,
+            find_query: &app_state.ui.find_query,
+            command_palette_open: app_state.palette.open,
+            palette_results: app_state
+                .palette
+                .results()
+                .iter()
+                .map(|item| aileron_shared::PaletteItem {
+                    id: item.id.clone(),
+                    label: item.label.clone(),
+                    description: item.description.clone(),
+                    category: crate::chrome_bridge::to_shared_category(item.category),
+                })
+                .collect(),
+            palette_selected: app_state.palette.selected_item().map_or(0, |s| {
+                app_state
+                    .palette
+                    .results()
+                    .iter()
+                    .position(|r| r.id == s.id)
+                    .unwrap_or(0)
+            }),
+            url_bar_focused: app_state.ui.url_bar_focused,
+            tab_layout: &app_state.config.tab_layout,
+            tab_sidebar_width: app_state.config.tab_sidebar_width as f64,
+            tab_sidebar_right: app_state.config.tab_sidebar_right,
+            version: format!("v{} (test-harness)", env!("CARGO_PKG_VERSION")),
+        };
+
+        let state = build_chrome_state(snapshot);
+        serde_json::to_string_pretty(&state)
+            .unwrap_or_else(|e| format!("{{\"error\": \"failed to serialize ChromeState: {e}\"}}"))
+    }
+
+    /// Convert RGBA pixel data to PNG bytes and save to disk.
+    ///
+    /// # Arguments
+    /// * `frame_rgba` - Raw RGBA8 pixel data
+    /// * `width` - Image width in pixels
+    /// * `height` - Image height in pixels
+    /// * `step_name` - Name for the output file
+    pub fn capture_screenshot(
+        &mut self,
+        frame_rgba: &[u8],
+        width: u32,
+        height: u32,
+        step_name: &str,
+    ) -> Vec<u8> {
+        let index = self.capture_count;
+        let padded = format!("{index:03}");
+
+        match encode_png(frame_rgba, width, height) {
+            Ok(png_bytes) => {
+                let path = self
+                    .session_dir
+                    .join("screens")
+                    .join(format!("{padded}_{step_name}.png"));
+                if let Err(e) = std::fs::write(&path, &png_bytes) {
+                    tracing::error!("Failed to write screenshot: {e}");
+                } else {
+                    info!("Screenshot saved: {}", path.display());
+                }
+                png_bytes
+            }
+            Err(e) => {
+                tracing::error!("Failed to encode PNG: {e}");
+                Vec::new()
+            }
+        }
+    }
+
+    /// Whether the route is complete.
+    pub fn is_done(&self) -> bool {
+        self.done
+    }
+
+    /// Path to this session's output directory.
+    pub fn session_dir(&self) -> &Path {
+        &self.session_dir
+    }
+
+    /// Current step index (0-based).
+    pub fn current_step(&self) -> usize {
+        self.current_step
+    }
+
+    /// Total number of steps in the route.
+    pub fn total_steps(&self) -> usize {
+        self.states.len()
+    }
+
+    /// Name of the current (or most recently completed) step.
+    pub fn current_step_name(&self) -> &str {
+        let idx = self
+            .current_step
+            .saturating_sub(1)
+            .min(self.states.len().saturating_sub(1));
+        if self.states.is_empty() {
+            "unknown"
+        } else {
+            &self.states[idx].name
+        }
+    }
+}
+
+/// Encode raw RGBA8 pixel data as PNG.
+///
+/// # Arguments
+/// * `rgba` - Raw RGBA8 pixel data (4 bytes per pixel)
+/// * `width` - Image width in pixels
+/// * `height` - Image height in pixels
+///
+/// # Returns
+/// PNG file bytes, or an error string.
+fn encode_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
+    let expected_len = (width as usize) * (height as usize) * 4;
+    if rgba.len() < expected_len {
+        return Err(format!(
+            "RGBA buffer too small: expected {} bytes, got {}",
+            expected_len,
+            rgba.len()
+        ));
+    }
+
+    let mut buf = std::io::Cursor::new(Vec::new());
+    {
+        let mut encoder = png::Encoder::new(&mut buf, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_compression(png::Compression::Fast);
+
+        let mut writer = encoder.write_header().map_err(|e| format!("{e}"))?;
+        writer.write_image_data(rgba).map_err(|e| format!("{e}"))?;
+        writer.finish().map_err(|e| format!("{e}"))?;
+    }
+
+    Ok(buf.into_inner())
+}
+
+/// Build the default test route covering all major UI states.
+pub fn default_route() -> Vec<TestState> {
+    vec![
+        // 1. Default (empty new tab)
+        TestState::wait_only("01_default", 500),
+        // 2. Enter Command mode via `:`
+        TestState::new("02_command_mode", TestAction::key(Key::Character(':')), 300),
+        // 3. Return to Normal, enter Insert mode via `i`
+        TestState::new("03_insert_mode", TestAction::key(Key::Character('i')), 300),
+        // 4. Return to Normal, open Command Palette (Ctrl+P)
+        TestState::new(
+            "04_command_palette",
+            TestAction::key_with_mods(Key::Character('p'), true, false, false),
+            500,
+        ),
+        // 5. Type "git" into palette
+        TestState::new("05_palette_type_git", TestAction::cmd("git"), 500),
+        // 6. Close palette (Escape)
+        TestState::new("06_palette_close", TestAction::key(Key::Escape), 200),
+        // 7. Open Find bar (Ctrl+F)
+        TestState::new(
+            "07_find_bar",
+            TestAction::key_with_mods(Key::Character('f'), true, false, false),
+            300,
+        ),
+        // 8. Close Find bar (Escape)
+        TestState::new("08_find_close", TestAction::key(Key::Escape), 200),
+        // 9. Split horizontal
+        TestState::new("09_hsplit", TestAction::cmd("hsplit"), 500),
+        // 10. Navigate to example.com
+        TestState::new(
+            "10_open_example",
+            TestAction::cmd("open https://example.com"),
+            3000,
+        ),
+        // 11. Split vertical
+        TestState::new("11_vsplit", TestAction::cmd("vsplit"), 500),
+        // 12. Capture final state
+        TestState::wait_only("12_final_state", 500),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wm::Rect;
+
+    #[test]
+    fn test_harness_creation() {
+        let dir = tempfile::tempdir().unwrap();
+        let harness = TestHarness::new(dir.path(), false);
+        assert!(!harness.is_done());
+        assert_eq!(harness.current_step(), 0);
+        assert_eq!(harness.total_steps(), 0);
+        assert!(harness.session_dir().exists());
+        assert!(harness.session_dir().join("dom").exists());
+        assert!(harness.session_dir().join("screens").exists());
+    }
+
+    #[test]
+    fn test_harness_empty_route_completes_immediately() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut harness = TestHarness::new(dir.path(), false);
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let config = crate::config::Config::default();
+        let mut state = AppState::new(viewport, config).unwrap();
+
+        // Empty route: tick should return true immediately
+        assert!(harness.tick(&mut state));
+        assert!(harness.is_done());
+    }
+
+    #[test]
+    fn test_harness_single_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut harness = TestHarness::new(dir.path(), false);
+        // Use 200ms to avoid timing race with AppState::new() overhead
+        harness.define_route(vec![TestState::wait_only("test", 200)]);
+
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let config = crate::config::Config::default();
+        let mut state = AppState::new(viewport, config).unwrap();
+
+        // First tick: action executed, waiting
+        assert!(!harness.tick(&mut state));
+
+        // Wait for the step to complete
+        std::thread::sleep(Duration::from_millis(250));
+
+        // Second tick: capture + done
+        assert!(harness.tick(&mut state));
+        assert!(harness.is_done());
+    }
+
+    #[test]
+    fn test_harness_command_execution() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut harness = TestHarness::new(dir.path(), false);
+        harness.define_route(vec![TestState::new(
+            "cmd_test",
+            TestAction::cmd("set adblock off"),
+            200,
+        )]);
+
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let config = crate::config::Config::default();
+        let mut state = AppState::new(viewport, config).unwrap();
+
+        // Tick to start the step (command will execute)
+        assert!(!harness.tick(&mut state));
+        assert!(!state.config.adblock_enabled);
+
+        // Wait and tick to capture
+        std::thread::sleep(Duration::from_millis(250));
+        assert!(harness.tick(&mut state));
+        assert!(harness.is_done());
+    }
+
+    #[test]
+    fn test_harness_key_event() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut harness = TestHarness::new(dir.path(), false);
+        harness.define_route(vec![TestState::new(
+            "key_test",
+            TestAction::key(Key::Character('i')),
+            200,
+        )]);
+
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let config = crate::config::Config::default();
+        let mut state = AppState::new(viewport, config).unwrap();
+
+        assert_eq!(state.mode, crate::input::Mode::Normal);
+
+        // Tick to execute key event — 'i' enters Insert mode
+        assert!(!harness.tick(&mut state));
+        assert_eq!(state.mode, crate::input::Mode::Insert);
+
+        // Wait and tick to capture
+        std::thread::sleep(Duration::from_millis(250));
+        assert!(harness.tick(&mut state));
+        assert!(harness.is_done());
+    }
+
+    #[test]
+    fn test_capture_dom() {
+        let dir = tempfile::tempdir().unwrap();
+        let harness = TestHarness::new(dir.path(), false);
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let config = crate::config::Config::default();
+        let state = AppState::new(viewport, config).unwrap();
+
+        let dom_json = harness.capture_dom(&state);
+        assert!(dom_json.contains("\"mode\""));
+        assert!(dom_json.contains("\"pane_count\""));
+        assert!(!dom_json.is_empty());
+    }
+
+    #[test]
+    fn test_encode_png_roundtrip() {
+        // Create a 2x2 red RGBA image
+        let rgba = vec![
+            255, 0, 0, 255, // red
+            0, 255, 0, 255, // green
+            0, 0, 255, 255, // blue
+            255, 255, 0, 255, // yellow
+        ];
+
+        let png_bytes = encode_png(&rgba, 2, 2).unwrap();
+        assert!(!png_bytes.is_empty());
+        // PNG magic bytes
+        assert_eq!(png_bytes[0], 0x89);
+        assert_eq!(png_bytes[1], b'P');
+        assert_eq!(png_bytes[2], b'N');
+        assert_eq!(png_bytes[3], b'G');
+    }
+
+    #[test]
+    fn test_encode_png_invalid_buffer() {
+        let rgba = vec![0u8; 10]; // too small for even 1x1
+        let result = encode_png(&rgba, 10, 10);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_default_route_length() {
+        let route = default_route();
+        assert_eq!(route.len(), 12);
+    }
+
+    #[test]
+    fn test_harness_screenshot_saves_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut harness = TestHarness::new(dir.path(), false);
+        harness.define_route(vec![TestState::wait_only("screenshot_test", 10)]);
+
+        // Create a 4x4 red RGBA image
+        let rgba: Vec<u8> = [255u8, 0, 0, 255].repeat(16);
+        let png = harness.capture_screenshot(&rgba, 4, 4, "test");
+
+        assert!(!png.is_empty());
+        // Verify the file was saved
+        let screens_dir = harness.session_dir().join("screens");
+        let files: Vec<_> = std::fs::read_dir(&screens_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+        assert_eq!(files.len(), 1);
+    }
+}

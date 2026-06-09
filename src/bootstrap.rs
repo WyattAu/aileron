@@ -10,6 +10,10 @@ pub struct CliArgs {
     pub profile_dir: Option<PathBuf>,
     /// Dump current config and exit.
     pub dump_config: bool,
+    /// Enable test harness mode with optional output directory.
+    pub test_harness: Option<PathBuf>,
+    /// Print DOM JSON to stdout after each capture (requires --test-harness).
+    pub dump_dom: bool,
 }
 
 impl CliArgs {
@@ -19,6 +23,8 @@ impl CliArgs {
         let mut debug = false;
         let mut profile_dir = None;
         let mut dump_config = false;
+        let mut test_harness = None;
+        let mut dump_dom = false;
 
         let mut i = 1;
         while i < args.len() {
@@ -35,14 +41,29 @@ impl CliArgs {
                 "--dump-config" => {
                     dump_config = true;
                 }
+                "--test-harness" => {
+                    i += 1;
+                    let dir = args
+                        .get(i)
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("/tmp/aileron_test_output"));
+                    test_harness = Some(dir);
+                }
+                "--dump-dom" => {
+                    dump_dom = true;
+                }
                 "--help" | "-h" => {
                     eprintln!("Usage: aileron [OPTIONS]");
                     eprintln!();
                     eprintln!("Options:");
-                    eprintln!("  --debug, -d         Enable debug logging");
-                    eprintln!("  --profile <dir>     Set profiling output directory");
-                    eprintln!("  --dump-config       Print current config and exit");
-                    eprintln!("  --help, -h          Show this help message");
+                    eprintln!("  --debug, -d              Enable debug logging");
+                    eprintln!("  --profile <dir>          Set profiling output directory");
+                    eprintln!("  --dump-config            Print current config and exit");
+                    eprintln!("  --test-harness [dir]     Run internal test harness");
+                    eprintln!(
+                        "  --dump-dom               Print DOM JSON to stdout (with --test-harness)"
+                    );
+                    eprintln!("  --help, -h               Show this help message");
                     std::process::exit(0);
                 }
                 "--version" | "-V" => {
@@ -60,6 +81,8 @@ impl CliArgs {
             debug,
             profile_dir,
             dump_config,
+            test_harness,
+            dump_dom,
         }
     }
 }
@@ -418,6 +441,12 @@ pub fn run() -> anyhow::Result<()> {
     info!("-- Phase 4: Creating application --");
     Config::set_session_active();
     let mut app = super::AileronApp::new();
+
+    // Initialize test harness if requested
+    if let Some(ref test_dir) = cli_args.test_harness {
+        app.init_test_harness(test_dir, cli_args.dump_dom);
+    }
+
     info!("Application created successfully");
 
     info!("-- Phase 5: Entering event loop --");
