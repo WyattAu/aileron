@@ -5,7 +5,7 @@
 | Metric | Value |
 |--------|-------|
 | Version | 1.0.0 |
-| Tests | 1178 lib, 253 integration (13 suites), 4 doc = 1435 total |
+| Tests | 1188 lib, 253 integration (13 suites), 4 doc = 1445 total |
 | Clippy | Zero warnings (all-targets, -D warnings) |
 | Formatting | Zero issues (cargo fmt) |
 | Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck -- SAFETY commented) |
@@ -405,14 +405,18 @@ The codebase demonstrates high quality:
 - All 19 unsafe blocks have SAFETY comments
 - Feature flags cleanly gate optional dependencies
 - Pure dispatch pattern (Action -> ActionEffect) is well-structured
-- 1130 lib + 253 integration + 4 doc = 1387 tests, zero failures
+- 1188 lib + 253 integration + 4 doc = 1445 tests, zero failures
 - Chrome WASM UI fully accessible with ARIA roles and labels
 - Design language consistent across chrome and landing page
+- GUI rendering fixed for Wayland+NVIDIA (XWayland child window detection)
+- Internal test harness for DOM/screenshot capture without external dependencies
 
 Known architectural debt:
 - Servo integration is skeleton only (documented, tracked)
 - wry !Send + !Sync requires bridging (documented, ADR-009)
 - main.rs is 730 lines (well under 2000 target after event_handlers.rs extraction)
+- Offscreen rendering pipeline captures frames but lacks egui/wgpu backend to display them on main window
+- GTK windows render but may not be captured by scrot on XWayland (compositor issue)
 
 ## Timeline Estimate
 
