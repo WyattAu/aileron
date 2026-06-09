@@ -44,7 +44,7 @@ fn App() -> impl IntoView {
     provide_context(ChromeStore { state });
 
     view! {
-        <div class="chrome-root">
+        <div class="chrome-root" role="application" aria-label="Aileron browser chrome">
             <StatusBar />
             <UrlBar />
             <TabSidebar />
@@ -72,10 +72,10 @@ fn StatusBar() -> impl IntoView {
     };
 
     view! {
-        <div class="status-bar">
-            <span class=mode_class>{mode}{find_sub}</span>
-            <span class="status-url">{url}</span>
-            <span class="status-msg">{status_msg}</span>
+        <div class="status-bar" role="status" aria-label="Browser status bar">
+            <span class=mode_class aria-label=move || format!("Mode: {}", mode())>{mode}{find_sub}</span>
+            <span class="status-url" aria-label="Current URL">{url}</span>
+            <span class="status-msg" aria-live="polite">{status_msg}</span>
         </div>
     }
 }
@@ -89,12 +89,14 @@ fn UrlBar() -> impl IntoView {
     let focused = move || store.state.read().url_bar_focused;
 
     view! {
-        <div class="url-bar">
+        <div class="url-bar" role="navigation" aria-label="URL bar">
             <input
                 type="text"
                 class="url-input"
                 prop:value=url
                 prop:disabled=move || !focused()
+                aria-label="URL input"
+                placeholder="Enter URL or search..."
             />
         </div>
     }
@@ -109,18 +111,21 @@ fn TabSidebar() -> impl IntoView {
     let sidebar_right = move || store.state.read().tab_sidebar_right;
 
     view! {
-        <div class="tab-sidebar" class:sidebar-right=sidebar_right>
+        <div class="tab-sidebar" class:sidebar-right=sidebar_right role="tablist" aria-label="Open tabs">
             <For
                 each=panes
                 key=|p| p.id.clone()
                 let(pane)
             >
-                <div class="tab-item" class:tab-active=pane.active>
-                    <span class="tab-title">{pane.title}</span>
-                    <span class="tab-close">&times;</span>
-                </div>
+                {let title_for_aria = pane.title.clone();
+                view! {
+                    <div class="tab-item" class:tab-active=pane.active role="tab" aria-selected=move || pane.active aria-label=move || title_for_aria.clone()>
+                        <span class="tab-title">{pane.title}</span>
+                        <span class="tab-close" role="button" aria-label="Close tab">&times;</span>
+                    </div>
+                }}
             </For>
-            <div class="tab-new">+</div>
+            <div class="tab-new" role="button" aria-label="New tab">+</div>
         </div>
     }
 }
@@ -180,7 +185,7 @@ fn FindBar() -> impl IntoView {
 
     view! {
         <Show when=visible fallback=|| ()>
-            <div class="find-bar">
+            <div class="find-bar" role="search" aria-label="Find in page">
                 <span class="find-label">Find:</span>
                 <input
                     type="text"
@@ -189,14 +194,15 @@ fn FindBar() -> impl IntoView {
                     on:keydown=on_keydown
                     on:input=on_input
                     placeholder="Search in page..."
+                    aria-label="Find in page"
                 />
-                <button class="find-btn" on:click=on_find_next title="Find next">
+                <button class="find-btn" on:click=on_find_next title="Find next" aria-label="Find next">
                     "\u{2193}"
                 </button>
-                <button class="find-btn" on:click=on_find_prev title="Find previous">
+                <button class="find-btn" on:click=on_find_prev title="Find previous" aria-label="Find previous">
                     "\u{2191}"
                 </button>
-                <button class="find-btn find-close" on:click=on_find_close title="Close">
+                <button class="find-btn find-close" on:click=on_find_close title="Close" aria-label="Close find bar">
                     "\u{2715}"
                 </button>
             </div>
@@ -278,7 +284,7 @@ fn CommandPalette() -> impl IntoView {
 
     view! {
         <Show when=visible fallback=|| ()>
-            <div class="palette-backdrop">
+            <div class="palette-backdrop" role="dialog" aria-label="Command palette" aria-modal="true">
                 <div class="palette-container">
                     <div class="palette-input-row">
                         <span class="palette-prompt">": "</span>
@@ -289,9 +295,12 @@ fn CommandPalette() -> impl IntoView {
                             autofocus=true
                             on:keydown=on_keydown
                             on:input=on_input
+                            aria-label="Command input"
+                            aria-autocomplete="list"
+                            aria-expanded="true"
                         />
                     </div>
-                    <div class="palette-results">
+                    <div class="palette-results" role="listbox" aria-label="Results">
                         <For
                             each=results
                             key=|item| item.id.clone()
@@ -307,6 +316,8 @@ fn CommandPalette() -> impl IntoView {
                                     <div
                                         class="palette-item"
                                         class:palette-selected=is_selected
+                                        role="option"
+                                        aria-selected=is_selected
                                         on:click=move |_| on_item_click(item_clone.clone())
                                     >
                                         <span class="palette-cat">

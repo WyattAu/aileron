@@ -23,14 +23,51 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
             box-sizing: border-box;
         }
 
+        :root {
+            /* Spatial Materialism: depth through layered surfaces */
+            --surface-0: #11111b;
+            --surface-1: #1e1e2e;
+            --surface-2: #313244;
+            --surface-3: #45475a;
+            --overlay: rgba(17, 17, 27, 0.85);
+
+            /* Amoebic UI: organic color palette */
+            --text-primary: #cdd6f4;
+            --text-secondary: #a6adc8;
+            --text-muted: #6c7086;
+            --text-faint: #585b70;
+
+            --accent-blue: #89b4fa;
+            --accent-green: #a6e3a1;
+            --accent-yellow: #f9e2af;
+            --accent-red: #f38ba8;
+            --accent-mauve: #cba6f7;
+
+            /* Amoebic UI: organic radii */
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --radius-pill: 100px;
+
+            /* Spatial Materialism: depth layers */
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+            --shadow-glow: 0 0 20px rgba(137, 180, 250, 0.08);
+
+            /* Amoebic UI: fluid transitions */
+            --transition-fast: 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            --transition-smooth: 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
         html, body {
             width: 100%;
             height: 100%;
             overflow: hidden;
             background: transparent;
-            font-family: system-ui, -apple-system, sans-serif;
+            font-family: "Inter", system-ui, -apple-system, sans-serif;
             font-size: 13px;
-            color: #cdd6f4;
+            color: var(--text-primary);
             -webkit-font-smoothing: antialiased;
         }
 
@@ -42,33 +79,44 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
             width: 100%;
             height: 100%;
             background: transparent;
-            pointer-events: none; /* pass events through by default */
+            pointer-events: none;
         }
 
-        /* Status bar: top, full width, 32px */
+        /* Status bar: Spatial Materialism -- elevated surface with subtle shadow */
         .status-bar {
             display: flex;
             align-items: center;
             height: 32px;
-            padding: 0 8px;
-            background: #1e1e2e;
-            border-bottom: 1px solid #313244;
+            padding: 0 10px;
+            background: var(--surface-1);
+            border-bottom: 1px solid var(--surface-2);
+            box-shadow: var(--shadow-sm);
             flex-shrink: 0;
             gap: 12px;
-            pointer-events: auto; /* capture events in chrome area */
+            pointer-events: auto;
+            z-index: 10;
         }
 
         .mode-NORMAL {
-            color: #89b4fa;
-            font-weight: bold;
+            color: var(--accent-blue);
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
         .mode-INSERT {
-            color: #a6e3a1;
-            font-weight: bold;
+            color: var(--accent-green);
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
         .mode-COMMAND {
-            color: #f9e2af;
-            font-weight: bold;
+            color: var(--accent-yellow);
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
         .status-url {
@@ -76,78 +124,88 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            color: #a6adc8;
+            color: var(--text-secondary);
         }
 
         .status-msg {
-            color: #6c7086;
-            font-size: 12px;
+            color: var(--text-muted);
+            font-size: 11px;
         }
 
-        /* URL bar: below status bar, full width, 32px */
+        /* URL bar: Amoebic UI -- organic input with fluid focus */
         .url-bar {
             display: flex;
             align-items: center;
             height: 32px;
-            padding: 0 8px;
-            background: #181825;
-            border-bottom: 1px solid #313244;
+            padding: 0 10px;
+            background: var(--surface-0);
+            border-bottom: 1px solid var(--surface-2);
             flex-shrink: 0;
             pointer-events: auto;
+            z-index: 10;
         }
 
         .url-input {
             width: 100%;
             height: 24px;
-            padding: 0 8px;
-            background: #313244;
-            border: 1px solid #45475a;
-            border-radius: 4px;
-            color: #cdd6f4;
+            padding: 0 10px;
+            background: var(--surface-2);
+            border: 1px solid transparent;
+            border-radius: var(--radius-pill);
+            color: var(--text-primary);
             font-size: 13px;
+            font-family: inherit;
             outline: none;
+            transition: border-color var(--transition-smooth), box-shadow var(--transition-smooth);
         }
 
         .url-input:focus {
-            border-color: #89b4fa;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.15);
         }
 
         .url-input:disabled {
-            opacity: 0.7;
+            opacity: 0.6;
             cursor: default;
         }
 
-        /* Tab sidebar: fills remaining space below status+url */
+        /* Tab sidebar: Spatial Materialism -- layered surface with depth */
         .tab-sidebar {
             display: flex;
             flex-direction: column;
             width: 180px;
             min-width: 120px;
-            background: #1e1e2e;
+            background: var(--surface-1);
             overflow-y: auto;
             flex-shrink: 0;
             pointer-events: auto;
+            border-right: 1px solid var(--surface-2);
+            z-index: 5;
         }
 
         .tab-sidebar.sidebar-right {
             margin-left: auto;
+            border-right: none;
+            border-left: 1px solid var(--surface-2);
         }
 
         .tab-item {
             display: flex;
             align-items: center;
-            padding: 4px 8px;
-            border-bottom: 1px solid #313244;
+            padding: 6px 10px;
+            border-bottom: 1px solid rgba(49, 50, 68, 0.5);
             cursor: pointer;
+            transition: background var(--transition-fast);
         }
 
         .tab-item:hover {
-            background: #313244;
+            background: var(--surface-2);
         }
 
         .tab-item.tab-active {
-            background: #313244;
-            border-left: 2px solid #89b4fa;
+            background: var(--surface-2);
+            border-left: 2px solid var(--accent-blue);
+            box-shadow: inset 3px 0 8px -4px rgba(137, 180, 250, 0.2);
         }
 
         .tab-title {
@@ -155,194 +213,211 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            font-size: 12px;
         }
 
         .tab-close {
-            color: #6c7086;
+            color: var(--text-muted);
             cursor: pointer;
             padding: 0 2px;
-            font-size: 16px;
+            font-size: 14px;
             line-height: 1;
+            border-radius: var(--radius-sm);
+            transition: color var(--transition-fast), background var(--transition-fast);
         }
 
         .tab-close:hover {
-            color: #f38ba8;
+            color: var(--accent-red);
+            background: rgba(243, 139, 168, 0.1);
         }
 
         .tab-new {
-            padding: 4px 8px;
-            color: #6c7086;
+            padding: 6px 10px;
+            color: var(--text-muted);
             cursor: pointer;
             text-align: center;
+            font-size: 14px;
+            transition: color var(--transition-fast), background var(--transition-fast);
         }
 
         .tab-new:hover {
-            color: #89b4fa;
-            background: #313244;
+            color: var(--accent-blue);
+            background: var(--surface-2);
         }
 
-        /* Content area: transparent, lets events pass through to content webview below */
+        /* Content area: transparent, lets events pass through */
         .chrome-content {
             flex: 1;
             pointer-events: none;
         }
 
-        /* Find bar: anchored to bottom-left, above status bar area.
-           When chrome renders the status bar, the find bar sits just above it. */
+        /* Find bar: Amoebic UI -- floating organic pill */
         .find-bar {
             display: flex;
             align-items: center;
-            height: 28px;
-            padding: 0 8px;
-            background: #1e1e2e;
-            border: 1px solid #45475a;
-            border-radius: 0 4px 0 0;
+            height: 30px;
+            padding: 0 6px;
+            background: var(--overlay);
+            border: 1px solid var(--surface-3);
+            border-radius: var(--radius-pill);
             gap: 4px;
             pointer-events: auto;
             position: fixed;
-            bottom: 0;
-            left: 0;
+            bottom: 8px;
+            left: 8px;
             z-index: 100;
+            box-shadow: var(--shadow-lg);
+            backdrop-filter: blur(12px);
         }
 
         .find-label {
-            color: #89b4fa;
-            font-size: 12px;
-            font-weight: bold;
+            color: var(--accent-blue);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 0 4px;
         }
 
         .find-input {
-            width: 280px;
+            width: 260px;
             height: 22px;
-            padding: 0 6px;
-            background: #313244;
-            border: 1px solid #45475a;
-            border-radius: 3px;
-            color: #cdd6f4;
+            padding: 0 8px;
+            background: var(--surface-2);
+            border: 1px solid transparent;
+            border-radius: var(--radius-pill);
+            color: var(--text-primary);
             font-size: 13px;
+            font-family: inherit;
             outline: none;
+            transition: border-color var(--transition-smooth);
         }
 
         .find-input:focus {
-            border-color: #89b4fa;
+            border-color: var(--accent-blue);
         }
 
         .find-btn {
             width: 24px;
             height: 22px;
-            background: #313244;
-            border: 1px solid #45475a;
-            border-radius: 3px;
-            color: #cdd6f4;
+            background: transparent;
+            border: none;
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
             cursor: pointer;
             font-size: 12px;
             line-height: 1;
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: background var(--transition-fast), color var(--transition-fast);
         }
 
         .find-btn:hover {
-            background: #45475a;
+            background: var(--surface-2);
+            color: var(--text-primary);
         }
 
         .find-close {
-            color: #6c7086;
+            color: var(--text-muted);
         }
 
         .find-close:hover {
-            color: #f38ba8;
+            color: var(--accent-red);
+            background: rgba(243, 139, 168, 0.1);
         }
 
-        /* Command palette: centered overlay with backdrop.
-           Pointer events are handled entirely by the palette. */
+        /* Command palette: Spatial Materialism + Amoebic UI -- floating card with depth */
         .palette-backdrop {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: transparent;
+            background: rgba(0, 0, 0, 0.3);
             display: flex;
             align-items: flex-start;
             justify-content: center;
             padding-top: 15vh;
             pointer-events: auto;
             z-index: 200;
+            backdrop-filter: blur(4px);
         }
 
         .palette-container {
             width: 520px;
-            max-height: 340px;
-            background: #1e1e2e;
-            border: 1px solid #45475a;
-            border-radius: 6px;
+            max-height: 360px;
+            background: var(--surface-1);
+            border: 1px solid var(--surface-3);
+            border-radius: var(--radius-lg);
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            box-shadow: var(--shadow-lg), var(--shadow-glow);
         }
 
         .palette-input-row {
             display: flex;
             align-items: center;
-            padding: 8px;
-            border-bottom: 1px solid #313244;
-            gap: 4px;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--surface-2);
+            gap: 6px;
         }
 
         .palette-prompt {
-            color: #89b4fa;
-            font-size: 13px;
-            font-weight: bold;
+            color: var(--accent-blue);
+            font-size: 14px;
+            font-weight: 700;
         }
 
         .palette-input {
             flex: 1;
-            height: 24px;
-            padding: 0 6px;
-            background: #313244;
-            border: 1px solid #45475a;
-            border-radius: 3px;
-            color: #cdd6f4;
-            font-size: 13px;
+            height: 26px;
+            padding: 0 8px;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-size: 14px;
+            font-family: inherit;
             outline: none;
         }
 
-        .palette-input:focus {
-            border-color: #89b4fa;
+        .palette-input::placeholder {
+            color: var(--text-muted);
         }
 
         .palette-results {
             overflow-y: auto;
-            max-height: 280px;
+            max-height: 300px;
         }
 
         .palette-item {
             display: flex;
             align-items: center;
-            padding: 4px 8px;
+            padding: 6px 12px;
             cursor: pointer;
-            gap: 8px;
+            gap: 10px;
+            transition: background var(--transition-fast);
         }
 
         .palette-item:hover {
-            background: #313244;
+            background: var(--surface-2);
         }
 
         .palette-item.palette-selected {
-            background: #313244;
-            border-left: 2px solid #89b4fa;
+            background: var(--surface-2);
+            border-left: 2px solid var(--accent-blue);
+            box-shadow: inset 3px 0 8px -4px rgba(137, 180, 250, 0.2);
         }
 
         .palette-cat {
-            color: #6c7086;
-            font-size: 12px;
+            color: var(--text-muted);
+            font-size: 11px;
             min-width: 32px;
+            font-weight: 500;
         }
 
         .palette-label {
             flex: 1;
-            color: #cdd6f4;
+            color: var(--text-primary);
             font-size: 13px;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -350,7 +425,7 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
         }
 
         .palette-desc {
-            color: #585b70;
+            color: var(--text-faint);
             font-size: 12px;
             overflow: hidden;
             text-overflow: ellipsis;
