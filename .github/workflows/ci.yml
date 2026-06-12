@@ -70,7 +70,7 @@ jobs:
 
       - name: Security audit
         run: |
-          command -v cargo-audit >/dev/null 2>&1 || cargo install cargo-audit --locked --root ~/.cargo
+          command -v cargo-audit >/dev/null 2>&1 || cargo install cargo-audit@0.20.0 --locked --root ~/.cargo
           ~/.cargo/bin/cargo audit
 
       - name: Build release
@@ -84,7 +84,7 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked --root ~/.cargo
+          command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov@0.6.14 --locked --root ~/.cargo
           AILERON_TESTING=1 xvfb-run -a ~/.cargo/bin/cargo llvm-cov --workspace --lcov --output-path lcov.info --exclude offscreen_render_test -- --test-threads=4
 
       - name: Upload coverage report

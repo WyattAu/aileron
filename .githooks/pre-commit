@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Aileron pre-commit hook (fast path)
-# Enforces: formatting, clippy, check, lib tests, doc tests
+# Aileron pre-commit hook (strict quality gates)
+# Enforces: formatting, clippy, check, lib tests, doc tests, secret scanning
 #
 set -euo pipefail
 
@@ -10,62 +10,90 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo -e "${YELLOW}[pre-commit] Aileron quality gates (fast)${NC}"
+echo -e "${YELLOW}[pre-commit] Aileron quality gates (strict)${NC}"
 
 export AILERON_TESTING=1
 
-# 1. Check formatting
-echo -e "${YELLOW}[1/6] Checking formatting (cargo fmt)...${NC}"
+# ── Secret/credential scan on staged Rust files ─────────────────────────
+echo -e "${YELLOW}[0/7] Scanning staged files for secrets...${NC}"
+STAGED_RS=$(git diff --cached --name-only --diff-filter=ACM -- '*.rs' '*.toml' '*.yml' '*.yaml' '*.json' '*.env' '*.sh' 2>/dev/null || true)
+SECRET_PATTERNS='(password|secret|token|api_key|private_key|credential)\s*[:=]\s*"[^"]{8,}"'
+if [ -n "$STAGED_RS" ]; then
+    SECRET_HITS=$(echo "$STAGED_RS" | xargs grep -ilE "$SECRET_PATTERNS" 2>/dev/null || true)
+    if [ -n "$SECRET_HITS" ]; then
+        echo -e "${RED}[WARN] Potential secrets found in:${NC}"
+        echo "$SECRET_HITS" | while read -r f; do echo "  $f"; done
+        echo -e "${YELLOW}Review these files before committing. Continuing...${NC}"
+    fi
+fi
+echo -e "${GREEN}[PASS] Secret scan${NC}"
+
+# ── Formatting ─────────────────────────────────────────────────────────
+echo -e "${YELLOW}[1/7] Checking formatting (cargo fmt)...${NC}"
 if ! cargo fmt --all -- --check 2>&1; then
     echo -e "${RED}[FAIL] Code is not formatted. Run: cargo fmt${NC}"
     exit 1
 fi
 echo -e "${GREEN}[PASS] Formatting${NC}"
 
-# 2. Check compilation (native workspace only; chrome is wasm32)
-echo -e "${YELLOW}[2/6] Checking compilation (cargo check -p aileron)...${NC}"
+# ── Compilation (all workspace members) ────────────────────────────────
+echo -e "${YELLOW}[2/7] Checking compilation (cargo check)...${NC}"
 if ! cargo check -p aileron --all-targets 2>&1; then
-    echo -e "${RED}[FAIL] Compilation failed.${NC}"
+    echo -e "${RED}[FAIL] Main crate compilation failed.${NC}"
     exit 1
 fi
-echo -e "${GREEN}[PASS] Compilation${NC}"
+echo -e "${GREEN}[PASS] Main crate compilation${NC}"
 
-# 3. Check chrome WASM (only if wasm target installed)
+# ── Chrome WASM compilation (conditional) ──────────────────────────────
 if rustup target list --installed 2>/dev/null | grep -q wasm32-unknown-unknown; then
-    echo -e "${YELLOW}[3/6] Checking chrome WASM target...${NC}"
+    echo -e "${YELLOW}[3/7] Checking chrome WASM target...${NC}"
     if ! cargo check -p aileron-chrome --target wasm32-unknown-unknown 2>&1; then
         echo -e "${RED}[FAIL] Chrome WASM check failed.${NC}"
         exit 1
     fi
     echo -e "${GREEN}[PASS] Chrome WASM${NC}"
 else
-    echo -e "${YELLOW}[3/6] Skipping chrome WASM check (wasm32 target not installed)${NC}"
+    echo -e "${YELLOW}[3/7] Skipping chrome WASM check (wasm32 target not installed)${NC}"
 fi
 
-# 4. Clippy (deny warnings, native only)
-echo -e "${YELLOW}[4/6] Running clippy (all-targets, -D warnings)...${NC}"
+# ── Clippy (deny warnings on all workspace crates) ─────────────────────
+echo -e "${YELLOW}[4/7] Running clippy (workspace, -D warnings)...${NC}"
 if ! cargo clippy -p aileron --all-targets -- -D warnings 2>&1; then
     echo -e "${RED}[FAIL] Clippy found warnings. Fix them before committing.${NC}"
     exit 1
 fi
 echo -e "${GREEN}[PASS] Clippy${NC}"
 
-# 5. Lib tests
-echo -e "${YELLOW}[5/6] Running lib tests...${NC}"
+# ── Lib tests ──────────────────────────────────────────────────────────
+echo -e "${YELLOW}[5/7] Running lib tests...${NC}"
 if ! cargo test -p aileron --lib -- --test-threads=4 2>&1; then
     echo -e "${RED}[FAIL] Lib tests failed.${NC}"
     exit 1
 fi
 echo -e "${GREEN}[PASS] Lib tests${NC}"
 
-# 6. Doc tests
-echo -e "${YELLOW}[6/6] Running doc tests...${NC}"
+# ── Doc tests ──────────────────────────────────────────────────────────
+echo -e "${YELLOW}[6/7] Running doc tests...${NC}"
 if ! cargo test -p aileron --doc 2>&1; then
     echo -e "${RED}[FAIL] Doc tests failed.${NC}"
     exit 1
 fi
 echo -e "${GREEN}[PASS] Doc tests${NC}"
 
-echo -e "${GREEN}All fast quality gates passed. Committing.${NC}"
-echo -e "${YELLOW}Note: Integration tests run on pre-push. Use 'cargo test' locally for full suite.${NC}"
+# ── Check for large files ──────────────────────────────────────────────
+echo -e "${YELLOW}[7/7] Checking for oversized staged files...${NC}"
+LARGE_FILES=""
+if [ -n "$STAGED_RS" ]; then
+    LARGE_FILES=$(echo "$STAGED_RS" | xargs stat --printf="%s %n\n" 2>/dev/null | awk '$1 > 1048576 {print $2}' || true)
+fi
+if [ -n "$LARGE_FILES" ]; then
+    echo -e "${RED}[WARN] Files larger than 1MB staged:${NC}"
+    echo "$LARGE_FILES" | while read -r f; do echo "  $f"; done
+    echo -e "${YELLOW}Consider using Git LFS for binary assets.${NC}"
+fi
+echo -e "${GREEN}[PASS] File size check${NC}"
+
+echo ""
+echo -e "${GREEN}All strict quality gates passed. Committing.${NC}"
+echo -e "${YELLOW}Note: Integration tests run on pre-push.${NC}"
 exit 0

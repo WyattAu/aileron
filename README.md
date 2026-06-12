@@ -1,6 +1,6 @@
 # Aileron
 
-**v1.0.0** -- 1178 lib tests, 253 integration, 4 doc (1435 total), ~56,900 Rust LOC
+**v1.0.0** -- 1191 lib tests, 233 integration, 4 doc (1428 total), ~56,900 Rust LOC
 
 **The terminal for the web.** A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals. Written in Rust with wry (WebKitGTK) for web rendering and Leptos WASM for the browser chrome overlay.
 
