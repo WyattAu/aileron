@@ -9,6 +9,16 @@ use super::dispatch::ActionEffect;
 
 impl AppState {
     pub fn process_key_event(&mut self, event: KeyEvent) {
+        // Escape closes find bar first (highest priority)
+        if self.ui.find_bar_open && event.key == Key::Escape {
+            self.ui.find_bar_open = false;
+            self.ui.find_query.clear();
+            self.pending_wry_actions.push_back(WryAction::RunJs(
+                "window.getSelection().removeAllRanges()".into(),
+            ));
+            return;
+        }
+
         // History panel: j/k and arrow navigation
         if self.panels.history_panel_open {
             match &event.key {
