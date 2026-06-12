@@ -17,15 +17,9 @@ pub struct GfxState {
     pub surface_format: wgpu::TextureFormat,
     /// Last successfully configured surface size.
     surface_size: (u32, u32),
+    /// Reusable BGRA buffer to avoid per-frame allocation.
+    bgra_buffer: Vec<u8>,
 }
-
-/// Vertex shader for fullscreen quad (unused in direct copy mode).
-#[allow(dead_code)]
-const VERTEX_SHADER: &str = r#"..."#;
-
-/// Fragment shader for texture sampling (unused in direct copy mode).
-#[allow(dead_code)]
-const FRAGMENT_SHADER: &str = r#"..."#;
 
 /// GPU backend combinations to try, in order of preference.
 fn backend_options() -> [wgpu::Backends; 3] {
@@ -164,6 +158,7 @@ impl GfxState {
             queue,
             surface_format,
             surface_size: (initial_w, initial_h),
+            bgra_buffer: Vec::new(),
         })
     }
 
@@ -209,13 +204,14 @@ impl GfxState {
             return;
         }
 
-        // Convert RGBA to BGRA for the surface format
-        let mut bgra = Vec::with_capacity(buffer_size);
+        // Convert RGBA to BGRA for the surface format, reusing the buffer.
+        self.bgra_buffer.clear();
+        self.bgra_buffer.reserve(buffer_size);
         for chunk in rgba.chunks_exact(4) {
-            bgra.push(chunk[2]); // B
-            bgra.push(chunk[1]); // G
-            bgra.push(chunk[0]); // R
-            bgra.push(chunk[3]); // A
+            self.bgra_buffer.push(chunk[2]); // B
+            self.bgra_buffer.push(chunk[1]); // G
+            self.bgra_buffer.push(chunk[0]); // R
+            self.bgra_buffer.push(chunk[3]); // A
         }
 
         // Write directly to the surface texture
@@ -226,7 +222,7 @@ impl GfxState {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &bgra,
+            &self.bgra_buffer,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * width),
