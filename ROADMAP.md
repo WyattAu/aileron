@@ -5,19 +5,19 @@
 | Metric | Value |
 |--------|-------|
 | Version | 1.0.0 |
-| Tests | 1188 lib, 253 integration (13 suites), 4 doc = 1445 total |
+| Tests | 1191 lib, 233 integration (13 suites), 4 doc = 1428 total |
 | Clippy | Zero warnings (all-targets, -D warnings) |
 | Formatting | Zero issues (cargo fmt) |
 | Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck -- SAFETY commented) |
 | #[must_use] | 49 attributes across 21 files |
-| LOC | 56,865 Rust across 148 source files |
+| LOC | ~56,900 Rust across 148 source files |
 | Binary size | ~21 MB stripped (x86_64 Linux) |
 | CI | 8 jobs: Linux test + coverage, macOS check, Windows check, cross-compile (3 targets), fmt, benchmark regression |
 | Coverage | cargo-llvm-cov (lcov) via Codecov |
-| Pre-commit | fmt, check, clippy, lib tests, doc tests; pre-push: integration tests, doc gen |
+| Pre-commit | fmt, check, clippy, lib tests, doc tests, secret scan, file size check; pre-push: integration tests, doc gen |
 | GitHub Pages | Deployed at https://wyattau.github.io/aileron/ |
 | Platforms | Linux (primary), macOS (compile), Windows (compile) |
-| Audit (2026-06-09) | Zero code stubs, zero TODO/FIXME, zero emojis in docs, CI/CD hardened, Lua version fixed, per-keypress allocation reduced, docs accuracy verified, UI updated with Spatial Materialism + Amoebic UI, ARIA accessibility added |
+| Audit (2026-06-12) | Full end-to-end audit completed: 5 atomic commits, security fixes, accessibility fixes, CI hardened, test infrastructure fixed |
 
 ## Execution Model
 
@@ -417,6 +417,35 @@ Known architectural debt:
 - main.rs is 730 lines (well under 2000 target after event_handlers.rs extraction)
 - Offscreen rendering pipeline captures frames but lacks egui/wgpu backend to display them on main window
 - GTK windows render but may not be captured by scrot on XWayland (compositor issue)
+
+### Audit Findings (2026-06-12)
+
+**Security Fixes:**
+- Fixed IPC JSON injection in chrome WASM bridge (format!() replaced with serde_json::json!())
+- Fixed update_check.rs dead-end background thread (now uses mpsc channel)
+
+**Test Infrastructure:**
+- Fixed 13 orphaned integration test files that were never compiled by Cargo
+- Fixed non-exhaustive match patterns in sync_integration.rs
+
+**Accessibility:**
+- Fixed WCAG AA color contrast failures in chrome and docs (2.8:1 to 4.5:1 ratio)
+- Added lang="en" to HTML elements for screen reader compatibility
+
+**Performance:**
+- Removed dead shader constants from gfx/renderer.rs
+- Added reusable BGRA buffer to eliminate per-frame allocation (~4KB at 1080p)
+
+**CI/CD:**
+- Pinned cargo-audit@0.20.0 and cargo-llvm-cov@0.6.14 for reproducible CI
+- Added dependabot.yml for automated dependency updates
+- Enhanced pre-commit hook with secret scanning and file size checks
+
+**Known Duplication (tracked for future refactoring):**
+- frame_tasks/mod.rs: process_wry_events_inner vs process_offscreen_events_inner (330 lines each, 90% identical)
+- frame_tasks/ipc.rs: handle_ipc_message vs handle_ipc_message_offscreen (340 lines each, 90% identical)
+- mcp/tools.rs: 3 pairs of duplicate tools (RunJs/ExecuteJs, Navigate/BrowserNavigate, FillForm/BrowserFillForm)
+- net/adblock.rs: Domain matching logic duplicated 4x
 
 ## Timeline Estimate
 
