@@ -73,113 +73,6 @@ impl McpTool for ReadActivePaneTool {
     }
 }
 
-/// Tool: Navigate to a URL in the active pane.
-/// Sends a command to the main thread via McpBridge.
-pub struct BrowserNavigateTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
-}
-
-impl BrowserNavigateTool {
-    pub fn new(_state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
-        Self { command_tx }
-    }
-}
-
-impl McpTool for BrowserNavigateTool {
-    fn name(&self) -> &str {
-        "browser_navigate"
-    }
-    fn description(&self) -> &str {
-        "Navigate the active browser pane to a URL"
-    }
-    fn input_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "url": {
-                    "type": "string",
-                    "description": "The URL to navigate to"
-                }
-            },
-            "required": ["url"]
-        })
-    }
-    fn execute(&self, args: &Value) -> anyhow::Result<String> {
-        let url = args
-            .get("url")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'url' parameter"))?;
-
-        // Validate URL
-        if url::Url::parse(url).is_err() {
-            return Err(anyhow::anyhow!("Invalid URL: {url}"));
-        }
-
-        self.command_tx
-            .send(McpCommand::Navigate {
-                url: url.to_string(),
-                new_tab: false,
-            })
-            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
-
-        Ok(format!("Navigating to: {url}"))
-    }
-}
-
-/// Tool: Execute JavaScript in the active pane.
-/// Sends a command to the main thread via McpBridge.
-pub struct RunJsTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
-}
-
-impl RunJsTool {
-    pub fn new(_state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
-        Self { command_tx }
-    }
-}
-
-impl McpTool for RunJsTool {
-    fn name(&self) -> &str {
-        "run_js"
-    }
-    fn description(&self) -> &str {
-        "Execute JavaScript in the active browser pane and return the result"
-    }
-    fn input_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "description": "JavaScript code to execute"
-                }
-            },
-            "required": ["code"]
-        })
-    }
-    fn execute(&self, args: &Value) -> anyhow::Result<String> {
-        let code = args
-            .get("code")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'code' parameter"))?;
-
-        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-
-        self.command_tx
-            .send(McpCommand::ExecuteJs {
-                code: code.to_string(),
-                response_tx,
-            })
-            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
-
-        let result = response_rx
-            .blocking_recv()
-            .map_err(|_| anyhow::anyhow!("JS execution cancelled"))?;
-
-        Ok(result)
-    }
-}
-
 /// Tool: Search the web using DuckDuckGo HTML lite endpoint.
 /// Performs a real HTTP request to DuckDuckGo's lite HTML interface
 /// and extracts search result titles and URLs.
@@ -818,70 +711,6 @@ impl McpTool for ClickTool {
     }
 }
 
-// ── Fill Form Tool ────────────────────────────────────────────
-
-struct FillFormTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
-}
-
-impl FillFormTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
-        Self { command_tx }
-    }
-}
-
-impl McpTool for FillFormTool {
-    fn name(&self) -> &str {
-        "fill_form"
-    }
-    fn description(&self) -> &str {
-        "Fill an input field by CSS selector with a value"
-    }
-    fn input_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "selector": { "type": "string", "description": "CSS selector of input element" },
-                "value": { "type": "string", "description": "Value to fill" }
-            },
-            "required": ["selector", "value"],
-        })
-    }
-    fn execute(&self, args: &serde_json::Value) -> anyhow::Result<String> {
-        let selector = args
-            .get("selector")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'selector' parameter"))?;
-
-        let value = args
-            .get("value")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'value' parameter"))?;
-
-        let escaped_selector = selector.replace('\\', "\\\\").replace('\'', "\\'");
-        let escaped_value = value.replace('\\', "\\\\").replace('\'', "\\'");
-
-        let code = format!(
-            "(function() {{ \
-                var el = document.querySelector('{escaped_selector}'); \
-                if (!el) return 'Error: element not found'; \
-                el.value = '{escaped_value}'; \
-                el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
-                el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
-                return 'filled'; \
-            }})()"
-        );
-
-        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-        self.command_tx
-            .send(McpCommand::ExecuteJs { code, response_tx })
-            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
-        response_rx
-            .blocking_recv()
-            .map_err(|_| anyhow::anyhow!("Form fill cancelled"))
-    }
-}
-
 // ── Get Cookies Tool ──────────────────────────────────────────
 
 struct GetCookiesTool {
@@ -1110,10 +939,8 @@ pub fn create_tools(
 ) -> Vec<Box<dyn McpTool + Send + Sync>> {
     vec![
         Box::new(ReadActivePaneTool::new(state.clone())),
-        Box::new(BrowserNavigateTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserGetTextTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserFillFormTool::new(state.clone(), command_tx.clone())),
-        Box::new(RunJsTool::new(state.clone(), command_tx.clone())),
         Box::new(SearchWebTool),
         Box::new(ListTabsTool::new(command_tx.clone())),
         Box::new(BookmarkCrudTool::new(command_tx.clone())),
@@ -1122,7 +949,6 @@ pub fn create_tools(
         Box::new(ExecuteJsTool::new(command_tx.clone())),
         Box::new(ScreenshotTool::new(command_tx.clone())),
         Box::new(ClickTool::new(command_tx.clone())),
-        Box::new(FillFormTool::new(command_tx.clone())),
         Box::new(GetCookiesTool::new(command_tx.clone())),
         Box::new(WaitForTool::new(command_tx.clone())),
         Box::new(CreateTabTool::new(command_tx.clone())),
@@ -1134,19 +960,11 @@ pub fn create_tools(
 pub fn default_tools() -> Vec<Box<dyn McpTool + Send + Sync>> {
     vec![
         Box::new(ReadActivePaneTool::new(McpState::default())),
-        Box::new(BrowserNavigateTool::new(
-            McpState::default(),
-            std::sync::mpsc::channel().0,
-        )),
         Box::new(BrowserGetTextTool::new(
             McpState::default(),
             std::sync::mpsc::channel().0,
         )),
         Box::new(BrowserFillFormTool::new(
-            McpState::default(),
-            std::sync::mpsc::channel().0,
-        )),
-        Box::new(RunJsTool::new(
             McpState::default(),
             std::sync::mpsc::channel().0,
         )),
@@ -1189,37 +1007,6 @@ mod tests {
     }
 
     #[test]
-    fn test_browser_navigate() {
-        let state = McpState::default();
-        let (tx, rx) = std::sync::mpsc::channel();
-        let tool = BrowserNavigateTool::new(state, tx);
-        let args = json!({"url": "https://example.com"});
-        let result = tool.execute(&args).unwrap();
-        assert!(result.contains("example.com"));
-        // Command should be in the channel
-        let cmd = rx
-            .recv_timeout(std::time::Duration::from_millis(100))
-            .unwrap();
-        match cmd {
-            McpCommand::Navigate { url, new_tab } => {
-                assert_eq!(url, "https://example.com");
-                assert!(!new_tab);
-            }
-            _ => panic!("Unexpected command: {cmd:?}"),
-        }
-    }
-
-    #[test]
-    fn test_browser_navigate_invalid_url() {
-        let state = McpState::default();
-        let (tx, _) = std::sync::mpsc::channel();
-        let tool = BrowserNavigateTool::new(state, tx);
-        let args = json!({"url": "not-a-url"});
-        let result = tool.execute(&args);
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn test_search_web() {
         if std::env::var("AILERON_NETWORK_TESTS").is_err() {
             return; // Skip: requires network access to DuckDuckGo API
@@ -1231,37 +1018,15 @@ mod tests {
     }
 
     #[test]
-    fn test_run_js() {
-        let state = McpState::default();
-        let (tx, rx) = std::sync::mpsc::channel();
-
-        // Spawn a thread to respond to the JS execution command
-        std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
-                rx.recv_timeout(std::time::Duration::from_secs(5))
-            {
-                let _ = response_tx.send("Executed JS: undefined".to_string());
-            }
-        });
-
-        let tool = RunJsTool::new(state, tx);
-        let args = json!({"code": "console.log('hello')"});
-        let result = tool.execute(&args).unwrap();
-        assert!(result.contains("Executed JS"));
-    }
-
-    #[test]
     fn test_create_tools() {
         let state = McpState::default();
         let (tx, _) = std::sync::mpsc::channel();
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 18);
+        assert_eq!(tools.len(), 15);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
-        assert!(names.contains(&"browser_navigate"));
         assert!(names.contains(&"browser_get_text"));
         assert!(names.contains(&"browser_fill_form"));
-        assert!(names.contains(&"run_js"));
         assert!(names.contains(&"search_web"));
         assert!(names.contains(&"list_tabs"));
         assert!(names.contains(&"bookmark_crud"));
@@ -1270,7 +1035,6 @@ mod tests {
         assert!(names.contains(&"execute_js"));
         assert!(names.contains(&"screenshot"));
         assert!(names.contains(&"click"));
-        assert!(names.contains(&"fill_form"));
         assert!(names.contains(&"get_cookies"));
         assert!(names.contains(&"wait_for"));
         assert!(names.contains(&"create_tab"));
@@ -1280,7 +1044,7 @@ mod tests {
     #[test]
     fn test_default_tools() {
         let tools = default_tools();
-        assert_eq!(tools.len(), 6);
+        assert_eq!(tools.len(), 4);
     }
 
     #[test]
@@ -1555,48 +1319,6 @@ mod tests {
         let result = tool.execute(&args);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("selector"));
-    }
-
-    #[test]
-    fn test_fill_form_tool() {
-        let (tx, rx) = std::sync::mpsc::channel();
-
-        std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, code }) =
-                rx.recv_timeout(std::time::Duration::from_secs(5))
-            {
-                assert!(code.contains("#search"), "JS should contain selector");
-                assert!(code.contains("hello world"), "JS should contain value");
-                assert!(code.contains("input"), "JS should dispatch input event");
-                assert!(code.contains("change"), "JS should dispatch change event");
-                let _ = response_tx.send("filled".to_string());
-            }
-        });
-
-        let tool = FillFormTool::new(tx);
-        let args = json!({"selector": "#search", "value": "hello world"});
-        let result = tool.execute(&args).unwrap();
-        assert_eq!(result, "filled");
-    }
-
-    #[test]
-    fn test_fill_form_tool_missing_selector() {
-        let (tx, _) = std::sync::mpsc::channel();
-        let tool = FillFormTool::new(tx);
-        let args = json!({"value": "test"});
-        let result = tool.execute(&args);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("selector"));
-    }
-
-    #[test]
-    fn test_fill_form_tool_missing_value() {
-        let (tx, _) = std::sync::mpsc::channel();
-        let tool = FillFormTool::new(tx);
-        let args = json!({"selector": "#input"});
-        let result = tool.execute(&args);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("value"));
     }
 
     #[test]

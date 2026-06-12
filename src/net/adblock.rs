@@ -296,6 +296,11 @@ impl AdBlocker {
         Some(domain.to_lowercase())
     }
 
+    /// Returns `true` if `host` is exactly `domain` or a subdomain of `domain`.
+    fn domain_matches(host: &str, domain: &str) -> bool {
+        host == domain || host.ends_with(&format!(".{domain}"))
+    }
+
     pub fn should_block(
         &mut self,
         url: &Url,
@@ -358,12 +363,10 @@ impl AdBlocker {
         }
 
         for blocked in &self.blocked_domains {
-            if blocked.starts_with("*.") {
-                let suffix = &blocked[1..];
-                if host.ends_with(suffix) {
-                    self.blocked_count += 1;
-                    return true;
-                }
+            let domain = blocked.strip_prefix("*.").unwrap_or(blocked.as_str());
+            if Self::domain_matches(&host, domain) {
+                self.blocked_count += 1;
+                return true;
             }
         }
 
@@ -475,20 +478,13 @@ impl AdBlocker {
     }
 
     fn host_matches_domain(&self, host: &str, domain: &str) -> bool {
-        host == domain || host.ends_with(&format!(".{domain}"))
+        Self::domain_matches(host, domain)
     }
 
     fn is_whitelisted(&self, host: &str) -> bool {
-        if self.whitelisted_domains.contains(host) {
-            return true;
-        }
-        if let Some(dot_pos) = host.find('.') {
-            let parent = &host[dot_pos + 1..];
-            if self.whitelisted_domains.contains(parent) {
-                return true;
-            }
-        }
-        false
+        self.whitelisted_domains
+            .iter()
+            .any(|d| Self::domain_matches(host, d))
     }
 
     pub fn cosmetic_css(&self) -> String {
@@ -680,19 +676,12 @@ impl AdBlocker {
     }
 
     fn pattern_matches_host(&self, filter: &NetworkFilter, host: &str) -> bool {
-        if filter.pattern.starts_with("||") {
-            let domain = filter
-                .pattern
-                .strip_prefix("||")
-                .expect("guarded by starts_with check")
-                .trim_end_matches('^')
-                .split('/')
-                .next()
-                .unwrap_or("");
-            host == domain || host.ends_with(&format!(".{domain}"))
-        } else {
-            false
+        if filter.pattern.starts_with("||")
+            && let Some(domain) = Self::extract_domain_from_pattern(&filter.pattern)
+        {
+            return Self::domain_matches(host, &domain);
         }
+        false
     }
 }
 
