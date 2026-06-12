@@ -39,6 +39,9 @@ impl ApplicationHandler for AileronApp {
             }
         }
 
+        // Explicitly focus the window (required on Wayland)
+        window.focus_window();
+
         self.init_app_state(window);
 
         // Initialize Leptos WASM chrome webview BEFORE content panes.
