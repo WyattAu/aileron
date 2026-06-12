@@ -155,6 +155,59 @@ name = "frame_bench"
 harness = false
 path = "../benches/frame_bench.rs"
 
+# Integration tests (located in workspace root tests/ directory)
+[[test]]
+name = "integration_smoke"
+path = "../tests/integration_smoke.rs"
+
+[[test]]
+name = "startup_test"
+path = "../tests/startup_test.rs"
+
+[[test]]
+name = "adblock_integration"
+path = "../tests/adblock_integration.rs"
+
+[[test]]
+name = "db_integration"
+path = "../tests/db_integration.rs"
+
+[[test]]
+name = "downloads_integration"
+path = "../tests/downloads_integration.rs"
+
+[[test]]
+name = "extension_integration"
+path = "../tests/extension_integration.rs"
+
+[[test]]
+name = "frame_tasks_integration"
+path = "../tests/frame_tasks_integration.rs"
+
+[[test]]
+name = "input_routing_integration"
+path = "../tests/input_routing_integration.rs"
+
+[[test]]
+name = "lua_integration"
+path = "../tests/lua_integration.rs"
+
+[[test]]
+name = "mcp_integration"
+path = "../tests/mcp_integration.rs"
+
+[[test]]
+name = "offscreen_render_test"
+path = "../tests/offscreen_render_test.rs"
+
+[[test]]
+name = "sync_integration"
+path = "../tests/sync_integration.rs"
+
+[[test]]
+name = "terminal_integration"
+path = "../tests/terminal_integration.rs"
+
 [features]
 default = ["mcp", "arp", "sync", "passwords", "lua", "terminal"]
 mcp = ["dep:image", "dep:base64"]

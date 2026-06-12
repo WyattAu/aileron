@@ -236,7 +236,7 @@ fn test_sync_target_parse_ssh() {
             assert_eq!(user_host, "deploy@backup.internal");
             assert_eq!(remote_path, "/var/sync/aileron");
         }
-        SyncTarget::Local(_) => panic!("expected SSH target"),
+        _ => panic!("expected SSH target"),
     }
 
     assert_eq!(target.display(), "deploy@backup.internal:/var/sync/aileron");
@@ -248,7 +248,7 @@ fn test_sync_target_parse_local_path() {
 
     match &target {
         SyncTarget::Local(p) => assert_eq!(p.as_path(), std::path::Path::new("/mnt/nas/aileron")),
-        SyncTarget::Ssh { .. } => panic!("expected Local target"),
+        _ => panic!("expected Local target"),
     }
 
     assert_eq!(target.display(), "/mnt/nas/aileron");
@@ -271,6 +271,6 @@ fn test_sync_target_ssh_with_tilde() {
             assert_eq!(user_host, "user@host");
             assert_eq!(remote_path, "~/sync");
         }
-        SyncTarget::Local(_) => panic!("expected SSH target"),
+        _ => panic!("expected SSH target"),
     }
 }
