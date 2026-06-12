@@ -370,32 +370,13 @@ pub fn run() -> anyhow::Result<()> {
         }
     }
 
-    // On NVIDIA + Wayland, winit's Wayland backend (sctk) fails to
-    // dispatch keyboard/mouse events despite the compositor sending
-    // wl_keyboard.enter. WINIT_UNIX_BACKEND was removed in winit 0.30;
-    // backend selection is now based on WAYLAND_DISPLAY presence.
-    // Temporarily hide WAYLAND_DISPLAY to force winit onto X11/XWayland.
-    // Force GDK_BACKEND=x11 so that GTK (used by wry) also uses X11
-    // for child window embedding. The GTK window fallback path handles
-    // positioning via set_bounds_with_parent_offset.
+    // On NVIDIA + Wayland, winit's Wayland backend (sctk) previously failed to
+    // dispatch keyboard/mouse events. We used to hide WAYLAND_DISPLAY to force
+    // winit onto X11/XWayland, but this caused X11 child window compositing
+    // issues. Instead, we now use native Wayland and let winit handle the
+    // event loop. GTK/Wayland handles its own rendering via WebKitGTK.
     #[cfg(target_os = "linux")]
-    let wayland_display_backup = {
-        if is_nvidia_gpu() && std::env::var("WAYLAND_DISPLAY").is_ok() {
-            let backup = std::env::var("WAYLAND_DISPLAY").ok();
-            // SAFETY: This runs before any threads are spawned (before event loop creation).
-            unsafe { std::env::remove_var("WAYLAND_DISPLAY") };
-            // Force GDK to use X11 backend so wry's GTK windows use X11
-            if std::env::var("GDK_BACKEND").is_err() {
-                unsafe { std::env::set_var("GDK_BACKEND", "x11") };
-            }
-            info!(
-                "NVIDIA + Wayland: temporarily hiding WAYLAND_DISPLAY to force winit X11 backend"
-            );
-            backup
-        } else {
-            None
-        }
-    };
+    let wayland_display_backup: Option<String> = None;
     #[cfg(not(target_os = "linux"))]
     let wayland_display_backup: Option<String> = None;
 

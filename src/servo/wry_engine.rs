@@ -147,21 +147,12 @@ impl WryPane {
         // On Wayland, wry's build_as_child panics at
         //   gdk_display.downcast_ref::<X11Display>().unwrap()
         // instead of returning Err. Detect this before calling it.
-        //
-        // NOTE: On XWayland (Wayland compositor with X11 fallback), build_as_child
-        // creates child windows that don't render properly. We skip Path 1 on
-        // XWayland by checking if the session is Wayland even when GDK_BACKEND=x11.
         #[cfg(target_os = "linux")]
         let is_x11_display: bool = {
             use webkit2gtk::glib::Cast;
-            let gdk_is_x11 = gtk::gdk::Display::default()
+            gtk::gdk::Display::default()
                 .and_then(|d| d.downcast::<gdkx11::X11Display>().ok())
-                .is_some();
-            // Also check if we're actually on Wayland (XWayland case)
-            let is_wayland_session = std::env::var("XDG_SESSION_TYPE")
-                .map(|v| v == "wayland")
-                .unwrap_or(false);
-            gdk_is_x11 && !is_wayland_session
+                .is_some()
         };
         #[cfg(not(target_os = "linux"))]
         let is_x11_display: bool = true;
