@@ -9,7 +9,7 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#11111b;--bg2:#1e1e2e;--bg3:#313244;
-  --text:#cdd6f4;--text2:#a6adc8;--text3:#6c7086;
+  --text:#cdd6f4;--text2:#a6adc8;  --text-muted:#9399b2;
   --accent:#89b4ff;--accent2:#74a8f7;
   --code-bg:#181825;--border:#313244;
   --max-w:960px;
@@ -31,7 +31,7 @@ nav .container{display:flex;align-items:center;justify-content:space-between;fle
 nav .logo{font-weight:700;font-size:1.1rem;letter-spacing:-.02em}
 nav .logo span{color:var(--accent)}
 nav ul{list-style:none;display:flex;gap:1.25rem;font-size:.875rem}
-nav ul a{color:var(--text3)}
+nav ul a{color:var(--text-muted)}
 nav ul a:hover,nav ul a:focus{color:var(--text)}
 h1,h2,h3{letter-spacing:-.03em;line-height:1.2}
 h1{font-size:clamp(2.5rem,6vw,3.75rem);font-weight:800;color:#fff}
@@ -72,7 +72,7 @@ pre .comment{color:#546178}
 .quickstart{max-width:600px;margin:0 auto}
 .quickstart p{color:var(--text2);font-size:.9rem;margin-bottom:1rem}
 .install-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:0}
-.install-tab{padding:.5rem 1rem;font-size:.8rem;font-weight:600;color:var(--text3);background:transparent;border:1px solid transparent;border-bottom:none;border-radius:var(--radius-sm) var(--radius-sm) 0 0;cursor:pointer;transition:color var(--transition),background var(--transition)}
+.install-tab{padding:.5rem 1rem;font-size:.8rem;font-weight:600;color:var(--text-muted);background:transparent;border:1px solid transparent;border-bottom:none;border-radius:var(--radius-sm) var(--radius-sm) 0 0;cursor:pointer;transition:color var(--transition),background var(--transition)}
 .install-tab:hover{color:var(--text)}
 .install-tab.active{color:var(--accent);background:var(--code-bg);border-color:var(--border)}
 .install-panel{display:none}
@@ -81,7 +81,7 @@ pre .comment{color:#546178}
 .links{display:flex;gap:1.5rem;flex-wrap:wrap;justify-content:center;padding-bottom:4rem}
 .links a{color:var(--text2);font-size:.9rem}
 .links a:hover{color:var(--accent)}
-footer{text-align:center;padding:2rem 0;color:var(--text3);font-size:.8rem;border-top:1px solid var(--border)}
+footer{text-align:center;padding:2rem 0;color:var(--text-muted);font-size:.8rem;border-top:1px solid var(--border)}
 @media(max-width:600px){.hero{padding:3rem 0 2.5rem}section{padding:2.5rem 0}.grid{grid-template-columns:1fr}.dl-grid{grid-template-columns:1fr 1fr}nav ul{gap:.75rem}}
 </style>
 </head>
