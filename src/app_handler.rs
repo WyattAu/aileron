@@ -1198,6 +1198,22 @@ impl ApplicationHandler for AileronApp {
                         tracing::debug!("offscreen pane {} not found", &active_id.to_string()[..8]);
                     }
                 }
+
+                // Composite chrome overlay on top (Wayland offscreen mode).
+                // The chrome overlay is rendered as an offscreen webview with UUID::nil().
+                // Its frame is captured and composited via wgpu on top of the content.
+                let chrome_pane_id = uuid::Uuid::nil();
+                if let Some(chrome_pane) = self.offscreen_panes.get_mut(&chrome_pane_id) {
+                    let frame_info = chrome_pane.frame().map(|f| (f.width, f.height));
+                    if let Some((width, height)) = frame_info
+                        && let Some(rgba) = chrome_pane.frame_rgba()
+                    {
+                        let rgba_owned = rgba.to_vec();
+                        // Render chrome overlay on top of content
+                        gfx.render_frame(&rgba_owned, width, height);
+                        textures_updated = true;
+                    }
+                }
             }
         }
 

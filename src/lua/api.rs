@@ -102,21 +102,73 @@ impl LuaEngine {
         extension_manager: Rc<RefCell<Option<Arc<parking_lot::RwLock<ExtensionManager>>>>>,
     ) -> mlua::Result<()> {
         let lua = &self.lua;
-
-        // aileron = {}
         let aileron = lua.create_table()?;
 
-        // aileron.version = env!("CARGO_PKG_VERSION")
+        Self::register_core_api(lua, &aileron, pending_navigations)?;
+        Self::register_keybinding_api(lua, &aileron, pending_keybinds)?;
+        Self::register_theme_api(lua, &aileron)?;
+        Self::register_command_api(lua, &aileron, custom_commands)?;
+        Self::register_hook_api(lua, &aileron)?;
+        Self::register_navigation_api(lua, &aileron, url_redirects)?;
+        Self::register_extensions_api(lua, &aileron, extension_manager)?;
+        Self::register_sandbox(lua)?;
+
+        lua.globals().set("aileron", aileron)?;
+        Ok(())
+    }
+
+    /// Register basic Lua API functions: version, info, log, warn, navigate.
+    fn register_core_api(
+        lua: &Lua,
+        aileron: &mlua::Table,
+        pending_navigations: Rc<RefCell<Vec<String>>>,
+    ) -> mlua::Result<()> {
         aileron.set("version", env!("CARGO_PKG_VERSION"))?;
 
-        // aileron.keymap = {}
+        let info_fn = lua.create_function(|lua, ()| {
+            let info = lua.create_table()?;
+            info.set("version", env!("CARGO_PKG_VERSION"))?;
+            info.set("engine", "wry")?;
+            Ok(info)
+        })?;
+        aileron.set("info", info_fn)?;
+
+        let log_fn = lua.create_function(|_, msg: String| {
+            info!(target: "lua", "{}", msg);
+            Ok(())
+        })?;
+        aileron.set("log", log_fn)?;
+
+        let warn_fn = lua.create_function(|_, msg: String| {
+            warn!(target: "lua", "{}", msg);
+            Ok(())
+        })?;
+        aileron.set("warn", warn_fn)?;
+
+        let navigate_fn = {
+            let navs = pending_navigations;
+            lua.create_function(move |_, url: String| {
+                info!(target: "lua", "navigate({})", url);
+                navs.borrow_mut().push(url);
+                Ok(())
+            })?
+        };
+        aileron.set("navigate", navigate_fn)?;
+
+        Ok(())
+    }
+
+    /// Register keybinding API: aileron.keymap.set(mode, key, action).
+    fn register_keybinding_api(
+        lua: &Lua,
+        aileron: &mlua::Table,
+        pending_keybinds: Rc<RefCell<Vec<PendingKeybind>>>,
+    ) -> mlua::Result<()> {
         let keymap = lua.create_table()?;
         aileron.set("keymap", keymap.clone())?;
 
-        // aileron.keymap.set(mode, key, action)
-        // Parses the key string and stores the binding for later application.
         let set_keybind = {
-            let binds = pending_keybinds.clone();
+            let binds = pending_keybinds;
             lua.create_function(move |_, (mode, key, action): (String, String, String)| {
                 info!(target: "lua", "keymap.set({}, {}, {})", mode, key, action);
                 binds
@@ -127,7 +179,11 @@ impl LuaEngine {
         };
         keymap.set("set", set_keybind)?;
 
-        // aileron.theme = {}
+        Ok(())
+    }
+
+    /// Register theme API: aileron.theme.set(name).
+    fn register_theme_api(lua: &Lua, aileron: &mlua::Table) -> mlua::Result<()> {
         let theme = lua.create_table()?;
         aileron.set("theme", theme.clone())?;
 
@@ -137,33 +193,34 @@ impl LuaEngine {
         })?;
         theme.set("set", set_theme)?;
 
-        // aileron.cmd = {}
+        Ok(())
+    }
+
+    /// Register command API: aileron.cmd.create(name, description, callback).
+    fn register_command_api(
+        lua: &Lua,
+        aileron: &mlua::Table,
+        custom_commands: Rc<RefCell<Vec<CustomCommand>>>,
+    ) -> mlua::Result<()> {
         let cmd = lua.create_table()?;
         aileron.set("cmd", cmd.clone())?;
 
-        // aileron._commands = {} — stores callback functions keyed by name
         let commands_table = lua.create_table()?;
         aileron.set("_commands", commands_table.clone())?;
 
-        // aileron.cmd.create(name, description, callback)
-        // Registers a custom command. The callback is stored in aileron._commands[name]
-        // so that call_command() can invoke it later.
         let create_cmd = {
-            let cmds = custom_commands.clone();
+            let cmds = custom_commands;
             lua.create_function(
                 move |lua, (name, desc, callback): (String, String, Value)| {
                     if let Value::Function(_) = callback {
                         info!(target: "lua", "cmd.create({}, {})", name, desc);
 
-                        // Store command metadata on the Rust side
                         cmds.borrow_mut().push(CustomCommand {
                             name: name.clone(),
                             description: desc,
                             callback_name: name.clone(),
                         });
 
-                        // Store the callback function in aileron._commands[name]
-                        // so call_command() can look it up and invoke it.
                         let aileron: Value = lua.globals().get("aileron")?;
                         if let Value::Table(aileron_tbl) = aileron {
                             let existing: Value = aileron_tbl.get("_commands")?;
@@ -181,11 +238,14 @@ impl LuaEngine {
         };
         cmd.set("create", create_cmd)?;
 
-        // aileron._hooks = {}
+        Ok(())
+    }
+
+    /// Register hook API: aileron.on(event, callback).
+    fn register_hook_api(lua: &Lua, aileron: &mlua::Table) -> mlua::Result<()> {
         let hooks_table = lua.create_table()?;
         aileron.set("_hooks", hooks_table)?;
 
-        // aileron.on(event, callback)
         let on_hook = lua.create_function(|lua, (event, callback): (String, Value)| {
             if let Value::Function(_) = callback {
                 let aileron: Value = lua.globals().get("aileron")?;
@@ -213,16 +273,20 @@ impl LuaEngine {
         })?;
         aileron.set("on", on_hook)?;
 
-        // aileron.url = {}
+        Ok(())
+    }
+
+    /// Register navigation/URL API: aileron.url.add_redirect(pattern, replacement).
+    fn register_navigation_api(
+        lua: &Lua,
+        aileron: &mlua::Table,
+        url_redirects: Rc<RefCell<Vec<UrlRedirect>>>,
+    ) -> mlua::Result<()> {
         let url_tbl = lua.create_table()?;
         aileron.set("url", url_tbl.clone())?;
 
-        // aileron.url.add_redirect(pattern, replacement)
-        // Registers a URL redirect rule. If a navigated URL's host contains
-        // `pattern` (case-insensitive), the host portion is replaced with
-        // `replacement`. Useful for redirecting to privacy frontends.
         let add_redirect = {
-            let redirects = url_redirects.clone();
+            let redirects = url_redirects;
             lua.create_function(move |_, (pattern, replacement): (String, String)| {
                 info!(target: "lua", "url.add_redirect({}, {})", pattern, replacement);
                 redirects.borrow_mut().push(UrlRedirect {
@@ -234,52 +298,18 @@ impl LuaEngine {
         };
         url_tbl.set("add_redirect", add_redirect)?;
 
-        // aileron.info()
-        let info_fn = lua.create_function(|lua, ()| {
-            let info = lua.create_table()?;
-            info.set("version", env!("CARGO_PKG_VERSION"))?;
-            info.set("engine", "wry")?;
-            Ok(info)
-        })?;
-        aileron.set("info", info_fn)?;
+        Ok(())
+    }
 
-        // aileron.log(message)
-        let log_fn = lua.create_function(|_, msg: String| {
-            info!(target: "lua", "{}", msg);
-            Ok(())
-        })?;
-        aileron.set("log", log_fn)?;
-
-        // aileron.warn(message)
-        let warn_fn = lua.create_function(|_, msg: String| {
-            warn!(target: "lua", "{}", msg);
-            Ok(())
-        })?;
-        aileron.set("warn", warn_fn)?;
-
-        // aileron.navigate(url)
-        // Pushes a URL into the pending navigations queue. The application
-        // processes these during init (for init.lua startup) and after
-        // hook callbacks (for runtime navigation from hooks).
-        let navigate_fn = {
-            let navs = pending_navigations.clone();
-            lua.create_function(move |_, url: String| {
-                info!(target: "lua", "navigate({})", url);
-                navs.borrow_mut().push(url);
-                Ok(())
-            })?
-        };
-        aileron.set("navigate", navigate_fn)?;
-
-        // === aileron.extensions ===
-        // Lua control plane for managing WebExtensions.
-        // Functions gracefully return nil/error if the extension manager
-        // hasn't been injected yet (happens during app startup).
+    /// Register extensions API: aileron.extensions.{list,info,reload}.
+    fn register_extensions_api(
+        lua: &Lua,
+        aileron: &mlua::Table,
+        extension_manager: Rc<RefCell<Option<Arc<parking_lot::RwLock<ExtensionManager>>>>>,
+    ) -> mlua::Result<()> {
         let extensions_tbl = lua.create_table()?;
         aileron.set("extensions", extensions_tbl.clone())?;
 
-        // aileron.extensions.list()
-        // Returns a table of extension info tables: { {id, name, version, ...}, ... }
         let ext_list = {
             let mgr = extension_manager.clone();
             lua.create_function(move |lua, ()| {
@@ -314,8 +344,6 @@ impl LuaEngine {
         };
         extensions_tbl.set("list", ext_list)?;
 
-        // aileron.extensions.info(id)
-        // Returns detailed info about a specific extension, or nil if not found.
         let ext_info = {
             let mgr = extension_manager.clone();
             lua.create_function(move |lua, id: String| {
@@ -361,11 +389,8 @@ impl LuaEngine {
         };
         extensions_tbl.set("info", ext_info)?;
 
-        // aileron.extensions.reload(id)
-        // Reload a specific extension by unloading and re-loading it.
-        // Returns true on success, false on failure.
         let ext_reload = {
-            let mgr = extension_manager.clone();
+            let mgr = extension_manager;
             lua.create_function(move |_, id: String| {
                 let mgr_ref = mgr.borrow();
                 let _mgr = match mgr_ref.as_ref() {
@@ -377,15 +402,22 @@ impl LuaEngine {
                     }
                 };
                 info!(target: "lua", "extensions.reload({})", id);
-                // Note: full reload requires unload+reload support in ExtensionManager.
-                // For now, just log the request.
                 warn!(target: "lua", "extensions.reload() not yet fully implemented");
                 Ok(true)
             })?
         };
         extensions_tbl.set("reload", ext_reload)?;
 
-        lua.globals().set("aileron", aileron)?;
+        Ok(())
+    }
+
+    /// Register sandbox restrictions.
+    ///
+    /// The Lua sandbox is enforced at VM creation via `StdLib` flags
+    /// (STRING | TABLE | MATH | UTF8 | COROUTINE only). This function
+    /// exists as a placeholder for any additional runtime restrictions
+    /// that may be added in the future.
+    fn register_sandbox(_lua: &Lua) -> mlua::Result<()> {
         Ok(())
     }
 

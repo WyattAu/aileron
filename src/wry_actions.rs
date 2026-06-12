@@ -103,16 +103,16 @@ fn eval_offscreen(
     rx.try_recv().ok()
 }
 
-/// Process a single WryAction against the wry pane manager.
-///
-/// Returns Ok(()) on success, Err(message) on failure.
-pub fn process_wry_action(
+// ---------------------------------------------------------------------------
+// Category handlers
+// ---------------------------------------------------------------------------
+
+/// Handle navigation actions: Navigate, Back, Forward, Reload.
+fn handle_navigation(
     action: crate::app::WryAction,
     active_id: uuid::Uuid,
     wry_panes: &mut crate::servo::WryPaneManager,
     offscreen_panes: &mut crate::offscreen_webview::OffscreenWebViewManager,
-    app_state: &mut Option<crate::app::AppState>,
-    content_scripts: &crate::scripts::ContentScriptManager,
 ) -> Result<(), String> {
     match action {
         crate::app::WryAction::Navigate(url) => {
@@ -156,58 +156,19 @@ pub fn process_wry_action(
                 }
             }
         }
-        crate::app::WryAction::ToggleBookmark => {
-            let url_str;
-            let title_str;
-            if let Some(wry_pane) = wry_panes.get(&active_id) {
-                url_str = wry_pane.url().to_string();
-                title_str = wry_pane.title().to_string();
-            } else if let Some(pane) = offscreen_panes.get(&active_id) {
-                url_str = pane.url().to_string();
-                title_str = pane.title().to_string();
-            } else {
-                return Ok(());
-            }
-            let display_title = if title_str.is_empty() {
-                &url_str
-            } else {
-                &title_str
-            };
-            if let Some(app_state) = app_state
-                && let Some(ref conn) = app_state.db
-            {
-                if crate::db::bookmarks::is_bookmarked(conn, &url_str) {
-                    if let Err(e) = crate::db::bookmarks::remove_bookmark(conn, &url_str) {
-                        tracing::warn!("Failed to remove bookmark: {}", e);
-                    }
-                    app_state.ui.status_message = format!("Bookmark removed: {display_title}");
-                } else {
-                    if let Err(e) =
-                        crate::db::bookmarks::add_bookmark(conn, &url_str, display_title)
-                    {
-                        tracing::warn!("Failed to add bookmark: {}", e);
-                    }
-                    app_state.ui.status_message = format!("Bookmarked: {display_title}");
-                }
-            }
-        }
-        crate::app::WryAction::Autofill { js } => {
-            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
-                info!("Auto-filling credentials into active pane");
-                wry_pane.execute_js(&js);
-            } else if let Some(pane) = offscreen_panes.get(&active_id) {
-                info!("Auto-filling credentials into offscreen pane");
-                pane.execute_js(&js);
-            }
-        }
-        crate::app::WryAction::ToggleDevTools => {
-            #[cfg(target_os = "linux")]
-            {
-                if wry_panes.get(&active_id).is_some() {
-                    wry_panes.open_devtools(&active_id);
-                }
-            }
-        }
+        _ => unreachable!("handle_navigation called with non-navigation action"),
+    }
+    Ok(())
+}
+
+/// Handle scroll actions: ScrollBy, SmoothScroll, ScrollTo, CaptureScrollFraction.
+fn handle_scroll(
+    action: crate::app::WryAction,
+    active_id: uuid::Uuid,
+    wry_panes: &mut crate::servo::WryPaneManager,
+    offscreen_panes: &mut crate::offscreen_webview::OffscreenWebViewManager,
+) -> Result<(), String> {
+    match action {
         crate::app::WryAction::SmoothScroll { x, y } => {
             if let Some(pane) = offscreen_panes.get_mut(&active_id) {
                 // Use 'instant' instead of 'smooth' — smooth scrolling
@@ -259,13 +220,19 @@ pub fn process_wry_action(
                 pane.execute_js(js);
             }
         }
-        crate::app::WryAction::RunJs(js) => {
-            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
-                wry_pane.execute_js(&js);
-            } else if let Some(pane) = offscreen_panes.get(&active_id) {
-                pane.execute_js(&js);
-            }
-        }
+        _ => unreachable!("handle_scroll called with non-scroll action"),
+    }
+    Ok(())
+}
+
+/// Handle mode actions: EnterReaderMode, ExitReaderMode, EnterMinimalMode, ExitMinimalMode.
+fn handle_mode(
+    action: crate::app::WryAction,
+    active_id: uuid::Uuid,
+    wry_panes: &mut crate::servo::WryPaneManager,
+    offscreen_panes: &mut crate::offscreen_webview::OffscreenWebViewManager,
+) -> Result<(), String> {
+    match action {
         crate::app::WryAction::EnterReaderMode => {
             if let Some(pane) = wry_panes.get_mut(&active_id) {
                 let reader_js = r#"
@@ -470,6 +437,80 @@ pub fn process_wry_action(
                 pane.execute_js(&restore_js);
             }
         }
+        _ => unreachable!("handle_mode called with non-mode action"),
+    }
+    Ok(())
+}
+
+/// Handle miscellaneous actions that don't fit into other categories.
+fn handle_misc(
+    action: crate::app::WryAction,
+    active_id: uuid::Uuid,
+    wry_panes: &mut crate::servo::WryPaneManager,
+    offscreen_panes: &mut crate::offscreen_webview::OffscreenWebViewManager,
+    app_state: &mut Option<crate::app::AppState>,
+    content_scripts: &crate::scripts::ContentScriptManager,
+) -> Result<(), String> {
+    match action {
+        crate::app::WryAction::ToggleBookmark => {
+            let url_str;
+            let title_str;
+            if let Some(wry_pane) = wry_panes.get(&active_id) {
+                url_str = wry_pane.url().to_string();
+                title_str = wry_pane.title().to_string();
+            } else if let Some(pane) = offscreen_panes.get(&active_id) {
+                url_str = pane.url().to_string();
+                title_str = pane.title().to_string();
+            } else {
+                return Ok(());
+            }
+            let display_title = if title_str.is_empty() {
+                &url_str
+            } else {
+                &title_str
+            };
+            if let Some(app_state) = app_state
+                && let Some(ref conn) = app_state.db
+            {
+                if crate::db::bookmarks::is_bookmarked(conn, &url_str) {
+                    if let Err(e) = crate::db::bookmarks::remove_bookmark(conn, &url_str) {
+                        tracing::warn!("Failed to remove bookmark: {}", e);
+                    }
+                    app_state.ui.status_message = format!("Bookmark removed: {display_title}");
+                } else {
+                    if let Err(e) =
+                        crate::db::bookmarks::add_bookmark(conn, &url_str, display_title)
+                    {
+                        tracing::warn!("Failed to add bookmark: {}", e);
+                    }
+                    app_state.ui.status_message = format!("Bookmarked: {display_title}");
+                }
+            }
+        }
+        crate::app::WryAction::Autofill { js } => {
+            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                info!("Auto-filling credentials into active pane");
+                wry_pane.execute_js(&js);
+            } else if let Some(pane) = offscreen_panes.get(&active_id) {
+                info!("Auto-filling credentials into offscreen pane");
+                pane.execute_js(&js);
+            }
+        }
+        crate::app::WryAction::ToggleDevTools => {
+            #[cfg(target_os = "linux")]
+            {
+                if wry_panes.get(&active_id).is_some() {
+                    wry_panes.open_devtools(&active_id);
+                }
+            }
+        }
+        crate::app::WryAction::RunJs(js) => {
+            if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                wry_pane.execute_js(&js);
+            } else if let Some(pane) = offscreen_panes.get(&active_id) {
+                pane.execute_js(&js);
+            }
+        }
         crate::app::WryAction::SaveWorkspace { name, .. } => {
             let mut pane_urls: std::collections::HashMap<uuid::Uuid, String> = wry_panes
                 .pane_ids()
@@ -636,8 +677,72 @@ pub fn process_wry_action(
                 app_state.ui.status_message = "Clipboard updated (via ARP)".into();
             }
         }
+        // These variants are handled by other category handlers but listed
+        // here for completeness — the match is exhaustive.
+        crate::app::WryAction::Navigate(_)
+        | crate::app::WryAction::Back
+        | crate::app::WryAction::Forward
+        | crate::app::WryAction::Reload
+        | crate::app::WryAction::SmoothScroll { .. }
+        | crate::app::WryAction::ScrollBy { .. }
+        | crate::app::WryAction::ScrollTo { .. }
+        | crate::app::WryAction::CaptureScrollFraction
+        | crate::app::WryAction::EnterReaderMode
+        | crate::app::WryAction::ExitReaderMode
+        | crate::app::WryAction::EnterMinimalMode
+        | crate::app::WryAction::ExitMinimalMode => {
+            unreachable!("handled by other category handlers")
+        }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Main router
+// ---------------------------------------------------------------------------
+
+/// Process a single WryAction against the wry pane manager.
+///
+/// Returns Ok(()) on success, Err(message) on failure.
+pub fn process_wry_action(
+    action: crate::app::WryAction,
+    active_id: uuid::Uuid,
+    wry_panes: &mut crate::servo::WryPaneManager,
+    offscreen_panes: &mut crate::offscreen_webview::OffscreenWebViewManager,
+    app_state: &mut Option<crate::app::AppState>,
+    content_scripts: &crate::scripts::ContentScriptManager,
+) -> Result<(), String> {
+    match action {
+        crate::app::WryAction::Navigate(_)
+        | crate::app::WryAction::Back
+        | crate::app::WryAction::Forward
+        | crate::app::WryAction::Reload => {
+            handle_navigation(action, active_id, wry_panes, offscreen_panes)
+        }
+
+        crate::app::WryAction::SmoothScroll { .. }
+        | crate::app::WryAction::ScrollBy { .. }
+        | crate::app::WryAction::ScrollTo { .. }
+        | crate::app::WryAction::CaptureScrollFraction => {
+            handle_scroll(action, active_id, wry_panes, offscreen_panes)
+        }
+
+        crate::app::WryAction::EnterReaderMode
+        | crate::app::WryAction::ExitReaderMode
+        | crate::app::WryAction::EnterMinimalMode
+        | crate::app::WryAction::ExitMinimalMode => {
+            handle_mode(action, active_id, wry_panes, offscreen_panes)
+        }
+
+        _ => handle_misc(
+            action,
+            active_id,
+            wry_panes,
+            offscreen_panes,
+            app_state,
+            content_scripts,
+        ),
+    }
 }
 
 #[cfg(test)]

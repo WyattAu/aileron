@@ -1,13 +1,9 @@
-#[cfg(target_os = "linux")]
-use gtk::prelude::GtkWindowExt;
 use std::sync::Arc;
 use tracing::{info, warn};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
-#[cfg(target_os = "linux")]
-use wry::WebViewBuilderExtUnix;
 
 use aileron::app::AppState;
 use aileron::config::Config;
@@ -102,10 +98,6 @@ struct AileronApp {
     /// Leptos WASM chrome webview (Phase 2b+).
     chrome_webview: Option<wry::WebView>,
 
-    /// GTK window for chrome overlay on Wayland (None on X11).
-    #[cfg(target_os = "linux")]
-    chrome_gtk_window: Option<gtk::Window>,
-
     /// IPC channel for the chrome webview.
     chrome_ipc_rx: Option<crossbeam_channel::Receiver<String>>,
 
@@ -167,8 +159,6 @@ impl AileronApp {
             ime_just_committed: false,
             webview_has_focus: false,
             chrome_webview: None,
-            #[cfg(target_os = "linux")]
-            chrome_gtk_window: None,
             chrome_ipc_rx: None,
             chrome_initialized: false,
             version_string: format!(
@@ -271,15 +261,12 @@ impl AileronApp {
         let (ipc_tx, ipc_rx) = crossbeam_channel::bounded::<String>(16);
         self.chrome_ipc_rx = Some(ipc_rx);
 
-        // Clone for potential GTK fallback
-        let dist_dir_clone = dist_dir.clone();
         let ipc_tx_clone = ipc_tx.clone();
-
         let chrome_webview = wry::WebViewBuilder::new()
             .with_url("aileron-chrome://chrome/index.html")
             .with_custom_protocol(
                 "aileron-chrome".into(),
-                aileron::chrome_bridge::chrome_asset_handler(dist_dir),
+                aileron::chrome_bridge::chrome_asset_handler(dist_dir.clone()),
             )
             .with_ipc_handler(move |req: wry::http::Request<String>| {
                 let body = req.into_body();
@@ -294,97 +281,72 @@ impl AileronApp {
                 self.chrome_webview = Some(wv);
             }
             Err(e) => {
-                // On Wayland, build_as_child fails. Fall back to a standalone GTK window.
-                info!("Chrome webview child window failed ({e}), trying GTK fallback");
-                match Self::create_chrome_gtk_window(dist_dir_clone, ipc_tx_clone) {
-                    Ok((wv, gtk_win)) => {
-                        info!("Chrome webview created (Leptos WASM, GTK window)");
-                        self.chrome_webview = Some(wv);
-                        #[cfg(target_os = "linux")]
-                        {
-                            self.chrome_gtk_window = Some(gtk_win);
-                        }
-                    }
-                    Err(e2) => {
-                        tracing::warn!("Failed to create chrome webview: {e2}");
-                    }
-                }
+                // On Wayland, build_as_child fails. Use offscreen rendering instead
+                // of a separate GTK window. The chrome overlay will be rendered via
+                // wgpu, composited on top of the content panes.
+                info!("Chrome webview child window failed ({e}), using offscreen rendering");
+                self.init_chrome_offscreen(dist_dir, ipc_tx_clone);
             }
         }
     }
 
-    /// Create a standalone GTK window for the chrome webview (Wayland fallback).
+    /// Create an offscreen chrome overlay for Wayland.
     ///
-    /// On Wayland, `build_as_child` fails, so we create a separate GTK window
-    /// that acts as a transparent overlay on top of the main window. The webview
-    /// itself is transparent (`with_transparent(true)`), and we configure the
-    /// GTK window to be paintable and use an RGBA visual for proper compositing.
+    /// Instead of a separate GTK window, the chrome overlay is rendered into
+    /// a gtk::OffscreenWindow and its pixels are captured and composited via
+    /// wgpu onto the main window. This eliminates the two-window problem.
     #[cfg(target_os = "linux")]
-    fn create_chrome_gtk_window(
-        dist_dir: std::path::PathBuf,
-        ipc_tx: crossbeam_channel::Sender<String>,
-    ) -> Result<(wry::WebView, gtk::Window), wry::Error> {
-        use gtk::prelude::*;
+    fn init_chrome_offscreen(
+        &mut self,
+        _dist_dir: std::path::PathBuf,
+        _ipc_tx: crossbeam_channel::Sender<String>,
+    ) {
+        let window = match &self.window {
+            Some(w) => Arc::clone(w),
+            None => return,
+        };
 
-        let gtk_window = gtk::Window::new(gtk::WindowType::Toplevel);
-        gtk_window.set_title("Aileron Chrome");
-        gtk_window.set_default_size(1280, 800);
-        gtk_window.set_decorated(false);
-        gtk_window.set_keep_above(true);
-        gtk_window.set_skip_taskbar_hint(true);
+        let size = window.inner_size();
+        let scale = window.scale_factor();
+        let width = (size.width as f64 / scale) as i32;
+        let height = (size.height as f64 / scale) as i32;
 
-        // Enable transparency: set_app_paintable allows GTK to composite
-        // the window with an alpha channel, making the transparent webview
-        // blend with the main window underneath.
-        gtk_window.set_app_paintable(true);
+        // Use a reserved UUID for the chrome overlay pane
+        let chrome_pane_id = uuid::Uuid::nil();
 
-        // Set RGBA visual for proper alpha compositing on Wayland
-        if let Some(screen) = gtk::prelude::GtkWindowExt::screen(&gtk_window)
-            && let Some(visual) = screen.rgba_visual()
-        {
-            gtk_window.set_visual(Some(&visual));
+        let chrome_url = url::Url::parse("aileron-chrome://chrome/index.html").unwrap();
+
+        // Create chrome as an offscreen webview
+        if let Err(e) = self.offscreen_panes.create_pane_with_privacy(
+            chrome_pane_id,
+            &chrome_url,
+            width,
+            height,
+            vec![], // no blocked domains
+            std::sync::Arc::new(std::collections::HashSet::new()),
+            false, // no HTTPS upgrade
+            false, // no tracking protection
+            false, // no devtools
+            false, // no popup blocker
+            None,  // no interceptor registry
+        ) {
+            tracing::warn!("Failed to create offscreen chrome overlay: {e}");
+            return;
         }
 
-        // Make the window background transparent
-        let css_provider = gtk::CssProvider::new();
-        let _ = css_provider.load_from_data(b"* { background-color: transparent; }");
-        gtk::StyleContext::add_provider_for_screen(
-            &gtk::prelude::GtkWindowExt::screen(&gtk_window).expect("No screen"),
-            &css_provider,
-            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        info!(
+            "Chrome overlay created as offscreen pane ({}x{})",
+            width, height
         );
-
-        let fixed = gtk::Fixed::new();
-        fixed.set_size_request(1280, 800);
-        fixed.show();
-        gtk_window.set_child(Some(&fixed));
-        gtk_window.show();
-
-        let builder = wry::WebViewBuilder::new()
-            .with_url("aileron-chrome://chrome/index.html")
-            .with_custom_protocol(
-                "aileron-chrome".into(),
-                aileron::chrome_bridge::chrome_asset_handler(dist_dir),
-            )
-            .with_ipc_handler(move |req: wry::http::Request<String>| {
-                let body = req.into_body();
-                let _ = ipc_tx.send(body);
-            })
-            .with_transparent(true);
-
-        let webview = builder.build_gtk(&fixed)?;
-        Ok((webview, gtk_window))
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn create_chrome_gtk_window(
+    fn init_chrome_offscreen(
+        &mut self,
         _dist_dir: std::path::PathBuf,
         _ipc_tx: crossbeam_channel::Sender<String>,
-    ) -> Result<(wry::WebView, ()), wry::Error> {
-        Err(wry::Error::Io(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "GTK fallback not available on this platform",
-        )))
+    ) {
+        // Not needed on non-Linux platforms
     }
 
     fn create_wry_pane_for(&mut self, pane_id: uuid::Uuid, url: &url::Url) {
@@ -702,15 +664,6 @@ impl AileronApp {
                 position: wry::dpi::Position::Logical(wry::dpi::LogicalPosition::new(0.0, 0.0)),
                 size: wry::dpi::Size::Logical(wry::dpi::LogicalSize::new(w, h)),
             });
-
-            // On Wayland, also resize the GTK overlay window to match
-            #[cfg(target_os = "linux")]
-            if let Some(ref gtk_win) = self.chrome_gtk_window {
-                gtk_win.set_default_size(size.width as i32, size.height as i32);
-                // Position at (0,0) relative to the main window
-                // On Wayland, we can't set absolute position, but the compositor
-                // should place it at the same location as the main window
-            }
         } else {
             info!("reposition: no window or chrome_webview available");
         }
