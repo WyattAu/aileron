@@ -1,5 +1,5 @@
 #[cfg(target_os = "linux")]
-use gtk::prelude::{ContainerExt, GtkWindowExt, WidgetExt};
+use gtk::prelude::GtkWindowExt;
 use std::sync::Arc;
 use tracing::{info, warn};
 use winit::application::ApplicationHandler;
@@ -314,17 +314,45 @@ impl AileronApp {
     }
 
     /// Create a standalone GTK window for the chrome webview (Wayland fallback).
+    ///
+    /// On Wayland, `build_as_child` fails, so we create a separate GTK window
+    /// that acts as a transparent overlay on top of the main window. The webview
+    /// itself is transparent (`with_transparent(true)`), and we configure the
+    /// GTK window to be paintable and use an RGBA visual for proper compositing.
     #[cfg(target_os = "linux")]
     fn create_chrome_gtk_window(
         dist_dir: std::path::PathBuf,
         ipc_tx: crossbeam_channel::Sender<String>,
     ) -> Result<(wry::WebView, gtk::Window), wry::Error> {
+        use gtk::prelude::*;
+
         let gtk_window = gtk::Window::new(gtk::WindowType::Toplevel);
         gtk_window.set_title("Aileron Chrome");
         gtk_window.set_default_size(1280, 800);
         gtk_window.set_decorated(false);
         gtk_window.set_keep_above(true);
         gtk_window.set_skip_taskbar_hint(true);
+
+        // Enable transparency: set_app_paintable allows GTK to composite
+        // the window with an alpha channel, making the transparent webview
+        // blend with the main window underneath.
+        gtk_window.set_app_paintable(true);
+
+        // Set RGBA visual for proper alpha compositing on Wayland
+        if let Some(screen) = gtk::prelude::GtkWindowExt::screen(&gtk_window)
+            && let Some(visual) = screen.rgba_visual()
+        {
+            gtk_window.set_visual(Some(&visual));
+        }
+
+        // Make the window background transparent
+        let css_provider = gtk::CssProvider::new();
+        let _ = css_provider.load_from_data(b"* { background-color: transparent; }");
+        gtk::StyleContext::add_provider_for_screen(
+            &gtk::prelude::GtkWindowExt::screen(&gtk_window).expect("No screen"),
+            &css_provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
 
         let fixed = gtk::Fixed::new();
         fixed.set_size_request(1280, 800);
