@@ -105,6 +105,10 @@ pub struct TestHarness {
     dump_dom: bool,
     /// Capture counter (for sequential file naming).
     capture_count: usize,
+    /// Pending DOM HTML capture: (step_index, step_name) waiting for async callback.
+    pending_dom_capture: Option<(usize, String)>,
+    /// Shared buffer for async DOM capture result from the webview.
+    pub dom_capture_buffer: std::sync::Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl TestHarness {
@@ -129,6 +133,8 @@ impl TestHarness {
             done: false,
             dump_dom,
             capture_count: 0,
+            pending_dom_capture: None,
+            dom_capture_buffer: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -383,6 +389,9 @@ impl TestHarness {
 
     /// Capture DOM HTML and screenshot from the active pane's webview.
     /// Called from app_handler after tick() to get data from wry_panes.
+    ///
+    /// If DOM HTML is not yet available (async callback hasn't fired),
+    /// stores the step info in `pending_dom_capture` for retry on next frame.
     pub fn capture_webview_data(&mut self, dom_html: Option<String>, screenshot: Option<String>) {
         info!(
             "capture_webview_data: dom_html={}, screenshot={}",
@@ -411,6 +420,12 @@ impl TestHarness {
             } else {
                 info!("DOM HTML saved: {}", html_path.display());
             }
+            // Clear pending capture since we got the data
+            self.pending_dom_capture = None;
+        } else if self.pending_dom_capture.is_none() {
+            // First attempt failed -- store for retry on next frames
+            tracing::debug!("DOM HTML not yet available, will retry next frames");
+            self.pending_dom_capture = Some((index, step_name.clone()));
         }
 
         // Save screenshot from data URL
@@ -431,6 +446,30 @@ impl TestHarness {
         }
     }
 
+    /// Get the step index and name for a pending DOM capture, if any.
+    pub fn pending_dom_capture_step(&self) -> Option<(usize, &str)> {
+        self.pending_dom_capture
+            .as_ref()
+            .map(|(idx, name)| (*idx, name.as_str()))
+    }
+
+    /// Save DOM HTML for a pending capture (called from retry loop).
+    pub fn save_pending_dom_html(&mut self, html: &str) {
+        if let Some((index, ref step_name)) = self.pending_dom_capture {
+            let padded = format!("{index:03}");
+            let html_path = self
+                .session_dir
+                .join("dom")
+                .join(format!("{padded}_{step_name}.html"));
+            if let Err(e) = std::fs::write(&html_path, html) {
+                tracing::error!("Failed to write pending DOM HTML: {e}");
+            } else {
+                info!("DOM HTML saved (retry): {}", html_path.display());
+            }
+            self.pending_dom_capture = None;
+        }
+    }
+
     /// Whether the route is complete.
     pub fn is_done(&self) -> bool {
         self.done
@@ -444,6 +483,11 @@ impl TestHarness {
     /// Current step index (0-based).
     pub fn current_step(&self) -> usize {
         self.current_step
+    }
+
+    /// Number of captures completed so far.
+    pub fn capture_count(&self) -> usize {
+        self.capture_count
     }
 
     /// Total number of steps in the route.

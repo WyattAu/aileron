@@ -601,6 +601,7 @@ impl ApplicationHandler for AileronApp {
             && !harness.is_done()
             && let Some(app_state) = &mut self.app_state
         {
+            let prev_capture_count = harness.capture_count();
             let done = harness.tick(app_state);
             if done {
                 tracing::info!("Test harness completed all steps");
@@ -608,34 +609,49 @@ impl ApplicationHandler for AileronApp {
                 return;
             }
 
-            // Capture DOM HTML and screenshot from active pane's webview
-            let active_id = app_state.wm.active_pane_id();
-            tracing::debug!(
-                "capture_webview: active_id={}, wry_panes_len={}",
-                &active_id.to_string()[..8],
-                self.wry_panes.len()
-            );
-            let dom_html = self.wry_panes.get(&active_id).and_then(|p| {
-                tracing::debug!("capture_webview: found pane, capturing DOM");
-                p.capture_dom_html()
-            });
-            let screenshot = self
-                .wry_panes
-                .get(&active_id)
-                .and_then(|p| p.capture_screenshot_js());
-            harness.capture_webview_data(dom_html, screenshot);
-
-            // Capture screenshot from active pane (offscreen mode only)
-            if self.config.is_offscreen()
-                && let Some(offscreen_pane) = self.offscreen_panes.get_mut(&active_id)
+            // Retry pending DOM capture: check if the async callback has written data.
+            if harness.pending_dom_capture_step().is_some()
+                && let Some(html) = aileron::servo::wry_engine::check_dom_capture_result(
+                    &harness.dom_capture_buffer,
+                )
             {
-                let frame_info = offscreen_pane.frame().map(|f| (f.width, f.height));
-                if let Some((width, height)) = frame_info
-                    && let Some(rgba) = offscreen_pane.frame_rgba()
+                harness.save_pending_dom_html(&html);
+            }
+
+            // When tick() completes a step, start the async DOM capture.
+            if harness.capture_count() > prev_capture_count {
+                let active_id = app_state.wm.active_pane_id();
+                tracing::debug!(
+                    "capture_webview: active_id={}, wry_panes_len={}",
+                    &active_id.to_string()[..8],
+                    self.wry_panes.len()
+                );
+                if let Some(pane) = self.wry_panes.get(&active_id) {
+                    // Clear the buffer and start async capture
+                    if let Ok(mut guard) = harness.dom_capture_buffer.lock() {
+                        *guard = None;
+                    }
+                    pane.start_capture_dom_html(harness.dom_capture_buffer.clone());
+                }
+                let screenshot = self
+                    .wry_panes
+                    .get(&active_id)
+                    .and_then(|p| p.capture_screenshot_js());
+                // Pass None for dom_html -- it will be captured async
+                harness.capture_webview_data(None, screenshot);
+
+                // Capture screenshot from active pane (offscreen mode only)
+                if self.config.is_offscreen()
+                    && let Some(offscreen_pane) = self.offscreen_panes.get_mut(&active_id)
                 {
-                    let rgba_owned = rgba.to_vec();
-                    let step_name = harness.current_step_name().to_string();
-                    harness.capture_screenshot(&rgba_owned, width, height, &step_name);
+                    let frame_info = offscreen_pane.frame().map(|f| (f.width, f.height));
+                    if let Some((width, height)) = frame_info
+                        && let Some(rgba) = offscreen_pane.frame_rgba()
+                    {
+                        let rgba_owned = rgba.to_vec();
+                        let step_name = harness.current_step_name().to_string();
+                        harness.capture_screenshot(&rgba_owned, width, height, &step_name);
+                    }
                 }
             }
         }

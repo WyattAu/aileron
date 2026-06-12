@@ -587,30 +587,29 @@ a {{ color: #4db4ff; }}
     }
 
     /// Capture the full DOM HTML of this pane's webview.
-    /// Uses evaluate_script_with_callback with extended timeout for GTK webviews.
-    pub fn capture_dom_html(&self) -> Option<String> {
-        let (tx, rx) = std::sync::mpsc::channel();
-        let tx_clone = tx;
+    /// Uses a shared buffer that the async callback writes to.
+    /// The caller must poll `pending_dom_result()` to check if data is ready.
+    pub fn start_capture_dom_html(&self, buffer: std::sync::Arc<std::sync::Mutex<Option<String>>>) {
+        let buf = buffer;
         let result = self.webview.evaluate_script_with_callback(
             "document.documentElement.outerHTML",
             move |result| {
                 tracing::debug!("capture_dom_html callback: {} bytes", result.len());
-                let _ = tx_clone.send(result);
+                if let Ok(mut guard) = buf.lock() {
+                    *guard = Some(result);
+                }
             },
         );
         if let Err(e) = &result {
             tracing::warn!("capture_dom_html: evaluate_script failed: {e}");
-            return None;
         }
-        // GTK webviews process callbacks asynchronously with significant delay.
-        // Wait up to 10 seconds to accommodate this.
-        match rx.recv_timeout(std::time::Duration::from_secs(10)) {
-            Ok(html) => {
-                tracing::debug!("capture_dom_html: got {} bytes", html.len());
-                if html.is_empty() { None } else { Some(html) }
-            }
-            Err(_) => None,
-        }
+    }
+
+    /// Non-blocking check: has the async DOM capture completed?
+    pub fn pending_dom_result(
+        buffer: &std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    ) -> Option<String> {
+        buffer.lock().ok().and_then(|mut guard| guard.take())
     }
 
     /// Capture a screenshot of this pane's webview as a PNG data URL.
@@ -823,6 +822,14 @@ a {{ color: #4db4ff; }}
     pub fn open_devtools(&self) {
         self.webview.open_devtools();
     }
+}
+
+/// Non-blocking check for async DOM capture result.
+/// Public so the binary crate can call it without importing WryPane.
+pub fn check_dom_capture_result(
+    buffer: &std::sync::Arc<std::sync::Mutex<Option<String>>>,
+) -> Option<String> {
+    buffer.lock().ok().and_then(|mut guard| guard.take())
 }
 
 impl super::engine::PaneRenderer for WryPane {
