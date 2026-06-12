@@ -1,9 +1,13 @@
+#[cfg(target_os = "linux")]
+use gtk::prelude::{ContainerExt, GtkWindowExt, WidgetExt};
 use std::sync::Arc;
 use tracing::{info, warn};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
+#[cfg(target_os = "linux")]
+use wry::WebViewBuilderExtUnix;
 
 use aileron::app::AppState;
 use aileron::config::Config;
@@ -261,6 +265,10 @@ impl AileronApp {
         let (ipc_tx, ipc_rx) = crossbeam_channel::bounded::<String>(16);
         self.chrome_ipc_rx = Some(ipc_rx);
 
+        // Clone for potential GTK fallback
+        let dist_dir_clone = dist_dir.clone();
+        let ipc_tx_clone = ipc_tx.clone();
+
         let chrome_webview = wry::WebViewBuilder::new()
             .with_url("aileron-chrome://chrome/index.html")
             .with_custom_protocol(
@@ -276,13 +284,68 @@ impl AileronApp {
 
         match chrome_webview {
             Ok(wv) => {
-                info!("Chrome webview created (Leptos WASM)");
+                info!("Chrome webview created (Leptos WASM, child window)");
                 self.chrome_webview = Some(wv);
             }
             Err(e) => {
-                tracing::warn!("Failed to create chrome webview: {e}");
+                // On Wayland, build_as_child fails. Fall back to a standalone GTK window.
+                info!("Chrome webview child window failed ({e}), trying GTK fallback");
+                match Self::create_chrome_gtk_window(dist_dir_clone, ipc_tx_clone) {
+                    Ok(wv) => {
+                        info!("Chrome webview created (Leptos WASM, GTK window)");
+                        self.chrome_webview = Some(wv);
+                    }
+                    Err(e2) => {
+                        tracing::warn!("Failed to create chrome webview: {e2}");
+                    }
+                }
             }
         }
+    }
+
+    /// Create a standalone GTK window for the chrome webview (Wayland fallback).
+    #[cfg(target_os = "linux")]
+    fn create_chrome_gtk_window(
+        dist_dir: std::path::PathBuf,
+        ipc_tx: crossbeam_channel::Sender<String>,
+    ) -> Result<wry::WebView, wry::Error> {
+        let gtk_window = gtk::Window::new(gtk::WindowType::Toplevel);
+        gtk_window.set_title("Aileron Chrome");
+        gtk_window.set_default_size(1280, 800);
+        gtk_window.set_decorated(false);
+        gtk_window.set_keep_above(true);
+        gtk_window.set_skip_taskbar_hint(true);
+
+        let fixed = gtk::Fixed::new();
+        fixed.set_size_request(1280, 800);
+        fixed.show();
+        gtk_window.set_child(Some(&fixed));
+        gtk_window.show();
+
+        let builder = wry::WebViewBuilder::new()
+            .with_url("aileron-chrome://chrome/index.html")
+            .with_custom_protocol(
+                "aileron-chrome".into(),
+                aileron::chrome_bridge::chrome_asset_handler(dist_dir),
+            )
+            .with_ipc_handler(move |req: wry::http::Request<String>| {
+                let body = req.into_body();
+                let _ = ipc_tx.send(body);
+            })
+            .with_transparent(true);
+
+        builder.build_gtk(&fixed)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn create_chrome_gtk_window(
+        _dist_dir: std::path::PathBuf,
+        _ipc_tx: crossbeam_channel::Sender<String>,
+    ) -> Result<wry::WebView, wry::Error> {
+        Err(wry::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "GTK fallback not available on this platform",
+        )))
     }
 
     fn create_wry_pane_for(&mut self, pane_id: uuid::Uuid, url: &url::Url) {
