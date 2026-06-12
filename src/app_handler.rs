@@ -27,6 +27,18 @@ impl ApplicationHandler for AileronApp {
             window.inner_size().width,
             window.inner_size().height
         );
+
+        // Initialize GPU renderer for offscreen frame display
+        match aileron::gfx::GfxState::new(Arc::clone(&window)) {
+            Ok(gfx) => {
+                self.gfx = Some(gfx);
+                info!("GPU renderer initialized");
+            }
+            Err(e) => {
+                tracing::warn!("GPU renderer init failed (offscreen rendering disabled): {e}");
+            }
+        }
+
         self.init_app_state(window);
 
         // Initialize Leptos WASM chrome webview BEFORE content panes.
@@ -153,6 +165,10 @@ impl ApplicationHandler for AileronApp {
                 physical_size.width as f64 / scale,
                 physical_size.height as f64 / scale,
             ));
+            // Resize GPU renderer surface
+            if let Some(gfx) = &mut self.gfx {
+                gfx.resize(physical_size.width, physical_size.height);
+            }
             // Defer pane repositioning to RedrawRequested to avoid calling
             // into GTK/WebKitGTK during the resize event itself, which can
             // deadlock or crash on NVIDIA + XWayland.
@@ -1096,13 +1112,44 @@ impl ApplicationHandler for AileronApp {
         #[cfg(target_os = "linux")]
         frame_tasks::pump_gtk_loop();
 
-        // Architecture B: capture dirty offscreen frames.
-        // NOTE: The egui rendering backend was removed when chrome was replaced
-        // with Leptos WASM. Frames are captured but not displayed on the main
-        // window. A rendering pipeline (egui/wgpu) is needed to display them.
-        let textures_updated = false;
+        // Architecture B: capture dirty offscreen frames and render them.
+        let mut textures_updated = false;
         if self.config.is_offscreen() {
+            tracing::debug!(
+                "offscreen: entering capture+render block, gfx={}",
+                self.gfx.is_some()
+            );
             self.offscreen_panes.capture_dirty_frames();
+
+            // Render captured frames to the main window via wgpu
+            if let Some(gfx) = &mut self.gfx {
+                let active_id = self.app_state.as_ref().map(|s| s.wm.active_pane_id());
+                if let Some(active_id) = active_id {
+                    if let Some(offscreen_pane) = self.offscreen_panes.get_mut(&active_id) {
+                        if let Some(frame) = offscreen_pane.frame() {
+                            let width = frame.width;
+                            let height = frame.height;
+                            if let Some(rgba) = offscreen_pane.frame_rgba() {
+                                let rgba_owned = rgba.to_vec();
+                                gfx.render_frame(&rgba_owned, width, height);
+                                textures_updated = true;
+                            } else {
+                                tracing::debug!(
+                                    "frame_rgba returned None for pane {}",
+                                    &active_id.to_string()[..8]
+                                );
+                            }
+                        } else {
+                            tracing::debug!(
+                                "frame() returned None for pane {}",
+                                &active_id.to_string()[..8]
+                            );
+                        }
+                    } else {
+                        tracing::debug!("offscreen pane {} not found", &active_id.to_string()[..8]);
+                    }
+                }
+            }
         }
 
         // Record frame end for input latency measurement.

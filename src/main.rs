@@ -39,6 +39,9 @@ struct AileronApp {
     modifiers: Modifiers,
     config: Config,
 
+    /// GPU renderer for displaying offscreen webview frames.
+    gfx: Option<aileron::gfx::GfxState>,
+
     /// Wry webview panes — one per BSP leaf.
     /// Must live here because wry::WebView is !Send + !Sync.
     wry_panes: WryPaneManager,
@@ -166,6 +169,7 @@ impl AileronApp {
             chrome_dirty: true,
             pending_pane_creates: std::collections::VecDeque::new(),
             test_harness: None,
+            gfx: None,
         }
     }
 
