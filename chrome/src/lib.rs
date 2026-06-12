@@ -113,14 +113,14 @@ fn TabSidebar() -> impl IntoView {
     let on_drag_start = move |ev: web_sys::DragEvent, pane_id: String| {
         if let Some(data_transfer) = ev.data_transfer() {
             let _ = data_transfer.set_data("text/plain", &pane_id);
-            let _ = data_transfer.set_effect_allowed("move");
+            data_transfer.set_effect_allowed("move");
         }
     };
 
     let on_drag_over = move |ev: web_sys::DragEvent| {
         ev.prevent_default();
         if let Some(data_transfer) = ev.data_transfer() {
-            let _ = data_transfer.set_drop_effect("move");
+            data_transfer.set_drop_effect("move");
         }
     };
 
@@ -131,9 +131,7 @@ fn TabSidebar() -> impl IntoView {
             && !from_id.is_empty()
             && from_id != target_id
         {
-            let json = format!(
-                r#"{{"kind":"reorder","payload":{{"from_id":"{from_id}","to_id":"{target_id}"}}}}"#
-            );
+            let json = serde_json::json!({"kind":"reorder","payload":{"from_id":from_id,"to_id":target_id}}).to_string();
             send_ipc_message(json);
         }
     };
@@ -386,25 +384,26 @@ fn CommandPalette() -> impl IntoView {
 
 /// Send a find bar IPC message to the Rust backend.
 fn send_find_ipc(sub: &str, query: &str) {
-    let json = format!(r#"{{"kind":"find","payload":{{"sub":"{sub}","query":"{query}"}}}}"#);
+    let json = serde_json::json!({"kind":"find","payload":{"sub":sub,"query":query}}).to_string();
     send_ipc_message(json);
 }
 
 /// Send a command palette IPC message to the Rust backend.
 fn send_palette_ipc(sub: &str, query: &str) {
-    let json = format!(r#"{{"kind":"palette","payload":{{"sub":"{sub}","query":"{query}"}}}}"#);
+    let json =
+        serde_json::json!({"kind":"palette","payload":{"sub":sub,"query":query}}).to_string();
     send_ipc_message(json);
 }
 
 /// Send a navigate IPC message to the Rust backend.
 fn send_navigate_ipc(url: &str) {
-    let json = format!(r#"{{"kind":"navigate","payload":{{"url":"{url}"}}}}"#);
+    let json = serde_json::json!({"kind":"navigate","payload":{"url":url}}).to_string();
     send_ipc_message(json);
 }
 
 /// Send an action IPC message to the Rust backend.
 fn send_action_ipc(action: &str) {
-    let json = format!(r#"{{"kind":"action","payload":{{"action":"{action}"}}}}"#);
+    let json = serde_json::json!({"kind":"action","payload":{"action":action}}).to_string();
     send_ipc_message(json);
 }
 

@@ -20,29 +20,42 @@ pub struct GitHubRelease {
 pub struct UpdateChecker {
     /// Last time we checked for updates.
     last_check: Option<Instant>,
-    /// Cached latest version string.
-    latest_version: Option<String>,
-    /// Cached changelog.
-    changelog: Option<String>,
-    /// Whether an update is available.
-    update_available: bool,
+    /// Receiver for background thread results.
+    result_rx: Option<std::sync::mpsc::Receiver<UpdateResult>>,
     /// The current version.
     current_version: String,
+    /// Latest version from the most recent check.
+    latest_version: Option<String>,
+    /// Whether an update is available.
+    update_available: bool,
+    /// Cached changelog.
+    changelog: Option<String>,
+}
+
+/// Result sent from the background update check thread.
+struct UpdateResult {
+    latest_version: String,
+    changelog: Option<String>,
+    update_available: bool,
 }
 
 impl UpdateChecker {
     pub fn new() -> Self {
         Self {
             last_check: None,
-            latest_version: None,
-            changelog: None,
-            update_available: false,
+            result_rx: None,
             current_version: env!("CARGO_PKG_VERSION").to_string(),
+            latest_version: None,
+            update_available: false,
+            changelog: None,
         }
     }
 
     /// Check for updates (non-blocking, spawns a background thread).
     pub fn check_for_updates(&mut self) {
+        // Drain any completed result from a prior background check.
+        self.poll_result();
+
         let now = Instant::now();
 
         // Don't check more than once per hour
@@ -52,28 +65,62 @@ impl UpdateChecker {
             return;
         }
 
+        // Don't spawn a new check if one is already in flight.
+        if self.result_rx.is_some() {
+            return;
+        }
+
         self.last_check = Some(now);
         let current_version = self.current_version.clone();
 
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.result_rx = Some(rx);
+
         // Spawn a background thread to check for updates
-        std::thread::spawn(move || {
-            match Self::fetch_latest_release() {
-                Ok(release) => {
-                    let latest = release.tag_name.trim_start_matches('v').to_string();
-                    let current = current_version.trim_start_matches('v');
-                    let update_available = Self::version_compare(&latest, current);
-                    info!(
-                        "Update check: current={}, latest={}, update_available={}",
-                        current, latest, update_available
-                    );
-                    // Note: In a real implementation, we'd send this back to the main thread
-                    // via a channel. For now, we just log it.
-                }
-                Err(e) => {
-                    warn!("Failed to check for updates: {}", e);
-                }
+        std::thread::spawn(move || match Self::fetch_latest_release() {
+            Ok(release) => {
+                let latest = release.tag_name.trim_start_matches('v').to_string();
+                let current = current_version.trim_start_matches('v');
+                let update_available = Self::version_compare(&latest, current);
+                info!(
+                    "Update check: current={}, latest={}, update_available={}",
+                    current, latest, update_available
+                );
+                let _ = tx.send(UpdateResult {
+                    latest_version: latest,
+                    changelog: release.body,
+                    update_available,
+                });
+            }
+            Err(e) => {
+                warn!("Failed to check for updates: {}", e);
             }
         });
+    }
+
+    /// Poll for a completed background check result. Returns true if new data arrived.
+    pub fn poll_result(&mut self) -> bool {
+        let rx = match self.result_rx.take() {
+            Some(rx) => rx,
+            None => return false,
+        };
+        match rx.try_recv() {
+            Ok(result) => {
+                self.latest_version = Some(result.latest_version);
+                self.changelog = result.changelog;
+                self.update_available = result.update_available;
+                true
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                // Still in flight, put the receiver back.
+                self.result_rx = Some(rx);
+                false
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                // Thread panicked or dropped the sender without sending.
+                false
+            }
+        }
     }
 
     /// Fetch the latest release from GitHub.
