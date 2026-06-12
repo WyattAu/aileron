@@ -765,6 +765,20 @@ impl ApplicationHandler for AileronApp {
                             }
                         }
                     }
+                    aileron::chrome_bridge::ChromeCommand::TabClose(pane_id) => {
+                        if let Some(app_state) = &mut self.app_state {
+                            if let Ok(close_uuid) = uuid::Uuid::parse_str(&pane_id) {
+                                app_state.pending_tab_close = Some(close_uuid);
+                            } else {
+                                app_state.ui.status_message = "Invalid tab ID for close".into();
+                            }
+                        }
+                    }
+                    aileron::chrome_bridge::ChromeCommand::TabNew => {
+                        if let Some(app_state) = &mut self.app_state {
+                            app_state.pending_new_tab = true;
+                        }
+                    }
                     aileron::chrome_bridge::ChromeCommand::StatusMessage(msg) => {
                         if let Some(app_state) = &mut self.app_state {
                             app_state.ui.status_message.push_str(&msg);

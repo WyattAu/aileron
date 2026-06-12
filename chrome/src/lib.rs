@@ -145,6 +145,8 @@ fn TabSidebar() -> impl IntoView {
             >
                 {let pane_id_for_drag = pane.id.clone();
                 let pane_id_for_drop = pane.id.clone();
+                let pane_id_for_close = pane.id.clone();
+                let pane_id_for_close_key = pane.id.clone();
                 let title_for_aria = pane.title.clone();
                 view! {
                     <div
@@ -159,11 +161,44 @@ fn TabSidebar() -> impl IntoView {
                         on:drop=move |ev| on_drop(ev, pane_id_for_drop.clone())
                     >
                         <span class="tab-title">{pane.title}</span>
-                        <span class="tab-close" role="button" aria-label="Close tab">&times;</span>
+                        <span
+                            class="tab-close"
+                            role="button"
+                            aria-label="Close tab"
+                            tabindex="0"
+                            on:click=move |ev| {
+                                ev.stop_propagation();
+                                send_tab_close_ipc(&pane_id_for_close);
+                            }
+                            on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                if ev.key() == "Enter" || ev.key() == " " {
+                                    ev.stop_propagation();
+                                    let id = pane_id_for_close_key.clone();
+                                    send_tab_close_ipc(&id);
+                                }
+                            }
+                        >
+                            "&times;"
+                        </span>
                     </div>
                 }}
             </For>
-            <div class="tab-new" role="button" aria-label="New tab">+</div>
+            <div
+                class="tab-new"
+                role="button"
+                aria-label="New tab"
+                tabindex="0"
+                on:click=move |_| {
+                    send_tab_new_ipc();
+                }
+                on:keydown=move |ev: web_sys::KeyboardEvent| {
+                    if ev.key() == "Enter" || ev.key() == " " {
+                        send_tab_new_ipc();
+                    }
+                }
+            >
+                "+"
+            </div>
         </div>
     }
 }
@@ -407,6 +442,18 @@ fn send_action_ipc(action: &str) {
     send_ipc_message(json);
 }
 
+/// Send a tab-close IPC message to the Rust backend.
+fn send_tab_close_ipc(pane_id: &str) {
+    let json = serde_json::json!({"kind":"tab-close","payload":{"pane_id":pane_id}}).to_string();
+    send_ipc_message(json);
+}
+
+/// Send a tab-new IPC message to the Rust backend.
+fn send_tab_new_ipc() {
+    let json = serde_json::json!({"kind":"tab-new","payload":{}}).to_string();
+    send_ipc_message(json);
+}
+
 /// Display label for a search category.
 fn category_label(cat: &SearchCategory) -> &'static str {
     match cat {
@@ -427,11 +474,17 @@ fn category_label(cat: &SearchCategory) -> &'static str {
 /// Register global JavaScript functions that the Rust backend calls via
 /// `evaluate_script()` to push state updates.
 fn register_bridge(state: RwSignal<ChromeState>) {
-    let closure = Closure::<dyn Fn(String)>::new(move |json_str: String| {
-        if let Ok(new_state) = serde_json::from_str::<ChromeState>(&json_str) {
-            state.set(new_state);
-        }
-    });
+    let closure =
+        Closure::<dyn Fn(String)>::new(move |json_str: String| {
+            match serde_json::from_str::<ChromeState>(&json_str) {
+                Ok(new_state) => state.set(new_state),
+                Err(e) => {
+                    web_sys::console::error_1(
+                        &format!("Failed to parse chrome state JSON: {e}").into(),
+                    );
+                }
+            }
+        });
 
     // Attach to window so Rust can call:
     //   webview.evaluate_script("window.updateChromeState('{...}')")

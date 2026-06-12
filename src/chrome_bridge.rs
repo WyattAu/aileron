@@ -172,6 +172,10 @@ pub enum ChromeCommand {
         /// ID of the pane being dropped onto.
         to_id: String,
     },
+    /// Close a specific tab by pane ID.
+    TabClose(String),
+    /// Create a new tab.
+    TabNew,
     /// No action needed.
     None,
 }
@@ -278,6 +282,21 @@ pub fn parse_chrome_ipc(json_str: &str) -> ChromeCommand {
                 ChromeCommand::TabReorder { from_id, to_id }
             }
         }
+        "tab-close" => {
+            let pane_id = request
+                .payload
+                .get("pane_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if pane_id.is_empty() {
+                tracing::warn!("tab-close missing pane_id");
+                ChromeCommand::None
+            } else {
+                ChromeCommand::TabClose(pane_id)
+            }
+        }
+        "tab-new" => ChromeCommand::TabNew,
         _ => {
             tracing::warn!("Unknown chrome IPC kind: {}", request.kind);
             ChromeCommand::None
@@ -423,6 +442,30 @@ mod tests {
     fn test_parse_chrome_ipc_reorder_empty_ids() {
         let json = r#"{"kind":"reorder","payload":{"from_id":"","to_id":"6ba7b810-9dad-11d1-80b4-00c04fd430c8"}}"#;
         assert!(matches!(parse_chrome_ipc(json), ChromeCommand::None));
+    }
+
+    #[test]
+    fn test_parse_chrome_ipc_tab_close() {
+        let json =
+            r#"{"kind":"tab-close","payload":{"pane_id":"550e8400-e29b-41d4-a716-446655440000"}}"#;
+        match parse_chrome_ipc(json) {
+            ChromeCommand::TabClose(id) => {
+                assert_eq!(id, "550e8400-e29b-41d4-a716-446655440000");
+            }
+            other => panic!("Expected TabClose, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_chrome_ipc_tab_close_empty_id() {
+        let json = r#"{"kind":"tab-close","payload":{"pane_id":""}}"#;
+        assert!(matches!(parse_chrome_ipc(json), ChromeCommand::None));
+    }
+
+    #[test]
+    fn test_parse_chrome_ipc_tab_new() {
+        let json = r#"{"kind":"tab-new","payload":{}}"#;
+        assert!(matches!(parse_chrome_ipc(json), ChromeCommand::TabNew));
     }
 
     #[test]
