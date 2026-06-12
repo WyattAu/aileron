@@ -578,6 +578,12 @@ a {{ color: #4db4ff; }}
         }
     }
 
+    /// No-op for WryPane (Wry re-renders automatically).
+    pub fn mark_dirty(&mut self) {}
+
+    /// No-op for WryPane (not applicable to native webviews).
+    pub fn suppress_context_menu(&self) {}
+
     /// Execute JavaScript with a callback that receives the result as JSON string.
     pub fn execute_js_with_callback(&self, js: &str, callback: impl Fn(String) + Send + 'static) {
         if let Err(e) = self.webview.evaluate_script_with_callback(js, callback) {

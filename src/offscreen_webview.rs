@@ -1239,6 +1239,15 @@ impl OffscreenWebViewManager {
         events
     }
 
+    /// Drain events from all panes, returning just the events (without pane_id tuples).
+    pub fn drain_all_events_flat(&mut self) -> Vec<WryEvent> {
+        let mut events = Vec::new();
+        for (_pane_id, pane) in self.panes.iter_mut() {
+            events.extend(pane.drain_events());
+        }
+        events
+    }
+
     /// Remove a pane.
     pub fn remove_pane(&mut self, pane_id: &Uuid) {
         if self.panes.remove(pane_id).is_some() {
