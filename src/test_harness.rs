@@ -199,7 +199,7 @@ impl TestHarness {
         let wait_duration = Duration::from_millis(self.states[self.current_step].wait_ms);
         if elapsed >= wait_duration {
             // Capture DOM before advancing step counter
-            self.capture_step(app_state);
+            self.capture_step(app_state, None, None);
             self.current_step += 1;
             self.action_executed = false;
             self.step_start = Instant::now();
@@ -217,12 +217,17 @@ impl TestHarness {
     }
 
     /// Capture DOM state for the current step.
-    fn capture_step(&mut self, app_state: &AppState) {
+    fn capture_step(
+        &mut self,
+        app_state: &AppState,
+        dom_html: Option<&str>,
+        screenshot_data: Option<&str>,
+    ) {
         let step_name = &self.states[self.current_step].name;
         let index = self.capture_count;
         let padded = format!("{index:03}");
 
-        // Capture DOM
+        // Capture DOM state JSON
         let dom_json = self.capture_dom(app_state);
         let dom_path = self
             .session_dir
@@ -234,9 +239,43 @@ impl TestHarness {
             info!("DOM saved: {}", dom_path.display());
         }
 
+        // Capture DOM HTML from webview
+        if let Some(html) = dom_html {
+            let html_path = self
+                .session_dir
+                .join("dom")
+                .join(format!("{padded}_{step_name}.html"));
+            if let Err(e) = std::fs::write(&html_path, html) {
+                tracing::error!("Failed to write DOM HTML: {e}");
+            } else {
+                info!("DOM HTML saved: {}", html_path.display());
+            }
+        }
+
+        // Capture screenshot from webview
+        if let Some(data_url) = screenshot_data
+            && let Some(b64) = data_url.strip_prefix("data:image/png;base64,")
+            && let Ok(bytes) =
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
+        {
+            let screen_path = self
+                .session_dir
+                .join("screens")
+                .join(format!("{padded}_{step_name}.png"));
+            if let Err(e) = std::fs::write(&screen_path, &bytes) {
+                tracing::error!("Failed to write screenshot: {e}");
+            } else {
+                info!("Screenshot saved: {}", screen_path.display());
+            }
+        }
+
         if self.dump_dom {
             println!("=== DOM [{padded}_{step_name}] ===");
             println!("{dom_json}");
+            if let Some(html) = dom_html {
+                println!("--- HTML ---");
+                println!("{html}");
+            }
             println!("=== END DOM ===");
         }
     }
@@ -338,6 +377,56 @@ impl TestHarness {
             Err(e) => {
                 tracing::error!("Failed to encode PNG: {e}");
                 Vec::new()
+            }
+        }
+    }
+
+    /// Capture DOM HTML and screenshot from the active pane's webview.
+    /// Called from app_handler after tick() to get data from wry_panes.
+    pub fn capture_webview_data(&mut self, dom_html: Option<String>, screenshot: Option<String>) {
+        info!(
+            "capture_webview_data: dom_html={}, screenshot={}",
+            dom_html.is_some(),
+            screenshot.is_some()
+        );
+        if self.capture_count == 0 {
+            return;
+        }
+        let index = self.capture_count - 1;
+        let step_name = if index < self.states.len() {
+            self.states[index].name.clone()
+        } else {
+            "unknown".to_string()
+        };
+        let padded = format!("{index:03}");
+
+        // Save DOM HTML
+        if let Some(html) = &dom_html {
+            let html_path = self
+                .session_dir
+                .join("dom")
+                .join(format!("{padded}_{step_name}.html"));
+            if let Err(e) = std::fs::write(&html_path, html) {
+                tracing::error!("Failed to write DOM HTML: {e}");
+            } else {
+                info!("DOM HTML saved: {}", html_path.display());
+            }
+        }
+
+        // Save screenshot from data URL
+        if let Some(data_url) = &screenshot
+            && let Some(b64) = data_url.strip_prefix("data:image/png;base64,")
+            && let Ok(bytes) =
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
+        {
+            let screen_path = self
+                .session_dir
+                .join("screens")
+                .join(format!("{padded}_{step_name}.png"));
+            if let Err(e) = std::fs::write(&screen_path, &bytes) {
+                tracing::error!("Failed to write screenshot: {e}");
+            } else {
+                info!("Screenshot saved: {}", screen_path.display());
             }
         }
     }

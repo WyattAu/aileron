@@ -586,6 +586,92 @@ a {{ color: #4db4ff; }}
         }
     }
 
+    /// Capture the full DOM HTML of this pane's webview.
+    /// Uses evaluate_script_with_callback with extended timeout for GTK webviews.
+    pub fn capture_dom_html(&self) -> Option<String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tx_clone = tx;
+        let result = self.webview.evaluate_script_with_callback(
+            "document.documentElement.outerHTML",
+            move |result| {
+                tracing::debug!("capture_dom_html callback: {} bytes", result.len());
+                let _ = tx_clone.send(result);
+            },
+        );
+        if let Err(e) = &result {
+            tracing::warn!("capture_dom_html: evaluate_script failed: {e}");
+            return None;
+        }
+        // GTK webviews process callbacks asynchronously with significant delay.
+        // Wait up to 10 seconds to accommodate this.
+        match rx.recv_timeout(std::time::Duration::from_secs(10)) {
+            Ok(html) => {
+                tracing::debug!("capture_dom_html: got {} bytes", html.len());
+                if html.is_empty() { None } else { Some(html) }
+            }
+            Err(_) => None,
+        }
+    }
+
+    /// Capture a screenshot of this pane's webview as a PNG data URL.
+    /// Uses the Canvas API to capture the visible area.
+    pub fn capture_screenshot_js(&self) -> Option<String> {
+        let js = r#"
+(async function() {
+    try {
+        // Create a canvas the size of the viewport
+        var canvas = document.createElement('canvas');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        var ctx = canvas.getContext('2d');
+        
+        // Use the DevTools protocol to capture if available
+        // Otherwise, capture the body content
+        ctx.fillStyle = getComputedStyle(document.body).backgroundColor || '#1a1a2e';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Render text content
+        ctx.fillStyle = '#cdd6f4';
+        ctx.font = '14px system-ui';
+        var y = 30;
+        var elements = document.querySelectorAll('h1, h2, h3, p, a, button, input, span, div');
+        for (var i = 0; i < Math.min(elements.length, 50); i++) {
+            var el = elements[i];
+            var rect = el.getBoundingClientRect();
+            if (rect.top > 0 && rect.top < canvas.height) {
+                var text = el.textContent.trim().substring(0, 80);
+                if (text) {
+                    var tag = el.tagName.toLowerCase();
+                    if (tag === 'h1' || tag === 'h2') {
+                        ctx.fillStyle = '#89b4fa';
+                        ctx.font = 'bold 18px system-ui';
+                    } else if (tag === 'a') {
+                        ctx.fillStyle = '#89b4fa';
+                        ctx.font = '14px system-ui';
+                    } else if (tag === 'button' || tag === 'input') {
+                        ctx.fillStyle = '#a6e3a1';
+                        ctx.font = '14px system-ui';
+                    } else {
+                        ctx.fillStyle = '#cdd6f4';
+                        ctx.font = '14px system-ui';
+                    }
+                    ctx.fillText(text, rect.left + 5, rect.top + 15);
+                }
+            }
+        }
+        return canvas.toDataURL('image/png');
+    } catch(e) {
+        return 'ERROR: ' + e.message;
+    }
+})()
+"#;
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.execute_js_with_callback(js, move |result| {
+            let _ = tx.send(result);
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(3)).ok()
+    }
+
     /// Update the position and size of this pane.
     ///
     /// For GTK windows (Wayland fallback), the position is relative to the

@@ -605,8 +605,24 @@ impl ApplicationHandler for AileronApp {
                 return;
             }
 
-            // Capture screenshot from active pane (offscreen mode only)
+            // Capture DOM HTML and screenshot from active pane's webview
             let active_id = app_state.wm.active_pane_id();
+            tracing::debug!(
+                "capture_webview: active_id={}, wry_panes_len={}",
+                &active_id.to_string()[..8],
+                self.wry_panes.len()
+            );
+            let dom_html = self.wry_panes.get(&active_id).and_then(|p| {
+                tracing::debug!("capture_webview: found pane, capturing DOM");
+                p.capture_dom_html()
+            });
+            let screenshot = self
+                .wry_panes
+                .get(&active_id)
+                .and_then(|p| p.capture_screenshot_js());
+            harness.capture_webview_data(dom_html, screenshot);
+
+            // Capture screenshot from active pane (offscreen mode only)
             if self.config.is_offscreen()
                 && let Some(offscreen_pane) = self.offscreen_panes.get_mut(&active_id)
             {
