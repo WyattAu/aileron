@@ -340,6 +340,9 @@ pub struct AppState {
     /// Consumed by main.rs in about_to_wait.
     pub pending_tab_close: Option<Uuid>,
 
+    /// Path to save reader mode content to (set by :reader-save command).
+    pub pending_reader_save_path: Option<std::path::PathBuf>,
+
     /// When true, the next about_to_wait iteration requests a new popup window.
     pub pending_new_window: bool,
 
@@ -601,6 +604,7 @@ impl AppState {
             #[cfg(feature = "terminal")]
             pending_terminal_command: None,
             pending_tab_close: None,
+            pending_reader_save_path: None,
             pending_new_window: false,
             pending_detach_url: None,
             pane_last_focus: HashMap::new(),

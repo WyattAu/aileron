@@ -457,7 +457,7 @@ impl AdBlocker {
             let domain = domain.trim_end_matches('^');
             let domain = domain.split('/').next().unwrap_or(domain);
 
-            if host == domain || host.ends_with(&format!(".{domain}")) {
+            if Self::domain_matches(host, domain) {
                 return true;
             }
         } else if let Some(stripped) = pattern.strip_prefix('|') {
@@ -507,16 +507,14 @@ impl AdBlocker {
         rules.extend(self.cosmetic_rules.iter().cloned());
 
         for (filter_domain, filter_rules) in &self.domain_cosmetic_rules {
-            if domain == filter_domain || domain.ends_with(&format!(".{filter_domain}")) {
+            if Self::domain_matches(domain, filter_domain) {
                 rules.extend(filter_rules.iter().cloned());
             }
         }
 
         for filter in &self.cosmetic_filters {
             if let Some(ref domains) = filter.domains {
-                let matches = domains
-                    .iter()
-                    .any(|d| domain == d || domain.ends_with(&format!(".{d}")));
+                let matches = domains.iter().any(|d| Self::domain_matches(domain, d));
                 if matches {
                     rules.push(format!(
                         "{} {{ display: none !important; }}",

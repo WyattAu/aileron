@@ -388,6 +388,38 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
                 pane.mark_dirty();
             }
         }
+        Some("reader-save-content") => {
+            // Handle reader mode content save from JavaScript
+            let title = msg
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Untitled");
+            let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            let word_count = msg.get("word_count").and_then(|v| v.as_u64()).unwrap_or(0);
+            let read_time = msg.get("read_time").and_then(|v| v.as_u64()).unwrap_or(0);
+
+            // Save to file if a path was provided via the pending reader-save command
+            if let Some(ref path) = app_state.pending_reader_save_path {
+                let markdown = format!(
+                    "# {}\n\n{}\n\n---\n*{} words, ~{} min read*\n",
+                    title, content, word_count, read_time
+                );
+                match std::fs::write(path, &markdown) {
+                    Ok(()) => {
+                        app_state.ui.status_message = format!("Saved to: {}", path.display());
+                    }
+                    Err(e) => {
+                        app_state.ui.status_message = format!("Failed to save: {}", e);
+                    }
+                }
+                app_state.pending_reader_save_path = None;
+            } else {
+                app_state.ui.status_message = format!(
+                    "Content extracted ({} words, ~{} min read)",
+                    word_count, read_time
+                );
+            }
+        }
         _ => {}
     }
 }

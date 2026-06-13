@@ -1133,6 +1133,7 @@ impl AppState {
 })()"#;
             self.pending_wry_actions
                 .push_back(WryAction::RunJs(js.to_string()));
+            self.pending_reader_save_path = Some(std::path::PathBuf::from(path));
             self.ui.status_message = format!("Saving to: {path}");
             return true;
         }
