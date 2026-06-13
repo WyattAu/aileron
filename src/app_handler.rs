@@ -601,33 +601,6 @@ impl ApplicationHandler for AileronApp {
             && !harness.is_done()
             && let Some(app_state) = &mut self.app_state
         {
-            // Wait for async callbacks to fire before executing next step
-            if harness.callback_wait_counter > 0 {
-                harness.callback_wait_counter -= 1;
-                tracing::debug!(
-                    "Callback wait: frame {}/{}",
-                    harness.callback_wait_counter,
-                    harness.callback_wait_frames
-                );
-                // Still check for pending captures during wait
-                if harness.pending_dom_capture_step().is_some()
-                    && let Some(html) = aileron::servo::wry_engine::check_dom_capture_result(
-                        &harness.dom_capture_buffer,
-                    )
-                {
-                    harness.save_pending_dom_html(&html);
-                }
-                if harness.pending_screenshot_capture_step().is_some()
-                    && let Some(screenshot) =
-                        aileron::servo::wry_engine::WryPane::pending_screenshot_result(
-                            &harness.screenshot_capture_buffer,
-                        )
-                {
-                    harness.save_pending_screenshot(&screenshot);
-                }
-                return;
-            }
-
             let prev_capture_count = harness.capture_count();
             let done = harness.tick(app_state);
             if done {

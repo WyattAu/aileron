@@ -14,6 +14,8 @@ pub struct CliArgs {
     pub test_harness: Option<PathBuf>,
     /// Print DOM JSON to stdout after each capture (requires --test-harness).
     pub dump_dom: bool,
+    /// Use comprehensive test route instead of default route.
+    pub comprehensive_test: bool,
 }
 
 impl CliArgs {
@@ -25,6 +27,7 @@ impl CliArgs {
         let mut dump_config = false;
         let mut test_harness = None;
         let mut dump_dom = false;
+        let mut comprehensive_test = false;
 
         let mut i = 1;
         while i < args.len() {
@@ -48,6 +51,9 @@ impl CliArgs {
                         .map(PathBuf::from)
                         .unwrap_or_else(|| PathBuf::from("/tmp/aileron_test_output"));
                     test_harness = Some(dir);
+                }
+                "--comprehensive" => {
+                    comprehensive_test = true;
                 }
                 "--dump-dom" => {
                     dump_dom = true;
@@ -83,6 +89,7 @@ impl CliArgs {
             dump_config,
             test_harness,
             dump_dom,
+            comprehensive_test,
         }
     }
 }
@@ -424,7 +431,7 @@ pub fn run() -> anyhow::Result<()> {
 
     // Initialize test harness if requested
     if let Some(ref test_dir) = cli_args.test_harness {
-        app.init_test_harness(test_dir, cli_args.dump_dom);
+        app.init_test_harness(test_dir, cli_args.dump_dom, cli_args.comprehensive_test);
     }
 
     info!("Application created successfully");

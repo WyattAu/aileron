@@ -635,12 +635,26 @@ impl AileronApp {
     }
 
     /// Initialize the test harness if `--test-harness` was specified.
-    pub fn init_test_harness(&mut self, output_dir: &std::path::Path, dump_dom: bool) {
-        use aileron::test_harness::default_route;
+    pub fn init_test_harness(
+        &mut self,
+        output_dir: &std::path::Path,
+        dump_dom: bool,
+        comprehensive: bool,
+    ) {
         let mut harness = TestHarness::new(output_dir, dump_dom);
-        harness.define_route(default_route());
+        if comprehensive {
+            use aileron::test_harness::comprehensive_route;
+            harness.define_route(comprehensive_route());
+            tracing::info!(
+                "Test harness activated (comprehensive): {}",
+                output_dir.display()
+            );
+        } else {
+            use aileron::test_harness::default_route;
+            harness.define_route(default_route());
+            tracing::info!("Test harness activated: {}", output_dir.display());
+        }
         self.test_harness = Some(harness);
-        tracing::info!("Test harness activated: {}", output_dir.display());
     }
 
     fn reposition_all_panes(&mut self) {

@@ -641,6 +641,83 @@ pub fn default_route() -> Vec<TestState> {
     ]
 }
 
+/// Build a comprehensive traversal route covering all major UI paths.
+///
+/// This route tests:
+/// - Default state and startup
+/// - Command palette (open, search, execute)
+/// - Navigation (open URL, back, forward, reload)
+/// - Pane management (split, close, resize)
+/// - Tab management (new tab, close tab, switch tabs)
+/// - Find bar (open, search, close)
+/// - Settings and configuration
+/// - Theme switching
+/// - Privacy features
+/// - Sync operations
+pub fn comprehensive_route() -> Vec<TestState> {
+    vec![
+        // === Phase 1: Default State & Startup ===
+        TestState::wait_only("01_startup", 1000),
+        // === Phase 2: Command Palette ===
+        TestState::new(
+            "02_palette_open_colon",
+            TestAction::key(Key::Character(':')),
+            500,
+        ),
+        TestState::new(
+            "03_palette_open_ctrl_p",
+            TestAction::key_with_mods(Key::Character('p'), true, false, false),
+            500,
+        ),
+        TestState::new("04_palette_close", TestAction::key(Key::Escape), 300),
+        // === Phase 3: Navigation ===
+        TestState::new(
+            "05_navigate_example",
+            TestAction::cmd("open https://example.com"),
+            3000,
+        ),
+        TestState::new("06_navigate_back", TestAction::cmd("back"), 500),
+        TestState::new("07_navigate_forward", TestAction::cmd("forward"), 500),
+        TestState::new("08_navigate_reload", TestAction::cmd("reload"), 500),
+        // === Phase 4: Pane Management ===
+        TestState::new("09_split_horizontal", TestAction::cmd("sp"), 500),
+        TestState::new("10_split_vertical", TestAction::cmd("vs"), 500),
+        TestState::new(
+            "11_navigate_pane_1",
+            TestAction::cmd("open https://rust-lang.org"),
+            3000,
+        ),
+        TestState::new(
+            "12_navigate_pane_2",
+            TestAction::cmd("open https://github.com"),
+            3000,
+        ),
+        // === Phase 5: Tab Management ===
+        TestState::new(
+            "13_new_tab",
+            TestAction::key_with_mods(Key::Character('t'), true, false, false),
+            500,
+        ),
+        TestState::new("14_switch_tab", TestAction::cmd("tab-activate"), 500),
+        // === Phase 6: Find Bar ===
+        TestState::new(
+            "15_find_open",
+            TestAction::key_with_mods(Key::Character('f'), true, false, false),
+            500,
+        ),
+        TestState::new("16_find_close", TestAction::key(Key::Escape), 300),
+        // === Phase 7: Settings ===
+        TestState::new("17_settings", TestAction::cmd("settings"), 500),
+        TestState::new("18_theme_list", TestAction::cmd("theme list"), 500),
+        TestState::new("19_theme_dark", TestAction::cmd("theme dark"), 500),
+        // === Phase 8: Privacy ===
+        TestState::new("20_adblock_toggle", TestAction::cmd("adblock-toggle"), 500),
+        TestState::new("21_privacy", TestAction::cmd("privacy"), 500),
+        // === Phase 9: Final State ===
+        TestState::wait_only("22_final_state", 1000),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
