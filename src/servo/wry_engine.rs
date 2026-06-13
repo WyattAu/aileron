@@ -620,22 +620,23 @@ a {{ color: #4db4ff; }}
 
     /// Capture a screenshot of this pane's webview as a PNG data URL.
     /// Uses the Canvas API to capture the visible area.
-    pub fn capture_screenshot_js(&self) -> Option<String> {
+    ///
+    /// Uses a shared buffer for non-blocking capture. The caller should
+    /// poll `pending_screenshot_result()` on subsequent frames to check
+    /// if the result is ready.
+    pub fn start_capture_screenshot(
+        &self,
+        buffer: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    ) {
         let js = r#"
 (async function() {
     try {
-        // Create a canvas the size of the viewport
         var canvas = document.createElement('canvas');
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
         var ctx = canvas.getContext('2d');
-        
-        // Use the DevTools protocol to capture if available
-        // Otherwise, capture the body content
         ctx.fillStyle = getComputedStyle(document.body).backgroundColor || '#1a1a2e';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Render text content
         ctx.fillStyle = '#cdd6f4';
         ctx.font = '14px system-ui';
         var y = 30;
@@ -670,11 +671,22 @@ a {{ color: #4db4ff; }}
     }
 })()
 "#;
-        let (tx, rx) = std::sync::mpsc::channel();
-        self.execute_js_with_callback(js, move |result| {
-            let _ = tx.send(result);
-        });
-        rx.recv_timeout(std::time::Duration::from_secs(3)).ok()
+        let buf = buffer;
+        let _ = self
+            .webview
+            .evaluate_script_with_callback(js, move |result| {
+                tracing::debug!("capture_screenshot callback: {} bytes", result.len());
+                if let Ok(mut guard) = buf.lock() {
+                    *guard = Some(result);
+                }
+            });
+    }
+
+    /// Non-blocking check: has the async screenshot capture completed?
+    pub fn pending_screenshot_result(
+        buffer: &std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    ) -> Option<String> {
+        buffer.lock().ok().and_then(|mut guard| guard.take())
     }
 
     /// Update the position and size of this pane.

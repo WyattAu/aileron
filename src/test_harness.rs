@@ -107,8 +107,12 @@ pub struct TestHarness {
     capture_count: usize,
     /// Pending DOM HTML capture: (step_index, step_name) waiting for async callback.
     pending_dom_capture: Option<(usize, String)>,
+    /// Pending screenshot capture: (step_index, step_name) waiting for async callback.
+    pending_screenshot_capture: Option<(usize, String)>,
     /// Shared buffer for async DOM capture result from the webview.
     pub dom_capture_buffer: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    /// Shared buffer for async screenshot capture result from the webview.
+    pub screenshot_capture_buffer: std::sync::Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl TestHarness {
@@ -134,7 +138,9 @@ impl TestHarness {
             dump_dom,
             capture_count: 0,
             pending_dom_capture: None,
+            pending_screenshot_capture: None,
             dom_capture_buffer: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            screenshot_capture_buffer: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -443,6 +449,12 @@ impl TestHarness {
             } else {
                 info!("Screenshot saved: {}", screen_path.display());
             }
+            // Clear pending screenshot capture since we got the data
+            self.pending_screenshot_capture = None;
+        } else if self.pending_screenshot_capture.is_none() && screenshot.is_none() {
+            // No screenshot data yet -- store for retry on next frames
+            tracing::debug!("Screenshot not yet available, will retry next frames");
+            self.pending_screenshot_capture = Some((index, step_name.clone()));
         }
     }
 
@@ -467,6 +479,34 @@ impl TestHarness {
                 info!("DOM HTML saved (retry): {}", html_path.display());
             }
             self.pending_dom_capture = None;
+        }
+    }
+
+    /// Get the step index and name for a pending screenshot capture, if any.
+    pub fn pending_screenshot_capture_step(&self) -> Option<(usize, &str)> {
+        self.pending_screenshot_capture
+            .as_ref()
+            .map(|(idx, name)| (*idx, name.as_str()))
+    }
+
+    /// Save screenshot for a pending capture (called from retry loop).
+    pub fn save_pending_screenshot(&mut self, data_url: &str) {
+        if let Some((index, ref step_name)) = self.pending_screenshot_capture
+            && let Some(b64) = data_url.strip_prefix("data:image/png;base64,")
+            && let Ok(bytes) =
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
+        {
+            let padded = format!("{index:03}");
+            let screen_path = self
+                .session_dir
+                .join("screens")
+                .join(format!("{padded}_{step_name}.png"));
+            if let Err(e) = std::fs::write(&screen_path, &bytes) {
+                tracing::error!("Failed to write pending screenshot: {e}");
+            } else {
+                info!("Screenshot saved (retry): {}", screen_path.display());
+            }
+            self.pending_screenshot_capture = None;
         }
     }
 

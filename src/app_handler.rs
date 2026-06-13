@@ -618,7 +618,17 @@ impl ApplicationHandler for AileronApp {
                 harness.save_pending_dom_html(&html);
             }
 
-            // When tick() completes a step, start the async DOM capture.
+            // Retry pending screenshot capture: check if the async callback has written data.
+            if harness.pending_screenshot_capture_step().is_some()
+                && let Some(screenshot) =
+                    aileron::servo::wry_engine::WryPane::pending_screenshot_result(
+                        &harness.screenshot_capture_buffer,
+                    )
+            {
+                harness.save_pending_screenshot(&screenshot);
+            }
+
+            // When tick() completes a step, start the async captures.
             if harness.capture_count() > prev_capture_count {
                 let active_id = app_state.wm.active_pane_id();
                 tracing::debug!(
@@ -627,18 +637,20 @@ impl ApplicationHandler for AileronApp {
                     self.wry_panes.len()
                 );
                 if let Some(pane) = self.wry_panes.get(&active_id) {
-                    // Clear the buffer and start async capture
+                    // Clear the buffer and start async DOM capture
                     if let Ok(mut guard) = harness.dom_capture_buffer.lock() {
                         *guard = None;
                     }
                     pane.start_capture_dom_html(harness.dom_capture_buffer.clone());
+
+                    // Clear screenshot buffer and start async capture
+                    if let Ok(mut guard) = harness.screenshot_capture_buffer.lock() {
+                        *guard = None;
+                    }
+                    pane.start_capture_screenshot(harness.screenshot_capture_buffer.clone());
                 }
-                let screenshot = self
-                    .wry_panes
-                    .get(&active_id)
-                    .and_then(|p| p.capture_screenshot_js());
-                // Pass None for dom_html -- it will be captured async
-                harness.capture_webview_data(None, screenshot);
+                // Pass None for both -- they will be captured async
+                harness.capture_webview_data(None, None);
 
                 // Capture screenshot from active pane (offscreen mode only)
                 if self.config.is_offscreen()
