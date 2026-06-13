@@ -72,7 +72,7 @@ pub enum McpCommand {
     NavigateForward {
         response_tx: oneshot::Sender<String>,
     },
-    /// Select an option in a <select> element by CSS selector and value.
+    /// Select an option in a `&lt;select&gt;` element by CSS selector and value.
     SelectOption {
         selector: String,
         value: String,

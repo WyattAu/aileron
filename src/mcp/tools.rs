@@ -1061,7 +1061,7 @@ impl McpTool for NavigateForwardTool {
     }
 }
 
-/// Tool: Select an option in a <select> element.
+/// Tool: Select an option in a `&lt;select&gt;` element.
 pub struct SelectOptionTool {
     command_tx: std::sync::mpsc::Sender<McpCommand>,
 }
@@ -1077,7 +1077,7 @@ impl McpTool for SelectOptionTool {
         "select_option"
     }
     fn description(&self) -> &str {
-        "Select an option in a <select> dropdown by CSS selector and option value"
+        "Select an option in a `select` dropdown by CSS selector and option value"
     }
     fn input_schema(&self) -> Value {
         json!({
