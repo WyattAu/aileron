@@ -118,6 +118,9 @@ impl McpServer {
                 // Notification — no response needed, but we return one for simplicity
                 JsonRpcResponse::ok(request.id.clone(), Value::Object(serde_json::Map::new()))
             }
+            "ping" => {
+                JsonRpcResponse::ok(request.id.clone(), Value::Object(serde_json::Map::new()))
+            }
             _ => JsonRpcResponse::error(
                 request.id.clone(),
                 JsonRpcError::method_not_found(&request.method),

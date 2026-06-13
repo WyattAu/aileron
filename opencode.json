@@ -3,7 +3,7 @@
   "mcp": {
     "aileron": {
       "type": "local",
-      "command": ["cargo", "run", "--bin", "aileron-mcp", "--all-features"],
+      "command": ["/home/wyatt/dev/src/github.com/WyattAu/aileron/target/debug/aileron-mcp"],
       "enabled": true,
       "env": {}
     }
