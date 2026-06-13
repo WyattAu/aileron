@@ -113,6 +113,11 @@ pub struct TestHarness {
     pub dom_capture_buffer: std::sync::Arc<std::sync::Mutex<Option<String>>>,
     /// Shared buffer for async screenshot capture result from the webview.
     pub screenshot_capture_buffer: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    /// Number of frames to wait after a step for async callbacks to fire.
+    /// The GTK event loop needs time to process evaluate_script_with_callback.
+    pub callback_wait_frames: u32,
+    /// Current frame count in the callback wait period.
+    pub callback_wait_counter: u32,
 }
 
 impl TestHarness {
@@ -141,6 +146,8 @@ impl TestHarness {
             pending_screenshot_capture: None,
             dom_capture_buffer: std::sync::Arc::new(std::sync::Mutex::new(None)),
             screenshot_capture_buffer: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            callback_wait_frames: 3,
+            callback_wait_counter: 0,
         }
     }
 
@@ -216,6 +223,8 @@ impl TestHarness {
             self.action_executed = false;
             self.step_start = Instant::now();
             self.capture_count += 1;
+            // Start callback wait period to allow GTK event loop to process async callbacks
+            self.callback_wait_counter = self.callback_wait_frames;
 
             // If all steps are done, mark complete and return true
             if self.current_step >= self.states.len() {
@@ -513,6 +522,11 @@ impl TestHarness {
     /// Whether the route is complete.
     pub fn is_done(&self) -> bool {
         self.done
+    }
+
+    /// Whether we're waiting for async callbacks to fire.
+    pub fn is_waiting_for_callbacks(&self) -> bool {
+        self.callback_wait_counter > 0
     }
 
     /// Path to this session's output directory.
