@@ -19,7 +19,11 @@ fn main() {
     eprintln!("[mcp-server] Starting standalone Aileron MCP server");
 
     let state = McpState::default();
-    let (command_tx, _command_rx) = std::sync::mpsc::channel();
+    let (command_tx, command_rx) = std::sync::mpsc::channel();
+
+    // Drop the receiver immediately so tool send() calls fail fast
+    // instead of hanging on blocking_recv() when no main thread processes commands.
+    drop(command_rx);
 
     let tools = create_tools(state, command_tx);
     let tool_count = tools.len();
