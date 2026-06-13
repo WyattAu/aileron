@@ -832,7 +832,6 @@ impl ApplicationHandler for AileronApp {
         // Avoids per-frame String allocations and JS injection when nothing changed.
         if self.chrome_dirty
             && let Some(app_state) = &self.app_state
-            && let Some(ref webview) = self.chrome_webview
         {
             let active_id = app_state.wm.active_pane_id();
             let panes_ref = app_state.wm.panes_ref();
@@ -899,7 +898,18 @@ impl ApplicationHandler for AileronApp {
             let state = aileron::chrome_bridge::build_chrome_state(snapshot);
             if let Ok(json) = serde_json::to_string(&state) {
                 let escaped = json.replace('\\', "\\\\").replace('\'', "\\'");
-                let _ = webview.evaluate_script(&format!("window.updateChromeState('{escaped}')"));
+                let script = format!("window.updateChromeState('{escaped}')");
+                // Push to wry webview (X11) or offscreen pane (Wayland)
+                if let Some(ref webview) = self.chrome_webview {
+                    let _ = webview.evaluate_script(&script);
+                } else {
+                    // Wayland: push to offscreen chrome pane
+                    let chrome_pane_id = uuid::Uuid::nil();
+                    if let Some(pane) = self.offscreen_panes.get_mut(&chrome_pane_id) {
+                        pane.execute_js(&script);
+                        pane.mark_dirty();
+                    }
+                }
             }
             self.chrome_dirty = false;
         }
@@ -1202,7 +1212,7 @@ impl ApplicationHandler for AileronApp {
 
         // Architecture B: capture dirty offscreen frames and render them.
         let mut textures_updated = false;
-        if self.config.is_offscreen() {
+        if self.config.is_offscreen() || self.offscreen_panes.get(&uuid::Uuid::nil()).is_some() {
             tracing::debug!(
                 "offscreen: entering capture+render block, gfx={}",
                 self.gfx.is_some()
