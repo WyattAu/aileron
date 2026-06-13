@@ -86,6 +86,19 @@ pub enum McpCommand {
     ExtractStructuredData {
         response_tx: oneshot::Sender<String>,
     },
+    /// Summarize the active page content using local LLM.
+    SummarizePage {
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Translate the active page content to a target language.
+    TranslatePage {
+        target_lang: String,
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Analyze the active page content using local LLM.
+    AnalyzePage {
+        response_tx: oneshot::Sender<String>,
+    },
 }
 
 /// Shared state readable by MCP tools (updated each frame from main thread).

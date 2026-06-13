@@ -209,10 +209,11 @@ name = "terminal_integration"
 path = "../tests/terminal_integration.rs"
 
 [features]
-default = ["mcp", "arp", "sync", "passwords", "lua", "terminal"]
+default = ["mcp", "arp", "sync", "passwords", "lua", "terminal", "llm"]
 mcp = ["dep:image", "dep:base64"]
 arp = ["dep:tokio-tungstenite"]
 sync = ["dep:fastcdc", "dep:blake3", "dep:age", "dep:notify", "dep:notify-debouncer-mini"]
 passwords = ["dep:keyring", "dep:age"]
 lua = ["dep:mlua"]
 terminal = ["dep:portable-pty", "dep:alacritty_terminal"]
+llm = []

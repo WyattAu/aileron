@@ -1194,6 +1194,130 @@ impl McpTool for ExtractStructuredDataTool {
     }
 }
 
+/// Tool: Summarize the active page content using local LLM.
+pub struct SummarizePageTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl SummarizePageTool {
+    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for SummarizePageTool {
+    fn name(&self) -> &str {
+        "summarize_page"
+    }
+    fn description(&self) -> &str {
+        "Summarize the active page content using a local LLM (Ollama). Returns a concise summary."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
+    }
+    fn execute(&self, _args: &Value) -> anyhow::Result<String> {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::SummarizePage { response_tx })
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
+
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Summarize page cancelled"))
+    }
+}
+
+/// Tool: Translate the active page content to a target language.
+pub struct TranslatePageTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl TranslatePageTool {
+    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for TranslatePageTool {
+    fn name(&self) -> &str {
+        "translate_page"
+    }
+    fn description(&self) -> &str {
+        "Translate the active page content to a target language using a local LLM (Ollama)."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "target_lang": {
+                    "type": "string",
+                    "description": "Target language code (e.g., 'en', 'zh', 'ja', 'es', 'fr', 'de')"
+                }
+            },
+            "required": ["target_lang"]
+        })
+    }
+    fn execute(&self, args: &Value) -> anyhow::Result<String> {
+        let target_lang = args
+            .get("target_lang")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'target_lang' parameter"))?;
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::TranslatePage {
+                target_lang: target_lang.to_string(),
+                response_tx,
+            })
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
+
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Translate page cancelled"))
+    }
+}
+
+/// Tool: Analyze the active page content using local LLM.
+pub struct AnalyzePageTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl AnalyzePageTool {
+    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for AnalyzePageTool {
+    fn name(&self) -> &str {
+        "analyze_page"
+    }
+    fn description(&self) -> &str {
+        "Analyze the active page content using a local LLM (Ollama). Returns structured analysis with topic, key points, sentiment, and language."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
+    }
+    fn execute(&self, _args: &Value) -> anyhow::Result<String> {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnalyzePage { response_tx })
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
+
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Analyze page cancelled"))
+    }
+}
+
 /// Create all MCP tools wired to the given bridge.
 pub fn create_tools(
     state: McpState,
@@ -1221,7 +1345,11 @@ pub fn create_tools(
         Box::new(NavigateForwardTool::new(command_tx.clone())),
         Box::new(SelectOptionTool::new(command_tx.clone())),
         Box::new(ReadPageStructureTool::new(command_tx.clone())),
-        Box::new(ExtractStructuredDataTool::new(command_tx)),
+        Box::new(ExtractStructuredDataTool::new(command_tx.clone())),
+        // LLM integration tools
+        Box::new(SummarizePageTool::new(command_tx.clone())),
+        Box::new(TranslatePageTool::new(command_tx.clone())),
+        Box::new(AnalyzePageTool::new(command_tx)),
     ]
 }
 
@@ -1291,7 +1419,7 @@ mod tests {
         let state = McpState::default();
         let (tx, _) = std::sync::mpsc::channel();
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 21);
+        assert_eq!(tools.len(), 24);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_get_text"));
@@ -1315,6 +1443,10 @@ mod tests {
         assert!(names.contains(&"select_option"));
         assert!(names.contains(&"read_page_structure"));
         assert!(names.contains(&"extract_structured_data"));
+        // LLM integration tools
+        assert!(names.contains(&"summarize_page"));
+        assert!(names.contains(&"translate_page"));
+        assert!(names.contains(&"analyze_page"));
     }
 
     #[test]

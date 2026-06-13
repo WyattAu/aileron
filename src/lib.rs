@@ -12,6 +12,8 @@ pub mod gfx;
 pub mod git;
 pub mod i18n;
 pub mod input;
+#[cfg(feature = "llm")]
+pub mod llm;
 #[cfg(feature = "lua")]
 pub mod lua;
 #[cfg(feature = "mcp")]

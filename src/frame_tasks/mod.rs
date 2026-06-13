@@ -810,6 +810,129 @@ pub fn process_mcp_commands(
                 };
                 let _ = response_tx.send(result);
             }
+            McpCommand::SummarizePage { response_tx } => {
+                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
+                    let (text_tx, text_rx) = tokio::sync::oneshot::channel();
+                    let text_tx_mutex = std::sync::Mutex::new(Some(text_tx));
+                    wry_pane.execute_js_with_callback(
+                        "document.body.innerText",
+                        move |result| {
+                            if let Ok(mut guard) = text_tx_mutex.lock()
+                                && let Some(sender) = guard.take()
+                            {
+                                let _ = sender.send(result);
+                            }
+                        },
+                    );
+                    match text_rx.blocking_recv() {
+                        Ok(text) if !text.is_empty() && text != "null" => {
+                            let config = crate::config::Config::load();
+                            if config.llm_base_url.is_empty() {
+                                "Error: LLM not configured (llm_base_url is empty)".into()
+                            } else {
+                                let client = crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
+                                    base_url: config.llm_base_url,
+                                    default_model: config.llm_model,
+                                    timeout_secs: config.llm_timeout_secs,
+                                    temperature: config.llm_temperature,
+                                    max_tokens: config.llm_max_tokens,
+                                });
+                                match client.summarize(&text) {
+                                    Ok(summary) => format!("## Summary\n\n{summary}"),
+                                    Err(e) => format!("Error: LLM summarization failed: {e}"),
+                                }
+                            }
+                        }
+                        _ => "Error: could not extract page text".into(),
+                    }
+                } else {
+                    "Error: no active pane".into()
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::TranslatePage {
+                target_lang,
+                response_tx,
+            } => {
+                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
+                    let (text_tx, text_rx) = tokio::sync::oneshot::channel();
+                    let text_tx_mutex = std::sync::Mutex::new(Some(text_tx));
+                    wry_pane.execute_js_with_callback(
+                        "document.body.innerText",
+                        move |result| {
+                            if let Ok(mut guard) = text_tx_mutex.lock()
+                                && let Some(sender) = guard.take()
+                            {
+                                let _ = sender.send(result);
+                            }
+                        },
+                    );
+                    match text_rx.blocking_recv() {
+                        Ok(text) if !text.is_empty() && text != "null" => {
+                            let config = crate::config::Config::load();
+                            if config.llm_base_url.is_empty() {
+                                "Error: LLM not configured (llm_base_url is empty)".into()
+                            } else {
+                                let client = crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
+                                    base_url: config.llm_base_url,
+                                    default_model: config.llm_model,
+                                    timeout_secs: config.llm_timeout_secs,
+                                    temperature: config.llm_temperature,
+                                    max_tokens: config.llm_max_tokens,
+                                });
+                                match client.translate(&text, &target_lang) {
+                                    Ok(translated) => format!("## Translation ({target_lang})\n\n{translated}"),
+                                    Err(e) => format!("Error: LLM translation failed: {e}"),
+                                }
+                            }
+                        }
+                        _ => "Error: could not extract page text".into(),
+                    }
+                } else {
+                    "Error: no active pane".into()
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::AnalyzePage { response_tx } => {
+                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
+                    let (text_tx, text_rx) = tokio::sync::oneshot::channel();
+                    let text_tx_mutex = std::sync::Mutex::new(Some(text_tx));
+                    wry_pane.execute_js_with_callback(
+                        "document.body.innerText",
+                        move |result| {
+                            if let Ok(mut guard) = text_tx_mutex.lock()
+                                && let Some(sender) = guard.take()
+                            {
+                                let _ = sender.send(result);
+                            }
+                        },
+                    );
+                    match text_rx.blocking_recv() {
+                        Ok(text) if !text.is_empty() && text != "null" => {
+                            let config = crate::config::Config::load();
+                            if config.llm_base_url.is_empty() {
+                                "Error: LLM not configured (llm_base_url is empty)".into()
+                            } else {
+                                let client = crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
+                                    base_url: config.llm_base_url,
+                                    default_model: config.llm_model,
+                                    timeout_secs: config.llm_timeout_secs,
+                                    temperature: config.llm_temperature,
+                                    max_tokens: config.llm_max_tokens,
+                                });
+                                match client.analyze(&text) {
+                                    Ok(analysis) => format!("## Analysis\n\n{analysis}"),
+                                    Err(e) => format!("Error: LLM analysis failed: {e}"),
+                                }
+                            }
+                        }
+                        _ => "Error: could not extract page text".into(),
+                    }
+                } else {
+                    "Error: no active pane".into()
+                };
+                let _ = response_tx.send(result);
+            }
         }
     }
 }

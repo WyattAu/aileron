@@ -171,6 +171,18 @@ pub struct Config {
     /// active background tab is evicted (webview destroyed, tree node kept).
     /// Zero or None means no limit.
     pub memory_limit_mb: u64,
+
+    /// Ollama server URL for local LLM inference (default: "http://localhost:11434").
+    /// Set to empty string to disable LLM features.
+    pub llm_base_url: String,
+    /// Default LLM model name (default: "llama3.2").
+    pub llm_model: String,
+    /// LLM request timeout in seconds (default: 120).
+    pub llm_timeout_secs: u64,
+    /// LLM generation temperature (0.0 - 2.0, default: 0.7).
+    pub llm_temperature: f32,
+    /// LLM max tokens to generate (default: 2048).
+    pub llm_max_tokens: u32,
 }
 
 /// Color overrides for a custom theme.
@@ -453,6 +465,11 @@ impl Default for Config {
             keybindings: std::collections::HashMap::new(),
             spellcheck_enabled: true,
             memory_limit_mb: 0,
+            llm_base_url: "http://localhost:11434".into(),
+            llm_model: "llama3.2".into(),
+            llm_timeout_secs: 120,
+            llm_temperature: 0.7,
+            llm_max_tokens: 2048,
         }
     }
 }
