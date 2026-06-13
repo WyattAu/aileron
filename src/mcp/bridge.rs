@@ -58,6 +58,34 @@ pub enum McpCommand {
         index: usize,
         response_tx: oneshot::Sender<String>,
     },
+    /// Scroll the active pane by (delta_x, delta_y) pixels.
+    Scroll {
+        delta_x: i32,
+        delta_y: i32,
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Navigate back in history.
+    NavigateBack {
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Navigate forward in history.
+    NavigateForward {
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Select an option in a <select> element by CSS selector and value.
+    SelectOption {
+        selector: String,
+        value: String,
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Read the accessibility tree of the active pane.
+    ReadPageStructure {
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Extract structured data (JSON-LD, OpenGraph, tables) from active pane.
+    ExtractStructuredData {
+        response_tx: oneshot::Sender<String>,
+    },
 }
 
 /// Shared state readable by MCP tools (updated each frame from main thread).

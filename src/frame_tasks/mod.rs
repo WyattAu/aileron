@@ -651,6 +651,165 @@ pub fn process_mcp_commands(
                 };
                 let _ = response_tx.send(result);
             }
+            McpCommand::Scroll {
+                delta_x,
+                delta_y,
+                response_tx,
+            } => {
+                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
+                    let js = format!(
+                        "window.scrollBy({{top: {}, left: {}, behavior: 'instant'}})",
+                        delta_y, delta_x
+                    );
+                    wry_pane.execute_js(&js);
+                    format!("Scrolled by ({delta_x}, {delta_y}) pixels")
+                } else {
+                    "Error: no active pane".into()
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::NavigateBack { response_tx } => {
+                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
+                    wry_pane.execute_js("window.history.back()");
+                    "Navigated back".into()
+                } else {
+                    "Error: no active pane".into()
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::NavigateForward { response_tx } => {
+                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
+                    wry_pane.execute_js("window.history.forward()");
+                    "Navigated forward".into()
+                } else {
+                    "Error: no active pane".into()
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::SelectOption {
+                selector,
+                value,
+                response_tx,
+            } => {
+                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
+                    let js = format!(
+                        r#"(() => {{
+                            const sel = document.querySelector('{}');
+                            if (!sel) return 'Error: select element not found';
+                            sel.value = '{}';
+                            sel.dispatchEvent(new Event('change', {{bubbles: true}}));
+                            return 'Selected option: {}';
+                        }})()"#,
+                        selector.replace('\'', "\\'"),
+                        value.replace('\'', "\\'"),
+                        value.replace('\'', "\\'")
+                    );
+                    let (response_tx_inner, response_rx) = tokio::sync::oneshot::channel();
+                    let tx = std::sync::Mutex::new(Some(response_tx_inner));
+                    wry_pane.execute_js_with_callback(&js, move |result| {
+                        if let Ok(mut guard) = tx.lock()
+                            && let Some(sender) = guard.take()
+                        {
+                            let _ = sender.send(result);
+                        }
+                    });
+                    match response_rx.blocking_recv() {
+                        Ok(r) => r,
+                        Err(_) => "Error: select option timed out".into(),
+                    }
+                } else {
+                    "Error: no active pane".into()
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::ReadPageStructure { response_tx } => {
+                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
+                    let js = r#"(() => {
+                        const tree = {headings: [], landmarks: [], links: [], buttons: [], forms: []};
+                        document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(h => {
+                            tree.headings.push({level: parseInt(h.tagName[1]), text: h.innerText.trim().slice(0, 200)});
+                        });
+                        document.querySelectorAll('nav,main,aside,header,footer,section[aria-label],section[aria-labelledby]').forEach(el => {
+                            tree.landmarks.push({role: el.tagName.toLowerCase(), label: (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || '').trim()});
+                        });
+                        document.querySelectorAll('a[href]').forEach(a => {
+                            const text = a.innerText.trim().slice(0, 100);
+                            if (text) tree.links.push({text, href: a.href});
+                        });
+                        document.querySelectorAll('button,[role="button"]').forEach(b => {
+                            const text = b.innerText.trim().slice(0, 100);
+                            if (text) tree.buttons.push({text});
+                        });
+                        document.querySelectorAll('form').forEach(f => {
+                            const inputs = [];
+                            f.querySelectorAll('input,select,textarea').forEach(inp => {
+                                inputs.push({type: inp.type || inp.tagName.toLowerCase(), name: inp.name || inp.id || ''});
+                            });
+                            tree.forms.push({action: f.action, inputs});
+                        });
+                        return JSON.stringify(tree);
+                    })()"#;
+                    let (response_tx_inner, response_rx) = tokio::sync::oneshot::channel();
+                    let tx = std::sync::Mutex::new(Some(response_tx_inner));
+                    wry_pane.execute_js_with_callback(js, move |result| {
+                        if let Ok(mut guard) = tx.lock()
+                            && let Some(sender) = guard.take()
+                        {
+                            let _ = sender.send(result);
+                        }
+                    });
+                    match response_rx.blocking_recv() {
+                        Ok(r) => r,
+                        Err(_) => "Error: page structure read timed out".into(),
+                    }
+                } else {
+                    "Error: no active pane".into()
+                };
+                let _ = response_tx.send(result);
+            }
+            McpCommand::ExtractStructuredData { response_tx } => {
+                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
+                    let js = r#"(() => {
+                        const data = {jsonLd: [], openGraph: {}, tables: []};
+                        document.querySelectorAll('script[type="application/ld+json"]').forEach(s => {
+                            try { data.jsonLd.push(JSON.parse(s.textContent)); } catch(e) {}
+                        });
+                        document.querySelectorAll('meta[property^="og:"]').forEach(m => {
+                            const key = m.getAttribute('property').replace('og:', '');
+                            data.openGraph[key] = m.getAttribute('content');
+                        });
+                        document.querySelectorAll('table').forEach((t, i) => {
+                            if (i >= 5) return;
+                            const headers = [];
+                            t.querySelectorAll('th').forEach(th => headers.push(th.innerText.trim()));
+                            const rows = [];
+                            t.querySelectorAll('tbody tr').forEach(tr => {
+                                const cells = [];
+                                tr.querySelectorAll('td').forEach(td => cells.push(td.innerText.trim()));
+                                if (cells.length) rows.push(cells);
+                            });
+                            data.tables.push({headers, rows: rows.slice(0, 50)});
+                        });
+                        return JSON.stringify(data);
+                    })()"#;
+                    let (response_tx_inner, response_rx) = tokio::sync::oneshot::channel();
+                    let tx = std::sync::Mutex::new(Some(response_tx_inner));
+                    wry_pane.execute_js_with_callback(js, move |result| {
+                        if let Ok(mut guard) = tx.lock()
+                            && let Some(sender) = guard.take()
+                        {
+                            let _ = sender.send(result);
+                        }
+                    });
+                    match response_rx.blocking_recv() {
+                        Ok(r) => r,
+                        Err(_) => "Error: structured data extraction timed out".into(),
+                    }
+                } else {
+                    "Error: no active pane".into()
+                };
+                let _ = response_tx.send(result);
+            }
         }
     }
 }

@@ -1,23 +1,26 @@
 # Aileron Roadmap: v1.0.0 and Beyond
 
-## Current State (v1.0.0, release candidate 2026-06-09)
+## Current State (v1.0.0, release candidate 2026-06-13)
 
 | Metric | Value |
 |--------|-------|
 | Version | 1.0.0 |
-| Tests | 1191 lib, 233 integration (13 suites), 4 doc = 1428 total |
+| Tests | 1188 lib, 233 integration (13 suites), 4 doc = 1425 total |
+| MCP Tools | 21 (15 base + 6 AI-native: scroll, navigate_back/forward, select_option, read_page_structure, extract_structured_data) |
 | Clippy | Zero warnings (all-targets, -D warnings) |
 | Formatting | Zero issues (cargo fmt) |
 | Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck -- SAFETY commented) |
 | #[must_use] | 49 attributes across 21 files |
-| LOC | ~56,900 Rust across 148 source files |
+| LOC | ~49,100 Rust across 148 source files |
 | Binary size | ~21 MB stripped (x86_64 Linux) |
 | CI | 8 jobs: Linux test + coverage, macOS check, Windows check, cross-compile (3 targets), fmt, benchmark regression |
 | Coverage | cargo-llvm-cov (lcov) via Codecov |
 | Pre-commit | fmt, check, clippy, lib tests, doc tests, secret scan, file size check; pre-push: integration tests, doc gen |
 | GitHub Pages | Deployed at https://wyattau.github.io/aileron/ |
 | Platforms | Linux (primary), macOS (compile), Windows (compile) |
+| Security | cargo-audit clean (14 allowed warnings, no critical advisories) |
 | Audit (2026-06-12) | Full end-to-end audit completed: 5 atomic commits, security fixes, accessibility fixes, CI hardened, test infrastructure fixed |
+| Wayland (2026-06-13) | Fixed content pane offscreen routing, alpha-compositing, chrome overlay resize |
 
 ## Execution Model
 
@@ -293,15 +296,54 @@ Each release targets a 2-3 week cadence. Items are organized by dependency order
 | Reading list | Save articles for later with offline caching | Sync infrastructure |
 | Passwordless auth | WebAuthn/passkey support for web forms | Security audit |
 
-### Horizon 2: AI-Native Browsing (v1.3-v1.4)
+### Horizon 2: AI-Native Browsing (v1.1-v1.2)
 
-| Feature | Description | Dependencies |
-|---------|-------------|--------------|
-| MCP agent expansion | DOM manipulation, multi-step workflows, data extraction | v0.23 extension JS runtime |
-| Local LLM integration | Ollama-backed summarization, translation, content analysis | No external deps |
-| Semantic history | Vector embeddings of visited pages for semantic search | Embedding model integration |
-| Workflow automation | Lua-driven browser automation without Selenium | v0.23 Lua infrastructure |
-| Smart tab management | AI-suggested tab grouping, auto-close stale tabs | Semantic history |
+**Target:** 4-6 weeks post-v1.0
+**Goal:** MCP agent expansion, local LLM integration, semantic search
+
+#### Priority 1: MCP Agent Expansion (Partially Done)
+
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| A1-01 | `scroll` tool (pixel deltas) | 2h | Done |
+| A1-02 | `navigate_back` / `navigate_forward` tools | 2h | Done |
+| A1-03 | `select_option` tool (dropdown selection) | 2h | Done |
+| A1-04 | `read_page_structure` tool (accessibility tree extraction) | 4h | Done |
+| A1-05 | `extract_structured_data` tool (JSON-LD, OpenGraph, tables) | 4h | Done |
+| A1-06 | `keyboard` tool (type text into focused elements) | 3h | Pending |
+| A1-07 | `hover` tool (trigger hover-dependent UI) | 2h | Pending |
+| A1-08 | `pdf_save` tool (save page as PDF) | 3h | Pending |
+| A1-09 | `download` tool (manage downloads) | 4h | Pending |
+| A1-10 | `accessibility_audit` tool (axe-core integration) | 6h | Pending |
+
+#### Priority 2: Local LLM Integration
+
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| A2-01 | Ollama client (HTTP API wrapper) | 4h | Pending |
+| A2-02 | `summarize_page` MCP tool (page content -> summary) | 4h | Pending |
+| A2-03 | `translate_page` MCP tool (content translation) | 4h | Pending |
+| A2-04 | `analyze_page` MCP tool (content analysis, extraction) | 4h | Pending |
+| A2-05 | Streaming response support (SSE from Ollama) | 6h | Pending |
+| A2-06 | Model management (pull, list, delete) | 3h | Pending |
+
+#### Priority 3: Semantic History
+
+| ID | Task | Estimate | Status |
+|----|------|----------|--------|
+| A3-01 | Page content fingerprinting (simhash) | 4h | Pending |
+| A3-02 | Vector embedding storage (SQLite + vec extension) | 6h | Pending |
+| A3-03 | `semantic_search` MCP tool | 4h | Pending |
+| A3-04 | Background embedding generation (on page load) | 3h | Pending |
+| A3-05 | Embedding model integration (local ONNX or API) | 6h | Pending |
+
+#### Success Criteria for v1.1-v1.2
+
+- [ ] 25+ MCP tools covering all common browser automation tasks
+- [ ] Ollama-backed summarization works end-to-end
+- [ ] Semantic history search returns relevant results
+- [ ] All new tools have unit tests
+- [ ] MCP integration tests pass with new tools
 
 ### Horizon 3: Rendering Independence (v1.5-v1.6)
 
@@ -447,18 +489,33 @@ Known architectural debt:
 - mcp/tools.rs: 3 pairs of duplicate tools (RunJs/ExecuteJs, Navigate/BrowserNavigate, FillForm/BrowserFillForm)
 - net/adblock.rs: Domain matching logic duplicated 4x
 
+### Audit Findings (2026-06-13)
+
+**Wayland Rendering (Critical Fix):**
+- Content panes were created as WryPane/GtkWindow instead of offscreen panes, making them invisible to wgpu compositor
+- Double render_frame() call overwrote content with chrome overlay (swap-chain texture overwrite)
+- Chrome overlay (UUID::nil()) not resized on reposition
+- Fix: Added `uses_offscreen_compositing()` helper, routed all content through offscreen pipeline, alpha-composited content + chrome into single buffer
+- 3 files changed, +118/-41 lines
+
+**MCP Agent Expansion:**
+- Added 6 new AI-native browsing tools: scroll, navigate_back, navigate_forward, select_option, read_page_structure, extract_structured_data
+- Total MCP tools: 15 -> 21
+- All tools have proper input schemas and error handling
+- New McpCommand variants: Scroll, NavigateBack, NavigateForward, SelectOption, ReadPageStructure, ExtractStructuredData
+
+**Security:**
+- cargo-audit clean: 14 allowed warnings, zero critical advisories
+
 ## Timeline Estimate
 
-| Release | Target Date | Weeks from Now |
-|---------|------------|----------------|
-| v0.21 | 2026-06-12 | 1 |
-| v0.22 | 2026-07-03 | 4 |
-| v0.23 | 2026-07-31 | 8 |
-| v0.24 | 2026-08-28 | 12 |
-| v0.25 | 2026-09-25 | 16 |
-| v1.0.0-rc.1 | 2026-10-16 | 19 |
-| v1.0.0 | 2026-10-30 | 21 |
-| v1.1 | 2026-12 | 26 |
-| v2.0 | 2027-Q2 | 38+ |
+| Release | Target Date | Weeks from Now | Status |
+|---------|------------|----------------|--------|
+| v1.0.0-rc.1 | 2026-06-20 | 1 | In progress (stabilization) |
+| v1.0.0 | 2026-06-27 | 2 | Pending |
+| v1.1 (AI-Native) | 2026-08-01 | 7 | Planning |
+| v1.2 (Semantic + LLM) | 2026-09-01 | 11 | Planning |
+| v1.3 (Multi-Device) | 2026-10-15 | 17 | Planning |
+| v2.0 | 2027-Q2 | 38+ | Vision |
 
 *Estimates assume single full-time developer. Parallel work on independent tracks can compress timeline.*

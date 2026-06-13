@@ -932,6 +932,268 @@ impl McpTool for CloseTabTool {
     }
 }
 
+/// Tool: Scroll the active pane by pixel deltas.
+pub struct ScrollTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl ScrollTool {
+    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for ScrollTool {
+    fn name(&self) -> &str {
+        "scroll"
+    }
+    fn description(&self) -> &str {
+        "Scroll the active pane by pixel deltas. Use positive values to scroll down/right."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "delta_x": {
+                    "type": "integer",
+                    "description": "Horizontal scroll delta in pixels (positive = right)",
+                    "default": 0
+                },
+                "delta_y": {
+                    "type": "integer",
+                    "description": "Vertical scroll delta in pixels (positive = down)",
+                    "default": 100
+                }
+            },
+            "required": []
+        })
+    }
+    fn execute(&self, args: &Value) -> anyhow::Result<String> {
+        let delta_x = args.get("delta_x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let delta_y = args.get("delta_y").and_then(|v| v.as_i64()).unwrap_or(100) as i32;
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::Scroll {
+                delta_x,
+                delta_y,
+                response_tx,
+            })
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
+
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Scroll cancelled"))
+    }
+}
+
+/// Tool: Navigate back in browser history.
+pub struct NavigateBackTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl NavigateBackTool {
+    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for NavigateBackTool {
+    fn name(&self) -> &str {
+        "navigate_back"
+    }
+    fn description(&self) -> &str {
+        "Navigate the active pane back in history"
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
+    }
+    fn execute(&self, _args: &Value) -> anyhow::Result<String> {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::NavigateBack { response_tx })
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
+
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Navigate back cancelled"))
+    }
+}
+
+/// Tool: Navigate forward in browser history.
+pub struct NavigateForwardTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl NavigateForwardTool {
+    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for NavigateForwardTool {
+    fn name(&self) -> &str {
+        "navigate_forward"
+    }
+    fn description(&self) -> &str {
+        "Navigate the active pane forward in history"
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
+    }
+    fn execute(&self, _args: &Value) -> anyhow::Result<String> {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::NavigateForward { response_tx })
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
+
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Navigate forward cancelled"))
+    }
+}
+
+/// Tool: Select an option in a <select> element.
+pub struct SelectOptionTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl SelectOptionTool {
+    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for SelectOptionTool {
+    fn name(&self) -> &str {
+        "select_option"
+    }
+    fn description(&self) -> &str {
+        "Select an option in a <select> dropdown by CSS selector and option value"
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector for the <select> element"
+                },
+                "value": {
+                    "type": "string",
+                    "description": "The value attribute of the option to select"
+                }
+            },
+            "required": ["selector", "value"]
+        })
+    }
+    fn execute(&self, args: &Value) -> anyhow::Result<String> {
+        let selector = args
+            .get("selector")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'selector' parameter"))?;
+        let value = args
+            .get("value")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'value' parameter"))?;
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::SelectOption {
+                selector: selector.to_string(),
+                value: value.to_string(),
+                response_tx,
+            })
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
+
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Select option cancelled"))
+    }
+}
+
+/// Tool: Read the accessibility tree of the active pane.
+pub struct ReadPageStructureTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl ReadPageStructureTool {
+    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for ReadPageStructureTool {
+    fn name(&self) -> &str {
+        "read_page_structure"
+    }
+    fn description(&self) -> &str {
+        "Read the accessibility tree of the active page. Returns structured information about headings, landmarks, links, buttons, and form elements."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
+    }
+    fn execute(&self, _args: &Value) -> anyhow::Result<String> {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::ReadPageStructure { response_tx })
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
+
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Read page structure cancelled"))
+    }
+}
+
+/// Tool: Extract structured data (JSON-LD, OpenGraph, tables) from active pane.
+pub struct ExtractStructuredDataTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl ExtractStructuredDataTool {
+    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl McpTool for ExtractStructuredDataTool {
+    fn name(&self) -> &str {
+        "extract_structured_data"
+    }
+    fn description(&self) -> &str {
+        "Extract structured data from the active page: JSON-LD schema, OpenGraph meta tags, and HTML tables as JSON."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
+    }
+    fn execute(&self, _args: &Value) -> anyhow::Result<String> {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::ExtractStructuredData { response_tx })
+            .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
+
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Extract structured data cancelled"))
+    }
+}
+
 /// Create all MCP tools wired to the given bridge.
 pub fn create_tools(
     state: McpState,
@@ -952,7 +1214,14 @@ pub fn create_tools(
         Box::new(GetCookiesTool::new(command_tx.clone())),
         Box::new(WaitForTool::new(command_tx.clone())),
         Box::new(CreateTabTool::new(command_tx.clone())),
-        Box::new(CloseTabTool::new(command_tx)),
+        Box::new(CloseTabTool::new(command_tx.clone())),
+        // AI-native browsing tools
+        Box::new(ScrollTool::new(command_tx.clone())),
+        Box::new(NavigateBackTool::new(command_tx.clone())),
+        Box::new(NavigateForwardTool::new(command_tx.clone())),
+        Box::new(SelectOptionTool::new(command_tx.clone())),
+        Box::new(ReadPageStructureTool::new(command_tx.clone())),
+        Box::new(ExtractStructuredDataTool::new(command_tx)),
     ]
 }
 
@@ -1022,7 +1291,7 @@ mod tests {
         let state = McpState::default();
         let (tx, _) = std::sync::mpsc::channel();
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 15);
+        assert_eq!(tools.len(), 21);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_get_text"));
@@ -1039,6 +1308,13 @@ mod tests {
         assert!(names.contains(&"wait_for"));
         assert!(names.contains(&"create_tab"));
         assert!(names.contains(&"close_tab"));
+        // AI-native browsing tools
+        assert!(names.contains(&"scroll"));
+        assert!(names.contains(&"navigate_back"));
+        assert!(names.contains(&"navigate_forward"));
+        assert!(names.contains(&"select_option"));
+        assert!(names.contains(&"read_page_structure"));
+        assert!(names.contains(&"extract_structured_data"));
     }
 
     #[test]
