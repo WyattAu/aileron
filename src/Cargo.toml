@@ -5,6 +5,10 @@ path = "lib.rs"
 name = "aileron"
 path = "main.rs"
 
+[[bin]]
+name = "aileron-mcp"
+path = "bin/mcp_server.rs"
+
 [package]
 name = "aileron"
 version = "1.0.0"
