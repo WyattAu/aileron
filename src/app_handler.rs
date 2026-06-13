@@ -341,7 +341,7 @@ impl ApplicationHandler for AileronApp {
                     // Now sync wry panes (drop borrow on app_state first)
                     for pid in &new_pane_ids {
                         let new_url = url::Url::parse("aileron://new").unwrap();
-                        if *pid == active_pane_id || !self.config.is_offscreen() {
+                        if *pid == active_pane_id || !self.uses_offscreen_compositing() {
                             self.create_wry_pane_for(*pid, &new_url);
                         } else {
                             self.pending_pane_creates.push_back((*pid, new_url));
@@ -378,8 +378,8 @@ impl ApplicationHandler for AileronApp {
 
                     // Handle Insert mode: focus the wry webview (native mode only)
                     // Track mode changes to avoid spamming focus calls every frame.
-                    if !self.config.is_offscreen() {
-                        let was_insert = self.webview_has_focus;
+                    let was_insert = self.webview_has_focus;
+                    if !self.uses_offscreen_compositing() {
                         if is_insert_mode && !was_insert {
                             if let Some(wry_pane) = self.wry_panes.get(&active_pane_id) {
                                 aileron::servo::wry_engine::set_webview_focus_allowed(true);
@@ -396,7 +396,7 @@ impl ApplicationHandler for AileronApp {
                     }
 
                     // Offscreen mode: forward keyboard to native terminal only.
-                    if is_insert_mode && self.config.is_offscreen() {
+                    if is_insert_mode && self.uses_offscreen_compositing() {
                         #[cfg(feature = "terminal")]
                         let is_terminal = self.terminal_manager.is_terminal(&active_pane_id);
 
@@ -469,7 +469,7 @@ impl ApplicationHandler for AileronApp {
                         };
 
                         if !is_terminal
-                            && !self.config.is_offscreen()
+                            && !self.uses_offscreen_compositing()
                             && let Some(wry_pane) = self.wry_panes.get(&active_id)
                         {
                             let js = format!(
@@ -596,6 +596,9 @@ impl ApplicationHandler for AileronApp {
             app_state.profiler.start_frame();
         }
 
+        // Capture offscreen flag before mutable borrow of test_harness.
+        let offscreen = self.uses_offscreen_compositing();
+
         // Test harness: execute next step's action and capture state
         if let Some(ref mut harness) = self.test_harness
             && !harness.is_done()
@@ -653,8 +656,7 @@ impl ApplicationHandler for AileronApp {
                 harness.capture_webview_data(None, None);
 
                 // Capture screenshot from active pane (offscreen mode only)
-                if self.config.is_offscreen()
-                    && let Some(offscreen_pane) = self.offscreen_panes.get_mut(&active_id)
+                if offscreen && let Some(offscreen_pane) = self.offscreen_panes.get_mut(&active_id)
                 {
                     let frame_info = offscreen_pane.frame().map(|f| (f.width, f.height));
                     if let Some((width, height)) = frame_info
@@ -1185,56 +1187,103 @@ impl ApplicationHandler for AileronApp {
 
         // Architecture B: capture dirty offscreen frames and render them.
         let mut textures_updated = false;
-        if self.config.is_offscreen() || self.offscreen_panes.get(&uuid::Uuid::nil()).is_some() {
+        if self.uses_offscreen_compositing() {
             tracing::debug!(
                 "offscreen: entering capture+render block, gfx={}",
                 self.gfx.is_some()
             );
             self.offscreen_panes.capture_dirty_frames();
 
-            // Render captured frames to the main window via wgpu
+            // Render captured frames to the main window via wgpu.
+            //
+            // IMPORTANT: We must composite content + chrome into a SINGLE
+            // RGBA buffer before calling render_frame(). Each render_frame()
+            // call acquires and presents a separate swap-chain texture —
+            // calling it twice means the second frame overwrites the first.
             if let Some(gfx) = &mut self.gfx {
                 let active_id = self.app_state.as_ref().map(|s| s.wm.active_pane_id());
+                let chrome_pane_id = uuid::Uuid::nil();
+                let has_chrome = self.offscreen_panes.get(&chrome_pane_id).is_some();
+
+                // Step 1: Get content pane RGBA into a working buffer.
+                let mut composited: Option<Vec<u8>> = None;
+                let mut comp_w: u32 = 0;
+                let mut comp_h: u32 = 0;
+
                 if let Some(active_id) = active_id {
-                    if let Some(offscreen_pane) = self.offscreen_panes.get_mut(&active_id) {
-                        if let Some(frame) = offscreen_pane.frame() {
-                            let width = frame.width;
-                            let height = frame.height;
-                            if let Some(rgba) = offscreen_pane.frame_rgba() {
-                                let rgba_owned = rgba.to_vec();
-                                gfx.render_frame(&rgba_owned, width, height);
-                                textures_updated = true;
-                            } else {
-                                tracing::debug!(
-                                    "frame_rgba returned None for pane {}",
-                                    &active_id.to_string()[..8]
-                                );
-                            }
-                        } else {
+                    let pane_result = self.offscreen_panes.get_mut(&active_id).and_then(|p| {
+                        let frame = p.frame()?;
+                        let w = frame.width;
+                        let h = frame.height;
+                        let rgba = p.frame_rgba()?;
+                        Some((rgba.to_vec(), w, h))
+                    });
+                    match pane_result {
+                        Some((rgba, w, h)) => {
+                            composited = Some(rgba);
+                            comp_w = w;
+                            comp_h = h;
+                            textures_updated = true;
+                        }
+                        None => {
                             tracing::debug!(
-                                "frame() returned None for pane {}",
+                                "content pane {} not available for compositing",
                                 &active_id.to_string()[..8]
                             );
                         }
-                    } else {
-                        tracing::debug!("offscreen pane {} not found", &active_id.to_string()[..8]);
                     }
                 }
 
-                // Composite chrome overlay on top (Wayland offscreen mode).
-                // The chrome overlay is rendered as an offscreen webview with UUID::nil().
-                // Its frame is captured and composited via wgpu on top of the content.
-                let chrome_pane_id = uuid::Uuid::nil();
-                if let Some(chrome_pane) = self.offscreen_panes.get_mut(&chrome_pane_id) {
-                    let frame_info = chrome_pane.frame().map(|f| (f.width, f.height));
-                    if let Some((width, height)) = frame_info
-                        && let Some(rgba) = chrome_pane.frame_rgba()
-                    {
-                        let rgba_owned = rgba.to_vec();
-                        // Render chrome overlay on top of content
-                        gfx.render_frame(&rgba_owned, width, height);
+                // Step 2: Alpha-composite chrome overlay on top of content.
+                if has_chrome {
+                    let chrome_result =
+                        self.offscreen_panes.get_mut(&chrome_pane_id).and_then(|p| {
+                            let frame = p.frame()?;
+                            let cw = frame.width;
+                            let ch = frame.height;
+                            let rgba = p.frame_rgba()?;
+                            Some((rgba.to_vec(), cw, ch))
+                        });
+                    if let Some((chrome_rgba, cw, ch)) = chrome_result {
+                        if let Some(ref mut buf) = composited {
+                            // Both buffers present — alpha-composite chrome over content.
+                            // Chrome overlay uses transparent background; only the UI
+                            // elements (toolbar, tabs) are opaque.
+                            let sw = cw.min(comp_w) as usize;
+                            let sh = ch.min(comp_h) as usize;
+                            for y in 0..sh {
+                                let content_row = y * comp_w as usize * 4;
+                                let chrome_row = y * cw as usize * 4;
+                                for x in 0..sw {
+                                    let ci = content_row + x * 4;
+                                    let xi = chrome_row + x * 4;
+                                    let src_a = chrome_rgba[xi + 3] as f32 / 255.0;
+                                    let inv = 1.0 - src_a;
+                                    buf[ci] = (chrome_rgba[xi] as f32 * src_a
+                                        + buf[ci] as f32 * inv)
+                                        as u8;
+                                    buf[ci + 1] = (chrome_rgba[xi + 1] as f32 * src_a
+                                        + buf[ci + 1] as f32 * inv)
+                                        as u8;
+                                    buf[ci + 2] = (chrome_rgba[xi + 2] as f32 * src_a
+                                        + buf[ci + 2] as f32 * inv)
+                                        as u8;
+                                    buf[ci + 3] = 255; // fully opaque result
+                                }
+                            }
+                        } else {
+                            // No content pane — show chrome alone.
+                            composited = Some(chrome_rgba);
+                            comp_w = cw;
+                            comp_h = ch;
+                        }
                         textures_updated = true;
                     }
+                }
+
+                // Step 3: Single render_frame call with composited buffer.
+                if let Some(rgba) = composited {
+                    gfx.render_frame(&rgba, comp_w, comp_h);
                 }
             }
         }

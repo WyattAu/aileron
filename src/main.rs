@@ -173,6 +173,16 @@ impl AileronApp {
         }
     }
 
+    /// Whether the app is using offscreen compositing (Architecture B).
+    ///
+    /// Returns true if:
+    /// - `render_mode = "offscreen"` is explicitly configured, OR
+    /// - A chrome overlay exists (UUID::nil()), which means we're on Wayland
+    ///   and all content panes must be offscreen for wgpu compositing.
+    fn uses_offscreen_compositing(&self) -> bool {
+        self.config.is_offscreen() || self.offscreen_panes.get(&uuid::Uuid::nil()).is_some()
+    }
+
     fn init_app_state(&mut self, window: Arc<Window>) {
         info!("── init_app_state(): Starting ──");
 
@@ -350,7 +360,11 @@ impl AileronApp {
     }
 
     fn create_wry_pane_for(&mut self, pane_id: uuid::Uuid, url: &url::Url) {
-        if self.config.is_offscreen() {
+        // Route to offscreen pipeline if explicitly configured OR if chrome overlay
+        // exists (Wayland fallback). Chrome overlay (UUID::nil()) means we're in
+        // Wayland compositing mode — all content must also be offscreen so they
+        // can be composited into the main window via wgpu.
+        if self.config.is_offscreen() || self.offscreen_panes.get(&uuid::Uuid::nil()).is_some() {
             self.create_offscreen_pane_for(pane_id, url);
             return;
         }
@@ -723,7 +737,7 @@ impl AileronApp {
             }
         }
 
-        if self.config.is_offscreen() {
+        if self.uses_offscreen_compositing() {
             for (pane_id, wm_rect) in panes.iter() {
                 let wry_rect = bsp_rect_to_wry_rect(
                     wm_rect,
@@ -739,6 +753,18 @@ impl AileronApp {
 
                 if w > 0 && h > 0 {
                     self.offscreen_panes.resize(pane_id, w, h);
+                }
+            }
+
+            // Resize chrome overlay (UUID::nil()) to full window size.
+            let chrome_pane_id = uuid::Uuid::nil();
+            if let Some(window) = &self.window {
+                let size = window.inner_size();
+                let scale = window.scale_factor();
+                let cw = (size.width as f64 / scale) as i32;
+                let ch = (size.height as f64 / scale) as i32;
+                if cw > 0 && ch > 0 {
+                    self.offscreen_panes.resize(&chrome_pane_id, cw, ch);
                 }
             }
         }

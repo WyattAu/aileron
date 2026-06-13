@@ -664,6 +664,8 @@ wiki = "https://en.wikipedia.org/w/index.php?search={query}"
     }
 
     /// Whether Architecture B offscreen rendering is enabled.
+    /// Returns true if explicitly configured OR if the chrome overlay exists
+    /// (UUID::nil()), which means we're on Wayland and need offscreen rendering.
     pub fn is_offscreen(&self) -> bool {
         self.render_mode == "offscreen"
     }
