@@ -568,18 +568,25 @@ mod tests {
     fn test_dropped_frames_count() {
         let mut p = Profiler::new();
         p.enable();
+        // Fast frames (well under 16.7ms budget)
         for _ in 0..5 {
             p.start_frame();
-            thread::sleep(Duration::from_millis(1));
             p.end_frame("fast");
         }
         let s = p.stats();
-        assert_eq!(s.dropped_frames, 0);
+        assert_eq!(
+            s.dropped_frames, 0,
+            "fast frames should not be counted as dropped"
+        );
 
+        // Slow frame (exceeds 16.7ms budget)
         p.start_frame();
         thread::sleep(Duration::from_millis(20));
         p.end_frame("slow");
         let s = p.stats();
-        assert!(s.dropped_frames >= 1);
+        assert!(
+            s.dropped_frames >= 1,
+            "slow frame should be counted as dropped"
+        );
     }
 }

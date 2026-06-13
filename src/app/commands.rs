@@ -40,51 +40,37 @@ impl AppState {
                 self.session.should_quit = true;
                 return;
             }
-            "vs" => {
-                self.execute_action(&crate::input::Action::SplitVertical);
-                return;
-            }
-            "sp" => {
-                self.execute_action(&crate::input::Action::SplitHorizontal);
-                return;
-            }
-            "files" | "browse" => {
-                let path =
-                    crate::git::repo_root(std::env::current_dir().unwrap_or_default().as_path())
-                        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-                let encoded = crate::servo::wry_pages::percent_encode_path(&path.to_string_lossy());
-                if let Ok(url) = url::Url::parse(&format!("aileron://files?path={encoded}")) {
-                    self.navigate_with_redirects(url);
-                    self.ui.status_message = format!("File browser: {}", path.display());
-                }
-                return;
-            }
             _ => {}
         }
 
-        if let Some(name) = query.strip_prefix("layout-save ") {
-            let name = name.trim();
-            if name.is_empty() {
-                self.ui.status_message = "Usage: :layout-save <name>".into();
-                return;
-            }
-            self.pending_wry_actions
-                .push_back(WryAction::SaveWorkspace {
-                    name: name.to_string(),
-                    pane_urls: std::collections::HashMap::new(),
-                });
-            self.ui.status_message = format!("Saving layout: {name}...");
+        if self.handle_nav_command(query) {
             return;
         }
-
-        if let Some(name) = query.strip_prefix("layout-load ") {
-            let name = name.trim();
-            if name.is_empty() {
-                self.ui.status_message = "Usage: :layout-load <name>".into();
-                return;
-            }
-            self.pending_workspace_restore = Some(name.to_string());
-            self.ui.status_message = format!("Loading layout: {name}...");
+        if self.handle_pane_command(query) {
+            return;
+        }
+        if self.handle_macro_command(query) {
+            return;
+        }
+        if self.handle_sync_command(query) {
+            return;
+        }
+        if self.handle_settings_command(query) {
+            return;
+        }
+        if self.handle_theme_command(query) {
+            return;
+        }
+        if self.handle_devtools_command(query) {
+            return;
+        }
+        if self.handle_profile_command(query) {
+            return;
+        }
+        if self.handle_misc_command(query) {
+            return;
+        }
+        if self.handle_quickmark_command(query) {
             return;
         }
 
@@ -93,255 +79,11 @@ impl AppState {
             return;
         }
 
-        if let Some(path) = query.strip_prefix("pdf ") {
-            let path = path.trim();
-            if path.is_empty() {
-                self.ui.status_message = "Usage: :pdf <path-or-url>".into();
-                return;
-            }
-            let url = if path.starts_with("http://") || path.starts_with("https://") {
-                url::Url::parse(path).ok()
-            } else {
-                let abs = std::path::Path::new(path);
-                let abs = if abs.is_absolute() {
-                    abs.to_path_buf()
-                } else {
-                    std::env::current_dir().unwrap_or_default().join(abs)
-                };
-                url::Url::from_file_path(abs).ok()
-            };
-            match url {
-                Some(u) => {
-                    self.navigate_with_redirects(u);
-                    self.ui.status_message = format!("Loading PDF: {path}");
-                }
-                None => {
-                    self.ui.status_message = format!("!Invalid path or URL: {path}");
-                }
-            }
-            return;
-        }
-
-        if let Some(_host) = query.strip_prefix("ssh ") {
-            #[cfg(feature = "terminal")]
-            {
-                let host = _host.trim();
-                if host.is_empty() {
-                    self.ui.status_message = "Usage: ssh <host>".into();
-                    return;
-                }
-                self.pending_terminal_command = Some(format!("ssh {host}\n"));
-                self.execute_action(&crate::input::Action::OpenTerminal);
-            }
-            #[cfg(not(feature = "terminal"))]
-            {
-                self.ui.status_message = "Terminal feature not enabled".into();
-            }
-            return;
-        }
-
         if super::cmd::workspaces::handle_workspace_commands(self, query).is_some() {
             return;
         }
 
-        // U1-06: Keyboard macro recording commands
-        if query == "macro-record" {
-            if self.macro_recorder.is_recording() {
-                let events = self.macro_recorder.stop_recording();
-                let count = events.len();
-                // Store the last recording temporarily for saving
-                self.last_macro_events = Some(events);
-                self.ui.status_message = format!(
-                    "Macro recording stopped ({count} events). Use :macro-save <name> to save."
-                );
-            } else {
-                self.macro_recorder.start_recording();
-                self.ui.status_message = "Macro recording started".into();
-            }
-            return;
-        }
-
-        if let Some(name) = query.strip_prefix("macro-save ") {
-            let name = name.trim();
-            if name.is_empty() {
-                self.ui.status_message = "Usage: :macro-save <name>".into();
-                return;
-            }
-            if let Some(events) = self.last_macro_events.take() {
-                let count = events.len();
-                self.macro_recorder.save_macro(name, events);
-                // Persist to disk
-                if let Err(e) = self.save_macros_to_disk() {
-                    tracing::warn!("Failed to save macros to disk: {}", e);
-                }
-                self.ui.status_message = format!("Macro saved: {name} ({count} events)");
-            } else {
-                self.ui.status_message =
-                    "No recorded macro to save. Use :macro-record first.".into();
-            }
-            return;
-        }
-
-        if let Some(name) = query.strip_prefix("macro-play ") {
-            let name = name.trim();
-            if name.is_empty() {
-                self.ui.status_message = "Usage: :macro-play <name>".into();
-                return;
-            }
-            if let Some(saved) = self.macro_recorder.get_macro(name).cloned() {
-                let count = saved.events.len();
-                self.macro_player.start_playback(saved.events);
-                self.ui.status_message = format!("Playing macro: {name} ({count} events)");
-            } else {
-                self.ui.status_message = format!("Macro not found: {name}");
-            }
-            return;
-        }
-
-        if query == "macro-list" {
-            let macros = self.macro_recorder.list_macros();
-            if macros.is_empty() {
-                self.ui.status_message = "No saved macros.".into();
-            } else {
-                self.ui.status_message = format!("Macros: {}", macros.join(", "));
-            }
-            return;
-        }
-
-        // D1-04: Auto-update check commands
-        if query == "update-check" {
-            self.update_checker.check_for_updates();
-            self.ui.status_message = "Checking for updates...".into();
-            return;
-        }
-
-        if query == "update-show" {
-            self.ui.status_message = self.update_checker.status_message();
-            return;
-        }
-
-        if let Some(name) = query.strip_prefix("macro-delete ") {
-            let name = name.trim();
-            if name.is_empty() {
-                self.ui.status_message = "Usage: :macro-delete <name>".into();
-                return;
-            }
-            if self.macro_recorder.delete_macro(name) {
-                if let Err(e) = self.save_macros_to_disk() {
-                    tracing::warn!("Failed to save macros to disk: {}", e);
-                }
-                self.ui.status_message = format!("Macro deleted: {name}");
-            } else {
-                self.ui.status_message = format!("Macro not found: {name}");
-            }
-            return;
-        }
-
-        if query == "only" {
-            self.execute_action(&crate::input::Action::CloseOtherPanes);
-            return;
-        }
-
-        if query == "reader" {
-            self.execute_action(&crate::input::Action::ToggleReaderMode);
-            return;
-        }
-
-        // U1-07: Reader mode enhancements
-        if let Some(path) = query.strip_prefix("reader-save ") {
-            let path = path.trim();
-            if path.is_empty() {
-                self.ui.status_message = "Usage: :reader-save <path>".into();
-                return;
-            }
-            // Request the page content via JS and save it
-            let js = r#"(function() {
-    var title = document.title || 'Untitled';
-    var article = document.querySelector('article') ||
-                  document.querySelector('[role="main"]') ||
-                  document.querySelector('main') ||
-                  document.body;
-    var text = article ? article.textContent.trim() : document.body.textContent.trim();
-    var wordCount = text.split(/\s+/).length;
-    var readTime = Math.max(1, Math.ceil(wordCount / 200));
-    window.ipc.postMessage(JSON.stringify({
-        t: 'reader-save-content',
-        title: title,
-        content: text,
-        word_count: wordCount,
-        read_time: readTime
-    }));
-    return 'Requesting content...';
-})()"#;
-            self.pending_wry_actions
-                .push_back(WryAction::RunJs(js.to_string()));
-            self.ui.status_message = format!("Saving to: {path}");
-            return;
-        }
-
-        if query == "minimal" {
-            self.execute_action(&crate::input::Action::ToggleMinimalMode);
-            return;
-        }
-
-        if query == "settings" {
-            if let Ok(url) = url::Url::parse("aileron://settings") {
-                self.navigate_with_redirects(url);
-                self.ui.status_message = "Settings".into();
-            }
-            return;
-        }
-
-        if query == "site-settings" {
-            self.panels.site_settings_panel_open = !self.panels.site_settings_panel_open;
-            if self.panels.site_settings_panel_open {
-                self.panels.site_settings_zoom = None;
-                self.panels.site_settings_js = None;
-                self.panels.site_settings_cookies = None;
-                self.panels.site_settings_adblock = None;
-                self.panels.site_settings_url_pattern = String::new();
-                self.ui.status_message = "Site settings panel opened".into();
-            }
-            return;
-        }
-
-        if query == "pin" {
-            self.execute_action(&crate::input::Action::PinPane);
-            return;
-        }
-
-        if query == "scripts" || query == "content-scripts" {
-            self.pending_wry_actions
-                .push_back(WryAction::ListContentScripts);
-            return;
-        }
-
-        if query == "network" || query == "netlog" {
-            self.pending_wry_actions.push_back(WryAction::GetNetworkLog);
-            return;
-        }
-        if query == "network-clear" || query == "netlog-clear" {
-            self.pending_wry_actions
-                .push_back(WryAction::ClearNetworkLog);
-            return;
-        }
-        if query == "console" || query == "consolelog" {
-            self.pending_wry_actions.push_back(WryAction::GetConsoleLog);
-            return;
-        }
-        if query == "console-clear" {
-            self.pending_wry_actions
-                .push_back(WryAction::ClearConsoleLog);
-            return;
-        }
-
         if super::cmd::privacy::cmd_clear_privacy(self, query).is_some() {
-            return;
-        }
-
-        if query == "inspect" {
-            self.pending_wry_actions
-                .push_back(WryAction::ToggleDevTools);
             return;
         }
 
@@ -358,67 +100,6 @@ impl AppState {
             return;
         }
 
-        if query == "config-save" {
-            self.pending_wry_actions.push_back(WryAction::SaveConfig);
-            return;
-        }
-
-        if query == "memory" {
-            let rss = crate::profiling::memory::process_rss_human();
-            let term_count = self.terminal_pane_count();
-            let total_panes = self.wm.panes_ref().len();
-            let web_count = total_panes - term_count;
-            let estimated = crate::profiling::memory::estimate_pane_memory(web_count, term_count);
-            self.ui.status_message = format!(
-                "RSS: {} | WebViews: {}x~50MB | Terminals: {}x~3MB | Est pane: {}",
-                rss,
-                web_count,
-                term_count,
-                crate::profiling::memory::format_human_bytes(estimated)
-            );
-            return;
-        }
-
-        if query == "stats" {
-            let lat = &self.input_latency;
-            let ps = &self.profiler.stats();
-            if lat.sample_count() == 0 && ps.count == 0 {
-                self.ui.status_message = "No samples yet. Press some keys.".into();
-            } else {
-                let mut parts = Vec::new();
-                if lat.sample_count() > 0 {
-                    parts.push(format!(
-                        "input avg:{:.1}ms max:{:.1}ms p99:{:.1}ms ({} samples)",
-                        lat.avg_latency_ms(),
-                        lat.max_latency_ms(),
-                        lat.p99_latency_ms(),
-                        lat.sample_count(),
-                    ));
-                }
-                if ps.count > 0 {
-                    parts.push(format!(
-                        "frame avg:{:.1}ms p50:{:.1}ms p95:{:.1}ms p99:{:.1}ms max:{:.1}ms dropped:{} ({} samples)",
-                        ps.avg_ms, ps.p50_ms, ps.p95_ms, ps.p99_ms, ps.max_ms, ps.dropped_frames, ps.count,
-                    ));
-                }
-                self.ui.status_message = parts.join(" | ");
-            }
-            return;
-        }
-
-        if query == "adaptive-quality" || query == "adaptive_quality" {
-            self.config.adaptive_quality = !self.config.adaptive_quality;
-            self.ui.status_message = format!(
-                "Adaptive quality: {}",
-                if self.config.adaptive_quality {
-                    "on"
-                } else {
-                    "off"
-                }
-            );
-            return;
-        }
-
         if super::cmd::downloads::cmd_downloads(self, query).is_some() {
             return;
         }
@@ -427,24 +108,11 @@ impl AppState {
             return;
         }
 
-        if query == "tabs" {
-            self.panels.tab_search_open = !self.panels.tab_search_open;
-            self.panels.tab_search_query.clear();
-            self.panels.tab_search_selected = 0;
-            return;
-        }
-
         if super::cmd::tabs::handle_tab_commands(self, query).is_some() {
             return;
         }
 
-        // U1-04: Session manager commands
         if super::cmd::session::handle_session_commands(self, query).is_some() {
-            return;
-        }
-
-        if query == "help" || query == "?" {
-            self.panels.help_panel_open = true;
             return;
         }
 
@@ -456,628 +124,7 @@ impl AppState {
             return;
         }
 
-        if query == "crash-reload" {
-            if let Some(url) = self.crash.crashed_pane_url.take() {
-                self.crash.webview_crash_detected = false;
-                if let Ok(parsed) = url::Url::parse(&url) {
-                    self.pending_wry_actions
-                        .push_back(WryAction::Navigate(parsed));
-                    self.ui.status_message = format!("Reloaded crashed pane: {url}");
-                }
-            } else {
-                self.ui.status_message = "No crash to recover from".into();
-            }
-            return;
-        }
-
-        if let Some(args) = query.strip_prefix("replace ") {
-            let parts: Vec<&str> = args.splitn(3, ' ').collect();
-            if parts.len() >= 2 {
-                let old_text = parts[0];
-                let new_text = parts[1];
-                let case_sensitive = parts.len() >= 3 && parts[2] == "case";
-                let flags = if case_sensitive { "g" } else { "gi" };
-                let safe_old = old_text
-                    .replace('\\', "\\\\")
-                    .replace('"', "\\\"")
-                    .replace('\'', "\\'")
-                    .replace(')', "\\)")
-                    .replace('}', "\\}")
-                    .replace(']', "\\]");
-                let safe_new = new_text
-                    .replace('\\', "\\\\")
-                    .replace('"', "\\\"")
-                    .replace('\'', "\\'")
-                    .replace('$', "\\$");
-                let js = format!(
-                    r#"(function() {{
-                        let count = 0;
-                        function walk(node) {{
-                            if (node.nodeType === 3) {{
-                                let re = new RegExp("{safe_old}", "{flags}");
-                                let m = node.textContent.match(re);
-                                if (m) count += m.length;
-                                node.textContent = node.textContent.replace(re, "{safe_new}");
-                            }} else {{
-                                for (let c of node.childNodes) walk(c);
-                            }}
-                        }}
-                        walk(document.body);
-                        return count;
-                    }})()"#
-                );
-                self.pending_wry_actions.push_back(WryAction::RunJs(js));
-                let mode_str = if case_sensitive {
-                    "case-sensitive"
-                } else {
-                    "case-insensitive"
-                };
-                self.ui.status_message =
-                    format!("Replacing '{old_text}' with '{new_text}' ({mode_str})");
-            } else {
-                self.ui.status_message = "Usage: :replace <old> <new> [case]".into();
-            }
-            return;
-        }
-
-        if query == "import-firefox" {
-            if let Some(db) = self.db.as_ref() {
-                self.ui.status_message = super::cmd::import::import_firefox(db);
-            } else {
-                self.ui.status_message = "No database connection".into();
-            }
-            return;
-        }
-
-        if query == "import-chrome" {
-            if let Some(db) = self.db.as_ref() {
-                self.ui.status_message = super::cmd::import::import_chrome(db);
-            } else {
-                self.ui.status_message = "No database connection".into();
-            }
-            return;
-        }
-
-        if let Some(proxy_url) = query.strip_prefix("proxy ") {
-            let proxy_url = proxy_url.trim();
-            if proxy_url.is_empty() || proxy_url == "none" {
-                self.config.proxy = None;
-                self.ui.status_message = "Proxy disabled (restart required)".into();
-            } else {
-                self.config.proxy = Some(proxy_url.to_string());
-                self.ui.status_message = format!("Proxy: {proxy_url} (restart required)");
-            }
-            return;
-        }
-
-        if query == "back" || query == "bd" {
-            self.pending_wry_actions.push_back(WryAction::Back);
-            return;
-        }
-        if query == "forward" || query == "fw" {
-            self.pending_wry_actions.push_back(WryAction::Forward);
-            return;
-        }
-        if query == "reload" {
-            self.pending_wry_actions.push_back(WryAction::Reload);
-            return;
-        }
-
-        if query == "engine" {
-            self.ui.status_message = format!("Engine: {}", self.config.engine_selection);
-            return;
-        }
-        if query == "engine auto" || query == "engine servo" || query == "engine webkit" {
-            let val = query
-                .strip_prefix("engine ")
-                .expect("guarded: query starts with 'engine '");
-            match val.parse::<crate::servo::EngineSelection>() {
-                Ok(selection) => {
-                    self.config.engine_selection = selection.to_string();
-                    self.ui.status_message = format!("Engine: {selection}");
-                }
-                Err(e) => {
-                    self.ui.status_message = e;
-                }
-            }
-            return;
-        }
-
-        if let Some(rest) = query.strip_prefix("compat-override ") {
-            let rest = rest.trim();
-            let mut parts = rest.splitn(3, ' ');
-            if let Some(subcmd) = parts.next() {
-                match subcmd {
-                    "list" => {
-                        let all: Vec<String> = self
-                            .config
-                            .compat_overrides
-                            .iter()
-                            .map(|(k, v)| format!("{k}={v}"))
-                            .collect();
-                        if all.is_empty() {
-                            self.ui.status_message = "No compat overrides".into();
-                        } else {
-                            let display = all.join(", ");
-                            let msg = if display.len() > 80 {
-                                format!("{}...", &display[..77])
-                            } else {
-                                display
-                            };
-                            self.ui.status_message = format!("Compat overrides: {msg}");
-                        }
-                    }
-                    "add" => {
-                        if let (Some(domain), Some(engine)) = (parts.next(), parts.next()) {
-                            let engine = engine.trim();
-                            if engine != "webkit" && engine != "servo" {
-                                self.ui.status_message =
-                                    "Usage: compat-override add <domain> webkit|servo".into();
-                            } else {
-                                self.config
-                                    .compat_overrides
-                                    .insert(domain.to_string(), engine.to_string());
-                                self.ui.status_message =
-                                    format!("Compat override: {domain} -> {engine}");
-                            }
-                        } else {
-                            self.ui.status_message =
-                                "Usage: compat-override add <domain> webkit|servo".into();
-                        }
-                    }
-                    "remove" => {
-                        if let Some(domain) = parts.next() {
-                            if self.config.compat_overrides.remove(domain).is_some() {
-                                self.ui.status_message = format!("Removed override for {domain}");
-                            } else {
-                                self.ui.status_message = format!("No override for {domain}");
-                            }
-                        } else {
-                            self.ui.status_message =
-                                "Usage: compat-override remove <domain>".into();
-                        }
-                    }
-                    _ => {
-                        self.ui.status_message = "Usage: compat-override list|add|remove".into();
-                    }
-                }
-            }
-            return;
-        }
-
-        if let Some(engine_name) = query.strip_prefix("engine ") {
-            let engine_name = engine_name.trim();
-            if engine_name.is_empty() {
-                let current = &self.config.search_engine;
-                let name = self
-                    .config
-                    .search_engines
-                    .iter()
-                    .find(|(_, url)| *url == current)
-                    .map(|(name, _)| name.as_str())
-                    .unwrap_or("default");
-                self.ui.status_message = format!("Search engine: {name} ({current})");
-            } else if engine_name == "default" {
-                self.config.search_engine = "https://duckduckgo.com/?q={query}".into();
-                self.ui.status_message = "Search engine: default (DuckDuckGo)".into();
-            } else if let Some(url) = self.config.search_engines.get(engine_name) {
-                self.config.search_engine = url.clone();
-                self.ui.status_message = format!("Search engine: {engine_name} ({url})");
-            } else {
-                let available: Vec<&str> = std::iter::once("default")
-                    .chain(self.config.search_engines.keys().map(|s| s.as_str()))
-                    .collect();
-                self.ui.status_message = format!(
-                    "Unknown engine: {}. Available: {}",
-                    engine_name,
-                    available.join(", ")
-                );
-            }
-            return;
-        }
-
         if super::cmd::site_settings::cmd_site_settings(self, query).is_some() {
-            return;
-        }
-
-        if let Some(url_str) = query.strip_prefix("open ") {
-            let url_str = url_str.trim();
-            if url_str.is_empty() {
-                self.ui.status_message = "Usage: open <url>".into();
-                return;
-            }
-            let url = if url_str.contains("://") {
-                url::Url::parse(url_str)
-            } else {
-                url::Url::parse(&format!("https://{url_str}"))
-            };
-            match url {
-                Ok(u) => {
-                    self.navigate_with_redirects(u);
-                    self.ui.status_message = format!("Opening: {url_str}");
-                }
-                Err(e) => {
-                    self.ui.status_message = format!("Invalid URL: {e}");
-                }
-            }
-            return;
-        }
-
-        if query == "private" || query.starts_with("private ") {
-            let active_id = self.wm.active_pane_id();
-            self.tabs.private_pane_ids.insert(active_id);
-            let target = query.strip_prefix("private ").unwrap_or("").trim();
-            if !target.is_empty() {
-                let url_str = if target.contains("://") {
-                    target.to_string()
-                } else {
-                    format!("https://{target}")
-                };
-                if let Ok(url) = url::Url::parse(&url_str) {
-                    self.navigate_with_redirects(url);
-                    self.ui.status_message = format!("Private: {target}");
-                } else {
-                    self.ui.status_message = "Invalid URL".into();
-                }
-            } else {
-                self.ui.status_message = "Private mode on (no history saved)".into();
-            }
-            return;
-        }
-
-        if query == "yt" {
-            let active_id = self.wm.active_pane_id();
-            if let Some(engine) = self.engines.get(&active_id)
-                && let Some(url) = engine.current_url()
-            {
-                let title = url.host_str().unwrap_or("untitled").to_string();
-                let copied = crate::platform::platform().clipboard_copy(&title);
-                if copied {
-                    self.ui.status_message = format!("Copied title: {title}");
-                } else {
-                    self.ui.status_message = "Clipboard: no clipboard tool available".into();
-                }
-                return;
-            }
-            self.ui.status_message = "No page to yank title from".into();
-            return;
-        }
-
-        if let Some(cmd) = query.strip_prefix("!") {
-            let cmd = cmd.trim();
-            if cmd.is_empty() {
-                self.ui.status_message = "Usage: !<command>".into();
-                return;
-            }
-            let shell_cmd = crate::platform::platform().shell_command(cmd);
-            let shell = &shell_cmd[0];
-            let args = &shell_cmd[1..];
-            match std::process::Command::new(shell).args(args).output() {
-                Ok(output) => {
-                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    let line = stdout.lines().next().unwrap_or("");
-                    if line.len() > 80 {
-                        self.ui.status_message = format!("{}...", &line[..77]);
-                    } else if line.is_empty() {
-                        self.ui.status_message = format!("(exit {})", output.status);
-                    } else {
-                        self.ui.status_message = line.to_string();
-                    }
-                }
-                Err(e) => {
-                    self.ui.status_message = format!("!{cmd}: {e}");
-                }
-            }
-            return;
-        }
-
-        if let Some(rest) = query.strip_prefix("set ") {
-            let rest = rest.trim();
-            let mut parts = rest.splitn(2, ' ');
-            if let Some(key) = parts.next() {
-                let value = parts.next().unwrap_or("");
-                self.ui.status_message =
-                    super::cmd::settings::apply_set_setting(&mut self.config, key, value);
-                self.cache.config_json_dirty = true;
-            }
-            return;
-        }
-
-        if query == "popups" {
-            self.config.popup_blocker_enabled = !self.config.popup_blocker_enabled;
-            self.ui.status_message = format!(
-                "Popup blocker: {}",
-                if self.config.popup_blocker_enabled {
-                    "on"
-                } else {
-                    "off"
-                }
-            );
-            return;
-        }
-        if let Some(val) = query.strip_prefix("popups ") {
-            let val = val.trim();
-            self.config.popup_blocker_enabled =
-                !val.contains("off") && !val.contains("false") && !val.contains("0");
-            self.ui.status_message = format!(
-                "Popup blocker: {}",
-                if self.config.popup_blocker_enabled {
-                    "on"
-                } else {
-                    "off"
-                }
-            );
-            return;
-        }
-
-        if query == "mute" {
-            let active_id = self.wm.active_pane_id();
-            self.tabs.muted_pane_ids.insert(active_id);
-            self.pending_wry_actions.push_back(WryAction::RunJs(
-                "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = true; el.pause(); });"
-                    .into(),
-            ));
-            self.ui.status_message = "Muted".into();
-            return;
-        }
-        if query == "unmute" {
-            let active_id = self.wm.active_pane_id();
-            self.tabs.muted_pane_ids.remove(&active_id);
-            self.pending_wry_actions.push_back(WryAction::RunJs(
-                "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = false; });"
-                    .into(),
-            ));
-            self.ui.status_message = "Unmuted".into();
-            return;
-        }
-
-        #[cfg(feature = "passwords")]
-        if query == "autofill" {
-            let active_id = self.wm.active_pane_id();
-            if let Some(engine) = self.engines.get(&active_id)
-                && let Some(url) = engine.current_url()
-            {
-                let url_str = url.to_string();
-                let domain = url.domain().unwrap_or("unknown");
-                if !self.bitwarden.is_unlocked() {
-                    self.ui.status_message =
-                        format!("No credentials found for {domain} (vault locked)");
-                } else {
-                    match self.bitwarden.search_for_url(&url_str) {
-                        Ok(items) if !items.is_empty() => {
-                            match self.bitwarden.get_credential(&items[0].id) {
-                                Ok(cred) => {
-                                    let js = self.bitwarden.autofill_by_id_js(
-                                        &self.autofill.username_id,
-                                        &self.autofill.password_id,
-                                        &cred,
-                                    );
-                                    self.pending_wry_actions.push_back(WryAction::RunJs(js));
-                                    self.ui.status_message =
-                                        format!("Auto-filled credentials for {domain}");
-                                    self.autofill.available = false;
-                                    self.autofill.js = None;
-                                }
-                                Err(e) => self.ui.status_message = format!("Auto-fill failed: {e}"),
-                            }
-                        }
-                        Ok(_) => {
-                            self.ui.status_message = format!("No credentials found for {domain}")
-                        }
-                        Err(e) => self.ui.status_message = format!("Auto-fill failed: {e}"),
-                    }
-                }
-            } else {
-                self.ui.status_message = "No login form detected".into();
-            }
-            return;
-        }
-
-        if query == "theme" {
-            self.ui.status_message = format!("Theme: {}", self.config.theme);
-            return;
-        }
-        if query == "theme list" {
-            let themes = self.config.available_themes();
-            self.ui.status_message = format!("Themes: {}", themes.join(", "));
-            return;
-        }
-        if let Some(name) = query.strip_prefix("theme ") {
-            let name = name.trim();
-            if name.is_empty() {
-                self.ui.status_message = format!("Theme: {}", self.config.theme);
-                return;
-            }
-            if self.config.themes.contains_key(name) {
-                self.config.theme = name.to_string();
-                self.ui.status_message = format!("Theme: {name}");
-            } else {
-                let available = self.config.available_themes();
-                self.ui.status_message = format!(
-                    "Unknown theme '{}'. Available: {}",
-                    name,
-                    available.join(", ")
-                );
-            }
-            return;
-        }
-
-        if query.starts_with('m') && query.len() >= 2 && query.as_bytes()[1].is_ascii_alphabetic() {
-            let letter = query.as_bytes()[1] as char;
-            let rest = query[2..].trim();
-            if rest.is_empty() {
-                self.ui.status_message = format!(
-                    "Quickmark {}: {}",
-                    letter,
-                    self.session
-                        .quickmarks
-                        .get(&letter.to_string())
-                        .map(|s| s.as_str())
-                        .unwrap_or("(not set)")
-                );
-                return;
-            }
-            let key = letter.to_string();
-            self.session
-                .quickmarks
-                .insert(key.clone(), rest.to_string());
-            if let Some(ref conn) = self.db
-                && let Err(e) = crate::db::quickmarks::set_quickmark(conn, &key, rest)
-            {
-                tracing::warn!("Failed to persist quickmark {}: {}", key, e);
-            }
-            self.ui.status_message = format!("Quickmark {letter} set");
-            return;
-        }
-
-        if query.starts_with('g') && query.len() == 2 && query.as_bytes()[1].is_ascii_alphabetic() {
-            let letter = query.as_bytes()[1] as char;
-            let key = letter.to_string();
-            match self.session.quickmarks.get(&key) {
-                Some(url_str) => {
-                    if let Ok(url) = url::Url::parse(url_str) {
-                        self.navigate_with_redirects(url);
-                        self.ui.status_message = format!("Quickmark {letter}");
-                    }
-                }
-                None => {
-                    self.ui.status_message = format!("Quickmark {letter} not set");
-                }
-            }
-            return;
-        }
-
-        if query.starts_with("g ") && query.len() > 2 {
-            let target = query[2..].trim();
-            if !target.is_empty() {
-                let url_str = if target.contains("://") {
-                    target.to_string()
-                } else {
-                    format!("https://{target}")
-                };
-                if let Ok(url) = url::Url::parse(&url_str) {
-                    self.pending_new_tab_url = Some(url);
-                    self.execute_action(&crate::input::Action::SplitHorizontal);
-                    return;
-                } else {
-                    self.ui.status_message = "Invalid URL".into();
-                }
-            }
-            return;
-        }
-
-        #[cfg(feature = "sync")]
-        if query == "sync" {
-            self.ui.status_message = super::cmd::sync::execute_sync_push(
-                &self.config.sync_target,
-                self.config.sync_encrypted,
-            );
-            return;
-        }
-        #[cfg(feature = "sync")]
-        if query == "sync --pull" {
-            self.ui.status_message = super::cmd::sync::execute_sync_pull(
-                &self.config.sync_target,
-                self.config.sync_encrypted,
-            );
-            return;
-        }
-        #[cfg(feature = "sync")]
-        if query == "sync --both" {
-            self.ui.status_message = super::cmd::sync::execute_sync_push(
-                &self.config.sync_target,
-                self.config.sync_encrypted,
-            );
-            let pull_msg = super::cmd::sync::execute_sync_pull(
-                &self.config.sync_target,
-                self.config.sync_encrypted,
-            );
-            self.ui.status_message = format!("{} | {}", self.ui.status_message, pull_msg);
-            return;
-        }
-        #[cfg(feature = "sync")]
-        if query == "sync --status" {
-            self.ui.status_message = super::cmd::sync::execute_sync_status(
-                &self.config.sync_target,
-                self.config.sync_encrypted,
-                self.sync_watcher.is_running(),
-            );
-            return;
-        }
-        #[cfg(feature = "sync")]
-        if query == "sync-status" {
-            self.panels.sync_status_panel_open = !self.panels.sync_status_panel_open;
-            return;
-        }
-        #[cfg(feature = "sync")]
-        if query == "sync-conflicts" {
-            if self.panels.sync_conflicts_panel_open {
-                self.panels.sync_conflicts_panel_open = false;
-                self.panels.sync_conflict_entries.clear();
-            } else {
-                let conflicts = super::cmd::sync::detect_sync_conflicts(
-                    &self.config.sync_target,
-                    self.config.sync_encrypted,
-                );
-                self.panels.sync_conflict_entries = conflicts;
-                self.panels.sync_conflict_selected = 0;
-                self.panels.sync_conflicts_panel_open = true;
-            }
-            return;
-        }
-        #[cfg(feature = "sync")]
-        if query == "sync-watch" {
-            if let Err(e) = super::cmd::sync::execute_sync_watch(&self.config.sync_target) {
-                self.ui.status_message = e;
-            } else {
-                let config_dir = crate::config::Config::config_dir();
-                match self.sync_watcher.start(&config_dir) {
-                    Ok(()) => self.ui.status_message = "Sync watcher started".into(),
-                    Err(e) => self.ui.status_message = format!("Failed to start watcher: {e}"),
-                }
-            }
-            return;
-        }
-        #[cfg(feature = "sync")]
-        if query == "sync-stop" {
-            self.sync_watcher.stop();
-            self.ui.status_message = "Sync watcher stopped".into();
-            return;
-        }
-        #[cfg(feature = "sync")]
-        if let Some(path) = query.strip_prefix("sync-resolve-local ") {
-            let path = path.trim();
-            if path.is_empty() {
-                self.ui.status_message = "Usage: :sync-resolve-local <path>".into();
-                return;
-            }
-            match super::cmd::sync::resolve_conflict_keep_local(&self.config.sync_target, path) {
-                Ok(msg) => self.ui.status_message = msg,
-                Err(e) => self.ui.status_message = e,
-            }
-            return;
-        }
-        #[cfg(feature = "sync")]
-        if let Some(path) = query.strip_prefix("sync-resolve-remote ") {
-            let path = path.trim();
-            if path.is_empty() {
-                self.ui.status_message = "Usage: :sync-resolve-remote <path>".into();
-                return;
-            }
-            match super::cmd::sync::resolve_conflict_keep_remote(&self.config.sync_target, path) {
-                Ok(msg) => self.ui.status_message = msg,
-                Err(e) => self.ui.status_message = e,
-            }
-            return;
-        }
-        if let Some(target) = query.strip_prefix("sync-target ") {
-            let target = target.trim();
-            if target.is_empty() {
-                self.ui.status_message = "Usage: :sync-target <target>".into();
-                return;
-            }
-            self.config.sync_target = target.to_string();
-            self.ui.status_message = format!("Sync target: {target}");
             return;
         }
 
@@ -1211,28 +258,21 @@ impl AppState {
                 "sync-conflicts",
                 "sync-resolve-local",
                 "sync-resolve-remote",
-                // U1-01: Tab-within-pane commands
                 "tab-new-in-pane",
                 "tab-close-in-pane",
-                // U1-03: Tab search
                 "tabs-search",
-                // U1-05: Workspace templates
                 "layout-template-save",
                 "layout-template-load",
                 "layout-template-list",
                 "layout-template-delete",
-                // U1-06: Keyboard macro recording
                 "macro-record",
                 "macro-save",
                 "macro-play",
                 "macro-list",
                 "macro-delete",
-                // U1-07: Reader mode
                 "reader-save",
-                // U1-02: Tab reorder
                 "tab-move-left",
                 "tab-move-right",
-                // U1-04: Session manager
                 "session-save",
                 "session-load",
                 "session-list",
@@ -1252,6 +292,1018 @@ impl AppState {
                 self.ui.status_message = format!("Search failed for: {query}");
             }
         }
+    }
+
+    fn handle_nav_command(&mut self, query: &str) -> bool {
+        if let Some(url_str) = query.strip_prefix("open ") {
+            let url_str = url_str.trim();
+            if url_str.is_empty() {
+                self.ui.status_message = "Usage: open <url>".into();
+                return true;
+            }
+            let url = if url_str.contains("://") {
+                url::Url::parse(url_str)
+            } else {
+                url::Url::parse(&format!("https://{url_str}"))
+            };
+            match url {
+                Ok(u) => {
+                    self.navigate_with_redirects(u);
+                    self.ui.status_message = format!("Opening: {url_str}");
+                }
+                Err(e) => {
+                    self.ui.status_message = format!("Invalid URL: {e}");
+                }
+            }
+            return true;
+        }
+
+        if query == "back" || query == "bd" {
+            self.pending_wry_actions.push_back(WryAction::Back);
+            return true;
+        }
+        if query == "forward" || query == "fw" {
+            self.pending_wry_actions.push_back(WryAction::Forward);
+            return true;
+        }
+        if query == "reload" {
+            self.pending_wry_actions.push_back(WryAction::Reload);
+            return true;
+        }
+
+        if let Some(path) = query.strip_prefix("pdf ") {
+            let path = path.trim();
+            if path.is_empty() {
+                self.ui.status_message = "Usage: :pdf <path-or-url>".into();
+                return true;
+            }
+            let url = if path.starts_with("http://") || path.starts_with("https://") {
+                url::Url::parse(path).ok()
+            } else {
+                let abs = std::path::Path::new(path);
+                let abs = if abs.is_absolute() {
+                    abs.to_path_buf()
+                } else {
+                    std::env::current_dir().unwrap_or_default().join(abs)
+                };
+                url::Url::from_file_path(abs).ok()
+            };
+            match url {
+                Some(u) => {
+                    self.navigate_with_redirects(u);
+                    self.ui.status_message = format!("Loading PDF: {path}");
+                }
+                None => {
+                    self.ui.status_message = format!("!Invalid path or URL: {path}");
+                }
+            }
+            return true;
+        }
+
+        if let Some(_host) = query.strip_prefix("ssh ") {
+            #[cfg(feature = "terminal")]
+            {
+                let host = _host.trim();
+                if host.is_empty() {
+                    self.ui.status_message = "Usage: ssh <host>".into();
+                    return true;
+                }
+                self.pending_terminal_command = Some(format!("ssh {host}\n"));
+                self.execute_action(&crate::input::Action::OpenTerminal);
+            }
+            #[cfg(not(feature = "terminal"))]
+            {
+                self.ui.status_message = "Terminal feature not enabled".into();
+            }
+            return true;
+        }
+
+        if query == "private" || query.starts_with("private ") {
+            let active_id = self.wm.active_pane_id();
+            self.tabs.private_pane_ids.insert(active_id);
+            let target = query.strip_prefix("private ").unwrap_or("").trim();
+            if !target.is_empty() {
+                let url_str = if target.contains("://") {
+                    target.to_string()
+                } else {
+                    format!("https://{target}")
+                };
+                if let Ok(url) = url::Url::parse(&url_str) {
+                    self.navigate_with_redirects(url);
+                    self.ui.status_message = format!("Private: {target}");
+                } else {
+                    self.ui.status_message = "Invalid URL".into();
+                }
+            } else {
+                self.ui.status_message = "Private mode on (no history saved)".into();
+            }
+            return true;
+        }
+
+        if query == "files" || query == "browse" {
+            let path = crate::git::repo_root(std::env::current_dir().unwrap_or_default().as_path())
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+            let encoded = crate::servo::wry_pages::percent_encode_path(&path.to_string_lossy());
+            if let Ok(url) = url::Url::parse(&format!("aileron://files?path={encoded}")) {
+                self.navigate_with_redirects(url);
+                self.ui.status_message = format!("File browser: {}", path.display());
+            }
+            return true;
+        }
+
+        false
+    }
+
+    fn handle_pane_command(&mut self, query: &str) -> bool {
+        match query {
+            "vs" => {
+                self.execute_action(&crate::input::Action::SplitVertical);
+                return true;
+            }
+            "sp" => {
+                self.execute_action(&crate::input::Action::SplitHorizontal);
+                return true;
+            }
+            "only" => {
+                self.execute_action(&crate::input::Action::CloseOtherPanes);
+                return true;
+            }
+            "pin" => {
+                self.execute_action(&crate::input::Action::PinPane);
+                return true;
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn handle_macro_command(&mut self, query: &str) -> bool {
+        if query == "macro-record" {
+            if self.macro_recorder.is_recording() {
+                let events = self.macro_recorder.stop_recording();
+                let count = events.len();
+                self.last_macro_events = Some(events);
+                self.ui.status_message = format!(
+                    "Macro recording stopped ({count} events). Use :macro-save <name> to save."
+                );
+            } else {
+                self.macro_recorder.start_recording();
+                self.ui.status_message = "Macro recording started".into();
+            }
+            return true;
+        }
+
+        if let Some(name) = query.strip_prefix("macro-save ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.ui.status_message = "Usage: :macro-save <name>".into();
+                return true;
+            }
+            if let Some(events) = self.last_macro_events.take() {
+                let count = events.len();
+                self.macro_recorder.save_macro(name, events);
+                if let Err(e) = self.save_macros_to_disk() {
+                    tracing::warn!("Failed to save macros to disk: {}", e);
+                }
+                self.ui.status_message = format!("Macro saved: {name} ({count} events)");
+            } else {
+                self.ui.status_message =
+                    "No recorded macro to save. Use :macro-record first.".into();
+            }
+            return true;
+        }
+
+        if let Some(name) = query.strip_prefix("macro-play ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.ui.status_message = "Usage: :macro-play <name>".into();
+                return true;
+            }
+            if let Some(saved) = self.macro_recorder.get_macro(name).cloned() {
+                let count = saved.events.len();
+                self.macro_player.start_playback(saved.events);
+                self.ui.status_message = format!("Playing macro: {name} ({count} events)");
+            } else {
+                self.ui.status_message = format!("Macro not found: {name}");
+            }
+            return true;
+        }
+
+        if query == "macro-list" {
+            let macros = self.macro_recorder.list_macros();
+            if macros.is_empty() {
+                self.ui.status_message = "No saved macros.".into();
+            } else {
+                self.ui.status_message = format!("Macros: {}", macros.join(", "));
+            }
+            return true;
+        }
+
+        if let Some(name) = query.strip_prefix("macro-delete ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.ui.status_message = "Usage: :macro-delete <name>".into();
+                return true;
+            }
+            if self.macro_recorder.delete_macro(name) {
+                if let Err(e) = self.save_macros_to_disk() {
+                    tracing::warn!("Failed to save macros to disk: {}", e);
+                }
+                self.ui.status_message = format!("Macro deleted: {name}");
+            } else {
+                self.ui.status_message = format!("Macro not found: {name}");
+            }
+            return true;
+        }
+
+        false
+    }
+
+    #[cfg(feature = "sync")]
+    fn handle_sync_command(&mut self, query: &str) -> bool {
+        if query == "sync" {
+            self.ui.status_message = super::cmd::sync::execute_sync_push(
+                &self.config.sync_target,
+                self.config.sync_encrypted,
+            );
+            return true;
+        }
+        if query == "sync --pull" {
+            self.ui.status_message = super::cmd::sync::execute_sync_pull(
+                &self.config.sync_target,
+                self.config.sync_encrypted,
+            );
+            return true;
+        }
+        if query == "sync --both" {
+            self.ui.status_message = super::cmd::sync::execute_sync_push(
+                &self.config.sync_target,
+                self.config.sync_encrypted,
+            );
+            let pull_msg = super::cmd::sync::execute_sync_pull(
+                &self.config.sync_target,
+                self.config.sync_encrypted,
+            );
+            self.ui.status_message = format!("{} | {}", self.ui.status_message, pull_msg);
+            return true;
+        }
+        if query == "sync --status" {
+            self.ui.status_message = super::cmd::sync::execute_sync_status(
+                &self.config.sync_target,
+                self.config.sync_encrypted,
+                self.sync_watcher.is_running(),
+            );
+            return true;
+        }
+        if query == "sync-status" {
+            self.panels.sync_status_panel_open = !self.panels.sync_status_panel_open;
+            return true;
+        }
+        if query == "sync-conflicts" {
+            if self.panels.sync_conflicts_panel_open {
+                self.panels.sync_conflicts_panel_open = false;
+                self.panels.sync_conflict_entries.clear();
+            } else {
+                let conflicts = super::cmd::sync::detect_sync_conflicts(
+                    &self.config.sync_target,
+                    self.config.sync_encrypted,
+                );
+                self.panels.sync_conflict_entries = conflicts;
+                self.panels.sync_conflict_selected = 0;
+                self.panels.sync_conflicts_panel_open = true;
+            }
+            return true;
+        }
+        if query == "sync-watch" {
+            if let Err(e) = super::cmd::sync::execute_sync_watch(&self.config.sync_target) {
+                self.ui.status_message = e;
+            } else {
+                let config_dir = crate::config::Config::config_dir();
+                match self.sync_watcher.start(&config_dir) {
+                    Ok(()) => self.ui.status_message = "Sync watcher started".into(),
+                    Err(e) => self.ui.status_message = format!("Failed to start watcher: {e}"),
+                }
+            }
+            return true;
+        }
+        if query == "sync-stop" {
+            self.sync_watcher.stop();
+            self.ui.status_message = "Sync watcher stopped".into();
+            return true;
+        }
+        if let Some(path) = query.strip_prefix("sync-resolve-local ") {
+            let path = path.trim();
+            if path.is_empty() {
+                self.ui.status_message = "Usage: :sync-resolve-local <path>".into();
+                return true;
+            }
+            match super::cmd::sync::resolve_conflict_keep_local(&self.config.sync_target, path) {
+                Ok(msg) => self.ui.status_message = msg,
+                Err(e) => self.ui.status_message = e,
+            }
+            return true;
+        }
+        if let Some(path) = query.strip_prefix("sync-resolve-remote ") {
+            let path = path.trim();
+            if path.is_empty() {
+                self.ui.status_message = "Usage: :sync-resolve-remote <path>".into();
+                return true;
+            }
+            match super::cmd::sync::resolve_conflict_keep_remote(&self.config.sync_target, path) {
+                Ok(msg) => self.ui.status_message = msg,
+                Err(e) => self.ui.status_message = e,
+            }
+            return true;
+        }
+        if let Some(target) = query.strip_prefix("sync-target ") {
+            let target = target.trim();
+            if target.is_empty() {
+                self.ui.status_message = "Usage: :sync-target <target>".into();
+                return true;
+            }
+            self.config.sync_target = target.to_string();
+            self.ui.status_message = format!("Sync target: {target}");
+            return true;
+        }
+        false
+    }
+
+    #[cfg(not(feature = "sync"))]
+    fn handle_sync_command(&mut self, _query: &str) -> bool {
+        false
+    }
+
+    fn handle_settings_command(&mut self, query: &str) -> bool {
+        if let Some(rest) = query.strip_prefix("set ") {
+            let rest = rest.trim();
+            let mut parts = rest.splitn(2, ' ');
+            if let Some(key) = parts.next() {
+                let value = parts.next().unwrap_or("");
+                self.ui.status_message =
+                    super::cmd::settings::apply_set_setting(&mut self.config, key, value);
+                self.cache.config_json_dirty = true;
+            }
+            return true;
+        }
+
+        if query == "config-save" {
+            self.pending_wry_actions.push_back(WryAction::SaveConfig);
+            return true;
+        }
+
+        if query == "site-settings" {
+            self.panels.site_settings_panel_open = !self.panels.site_settings_panel_open;
+            if self.panels.site_settings_panel_open {
+                self.panels.site_settings_zoom = None;
+                self.panels.site_settings_js = None;
+                self.panels.site_settings_cookies = None;
+                self.panels.site_settings_adblock = None;
+                self.panels.site_settings_url_pattern = String::new();
+                self.ui.status_message = "Site settings panel opened".into();
+            }
+            return true;
+        }
+
+        if query == "popups" {
+            self.config.popup_blocker_enabled = !self.config.popup_blocker_enabled;
+            self.ui.status_message = format!(
+                "Popup blocker: {}",
+                if self.config.popup_blocker_enabled {
+                    "on"
+                } else {
+                    "off"
+                }
+            );
+            return true;
+        }
+        if let Some(val) = query.strip_prefix("popups ") {
+            let val = val.trim();
+            self.config.popup_blocker_enabled =
+                !val.contains("off") && !val.contains("false") && !val.contains("0");
+            self.ui.status_message = format!(
+                "Popup blocker: {}",
+                if self.config.popup_blocker_enabled {
+                    "on"
+                } else {
+                    "off"
+                }
+            );
+            return true;
+        }
+
+        if query == "engine" {
+            self.ui.status_message = format!("Engine: {}", self.config.engine_selection);
+            return true;
+        }
+        if query == "engine auto" || query == "engine servo" || query == "engine webkit" {
+            let val = query
+                .strip_prefix("engine ")
+                .expect("guarded: query starts with 'engine '");
+            match val.parse::<crate::servo::EngineSelection>() {
+                Ok(selection) => {
+                    self.config.engine_selection = selection.to_string();
+                    self.ui.status_message = format!("Engine: {selection}");
+                }
+                Err(e) => {
+                    self.ui.status_message = e;
+                }
+            }
+            return true;
+        }
+
+        if let Some(rest) = query.strip_prefix("compat-override ") {
+            let rest = rest.trim();
+            let mut parts = rest.splitn(3, ' ');
+            if let Some(subcmd) = parts.next() {
+                match subcmd {
+                    "list" => {
+                        let all: Vec<String> = self
+                            .config
+                            .compat_overrides
+                            .iter()
+                            .map(|(k, v)| format!("{k}={v}"))
+                            .collect();
+                        if all.is_empty() {
+                            self.ui.status_message = "No compat overrides".into();
+                        } else {
+                            let display = all.join(", ");
+                            let msg = if display.len() > 80 {
+                                format!("{}...", &display[..77])
+                            } else {
+                                display
+                            };
+                            self.ui.status_message = format!("Compat overrides: {msg}");
+                        }
+                    }
+                    "add" => {
+                        if let (Some(domain), Some(engine)) = (parts.next(), parts.next()) {
+                            let engine = engine.trim();
+                            if engine != "webkit" && engine != "servo" {
+                                self.ui.status_message =
+                                    "Usage: compat-override add <domain> webkit|servo".into();
+                            } else {
+                                self.config
+                                    .compat_overrides
+                                    .insert(domain.to_string(), engine.to_string());
+                                self.ui.status_message =
+                                    format!("Compat override: {domain} -> {engine}");
+                            }
+                        } else {
+                            self.ui.status_message =
+                                "Usage: compat-override add <domain> webkit|servo".into();
+                        }
+                    }
+                    "remove" => {
+                        if let Some(domain) = parts.next() {
+                            if self.config.compat_overrides.remove(domain).is_some() {
+                                self.ui.status_message = format!("Removed override for {domain}");
+                            } else {
+                                self.ui.status_message = format!("No override for {domain}");
+                            }
+                        } else {
+                            self.ui.status_message =
+                                "Usage: compat-override remove <domain>".into();
+                        }
+                    }
+                    _ => {
+                        self.ui.status_message = "Usage: compat-override list|add|remove".into();
+                    }
+                }
+            }
+            return true;
+        }
+
+        if let Some(engine_name) = query.strip_prefix("engine ") {
+            let engine_name = engine_name.trim();
+            if engine_name.is_empty() {
+                let current = &self.config.search_engine;
+                let name = self
+                    .config
+                    .search_engines
+                    .iter()
+                    .find(|(_, url)| *url == current)
+                    .map(|(name, _)| name.as_str())
+                    .unwrap_or("default");
+                self.ui.status_message = format!("Search engine: {name} ({current})");
+            } else if engine_name == "default" {
+                self.config.search_engine = "https://duckduckgo.com/?q={query}".into();
+                self.ui.status_message = "Search engine: default (DuckDuckGo)".into();
+            } else if let Some(url) = self.config.search_engines.get(engine_name) {
+                self.config.search_engine = url.clone();
+                self.ui.status_message = format!("Search engine: {engine_name} ({url})");
+            } else {
+                let available: Vec<&str> = std::iter::once("default")
+                    .chain(self.config.search_engines.keys().map(|s| s.as_str()))
+                    .collect();
+                self.ui.status_message = format!(
+                    "Unknown engine: {}. Available: {}",
+                    engine_name,
+                    available.join(", ")
+                );
+            }
+            return true;
+        }
+
+        if query == "adaptive-quality" || query == "adaptive_quality" {
+            self.config.adaptive_quality = !self.config.adaptive_quality;
+            self.ui.status_message = format!(
+                "Adaptive quality: {}",
+                if self.config.adaptive_quality {
+                    "on"
+                } else {
+                    "off"
+                }
+            );
+            return true;
+        }
+
+        if let Some(proxy_url) = query.strip_prefix("proxy ") {
+            let proxy_url = proxy_url.trim();
+            if proxy_url.is_empty() || proxy_url == "none" {
+                self.config.proxy = None;
+                self.ui.status_message = "Proxy disabled (restart required)".into();
+            } else {
+                self.config.proxy = Some(proxy_url.to_string());
+                self.ui.status_message = format!("Proxy: {proxy_url} (restart required)");
+            }
+            return true;
+        }
+
+        false
+    }
+
+    fn handle_theme_command(&mut self, query: &str) -> bool {
+        if query == "theme" {
+            self.ui.status_message = format!("Theme: {}", self.config.theme);
+            return true;
+        }
+        if query == "theme list" {
+            let themes = self.config.available_themes();
+            self.ui.status_message = format!("Themes: {}", themes.join(", "));
+            return true;
+        }
+        if let Some(name) = query.strip_prefix("theme ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.ui.status_message = format!("Theme: {}", self.config.theme);
+                return true;
+            }
+            if self.config.themes.contains_key(name) {
+                self.config.theme = name.to_string();
+                self.ui.status_message = format!("Theme: {name}");
+            } else {
+                let available = self.config.available_themes();
+                self.ui.status_message = format!(
+                    "Unknown theme '{}'. Available: {}",
+                    name,
+                    available.join(", ")
+                );
+            }
+            return true;
+        }
+        false
+    }
+
+    fn handle_devtools_command(&mut self, query: &str) -> bool {
+        if query == "scripts" || query == "content-scripts" {
+            self.pending_wry_actions
+                .push_back(WryAction::ListContentScripts);
+            return true;
+        }
+
+        if query == "network" || query == "netlog" {
+            self.pending_wry_actions.push_back(WryAction::GetNetworkLog);
+            return true;
+        }
+        if query == "network-clear" || query == "netlog-clear" {
+            self.pending_wry_actions
+                .push_back(WryAction::ClearNetworkLog);
+            return true;
+        }
+        if query == "console" || query == "consolelog" {
+            self.pending_wry_actions.push_back(WryAction::GetConsoleLog);
+            return true;
+        }
+        if query == "console-clear" {
+            self.pending_wry_actions
+                .push_back(WryAction::ClearConsoleLog);
+            return true;
+        }
+
+        if query == "inspect" {
+            self.pending_wry_actions
+                .push_back(WryAction::ToggleDevTools);
+            return true;
+        }
+
+        if query == "memory" {
+            let rss = crate::profiling::memory::process_rss_human();
+            let term_count = self.terminal_pane_count();
+            let total_panes = self.wm.panes_ref().len();
+            let web_count = total_panes - term_count;
+            let estimated = crate::profiling::memory::estimate_pane_memory(web_count, term_count);
+            self.ui.status_message = format!(
+                "RSS: {} | WebViews: {}x~50MB | Terminals: {}x~3MB | Est pane: {}",
+                rss,
+                web_count,
+                term_count,
+                crate::profiling::memory::format_human_bytes(estimated)
+            );
+            return true;
+        }
+
+        if query == "stats" {
+            let lat = &self.input_latency;
+            let ps = &self.profiler.stats();
+            if lat.sample_count() == 0 && ps.count == 0 {
+                self.ui.status_message = "No samples yet. Press some keys.".into();
+            } else {
+                let mut parts = Vec::new();
+                if lat.sample_count() > 0 {
+                    parts.push(format!(
+                        "input avg:{:.1}ms max:{:.1}ms p99:{:.1}ms ({} samples)",
+                        lat.avg_latency_ms(),
+                        lat.max_latency_ms(),
+                        lat.p99_latency_ms(),
+                        lat.sample_count(),
+                    ));
+                }
+                if ps.count > 0 {
+                    parts.push(format!(
+                        "frame avg:{:.1}ms p50:{:.1}ms p95:{:.1}ms p99:{:.1}ms max:{:.1}ms dropped:{} ({} samples)",
+                        ps.avg_ms, ps.p50_ms, ps.p95_ms, ps.p99_ms, ps.max_ms, ps.dropped_frames, ps.count,
+                    ));
+                }
+                self.ui.status_message = parts.join(" | ");
+            }
+            return true;
+        }
+
+        false
+    }
+
+    fn handle_profile_command(&mut self, query: &str) -> bool {
+        if query == "import-firefox" {
+            if let Some(db) = self.db.as_ref() {
+                self.ui.status_message = super::cmd::import::import_firefox(db);
+            } else {
+                self.ui.status_message = "No database connection".into();
+            }
+            return true;
+        }
+
+        if query == "import-chrome" {
+            if let Some(db) = self.db.as_ref() {
+                self.ui.status_message = super::cmd::import::import_chrome(db);
+            } else {
+                self.ui.status_message = "No database connection".into();
+            }
+            return true;
+        }
+
+        false
+    }
+
+    fn handle_quickmark_command(&mut self, query: &str) -> bool {
+        if query.starts_with('m') && query.len() >= 2 && query.as_bytes()[1].is_ascii_alphabetic() {
+            let letter = query.as_bytes()[1] as char;
+            let rest = query[2..].trim();
+            if rest.is_empty() {
+                self.ui.status_message = format!(
+                    "Quickmark {}: {}",
+                    letter,
+                    self.session
+                        .quickmarks
+                        .get(&letter.to_string())
+                        .map(|s| s.as_str())
+                        .unwrap_or("(not set)")
+                );
+                return true;
+            }
+            let key = letter.to_string();
+            self.session
+                .quickmarks
+                .insert(key.clone(), rest.to_string());
+            if let Some(ref conn) = self.db
+                && let Err(e) = crate::db::quickmarks::set_quickmark(conn, &key, rest)
+            {
+                tracing::warn!("Failed to persist quickmark {}: {}", key, e);
+            }
+            self.ui.status_message = format!("Quickmark {letter} set");
+            return true;
+        }
+
+        if query.starts_with('g') && query.len() == 2 && query.as_bytes()[1].is_ascii_alphabetic() {
+            let letter = query.as_bytes()[1] as char;
+            let key = letter.to_string();
+            match self.session.quickmarks.get(&key) {
+                Some(url_str) => {
+                    if let Ok(url) = url::Url::parse(url_str) {
+                        self.navigate_with_redirects(url);
+                        self.ui.status_message = format!("Quickmark {letter}");
+                    }
+                }
+                None => {
+                    self.ui.status_message = format!("Quickmark {letter} not set");
+                }
+            }
+            return true;
+        }
+
+        if query.starts_with("g ") && query.len() > 2 {
+            let target = query[2..].trim();
+            if !target.is_empty() {
+                let url_str = if target.contains("://") {
+                    target.to_string()
+                } else {
+                    format!("https://{target}")
+                };
+                if let Ok(url) = url::Url::parse(&url_str) {
+                    self.pending_new_tab_url = Some(url);
+                    self.execute_action(&crate::input::Action::SplitHorizontal);
+                    return true;
+                } else {
+                    self.ui.status_message = "Invalid URL".into();
+                }
+            }
+            return true;
+        }
+
+        false
+    }
+
+    fn handle_misc_command(&mut self, query: &str) -> bool {
+        if query == "help" || query == "?" {
+            self.panels.help_panel_open = true;
+            return true;
+        }
+
+        if query == "crash-reload" {
+            if let Some(url) = self.crash.crashed_pane_url.take() {
+                self.crash.webview_crash_detected = false;
+                if let Ok(parsed) = url::Url::parse(&url) {
+                    self.pending_wry_actions
+                        .push_back(WryAction::Navigate(parsed));
+                    self.ui.status_message = format!("Reloaded crashed pane: {url}");
+                }
+            } else {
+                self.ui.status_message = "No crash to recover from".into();
+            }
+            return true;
+        }
+
+        if let Some(args) = query.strip_prefix("replace ") {
+            let parts: Vec<&str> = args.splitn(3, ' ').collect();
+            if parts.len() >= 2 {
+                let old_text = parts[0];
+                let new_text = parts[1];
+                let case_sensitive = parts.len() >= 3 && parts[2] == "case";
+                let flags = if case_sensitive { "g" } else { "gi" };
+                let safe_old = old_text
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\'', "\\'")
+                    .replace(')', "\\)")
+                    .replace('}', "\\}")
+                    .replace(']', "\\]");
+                let safe_new = new_text
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\'', "\\'")
+                    .replace('$', "\\$");
+                let js = format!(
+                    r#"(function() {{
+                        let count = 0;
+                        function walk(node) {{
+                            if (node.nodeType === 3) {{
+                                let re = new RegExp("{safe_old}", "{flags}");
+                                let m = node.textContent.match(re);
+                                if (m) count += m.length;
+                                node.textContent = node.textContent.replace(re, "{safe_new}");
+                            }} else {{
+                                for (let c of node.childNodes) walk(c);
+                            }}
+                        }}
+                        walk(document.body);
+                        return count;
+                    }})()"#
+                );
+                self.pending_wry_actions.push_back(WryAction::RunJs(js));
+                let mode_str = if case_sensitive {
+                    "case-sensitive"
+                } else {
+                    "case-insensitive"
+                };
+                self.ui.status_message =
+                    format!("Replacing '{old_text}' with '{new_text}' ({mode_str})");
+            } else {
+                self.ui.status_message = "Usage: :replace <old> <new> [case]".into();
+            }
+            return true;
+        }
+
+        if query == "reader" {
+            self.execute_action(&crate::input::Action::ToggleReaderMode);
+            return true;
+        }
+
+        if let Some(path) = query.strip_prefix("reader-save ") {
+            let path = path.trim();
+            if path.is_empty() {
+                self.ui.status_message = "Usage: :reader-save <path>".into();
+                return true;
+            }
+            let js = r#"(function() {
+    var title = document.title || 'Untitled';
+    var article = document.querySelector('article') ||
+                  document.querySelector('[role="main"]') ||
+                  document.querySelector('main') ||
+                  document.body;
+    var text = article ? article.textContent.trim() : document.body.textContent.trim();
+    var wordCount = text.split(/\s+/).length;
+    var readTime = Math.max(1, Math.ceil(wordCount / 200));
+    window.ipc.postMessage(JSON.stringify({
+        t: 'reader-save-content',
+        title: title,
+        content: text,
+        word_count: wordCount,
+        read_time: readTime
+    }));
+    return 'Requesting content...';
+})()"#;
+            self.pending_wry_actions
+                .push_back(WryAction::RunJs(js.to_string()));
+            self.ui.status_message = format!("Saving to: {path}");
+            return true;
+        }
+
+        if query == "minimal" {
+            self.execute_action(&crate::input::Action::ToggleMinimalMode);
+            return true;
+        }
+
+        if query == "settings" {
+            if let Ok(url) = url::Url::parse("aileron://settings") {
+                self.navigate_with_redirects(url);
+                self.ui.status_message = "Settings".into();
+            }
+            return true;
+        }
+
+        if query == "yt" {
+            let active_id = self.wm.active_pane_id();
+            if let Some(engine) = self.engines.get(&active_id)
+                && let Some(url) = engine.current_url()
+            {
+                let title = url.host_str().unwrap_or("untitled").to_string();
+                let copied = crate::platform::platform().clipboard_copy(&title);
+                if copied {
+                    self.ui.status_message = format!("Copied title: {title}");
+                } else {
+                    self.ui.status_message = "Clipboard: no clipboard tool available".into();
+                }
+                return true;
+            }
+            self.ui.status_message = "No page to yank title from".into();
+            return true;
+        }
+
+        if let Some(cmd) = query.strip_prefix("!") {
+            let cmd = cmd.trim();
+            if cmd.is_empty() {
+                self.ui.status_message = "Usage: !<command>".into();
+                return true;
+            }
+            let shell_cmd = crate::platform::platform().shell_command(cmd);
+            let shell = &shell_cmd[0];
+            let args = &shell_cmd[1..];
+            match std::process::Command::new(shell).args(args).output() {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    let line = stdout.lines().next().unwrap_or("");
+                    if line.len() > 80 {
+                        self.ui.status_message = format!("{}...", &line[..77]);
+                    } else if line.is_empty() {
+                        self.ui.status_message = format!("(exit {})", output.status);
+                    } else {
+                        self.ui.status_message = line.to_string();
+                    }
+                }
+                Err(e) => {
+                    self.ui.status_message = format!("!{cmd}: {e}");
+                }
+            }
+            return true;
+        }
+
+        if query == "update-check" {
+            self.update_checker.check_for_updates();
+            self.ui.status_message = "Checking for updates...".into();
+            return true;
+        }
+
+        if query == "update-show" {
+            self.ui.status_message = self.update_checker.status_message();
+            return true;
+        }
+
+        if query == "mute" {
+            let active_id = self.wm.active_pane_id();
+            self.tabs.muted_pane_ids.insert(active_id);
+            self.pending_wry_actions.push_back(WryAction::RunJs(
+                "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = true; el.pause(); });"
+                    .into(),
+            ));
+            self.ui.status_message = "Muted".into();
+            return true;
+        }
+        if query == "unmute" {
+            let active_id = self.wm.active_pane_id();
+            self.tabs.muted_pane_ids.remove(&active_id);
+            self.pending_wry_actions.push_back(WryAction::RunJs(
+                "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = false; });"
+                    .into(),
+            ));
+            self.ui.status_message = "Unmuted".into();
+            return true;
+        }
+
+        #[cfg(feature = "passwords")]
+        if query == "autofill" {
+            let active_id = self.wm.active_pane_id();
+            if let Some(engine) = self.engines.get(&active_id)
+                && let Some(url) = engine.current_url()
+            {
+                let url_str = url.to_string();
+                let domain = url.domain().unwrap_or("unknown");
+                if !self.bitwarden.is_unlocked() {
+                    self.ui.status_message =
+                        format!("No credentials found for {domain} (vault locked)");
+                } else {
+                    match self.bitwarden.search_for_url(&url_str) {
+                        Ok(items) if !items.is_empty() => {
+                            match self.bitwarden.get_credential(&items[0].id) {
+                                Ok(cred) => {
+                                    let js = self.bitwarden.autofill_by_id_js(
+                                        &self.autofill.username_id,
+                                        &self.autofill.password_id,
+                                        &cred,
+                                    );
+                                    self.pending_wry_actions.push_back(WryAction::RunJs(js));
+                                    self.ui.status_message =
+                                        format!("Auto-filled credentials for {domain}");
+                                    self.autofill.available = false;
+                                    self.autofill.js = None;
+                                }
+                                Err(e) => self.ui.status_message = format!("Auto-fill failed: {e}"),
+                            }
+                        }
+                        Ok(_) => {
+                            self.ui.status_message = format!("No credentials found for {domain}")
+                        }
+                        Err(e) => self.ui.status_message = format!("Auto-fill failed: {e}"),
+                    }
+                }
+            } else {
+                self.ui.status_message = "No login form detected".into();
+            }
+            return true;
+        }
+
+        if query == "tabs" {
+            self.panels.tab_search_open = !self.panels.tab_search_open;
+            self.panels.tab_search_query.clear();
+            self.panels.tab_search_selected = 0;
+            return true;
+        }
+
+        if let Some(name) = query.strip_prefix("layout-save ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.ui.status_message = "Usage: :layout-save <name>".into();
+                return true;
+            }
+            self.pending_wry_actions
+                .push_back(WryAction::SaveWorkspace {
+                    name: name.to_string(),
+                    pane_urls: std::collections::HashMap::new(),
+                });
+            self.ui.status_message = format!("Saving layout: {name}...");
+            return true;
+        }
+
+        if let Some(name) = query.strip_prefix("layout-load ") {
+            let name = name.trim();
+            if name.is_empty() {
+                self.ui.status_message = "Usage: :layout-load <name>".into();
+                return true;
+            }
+            self.pending_workspace_restore = Some(name.to_string());
+            self.ui.status_message = format!("Loading layout: {name}...");
+            return true;
+        }
+
+        false
     }
 
     #[cfg(feature = "lua")]
