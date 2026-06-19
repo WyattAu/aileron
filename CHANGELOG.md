@@ -24,6 +24,7 @@ All notable changes to Aileron will be documented in this file.
 
 ### Fixed -- CI tooling (restores the Linux Test job)
 - **`.github/workflows/ci.yml`**: replaced `cargo install cargo-audit@0.20.0 --locked` and `cargo install cargo-llvm-cov@0.6.14 --locked` with `taiki-e/install-action@v2`, which installs pre-built binaries. The `--locked` source installs failed with `E0282` in the pinned `time` crate on Rust 1.96; pre-built binaries are immune to compiler-version drift and are markedly faster to provision. This restores the security-audit and code-coverage steps that had been failing the Test job (all 1459 tests themselves passed).
+- **`.github/workflows/ci.yml`**: moved the `AILERON_TESTING=1` environment variable for the macOS and Windows test steps from inline (`AILERON_TESTING=1 cargo test ...`, bash syntax) to the step-level `env:` map. Windows runners default to PowerShell, which does not recognise the inline `VAR=value command` form and was failing the Windows build-check job with `The term 'AILERON_TESTING=1' is not recognized`. The Linux job retains the inline form because it relies on `xvfb-run` (bash).
 
 ### Changed -- Single canonical roadmap
 - Removed four superseded, overlapping planning documents (`ROADMAP_COMPREHENSIVE.md`, `ROADMAP_FINAL.md`, `ROADMAP_PRODUCTION.md`, `ROADMAP_v0.19_v1.0.md`); `ROADMAP.md` is now the single source of truth, with its Current State refreshed to the live metrics (1198/257/4 tests, 9 CI jobs including the new WASM job).

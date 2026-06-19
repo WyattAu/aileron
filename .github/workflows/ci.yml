@@ -129,10 +129,14 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Run library tests
-        run: AILERON_TESTING=1 cargo test --lib -- --test-threads=4
+        env:
+          AILERON_TESTING: "1"
+        run: cargo test --lib -- --test-threads=4
 
       - name: Run integration tests
-        run: AILERON_TESTING=1 cargo test --tests -- --test-threads=4
+        env:
+          AILERON_TESTING: "1"
+        run: cargo test --tests -- --test-threads=4
 
   build-windows:
     name: Windows build check
@@ -163,10 +167,14 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Run library tests
-        run: AILERON_TESTING=1 cargo test --lib -- --test-threads=4
+        env:
+          AILERON_TESTING: "1"
+        run: cargo test --lib -- --test-threads=4
 
       - name: Run integration tests
-        run: AILERON_TESTING=1 cargo test --tests -- --test-threads=4
+        env:
+          AILERON_TESTING: "1"
+        run: cargo test --tests -- --test-threads=4
 
   cross-compile:
     name: Cross-compile (${{ matrix.target }})
