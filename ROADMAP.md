@@ -1,26 +1,28 @@
 # Aileron Roadmap: v1.0.0 and Beyond
 
-## Current State (v1.0.0, release candidate 2026-06-13)
+## Current State (v1.0.0, 2026-06-19)
 
 | Metric | Value |
 |--------|-------|
 | Version | 1.0.0 |
-| Tests | 1188 lib, 233 integration (13 suites), 4 doc = 1425 total |
+| Tests | 1198 lib, 257 integration (15 suites), 4 doc = 1459 total (all passing) |
 | MCP Tools | 21 (15 base + 6 AI-native: scroll, navigate_back/forward, select_option, read_page_structure, extract_structured_data) |
-| Clippy | Zero warnings (all-targets, -D warnings) |
+| MCP architecture | Single source of truth: stdio + TCP bridge transports both delegate to one registered `McpServer`; standalone `aileron-mcp` relay forwards to the running browser over loopback TCP (port 9543) |
+| Clippy | Zero warnings (all-targets, -D warnings) on native and WASM targets |
 | Formatting | Zero issues (cargo fmt) |
 | Unsafe blocks | 19 (all FFI: WebKitGTK, Cairo, X11, spellcheck -- SAFETY commented) |
 | #[must_use] | 49 attributes across 21 files |
-| LOC | ~49,100 Rust across 148 source files |
+| LOC | ~56,900 Rust across 148 source files |
 | Binary size | ~21 MB stripped (x86_64 Linux) |
-| CI | 8 jobs: Linux test + coverage, macOS check, Windows check, cross-compile (3 targets), fmt, benchmark regression |
+| CI | 9 jobs: Linux test + coverage, macOS check, Windows check, cross-compile (3 targets), chrome WASM check, fmt, benchmark regression |
 | Coverage | cargo-llvm-cov (lcov) via Codecov |
-| Pre-commit | fmt, check, clippy, lib tests, doc tests, secret scan, file size check; pre-push: integration tests, doc gen |
+| Pre-commit | fmt, check, chrome WASM check, clippy, lib tests, doc tests, secret scan, file size check; pre-push: integration tests, doc gen |
 | GitHub Pages | Deployed at https://wyattau.github.io/aileron/ |
 | Platforms | Linux (primary), macOS (compile), Windows (compile) |
 | Security | cargo-audit clean (14 allowed warnings, no critical advisories) |
 | Audit (2026-06-12) | Full end-to-end audit completed: 5 atomic commits, security fixes, accessibility fixes, CI hardened, test infrastructure fixed |
 | Wayland (2026-06-13) | Fixed content pane offscreen routing, alpha-compositing, chrome overlay resize |
+| MCP dedup (2026-06-19) | Removed ~280 lines of duplicated tool dispatch from TCP bridge; both transports now share canonical `McpServer`; added 6 loopback bridge tests + compile-time port invariant; added WASM job to CI |
 
 ## Execution Model
 

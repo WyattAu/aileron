@@ -1192,6 +1192,11 @@ impl ApplicationHandler for AileronApp {
                 "offscreen: entering capture+render block, gfx={}",
                 self.gfx.is_some()
             );
+            // `capture_dirty_frames` is only implemented for Linux (offscreen
+            // WebKitGTK texture capture). On other platforms this branch is
+            // dead at runtime (`uses_offscreen_compositing()` is false), but
+            // the call must still type-check, hence the cfg gate.
+            #[cfg(target_os = "linux")]
             self.offscreen_panes.capture_dirty_frames();
 
             // Render captured frames to the main window via wgpu.

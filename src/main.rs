@@ -484,7 +484,10 @@ impl AileronApp {
     }
 
     fn create_offscreen_pane_for(&mut self, pane_id: uuid::Uuid, url: &url::Url) {
-        #[cfg(feature = "terminal")]
+        // `is_terminal` is only consumed inside the `#[cfg(target_os = "linux")]`
+        // match below; define it under the same combined condition so it is not
+        // flagged as unused on macOS/Windows (where offscreen panes are stubs).
+        #[cfg(all(target_os = "linux", feature = "terminal"))]
         let is_terminal = {
             let app_state = match &self.app_state {
                 Some(s) => s,

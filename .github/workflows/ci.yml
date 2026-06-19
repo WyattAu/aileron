@@ -68,10 +68,17 @@ jobs:
       - name: Generate documentation
         run: cargo doc --no-deps --all-features
 
+      # Install audit/coverage tools as pre-built binaries via taiki-e/install-action.
+      # Compiling them from source with `cargo install ... --locked` broke on
+      # Rust 1.96 because the pinned `time` dependency hit E0282 type-inference
+      # errors. Pre-built binaries sidestep compiler-version drift entirely.
+      - name: Install cargo-audit and cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-llvm-cov
+
       - name: Security audit
-        run: |
-          command -v cargo-audit >/dev/null 2>&1 || cargo install cargo-audit@0.20.0 --locked --root ~/.cargo
-          ~/.cargo/bin/cargo audit
+        run: cargo audit
 
       - name: Build release
         run: cargo build --release
@@ -84,8 +91,7 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov@0.6.14 --locked --root ~/.cargo
-          AILERON_TESTING=1 xvfb-run -a ~/.cargo/bin/cargo llvm-cov --workspace --lcov --output-path lcov.info --exclude offscreen_render_test -- --test-threads=4
+          AILERON_TESTING=1 xvfb-run -a cargo llvm-cov --workspace --lcov --output-path lcov.info --exclude offscreen_render_test -- --test-threads=4
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v4

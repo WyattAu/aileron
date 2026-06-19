@@ -12,7 +12,17 @@ All notable changes to Aileron will be documented in this file.
 - **`src/mcp/tcp_bridge.rs`**: added six loopback integration tests (`tools_list_is_dispatched_to_server`, `tools_call_is_dispatched_to_registered_tool`, `initialize_is_dispatched_to_server`, `unknown_method_returns_method_not_found`, `unknown_tool_returns_invalid_params`, `malformed_json_returns_parse_error`) that exercise the bridge end-to-end over a real TCP socket with deterministic timeouts and explicit EOF signalling to avoid read-loop deadlocks.
 - **`src/mcp/tcp_bridge.rs`**: compile-time port-sanity invariant (`const _: () = { assert!(MCP_TCP_PORT > 1024); assert!(MCP_TCP_PORT < 49152); }`) so an invalid port fails the build.
 - **`.github/workflows/ci.yml`**: added a `wasm` job that runs `cargo check` and `cargo clippy -D warnings` against `aileron-chrome` on `wasm32-unknown-unknown`. Previously chrome WASM regressions were only caught by the local pre-commit hook, never by remote CI.
-- **`README.md`**: corrected stale test counts (1198 lib / 257 integration / 4 doc / 1459 total).
+- **`README.md`**: corrected stale test counts (1198 lib / 257 integration / 4 doc / 1459).
+
+### Fixed -- Cross-platform compilation (restores macOS/Windows/cross-compile CI)
+- **`src/app_handler.rs`**: gated the `OffscreenWebViewManager::capture_dirty_frames()` call behind `#[cfg(target_os = "linux")]`. The method is only implemented in the Linux `impl` block (offscreen WebKitGTK texture capture); the unconditional call caused `error[E0599]` on macOS, Windows, and all cross-compile targets. On non-Linux the enclosing `uses_offscreen_compositing()` branch is already dead at runtime.
+- **`src/main.rs`**: narrowed the `is_terminal` binding in `create_offscreen_pane_for` to `#[cfg(all(target_os = "linux", feature = "terminal"))]` so it matches its only use site (inside the Linux-only offscreen match). Previously it was `#[cfg(feature = "terminal")]` only, producing an `unused variable` warning on macOS/Windows that failed clippy under `-D warnings`.
+
+### Fixed -- CI tooling (restores the Linux Test job)
+- **`.github/workflows/ci.yml`**: replaced `cargo install cargo-audit@0.20.0 --locked` and `cargo install cargo-llvm-cov@0.6.14 --locked` with `taiki-e/install-action@v2`, which installs pre-built binaries. The `--locked` source installs failed with `E0282` in the pinned `time` crate on Rust 1.96; pre-built binaries are immune to compiler-version drift and are markedly faster to provision. This restores the security-audit and code-coverage steps that had been failing the Test job (all 1459 tests themselves passed).
+
+### Changed -- Single canonical roadmap
+- Removed four superseded, overlapping planning documents (`ROADMAP_COMPREHENSIVE.md`, `ROADMAP_FINAL.md`, `ROADMAP_PRODUCTION.md`, `ROADMAP_v0.19_v1.0.md`); `ROADMAP.md` is now the single source of truth, with its Current State refreshed to the live metrics (1198/257/4 tests, 9 CI jobs including the new WASM job).
 
 ### Test Results
 - 1198 library tests, 257 integration tests, 4 doc tests -- all passing with zero clippy warnings on both native and WASM targets.
