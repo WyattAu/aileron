@@ -2,6 +2,21 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
 
+/// Normalize a relative path to canonical forward-slash form for use as a
+/// cross-platform manifest key / `relative_path` field.
+///
+/// Manifest entries computed on Windows would otherwise use `\` separators
+/// (`sub\data.json`) while Linux/macOS use `/` (`sub/data.json`), breaking
+/// delta detection across platforms. Joining [`std::path::Component`]s with
+/// `/` yields a stable key regardless of the host OS.
+fn normalize_relpath(relative: &Path) -> String {
+    relative
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileManifest {
     pub relative_path: String,
@@ -153,9 +168,9 @@ impl SyncManager {
                 .unwrap_or(0);
 
             manifest.files.insert(
-                relative.to_string_lossy().to_string(),
+                normalize_relpath(relative),
                 FileManifest {
-                    relative_path: relative.to_string_lossy().to_string(),
+                    relative_path: normalize_relpath(relative),
                     blake3_hash: hash.to_string(),
                     size: metadata.len(),
                     modified,

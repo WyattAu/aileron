@@ -7,7 +7,12 @@ use crate::db::bookmarks;
 /// Import bookmarks and history from Firefox profiles.
 /// Returns a status message describing what was imported.
 pub fn import_firefox(db: &rusqlite::Connection) -> String {
-    let home = match std::env::var("HOME") {
+    // Resolve the user home directory cross-platform: Unix sets `HOME`,
+    // Windows sets `USERPROFILE`. Falling back to `USERPROFILE` lets the
+    // function reach the "Firefox data not found" message on Windows rather
+    // than aborting with a generic HOME error (full Windows profile-path
+    // support is tracked separately).
+    let home = match std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
         Ok(h) => h,
         Err(_) => return "Cannot determine HOME directory".into(),
     };

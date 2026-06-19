@@ -14,6 +14,11 @@ All notable changes to Aileron will be documented in this file.
 - **`.github/workflows/ci.yml`**: added a `wasm` job that runs `cargo check` and `cargo clippy -D warnings` against `aileron-chrome` on `wasm32-unknown-unknown`. Previously chrome WASM regressions were only caught by the local pre-commit hook, never by remote CI.
 - **`README.md`**: corrected stale test counts (1198 lib / 257 integration / 4 doc / 1459).
 
+### Fixed -- Cross-platform test correctness (restores the Windows build-check job)
+- **`src/sync/core.rs`**: manifest keys and the `relative_path` field are now normalized to canonical forward-slash form via a new `normalize_relpath` helper (joining `Path::components` with `/`). Previously they used `to_string_lossy()`, which yields OS-native separators (`sub\data.json` on Windows vs `sub/data.json` on Unix); this is a genuine cross-platform sync bug (a manifest built on one OS would not delta-match one built on the other) and also broke `test_compute_manifest` on Windows.
+- **`src/app/cmd/import.rs`**: `import_firefox` now resolves the home directory via `HOME` then `USERPROFILE` instead of `HOME` alone, so on Windows it reaches the "Firefox data not found" message rather than aborting with a generic HOME error (`HOME` is unset on Windows).
+- **`src/servo/wry_pages.rs`**: `test_file_browser_page_generates_valid_html` now uses a real `tempfile::tempdir()` (URL-encoded) instead of a hardcoded `/tmp`, so the listing path exists on Windows as well as Unix.
+
 ### Fixed -- Cross-platform compilation (restores macOS/Windows/cross-compile CI)
 - **`src/app_handler.rs`**: gated the `OffscreenWebViewManager::capture_dirty_frames()` call behind `#[cfg(target_os = "linux")]`. The method is only implemented in the Linux `impl` block (offscreen WebKitGTK texture capture); the unconditional call caused `error[E0599]` on macOS, Windows, and all cross-compile targets. On non-Linux the enclosing `uses_offscreen_compositing()` branch is already dead at runtime.
 - **`src/main.rs`**: narrowed the `is_terminal` binding in `create_offscreen_pane_for` to `#[cfg(all(target_os = "linux", feature = "terminal"))]` so it matches its only use site (inside the Linux-only offscreen match). Previously it was `#[cfg(feature = "terminal")]` only, producing an `unused variable` warning on macOS/Windows that failed clippy under `-D warnings`.

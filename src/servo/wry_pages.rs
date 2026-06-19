@@ -1341,7 +1341,15 @@ mod tests {
 
     #[test]
     fn test_file_browser_page_generates_valid_html() {
-        let uri = wry::http::Uri::from_static("aileron://files?path=%2Ftmp");
+        // Use a real temp directory so the listing path exists on every
+        // platform; the previous hardcoded "/tmp" only exists on Unix and
+        // caused file_browser_page to return its error page (no <table>) on
+        // Windows.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(tmp.path().join("hello.txt"), b"hi").expect("write");
+        let path_str = tmp.path().to_string_lossy();
+        let encoded = urlencoding::encode(&path_str);
+        let uri: wry::http::Uri = format!("aileron://files?path={encoded}").parse().unwrap();
         let html = file_browser_page(&uri);
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("Files:"));
