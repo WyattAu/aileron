@@ -393,6 +393,9 @@ pub(crate) fn aileron_reader_page() -> String {
 }
 
 /// Welcome page shown at `aileron://welcome` (default homepage).
+// Reached via the Linux offscreen custom-protocol handler; on other platforms
+// the offscreen path is stubbed out, so suppress the dead-code lint there.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn aileron_welcome_page() -> String {
     r#"<!DOCTYPE html>
 <html lang="en">

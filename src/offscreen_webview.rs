@@ -111,6 +111,7 @@ pub struct OffscreenWebView {
     /// Reusable buffer for RGBA frame data (avoids per-frame allocation).
     rgba_buffer: Vec<u8>,
     /// Reusable buffer for BGRA capture data (avoids per-frame ~8MB allocation).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     bgra_buffer: Vec<u8>,
 }
 

@@ -10,6 +10,9 @@ pub mod workspaces;
 use anyhow::Result;
 use rusqlite::Connection;
 use std::path::Path;
+// `warn` is only invoked inside the `#[cfg(unix)]` file-permissions block below;
+// gate the import to match so it is not flagged as unused on Windows.
+#[cfg(unix)]
 use tracing::warn;
 
 #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]

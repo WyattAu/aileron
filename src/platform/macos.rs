@@ -42,7 +42,7 @@ impl PlatformOps for MacOSPlatform {
         vec![("tab_sidebar_right", "true".into())]
     }
 
-    fn file_open_dialog(&self, title: &str, filters: &[(&str, &str)]) -> Option<PathBuf> {
+    fn file_open_dialog(&self, _title: &str, filters: &[(&str, &str)]) -> Option<PathBuf> {
         if std::env::var("AILERON_TESTING").is_ok() {
             return None;
         }

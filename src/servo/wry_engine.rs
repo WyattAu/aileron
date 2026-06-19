@@ -20,6 +20,9 @@ use glib_sys;
 #[cfg(target_os = "linux")]
 use gtk::prelude::{ContainerExt, GtkWindowExt, WidgetExt};
 use std::collections::HashMap;
+// `AtomicBool`/`Ordering` back the Linux-only `WEBVIEW_ACCEPTS_FOCUS` X11-focus
+// gate; gate the import to match so it is not flagged as unused on macOS/Windows.
+#[cfg(target_os = "linux")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use tracing::{info, warn};
@@ -694,6 +697,11 @@ a {{ color: #4db4ff; }}
     /// For GTK windows (Wayland fallback), the position is relative to the
     /// parent winit window, so we need to add the parent window's screen position.
     pub fn set_bounds_with_parent_offset(&self, bounds: Rect, parent_x: i32, parent_y: i32) {
+        // `parent_x`/`parent_y` are only consumed by the Linux GTK offset block
+        // below; on other platforms mark them inspected so clippy (-D warnings)
+        // does not flag them as unused.
+        #[cfg(not(target_os = "linux"))]
+        let _ = (parent_x, parent_y);
         if let Err(e) = self.webview.set_bounds(bounds) {
             warn!(
                 "Failed to set bounds for pane {}: {}",
