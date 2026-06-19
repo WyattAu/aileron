@@ -93,6 +93,7 @@ pub(crate) fn is_nvidia_gpu() -> bool {
 }
 
 #[cfg(not(target_os = "linux"))]
+#[allow(dead_code)] // stub kept for symbol parity; only invoked on Linux (bootstrap DMA-BUF gate)
 pub(crate) fn is_nvidia_gpu() -> bool {
     false
 }

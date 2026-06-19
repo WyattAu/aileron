@@ -604,6 +604,7 @@ impl AileronApp {
                 width,
                 height,
                 blocked_domains,
+                https_safe_list,
                 interceptor_registry,
             );
             warn!("Offscreen webview not supported on this platform");

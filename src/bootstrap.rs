@@ -248,6 +248,10 @@ pub fn run() -> anyhow::Result<()> {
     use aileron::platform::x11::x11_error_handler;
     use aileron::servo::init_gtk;
 
+    // `is_nvidia_gpu` is only invoked inside the `#[cfg(target_os = "linux")]`
+    // WebKit DMA-BUF block below; gate the import to match so it is not flagged
+    // as unused on macOS/Windows.
+    #[cfg(target_os = "linux")]
     use super::event_handlers::is_nvidia_gpu;
 
     // D1-05: Parse CLI arguments
