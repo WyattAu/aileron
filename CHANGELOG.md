@@ -2,6 +2,21 @@
 
 All notable changes to Aileron will be documented in this file.
 
+## [Unreleased] -- MCP Bridge Deduplication & CI Hardening
+
+### Changed -- Single source of truth for MCP tool dispatch
+- **`src/mcp/tcp_bridge.rs`**: removed the duplicated `handle_tool_call` re-dispatcher (~280 lines) that re-implemented every tool's command mapping inline. The TCP bridge now delegates all JSON-RPC requests (`initialize`, `tools/list`, `tools/call`, `ping`, notifications) to the same registered `McpServer` used by the in-process stdio transport. This corrects divergent behaviour: the LLM-backed tools (`summarize_page`, `translate_page`, `analyze_page`) and `read_active_pane` (which reads shared state without a main-thread round-trip) are now executed via their canonical `McpTool::execute` implementations rather than the lossy inline approximation.
+- **`src/bin/mcp_server.rs`**: simplified the standalone relay. Each request opens a fresh loopback connection (tolerates browser restarts at negligible cost for MCP's request frequency), and the redundant startup connectivity probe was removed; per-request connection errors are already mapped to well-formed JSON-RPC error responses.
+
+### Added -- Verifiability & CI coverage
+- **`src/mcp/tcp_bridge.rs`**: added six loopback integration tests (`tools_list_is_dispatched_to_server`, `tools_call_is_dispatched_to_registered_tool`, `initialize_is_dispatched_to_server`, `unknown_method_returns_method_not_found`, `unknown_tool_returns_invalid_params`, `malformed_json_returns_parse_error`) that exercise the bridge end-to-end over a real TCP socket with deterministic timeouts and explicit EOF signalling to avoid read-loop deadlocks.
+- **`src/mcp/tcp_bridge.rs`**: compile-time port-sanity invariant (`const _: () = { assert!(MCP_TCP_PORT > 1024); assert!(MCP_TCP_PORT < 49152); }`) so an invalid port fails the build.
+- **`.github/workflows/ci.yml`**: added a `wasm` job that runs `cargo check` and `cargo clippy -D warnings` against `aileron-chrome` on `wasm32-unknown-unknown`. Previously chrome WASM regressions were only caught by the local pre-commit hook, never by remote CI.
+- **`README.md`**: corrected stale test counts (1198 lib / 257 integration / 4 doc / 1459 total).
+
+### Test Results
+- 1198 library tests, 257 integration tests, 4 doc tests -- all passing with zero clippy warnings on both native and WASM targets.
+
 ## v1.0.0 (2026-06-09) -- First Stable Release
 
 ### Summary

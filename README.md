@@ -1,6 +1,6 @@
 # Aileron
 
-**v1.0.0** -- 1191 lib tests, 233 integration, 4 doc (1428 total), ~56,900 Rust LOC
+**v1.0.0** -- 1198 lib tests, 257 integration, 4 doc (1459 total), ~56,900 Rust LOC
 
 **The terminal for the web.** A keyboard-driven, tiling web environment with an embedded native terminal, built for developers who live in terminals. Written in Rust with wry (WebKitGTK) for web rendering and Leptos WASM for the browser chrome overlay.
 
@@ -122,10 +122,10 @@ LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH" ./target/debug/aileron
 ## Test
 
 ```bash
-# Unit tests (1130 tests)
+# Unit tests (1198 tests)
 cargo test --lib -- --test-threads=4
 
-# Integration tests (253 tests, 13 suites)
+# Integration tests (257 tests, 15 suites)
 cargo test --tests -- --test-threads=4
 
 # All tests + clippy (zero warnings)

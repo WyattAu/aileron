@@ -159,10 +159,7 @@ impl OllamaClient {
                                 .as_str()
                                 .unwrap_or("unknown")
                                 .to_string(),
-                            modified_at: m["modified_at"]
-                                .as_str()
-                                .unwrap_or("unknown")
-                                .to_string(),
+                            modified_at: m["modified_at"].as_str().unwrap_or("unknown").to_string(),
                         })
                     })
                     .collect()
@@ -227,11 +224,7 @@ impl OllamaClient {
     }
 
     /// Translate text to the target language.
-    pub fn translate(
-        &self,
-        text: &str,
-        target_lang: &str,
-    ) -> Result<String, OllamaError> {
+    pub fn translate(&self, text: &str, target_lang: &str) -> Result<String, OllamaError> {
         let system = "You are a professional translator. Translate the text to the target language. Return only the translation, no explanations.";
         let prompt = format!("Translate to {target_lang}:\n\n{text}");
         let resp = self.generate(&prompt, Some(system), None)?;

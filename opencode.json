@@ -5,7 +5,7 @@
       "type": "local",
       "command": ["/home/wyatt/dev/src/github.com/WyattAu/aileron/target/debug/aileron-mcp"],
       "enabled": true,
-      "env": {}
+      "timeout": 10000
     }
   }
 }

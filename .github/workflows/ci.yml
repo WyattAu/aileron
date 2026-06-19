@@ -199,6 +199,37 @@ jobs:
       - name: Check compilation
         run: cargo check --target ${{ matrix.target }}
 
+  wasm:
+    name: Chrome WASM (wasm32-unknown-unknown)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - name: Cache Cargo artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: wasm-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            wasm-${{ runner.os }}-
+
+      - name: Check chrome crate (WASM)
+        run: cargo check -p aileron-chrome --target wasm32-unknown-unknown
+
+      - name: Clippy on chrome crate (WASM, zero warnings)
+        run: cargo clippy -p aileron-chrome --target wasm32-unknown-unknown -- -D warnings
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

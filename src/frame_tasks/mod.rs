@@ -814,29 +814,27 @@ pub fn process_mcp_commands(
                 let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
                     let (text_tx, text_rx) = tokio::sync::oneshot::channel();
                     let text_tx_mutex = std::sync::Mutex::new(Some(text_tx));
-                    wry_pane.execute_js_with_callback(
-                        "document.body.innerText",
-                        move |result| {
-                            if let Ok(mut guard) = text_tx_mutex.lock()
-                                && let Some(sender) = guard.take()
-                            {
-                                let _ = sender.send(result);
-                            }
-                        },
-                    );
+                    wry_pane.execute_js_with_callback("document.body.innerText", move |result| {
+                        if let Ok(mut guard) = text_tx_mutex.lock()
+                            && let Some(sender) = guard.take()
+                        {
+                            let _ = sender.send(result);
+                        }
+                    });
                     match text_rx.blocking_recv() {
                         Ok(text) if !text.is_empty() && text != "null" => {
                             let config = crate::config::Config::load();
                             if config.llm_base_url.is_empty() {
                                 "Error: LLM not configured (llm_base_url is empty)".into()
                             } else {
-                                let client = crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
-                                    base_url: config.llm_base_url,
-                                    default_model: config.llm_model,
-                                    timeout_secs: config.llm_timeout_secs,
-                                    temperature: config.llm_temperature,
-                                    max_tokens: config.llm_max_tokens,
-                                });
+                                let client =
+                                    crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
+                                        base_url: config.llm_base_url,
+                                        default_model: config.llm_model,
+                                        timeout_secs: config.llm_timeout_secs,
+                                        temperature: config.llm_temperature,
+                                        max_tokens: config.llm_max_tokens,
+                                    });
                                 match client.summarize(&text) {
                                     Ok(summary) => format!("## Summary\n\n{summary}"),
                                     Err(e) => format!("Error: LLM summarization failed: {e}"),
@@ -857,31 +855,31 @@ pub fn process_mcp_commands(
                 let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
                     let (text_tx, text_rx) = tokio::sync::oneshot::channel();
                     let text_tx_mutex = std::sync::Mutex::new(Some(text_tx));
-                    wry_pane.execute_js_with_callback(
-                        "document.body.innerText",
-                        move |result| {
-                            if let Ok(mut guard) = text_tx_mutex.lock()
-                                && let Some(sender) = guard.take()
-                            {
-                                let _ = sender.send(result);
-                            }
-                        },
-                    );
+                    wry_pane.execute_js_with_callback("document.body.innerText", move |result| {
+                        if let Ok(mut guard) = text_tx_mutex.lock()
+                            && let Some(sender) = guard.take()
+                        {
+                            let _ = sender.send(result);
+                        }
+                    });
                     match text_rx.blocking_recv() {
                         Ok(text) if !text.is_empty() && text != "null" => {
                             let config = crate::config::Config::load();
                             if config.llm_base_url.is_empty() {
                                 "Error: LLM not configured (llm_base_url is empty)".into()
                             } else {
-                                let client = crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
-                                    base_url: config.llm_base_url,
-                                    default_model: config.llm_model,
-                                    timeout_secs: config.llm_timeout_secs,
-                                    temperature: config.llm_temperature,
-                                    max_tokens: config.llm_max_tokens,
-                                });
+                                let client =
+                                    crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
+                                        base_url: config.llm_base_url,
+                                        default_model: config.llm_model,
+                                        timeout_secs: config.llm_timeout_secs,
+                                        temperature: config.llm_temperature,
+                                        max_tokens: config.llm_max_tokens,
+                                    });
                                 match client.translate(&text, &target_lang) {
-                                    Ok(translated) => format!("## Translation ({target_lang})\n\n{translated}"),
+                                    Ok(translated) => {
+                                        format!("## Translation ({target_lang})\n\n{translated}")
+                                    }
                                     Err(e) => format!("Error: LLM translation failed: {e}"),
                                 }
                             }
@@ -897,29 +895,27 @@ pub fn process_mcp_commands(
                 let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
                     let (text_tx, text_rx) = tokio::sync::oneshot::channel();
                     let text_tx_mutex = std::sync::Mutex::new(Some(text_tx));
-                    wry_pane.execute_js_with_callback(
-                        "document.body.innerText",
-                        move |result| {
-                            if let Ok(mut guard) = text_tx_mutex.lock()
-                                && let Some(sender) = guard.take()
-                            {
-                                let _ = sender.send(result);
-                            }
-                        },
-                    );
+                    wry_pane.execute_js_with_callback("document.body.innerText", move |result| {
+                        if let Ok(mut guard) = text_tx_mutex.lock()
+                            && let Some(sender) = guard.take()
+                        {
+                            let _ = sender.send(result);
+                        }
+                    });
                     match text_rx.blocking_recv() {
                         Ok(text) if !text.is_empty() && text != "null" => {
                             let config = crate::config::Config::load();
                             if config.llm_base_url.is_empty() {
                                 "Error: LLM not configured (llm_base_url is empty)".into()
                             } else {
-                                let client = crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
-                                    base_url: config.llm_base_url,
-                                    default_model: config.llm_model,
-                                    timeout_secs: config.llm_timeout_secs,
-                                    temperature: config.llm_temperature,
-                                    max_tokens: config.llm_max_tokens,
-                                });
+                                let client =
+                                    crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
+                                        base_url: config.llm_base_url,
+                                        default_model: config.llm_model,
+                                        timeout_secs: config.llm_timeout_secs,
+                                        temperature: config.llm_temperature,
+                                        max_tokens: config.llm_max_tokens,
+                                    });
                                 match client.analyze(&text) {
                                     Ok(analysis) => format!("## Analysis\n\n{analysis}"),
                                     Err(e) => format!("Error: LLM analysis failed: {e}"),
@@ -1005,13 +1001,27 @@ pub fn spawn_mcp_server(mcp_bridge: &McpBridge) {
     use crate::mcp::tools;
     let mcp_state = mcp_bridge.state.clone();
     let mcp_command_tx = mcp_bridge.command_tx.clone();
-    let tool_list = tools::create_tools(mcp_state, mcp_command_tx);
+
+    // Tools for the TCP bridge: constructed with their own `command_tx` clone so
+    // they can forward main-thread work. The bridge delegates every JSON-RPC
+    // request to a registered `McpServer`, so this set is the single source of
+    // truth for TCP-driven tool dispatch.
+    let tcp_tools = tools::create_tools(mcp_state.clone(), mcp_command_tx.clone());
+    crate::mcp::tcp_bridge::start_tcp_mcp_server(tcp_tools, mcp_command_tx);
+
+    // A separate tool set backs the in-process stdio transport; both transports
+    // therefore behave identically without sharing mutable state.
+    let stdio_tools = tools::create_tools(mcp_state, mcp_bridge.command_tx.clone());
     let mut mcp_server = crate::mcp::McpServer::new();
-    for tool in tool_list {
+    for tool in stdio_tools {
         mcp_server.register_tool(tool);
     }
+
     let transport = crate::mcp::McpTransport::new(mcp_server);
-    info!("MCP server starting on background thread (stdio transport)");
+    info!(
+        "MCP server starting (stdio + TCP bridge on port {})",
+        crate::mcp::MCP_TCP_PORT
+    );
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
