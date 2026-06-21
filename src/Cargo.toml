@@ -128,7 +128,7 @@ rquickjs = { version = "0.11", features = ["loader", "futures"] }
 image = { version = "0.25", default-features = false, features = ["png"], optional = true }
 
 # PNG encoding (for test harness screenshot capture)
-png = "0.17"
+png = "0.18"
 
 # Base64 encoding (for MCP screenshot tool)
 base64 = { version = "0.22", optional = true }
