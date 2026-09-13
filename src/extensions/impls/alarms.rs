@@ -35,7 +35,7 @@ impl AileronAlarmsApi {
         let mut to_fire = Vec::new();
         let mut alarms = self.alarms.write();
 
-        for (_name, alarm) in alarms.iter_mut() {
+        for alarm in alarms.values_mut() {
             if alarm.scheduled_time <= now_ms {
                 to_fire.push(alarm.clone());
 

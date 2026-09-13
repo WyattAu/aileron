@@ -75,7 +75,9 @@ fn test_offscreen_webview_creates_and_captures() {
     // Note: this check may not pass because WebKitGTK may use hardware acceleration
     // or a different rendering path. The non-zero check above is the primary assertion.
     let _has_green = pixels
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .any(|chunk| chunk.get(1).copied().unwrap_or(0) > 200);
 
     // Note: the green background check may not pass because WebKitGTK may use

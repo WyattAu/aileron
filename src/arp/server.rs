@@ -296,7 +296,7 @@ impl ArpServer {
         let sessions = self.sessions.clone();
         drop(self.runtime.spawn(async move {
             let sessions = sessions.lock().await;
-            for (_id, sender) in sessions.iter() {
+            for sender in sessions.values() {
                 let _ = sender.send(msg.clone());
             }
         }));

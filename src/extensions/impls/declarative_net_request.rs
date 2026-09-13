@@ -40,7 +40,7 @@ impl AileronDeclarativeNetRequestApi {
 
         {
             let static_sets = self.static_rulesets.read();
-            for (_, rs) in static_sets.iter() {
+            for rs in static_sets.values() {
                 if rs.enabled {
                     all.extend(rs.rules.iter().cloned());
                 }

@@ -898,7 +898,7 @@ a {{ color: #4db4ff; }}
                 self.rgba_buffer
                     .extend_from_slice(&bgra[src_start..src_start + row_bytes]);
             }
-            for chunk in self.rgba_buffer.chunks_exact_mut(4) {
+            for chunk in self.rgba_buffer.as_chunks_mut::<4>().0 {
                 chunk.swap(0, 2);
             }
 
@@ -1136,7 +1136,7 @@ fn bgra_to_rgba(bgra: &[u8], width: usize, height: usize, rowstride: u32) -> Vec
         let row_start = row * stride;
         let row_end = row_start + row_bytes;
         let row_data = &bgra[row_start..row_end];
-        for chunk in row_data.chunks_exact(4) {
+        for chunk in row_data.as_chunks::<4>().0 {
             rgba.push(chunk[2]); // R
             rgba.push(chunk[1]); // G
             rgba.push(chunk[0]); // B
@@ -1243,7 +1243,7 @@ impl OffscreenWebViewManager {
     /// Drain events from all panes, returning just the events (without pane_id tuples).
     pub fn drain_all_events_flat(&mut self) -> Vec<WryEvent> {
         let mut events = Vec::new();
-        for (_pane_id, pane) in self.panes.iter_mut() {
+        for pane in self.panes.values_mut() {
             events.extend(pane.drain_events());
         }
         events
@@ -1343,7 +1343,7 @@ impl OffscreenWebViewManager {
             let src_start = row * stride;
             buf.extend_from_slice(&bgra[src_start..src_start + row_bytes]);
         }
-        for chunk in buf.chunks_exact_mut(4) {
+        for chunk in buf.as_chunks_mut::<4>().0 {
             chunk.swap(0, 2);
         }
         Some(buf)

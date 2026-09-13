@@ -207,7 +207,7 @@ impl GfxState {
         // Convert RGBA to BGRA for the surface format, reusing the buffer.
         self.bgra_buffer.clear();
         self.bgra_buffer.reserve(buffer_size);
-        for chunk in rgba.chunks_exact(4) {
+        for chunk in rgba.as_chunks::<4>().0 {
             self.bgra_buffer.push(chunk[2]); // B
             self.bgra_buffer.push(chunk[1]); // G
             self.bgra_buffer.push(chunk[0]); // R

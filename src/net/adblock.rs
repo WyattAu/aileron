@@ -569,9 +569,9 @@ impl AdBlocker {
             return None;
         }
 
-        let host = match url.host_str() {
-            Some(h) => h.to_lowercase(),
-            None => return None,
+        let host = {
+            let h = url.host_str()?;
+            h.to_lowercase()
         };
 
         if self.is_whitelisted(&host) {

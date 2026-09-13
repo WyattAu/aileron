@@ -49,7 +49,7 @@ fn frame_capture_benchmarks(c: &mut Criterion) {
         b.iter_batched(
             || {
                 let mut buf = vec![0u8; pixel_count];
-                for chunk in buf.chunks_exact_mut(4) {
+                for chunk in buf.as_chunks_mut::<4>().0 {
                     chunk[0] = 0xBB;
                     chunk[1] = 0x11;
                     chunk[2] = 0x22;
@@ -65,7 +65,7 @@ fn frame_capture_benchmarks(c: &mut Criterion) {
                     let src_start = row * stride;
                     rgba.extend_from_slice(&bgra[src_start..src_start + row_bytes]);
                 }
-                for chunk in rgba.chunks_exact_mut(4) {
+                for chunk in rgba.as_chunks_mut::<4>().0 {
                     chunk.swap(0, 2);
                 }
                 black_box(rgba)
@@ -78,7 +78,7 @@ fn frame_capture_benchmarks(c: &mut Criterion) {
         b.iter_batched(
             || {
                 let mut buf = vec![0u8; pixel_count];
-                for chunk in buf.chunks_exact_mut(4) {
+                for chunk in buf.as_chunks_mut::<4>().0 {
                     chunk[0] = 0xBB;
                     chunk[1] = 0x11;
                     chunk[2] = 0x22;
@@ -93,7 +93,7 @@ fn frame_capture_benchmarks(c: &mut Criterion) {
                 for row in 0..height {
                     let src_start = row * stride;
                     let row_data = &bgra[src_start..src_start + row_bytes];
-                    for chunk in row_data.chunks_exact(4) {
+                    for chunk in row_data.as_chunks::<4>().0 {
                         rgba.push(chunk[2]);
                         rgba.push(chunk[1]);
                         rgba.push(chunk[0]);
@@ -124,7 +124,7 @@ fn frame_capture_benchmarks(c: &mut Criterion) {
                 let src_start = row * stride;
                 rgba.extend_from_slice(&f.pixels[src_start..src_start + row_bytes]);
             }
-            for chunk in rgba.chunks_exact_mut(4) {
+            for chunk in rgba.as_chunks_mut::<4>().0 {
                 chunk.swap(0, 2);
             }
             black_box(rgba)
