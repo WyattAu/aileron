@@ -46,6 +46,7 @@ pub struct WebdavFileInfo {
 /// WebDAV transport client.
 pub struct WebdavClient {
     config: WebdavConfig,
+    retry: loop_retry::RetryConfig,
     http: reqwest::blocking::Client,
 }
 
@@ -55,7 +56,22 @@ impl WebdavClient {
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .unwrap_or_default();
-        Self { config, http }
+        // Estate retry policy (loop-retry): exponential backoff with jitter,
+        // capped at the configured ceiling. The sync loop is blocking, so the
+        // policy drives thread::sleep below; a future async migration can swap
+        // in loop_retry::with_backoff directly.
+        let retry = loop_retry::RetryConfig {
+            max_retries: config.max_retries,
+            initial_delay: std::time::Duration::from_millis(config.retry_delay_ms),
+            max_delay: std::time::Duration::from_millis(config.max_retry_delay_ms),
+            backoff_multiplier: 2.0,
+            jitter: true,
+        };
+        Self {
+            config,
+            retry,
+            http,
+        }
     }
 
     /// Build the full URL for a relative path.
@@ -87,12 +103,9 @@ impl WebdavClient {
 
         for attempt in 0..=self.config.max_retries {
             if attempt > 0 {
-                let delay = std::cmp::min(
-                    self.config.retry_delay_ms * 2u64.pow(attempt - 1),
-                    self.config.max_retry_delay_ms,
-                );
-                debug!("Retry attempt {attempt}, waiting {delay}ms");
-                std::thread::sleep(std::time::Duration::from_millis(delay));
+                let delay = self.retry.delay_for_attempt(attempt - 1);
+                debug!("Retry attempt {attempt}, waiting {}ms", delay.as_millis());
+                std::thread::sleep(delay);
             }
 
             let builder = build_request(&self.http);

@@ -123,6 +123,7 @@ dependencies = [
  "gtk",
  "image",
  "keyring",
+ "loop-retry",
  "mlua",
  "notify",
  "notify-debouncer-mini",
@@ -3157,6 +3158,17 @@ name = "log"
 version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
+
+[[package]]
+name = "loop-retry"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea4eb89319ccff87b2b1b93c104d55488a3c4e3dbe49a200f2d6af182a8bc0e2"
+dependencies = [
+ "rand 0.9.4",
+ "thiserror 2.0.18",
+ "tokio",
+]
 
 [[package]]
 name = "lru-slab"

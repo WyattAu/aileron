@@ -115,6 +115,9 @@ attohttpc = "0.28"
 reqwest = { version = "0.13", default-features = false, features = ["stream", "rustls", "blocking"] }
 futures-util = "0.3"
 
+# Estate retry policy (exponential backoff + jitter) for WebDAV sync
+loop-retry = "0.1"
+
 # Regex (for site settings pattern matching)
 regex = "1"
 
@@ -207,6 +210,11 @@ path = "../tests/offscreen_render_test.rs"
 [[test]]
 name = "sync_integration"
 path = "../tests/sync_integration.rs"
+
+[[test]]
+name = "sync_retry_seam"
+path = "../tests/sync_retry_seam.rs"
+required-features = ["sync"]
 
 [[test]]
 name = "terminal_integration"
