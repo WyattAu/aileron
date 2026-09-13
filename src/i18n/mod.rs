@@ -231,6 +231,10 @@ pub fn tr_locale(key: TrKey, locale: Locale) -> &'static str {
 mod tests {
     use super::*;
 
+    /// Serializes tests that mutate the global `LOCALE_OVERRIDE`: parallel
+    /// set/clear races made `tr()` assertions flaky (observed in pre-push).
+    static LOCALE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     // --- Pure locale parsing tests (no env var mutation, safe for parallelism) ---
 
     #[test]
@@ -296,6 +300,7 @@ mod tests {
 
     #[test]
     fn test_locale_override_set_clear_and_precedence() {
+        let _locale_guard = LOCALE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // Start clean
         clear_locale_override();
         let original = detect_locale();
@@ -385,6 +390,7 @@ mod tests {
     #[test]
     fn test_tr_fallback() {
         init();
+        let _locale_guard = LOCALE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_locale(Locale::English);
         assert_eq!(tr(TrKey("unknown_key")), "unknown_key");
         clear_locale_override();
@@ -393,6 +399,7 @@ mod tests {
     #[test]
     fn test_tr_known_key() {
         init();
+        let _locale_guard = LOCALE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_locale(Locale::English);
         assert_eq!(tr(TrKey("mode_normal")), "NORMAL");
         clear_locale_override();
@@ -407,6 +414,7 @@ mod tests {
     #[test]
     fn test_tr_status_pinned() {
         init();
+        let _locale_guard = LOCALE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_locale(Locale::English);
         assert_eq!(tr(TrKey("status_pinned")), "Pane pinned");
         clear_locale_override();
@@ -415,6 +423,7 @@ mod tests {
     #[test]
     fn test_tr_status_unpinned() {
         init();
+        let _locale_guard = LOCALE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_locale(Locale::English);
         assert_eq!(tr(TrKey("status_unpinned")), "Pane unpinned");
         clear_locale_override();
@@ -423,6 +432,7 @@ mod tests {
     #[test]
     fn test_tr_cmd_quit() {
         init();
+        let _locale_guard = LOCALE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_locale(Locale::English);
         assert_eq!(tr(TrKey("cmd_quit")), "Quit Aileron");
         clear_locale_override();
@@ -431,6 +441,7 @@ mod tests {
     #[test]
     fn test_tr_cmd_new_tab() {
         init();
+        let _locale_guard = LOCALE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_locale(Locale::English);
         assert_eq!(tr(TrKey("cmd_new_tab")), "New tab");
         clear_locale_override();
@@ -439,6 +450,7 @@ mod tests {
     #[test]
     fn test_tr_err_vault_locked() {
         init();
+        let _locale_guard = LOCALE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_locale(Locale::English);
         assert_eq!(
             tr(TrKey("err_vault_locked")),
@@ -450,6 +462,7 @@ mod tests {
     #[test]
     fn test_tr_status_blocked() {
         init();
+        let _locale_guard = LOCALE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_locale(Locale::English);
         assert_eq!(tr(TrKey("status_blocked")), "Blocked by ad blocker");
         clear_locale_override();
@@ -458,6 +471,7 @@ mod tests {
     #[test]
     fn test_tr_status_credential_saved() {
         init();
+        let _locale_guard = LOCALE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_locale(Locale::English);
         assert_eq!(tr(TrKey("status_credential_saved")), "Credential saved");
         clear_locale_override();
@@ -466,6 +480,7 @@ mod tests {
     #[test]
     fn test_tr_status_vault_locked() {
         init();
+        let _locale_guard = LOCALE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_locale(Locale::English);
         assert_eq!(tr(TrKey("status_vault_locked")), "Vault locked");
         clear_locale_override();
@@ -474,6 +489,7 @@ mod tests {
     #[test]
     fn test_tr_fallback_to_english() {
         init();
+        let _locale_guard = LOCALE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_locale(Locale::Chinese);
         let val = tr(TrKey("mode_normal"));
         assert_eq!(val, "普通");
