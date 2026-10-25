@@ -481,6 +481,29 @@ fn dispatch_active_js(
     dispatch_active_js_with_callback(wry_panes, offscreen_panes, pane_id, js, |_| {})
 }
 
+/// Commands that wait for JS results via wait_for_js_result() and therefore
+/// pump the GTK loop - unsafe to run while the active page is loading
+/// (load-phase IPC handlers re-enter borrowed state -> self-deadlock).
+#[cfg(feature = "mcp")]
+fn needs_pump_wait(command: &McpCommand) -> bool {
+    matches!(
+        command,
+        McpCommand::ExecuteJs { .. }
+            | McpCommand::SelectOption { .. }
+            | McpCommand::ReadPageStructure { .. }
+            | McpCommand::ExtractStructuredData { .. }
+            | McpCommand::SummarizePage { .. }
+            | McpCommand::TranslatePage { .. }
+            | McpCommand::AnalyzePage { .. }
+    )
+}
+
+/// Pump-waiting commands deferred while a page load is in flight.
+/// Module-level because process_mcp_commands is a free fn and the bridge
+/// channel cannot take commands back once polled.
+#[cfg(feature = "mcp")]
+static DEFERRED_MCP_COMMANDS: std::sync::Mutex<Vec<McpCommand>> = std::sync::Mutex::new(Vec::new());
+
 #[cfg(feature = "mcp")]
 pub fn process_mcp_commands(
     mcp_bridge: &McpBridge,
@@ -489,7 +512,48 @@ pub fn process_mcp_commands(
     app_state: &mut AppState,
     offscreen_panes: &mut OffscreenWebViewManager,
 ) {
-    let mcp_commands: Vec<McpCommand> = mcp_bridge.poll_commands().collect();
+    // Load-phase deadlock guard: pump-waiting commands (wait_for_js_result
+    // pumps the GTK loop) must not run while the active page is loading -
+    // load-phase IPC handlers re-enter the state this function holds &mut,
+    // wedging the pipeline in a futex (observed 2026-10-25). They are parked
+    // and replayed once the load completes. Everything else (navigate,
+    // tabs, bookmarks, screenshot, fire-and-forget JS) is safe mid-load.
+    // Park BEFORE polling: poll_commands() drains the bridge, and dropped
+    // commands never answer.
+    let mut mcp_commands: Vec<McpCommand> = {
+        DEFERRED_MCP_COMMANDS
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .drain(..)
+            .collect()
+    };
+    mcp_commands.extend(mcp_bridge.poll_commands());
+    let loading = offscreen_panes
+        .get(&active_id)
+        .map(|p| p.is_loading())
+        .unwrap_or(false);
+    let mut deferred = Vec::new();
+    if loading {
+        let mut kept = Vec::with_capacity(mcp_commands.len());
+        for c in mcp_commands {
+            if needs_pump_wait(&c) {
+                deferred.push(c);
+            } else {
+                kept.push(c);
+            }
+        }
+        mcp_commands = kept;
+    }
+    if !deferred.is_empty() {
+        DEFERRED_MCP_COMMANDS
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .extend(deferred);
+    }
+    if mcp_commands.is_empty() {
+        return;
+    }
+    tracing::debug!("mcp: processing {} command(s)", mcp_commands.len());
 
     for command in mcp_commands {
         match command {
@@ -799,9 +863,9 @@ pub fn process_mcp_commands(
                     },
                 );
                 let result = if dispatched {
-                    match response_rx.blocking_recv() {
-                        Ok(r) => r,
-                        Err(_) => "Error: select option timed out".into(),
+                    match wait_for_js_result(response_rx, std::time::Duration::from_secs(10)) {
+                        Some(r) => r,
+                        None => "Error: select option timed out".into(),
                     }
                 } else {
                     "Error: no active pane".into()
@@ -850,9 +914,9 @@ pub fn process_mcp_commands(
                     },
                 );
                 let result = if dispatched {
-                    match response_rx.blocking_recv() {
-                        Ok(r) => r,
-                        Err(_) => "Error: page structure read timed out".into(),
+                    match wait_for_js_result(response_rx, std::time::Duration::from_secs(10)) {
+                        Some(r) => r,
+                        None => "Error: page structure read timed out".into(),
                     }
                 } else {
                     "Error: no active pane".into()
@@ -899,9 +963,9 @@ pub fn process_mcp_commands(
                     },
                 );
                 let result = if dispatched {
-                    match response_rx.blocking_recv() {
-                        Ok(r) => r,
-                        Err(_) => "Error: structured data extraction timed out".into(),
+                    match wait_for_js_result(response_rx, std::time::Duration::from_secs(10)) {
+                        Some(r) => r,
+                        None => "Error: structured data extraction timed out".into(),
                     }
                 } else {
                     "Error: no active pane".into()
