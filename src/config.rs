@@ -464,7 +464,10 @@ impl Default for Config {
             arp_token: None,
             keybindings: std::collections::HashMap::new(),
             spellcheck_enabled: true,
-            memory_limit_mb: 0,
+            // 8 GiB default: evict LRU background tabs before the kernel OOM
+            // killer does (2026-10-25: idle browser reached ~50GB via the
+            // snapshot pipeline and was OOM-killed with the guard disabled).
+            memory_limit_mb: 8192,
             llm_base_url: "http://localhost:11434".into(),
             llm_model: "llama3.2".into(),
             llm_timeout_secs: 120,

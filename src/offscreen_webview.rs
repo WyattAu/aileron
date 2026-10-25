@@ -97,6 +97,18 @@ pub struct OffscreenWebView {
     /// would produce a frame with different colors, causing visual flashing).
     #[cfg(target_os = "linux")]
     snapshot_in_flight: bool,
+    /// When the in-flight snapshot was requested (stall detection).
+    #[cfg(target_os = "linux")]
+    snapshot_requested_at: Option<std::time::Instant>,
+    /// Consecutive snapshot stalls (request→result > SNAPSHOT_STALL_THRESHOLD).
+    /// A saturated WebKitGTK compositor gets worse with every retry — observed
+    /// 8-minute callback delays and ~24GB shmem growth ending in kernel OOM.
+    /// Drives an exponential capture cooldown.
+    #[cfg(target_os = "linux")]
+    snapshot_stall_streak: u32,
+    /// Skip captures until this instant (compositor backpressure).
+    #[cfg(target_os = "linux")]
+    capture_cooldown_until: Option<std::time::Instant>,
     /// Whether a micro-resize redraw is needed after page load.
     needs_force_redraw: bool,
     /// How many times we've requested a snapshot (diagnostic counter).
@@ -114,6 +126,20 @@ pub struct OffscreenWebView {
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     bgra_buffer: Vec<u8>,
 }
+
+/// A snapshot taking at least this long signals a saturated WebKitGTK
+/// compositor (healthy snapshots complete in well under a second).
+#[cfg(target_os = "linux")]
+const SNAPSHOT_STALL_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(5);
+/// Abandon snapshots pending longer than this; the compositor is stuck and
+/// the queued work will not complete in time to be useful.
+#[cfg(target_os = "linux")]
+const SNAPSHOT_ABORT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Cooldown applied after repeated stalls (doubles per stall, capped).
+#[cfg(target_os = "linux")]
+const SNAPSHOT_COOLDOWN_BASE: std::time::Duration = std::time::Duration::from_secs(30);
+#[cfg(target_os = "linux")]
+const SNAPSHOT_COOLDOWN_MAX: std::time::Duration = std::time::Duration::from_secs(300);
 
 impl OffscreenWebView {
     /// Create a new offscreen webview pane with full wry builder configuration.
@@ -425,6 +451,9 @@ a {{ color: #4db4ff; }}
             dirty: true,
             snapshot_rx: None,
             snapshot_in_flight: false,
+            snapshot_requested_at: None,
+            snapshot_stall_streak: 0,
+            capture_cooldown_until: None,
             needs_force_redraw: false,
             snapshot_request_count: 0,
             event_rx,
@@ -530,6 +559,19 @@ a {{ color: #4db4ff; }}
     #[cfg(target_os = "linux")]
     #[must_use]
     pub fn capture_frame(&mut self) -> Option<&FrameData> {
+        // Compositor backpressure: while cooling down after snapshot stalls,
+        // skip captures entirely (don't even pump GTK — that's the point).
+        if let Some(until) = self.capture_cooldown_until {
+            if std::time::Instant::now() < until {
+                return None;
+            }
+            self.capture_cooldown_until = None;
+            info!(
+                "capture_frame: pane {} cooldown elapsed, resuming captures",
+                &self.pane_id.to_string()[..8],
+            );
+        }
+
         // Pump a few GTK events so pending renders can start, but don't
         // block the main thread. WebKitGTK layout/compositing can queue
         // many events that take hundreds of ms each — we only need a
@@ -595,6 +637,29 @@ a {{ color: #4db4ff; }}
     fn capture_frame_snapshot(&mut self) -> Option<FrameData> {
         // Non-blocking snapshot: request on first call, collect on subsequent calls.
         //
+        // Step 0: abandon snapshots stuck longer than SNAPSHOT_ABORT_TIMEOUT.
+        //         A late WebKitGTK callback (observed: 8 minutes) means the
+        //         compositor is saturated; keeping the request "in flight"
+        //         would block this pane's capture pipeline forever.
+        if self.snapshot_in_flight {
+            let stalled_for = self
+                .snapshot_requested_at
+                .map(|t| t.elapsed())
+                .unwrap_or_default();
+            if stalled_for > SNAPSHOT_ABORT_TIMEOUT {
+                warn!(
+                    "capture_frame_snapshot: pane {} snapshot abandoned after {:.1}s — applying backpressure",
+                    &self.pane_id.to_string()[..8],
+                    stalled_for.as_secs_f32(),
+                );
+                self.snapshot_rx = None;
+                self.snapshot_in_flight = false;
+                self.snapshot_requested_at = None;
+                self.note_snapshot_latency(stalled_for);
+                return None;
+            }
+        }
+        //
         // Step 1: If no pending snapshot, request one and return None.
         //         The snapshot callback will fire during a future pump_gtk().
         if self.snapshot_rx.is_none() {
@@ -647,6 +712,7 @@ a {{ color: #4db4ff; }}
             );
             self.snapshot_rx = Some(rx);
             self.snapshot_in_flight = true;
+            self.snapshot_requested_at = Some(std::time::Instant::now());
             // Pump GTK events aggressively to let the snapshot pipeline
             // complete. The callback needs the GL thread to finish, which
             // requires processing many GTK/Weyland events. We pump for up
@@ -667,6 +733,12 @@ a {{ color: #4db4ff; }}
                             self.snapshot_rx = None;
                             self.snapshot_in_flight = false;
                             self.snapshot_request_count = 0;
+                            let elapsed = self
+                                .snapshot_requested_at
+                                .take()
+                                .map(|t| t.elapsed())
+                                .unwrap_or_default();
+                            self.note_snapshot_latency(elapsed);
                             return self.process_snapshot_surface(surface);
                         }
                         Ok(Err(e)) => {
@@ -674,6 +746,7 @@ a {{ color: #4db4ff; }}
                             self.snapshot_rx = None;
                             self.snapshot_in_flight = false;
                             self.snapshot_request_count = 0;
+                            self.snapshot_requested_at = None;
                             return None;
                         }
                         Err(_) => {}
@@ -694,12 +767,19 @@ a {{ color: #4db4ff; }}
                 );
                 self.snapshot_rx = None;
                 self.snapshot_in_flight = false;
+                let elapsed = self
+                    .snapshot_requested_at
+                    .take()
+                    .map(|t| t.elapsed())
+                    .unwrap_or_default();
+                self.note_snapshot_latency(elapsed);
                 self.process_snapshot_surface(surface)
             }
             Ok(Err(e)) => {
                 warn!("capture_frame_snapshot: error: {}", e);
                 self.snapshot_rx = None;
                 self.snapshot_in_flight = false;
+                self.snapshot_requested_at = None;
                 None
             }
             Err(_) => {
@@ -800,6 +880,37 @@ a {{ color: #4db4ff; }}
     #[must_use]
     pub fn capture_frame(&mut self) -> Option<&FrameData> {
         None
+    }
+
+    /// Track snapshot latency and apply exponential cooldown on stalls.
+    ///
+    /// Backpressure for a saturated WebKitGTK compositor: once snapshots
+    /// start returning late, every additional request queues more GL work
+    /// and makes latency worse (observed: callbacks 8 minutes late and
+    /// ~24GB of shared-memory surfaces accumulating until kernel OOM).
+    /// Two consecutive stalls start a 30s capture cooldown that doubles
+    /// per further stall, capped at SNAPSHOT_COOLDOWN_MAX.
+    #[cfg(target_os = "linux")]
+    fn note_snapshot_latency(&mut self, elapsed: std::time::Duration) {
+        if elapsed >= SNAPSHOT_STALL_THRESHOLD {
+            self.snapshot_stall_streak = self.snapshot_stall_streak.saturating_add(1);
+            if self.snapshot_stall_streak >= 2 {
+                let shift = self.snapshot_stall_streak.saturating_sub(2).min(4);
+                let cooldown = SNAPSHOT_COOLDOWN_BASE
+                    .saturating_mul(1 << shift)
+                    .min(SNAPSHOT_COOLDOWN_MAX);
+                self.capture_cooldown_until = Some(std::time::Instant::now() + cooldown);
+                warn!(
+                    "capture_frame_snapshot: pane {} slow snapshot ({:.1}s) — cooling down captures for {}s",
+                    &self.pane_id.to_string()[..8],
+                    elapsed.as_secs_f32(),
+                    cooldown.as_secs(),
+                );
+            }
+        } else {
+            self.snapshot_stall_streak = 0;
+            self.capture_cooldown_until = None;
+        }
     }
 
     /// Fallback: capture via OffscreenWindow::pixbuf() (cairo-only rendering).

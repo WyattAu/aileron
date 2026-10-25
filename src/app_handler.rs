@@ -1216,40 +1216,42 @@ impl ApplicationHandler for AileronApp {
                 let mut comp_h: u32 = 0;
 
                 if let Some(active_id) = active_id {
-                    let pane_result = self.offscreen_panes.get_mut(&active_id).and_then(|p| {
-                        let frame = p.frame()?;
-                        let w = frame.width;
-                        let h = frame.height;
-                        let rgba = p.frame_rgba()?;
-                        Some((rgba.to_vec(), w, h))
-                    });
-                    match pane_result {
-                        Some((rgba, w, h)) => {
-                            composited = Some(rgba);
-                            comp_w = w;
-                            comp_h = h;
-                            textures_updated = true;
-                        }
-                        None => {
-                            tracing::debug!(
-                                "content pane {} not available for compositing",
-                                &active_id.to_string()[..8]
-                            );
+                    // Dimensions first (immutable borrow), then the pooled RGBA
+                    // copy (mutable borrow). The pooled path reuses texture
+                    // buffers across frames instead of allocating ~4MB per
+                    // pane per frame (≈480MB/s of allocator churn at 60fps).
+                    let dims = self
+                        .offscreen_panes
+                        .get(&active_id)
+                        .and_then(|p| p.frame().map(|f| (f.width, f.height)));
+                    if let Some((w, h)) = dims {
+                        match self.offscreen_panes.frame_rgba_pooled(&active_id) {
+                            Some(rgba) => {
+                                composited = Some(rgba);
+                                comp_w = w;
+                                comp_h = h;
+                                textures_updated = true;
+                            }
+                            None => {
+                                tracing::debug!(
+                                    "content pane {} not available for compositing",
+                                    &active_id.to_string()[..8]
+                                );
+                            }
                         }
                     }
                 }
 
                 // Step 2: Alpha-composite chrome overlay on top of content.
                 if has_chrome {
-                    let chrome_result =
-                        self.offscreen_panes.get_mut(&chrome_pane_id).and_then(|p| {
-                            let frame = p.frame()?;
-                            let cw = frame.width;
-                            let ch = frame.height;
-                            let rgba = p.frame_rgba()?;
-                            Some((rgba.to_vec(), cw, ch))
-                        });
-                    if let Some((chrome_rgba, cw, ch)) = chrome_result {
+                    let chrome_dims = self
+                        .offscreen_panes
+                        .get(&chrome_pane_id)
+                        .and_then(|p| p.frame().map(|f| (f.width, f.height)));
+                    if let Some((cw, ch)) = chrome_dims
+                        && let Some(chrome_rgba) =
+                            self.offscreen_panes.frame_rgba_pooled(&chrome_pane_id)
+                    {
                         if let Some(ref mut buf) = composited {
                             // Both buffers present — alpha-composite chrome over content.
                             // Chrome overlay uses transparent background; only the UI
@@ -1276,6 +1278,9 @@ impl ApplicationHandler for AileronApp {
                                     buf[ci + 3] = 255; // fully opaque result
                                 }
                             }
+                            // Chrome buffer no longer needed — return it to the pool.
+                            self.offscreen_panes
+                                .release_texture_buffer(cw, ch, chrome_rgba);
                         } else {
                             // No content pane — show chrome alone.
                             composited = Some(chrome_rgba);
@@ -1285,10 +1290,13 @@ impl ApplicationHandler for AileronApp {
                         textures_updated = true;
                     }
                 }
+                // has_chrome block closed above.
 
                 // Step 3: Single render_frame call with composited buffer.
-                if let Some(rgba) = composited {
+                if let Some(rgba) = composited.take() {
                     gfx.render_frame(&rgba, comp_w, comp_h);
+                    self.offscreen_panes
+                        .release_texture_buffer(comp_w, comp_h, rgba);
                 }
             }
         }
