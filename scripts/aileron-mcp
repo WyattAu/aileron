@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# aileron-mcp -- self-healing launcher for the standalone Aileron MCP relay.
+#
+# MCP clients (e.g. OpenCode) should point at this wrapper instead of
+# target/debug/aileron-mcp directly. Disk-cleanup routines ( nightly-cleanup
+# timers, cargo clean ) routinely wipe Rust target/ dirs, which would leave the
+# client with a dangling binary path. Resolution order:
+#
+#   1. target/debug/aileron-mcp   freshest build from current sources
+#   2. ~/.cargo/bin/aileron-mcp   stable install (survives target/ cleanups)
+#   3. rebuild from current sources into target/, then exec it
+#
+# stdout is reserved for the MCP JSON-RPC protocol; every diagnostic goes to
+# stderr. See README "MCP relay" for client configuration.
+
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEV_BIN="$REPO_DIR/target/debug/aileron-mcp"
+INSTALLED_BIN="$HOME/.cargo/bin/aileron-mcp"
+
+if [[ -x "$DEV_BIN" ]]; then
+    exec "$DEV_BIN" "$@"
+fi
+
+if [[ -x "$INSTALLED_BIN" ]]; then
+    echo "[aileron-mcp] $DEV_BIN missing (cleaned by a disk-cleanup job?) — falling back to $INSTALLED_BIN" >&2
+    exec "$INSTALLED_BIN" "$@"
+fi
+
+echo "[aileron-mcp] no relay binary found — rebuilding from source (can take minutes on a cold cache)..." >&2
+if ! (cd "$REPO_DIR" && cargo build --bin aileron-mcp --quiet 1>&2); then
+    echo "[aileron-mcp] rebuild failed; install a stable copy with: cargo install --path src --bin aileron-mcp --debug" >&2
+    exit 1
+fi
+echo "[aileron-mcp] rebuild complete" >&2
+exec "$DEV_BIN" "$@"

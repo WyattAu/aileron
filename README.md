@@ -119,6 +119,38 @@ cargo build
 LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH" ./target/debug/aileron
 ```
 
+### MCP relay (`aileron-mcp`)
+
+The browser hosts an MCP TCP bridge on `127.0.0.1:9543`; `aileron-mcp` is the
+standalone stdio relay that lets external MCP clients (OpenCode, Claude, ...)
+drive the browser. The browser must be running for the relay to answer
+requests — it forwards each JSON-RPC line over the bridge.
+
+If your machine runs a nightly disk cleanup that deletes Rust `target/`
+directories, point MCP clients at the self-healing launcher instead of the
+raw binary — it prefers the fresh dev build, falls back to the stable
+`cargo install` copy, and rebuilds from source only as a last resort:
+
+```bash
+cargo install --path src --bin aileron-mcp --debug   # stable fallback copy
+./scripts/aileron-mcp                                # launch via wrapper
+```
+
+OpenCode config example:
+
+```json
+{
+  "mcp": {
+    "aileron": {
+      "type": "local",
+      "command": ["/path/to/aileron/scripts/aileron-mcp"],
+      "enabled": true,
+      "timeout": 60000
+    }
+  }
+}
+```
+
 ## Test
 
 ```bash
