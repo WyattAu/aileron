@@ -422,6 +422,65 @@ pub fn process_pending_wry_actions(
     }
 }
 
+/// Wait for a oneshot JS result while pumping the GTK main loop.
+///
+/// Offscreen (Wayland) webviews deliver script callbacks on the GTK main
+/// loop; a plain `blocking_recv()` would deadlock the very loop that must
+/// run for the callback to fire. Pumping also covers wry (X11) delivery.
+fn wait_for_js_result(
+    mut rx: tokio::sync::oneshot::Receiver<String>,
+    timeout: std::time::Duration,
+) -> Option<String> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match rx.try_recv() {
+            Ok(v) => return Some(v),
+            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => return None,
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        pump_gtk_loop();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+/// Dispatch JS execution on a pane regardless of rendering backend: native
+/// wry pane (X11) or offscreen pane (Wayland). Returns false when the pane
+/// exists in neither map.
+///
+/// Before 2026-10-25 the MCP browsing tools only consulted `wry_panes`,
+/// which left every read/interaction tool dead on Wayland ("no active
+/// pane") — the default Linux session type.
+fn dispatch_active_js_with_callback(
+    wry_panes: &WryPaneManager,
+    offscreen_panes: &mut OffscreenWebViewManager,
+    pane_id: &uuid::Uuid,
+    js: &str,
+    callback: impl Fn(String) + Send + 'static,
+) -> bool {
+    if let Some(pane) = wry_panes.get(pane_id) {
+        pane.execute_js_with_callback(js, callback);
+        true
+    } else if let Some(pane) = offscreen_panes.get_mut(pane_id) {
+        pane.execute_js_with_callback(js, callback);
+        true
+    } else {
+        false
+    }
+}
+
+/// Fire-and-forget variant of [`dispatch_active_js_with_callback`].
+fn dispatch_active_js(
+    wry_panes: &WryPaneManager,
+    offscreen_panes: &mut OffscreenWebViewManager,
+    pane_id: &uuid::Uuid,
+    js: &str,
+) -> bool {
+    dispatch_active_js_with_callback(wry_panes, offscreen_panes, pane_id, js, |_| {})
+}
+
 #[cfg(feature = "mcp")]
 pub fn process_mcp_commands(
     mcp_bridge: &McpBridge,
@@ -462,25 +521,39 @@ pub fn process_mcp_commands(
                 }
             }
             McpCommand::ExecuteJs { code, response_tx } => {
-                if let Some(wry_pane) = wry_panes.get(&active_id) {
-                    info!("MCP: executing JS ({} chars)", code.len());
-                    let tx = std::sync::Mutex::new(Some(response_tx));
-                    wry_pane.execute_js_with_callback(&code, move |result| {
-                        if let Ok(mut guard) = tx.lock()
+                info!("MCP: executing JS ({} chars)", code.len());
+                let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(response_tx)));
+                let tx_for_cb = std::sync::Arc::clone(&tx);
+                let dispatched = dispatch_active_js_with_callback(
+                    wry_panes,
+                    offscreen_panes,
+                    &active_id,
+                    &code,
+                    move |result| {
+                        if let Ok(mut guard) = tx_for_cb.lock()
                             && let Some(sender) = guard.take()
                         {
                             let _ = sender.send(result);
                         }
-                    });
-                } else {
-                    let _ = response_tx.send("Error: No active pane".to_string());
+                    },
+                );
+                if !dispatched
+                    && let Ok(mut guard) = tx.lock()
+                    && let Some(sender) = guard.take()
+                {
+                    let _ = sender.send("Error: No active pane".to_string());
                 }
             }
             McpCommand::GetActivePane { response_tx } => {
-                let (url, title) = wry_panes
+                let from_wry = wry_panes
                     .get(&active_id)
-                    .map(|p| (p.url().as_str().to_string(), p.title().to_string()))
-                    .unwrap_or_default();
+                    .map(|p| (p.url().as_str().to_string(), p.title().to_string()));
+                let (url, title) = from_wry.unwrap_or_else(|| {
+                    offscreen_panes
+                        .get(&active_id)
+                        .map(|p| (p.url().as_str().to_string(), p.title().to_string()))
+                        .unwrap_or_default()
+                });
                 let _ = response_tx.send((url, title));
             }
             McpCommand::ListBookmarks { response_tx } => {
@@ -656,12 +729,11 @@ pub fn process_mcp_commands(
                 delta_y,
                 response_tx,
             } => {
-                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
-                    let js = format!(
-                        "window.scrollBy({{top: {}, left: {}, behavior: 'instant'}})",
-                        delta_y, delta_x
-                    );
-                    wry_pane.execute_js(&js);
+                let js = format!(
+                    "window.scrollBy({{top: {}, left: {}, behavior: 'instant'}})",
+                    delta_y, delta_x
+                );
+                let result = if dispatch_active_js(wry_panes, offscreen_panes, &active_id, &js) {
                     format!("Scrolled by ({delta_x}, {delta_y}) pixels")
                 } else {
                     "Error: no active pane".into()
@@ -669,8 +741,12 @@ pub fn process_mcp_commands(
                 let _ = response_tx.send(result);
             }
             McpCommand::NavigateBack { response_tx } => {
-                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
-                    wry_pane.execute_js("window.history.back()");
+                let result = if dispatch_active_js(
+                    wry_panes,
+                    offscreen_panes,
+                    &active_id,
+                    "window.history.back()",
+                ) {
                     "Navigated back".into()
                 } else {
                     "Error: no active pane".into()
@@ -678,8 +754,12 @@ pub fn process_mcp_commands(
                 let _ = response_tx.send(result);
             }
             McpCommand::NavigateForward { response_tx } => {
-                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
-                    wry_pane.execute_js("window.history.forward()");
+                let result = if dispatch_active_js(
+                    wry_panes,
+                    offscreen_panes,
+                    &active_id,
+                    "window.history.forward()",
+                ) {
                     "Navigated forward".into()
                 } else {
                     "Error: no active pane".into()
@@ -691,28 +771,34 @@ pub fn process_mcp_commands(
                 value,
                 response_tx,
             } => {
-                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
-                    let js = format!(
-                        r#"(() => {{
-                            const sel = document.querySelector('{}');
+                let js = format!(
+                    r#"(() => {{
+                        const sel = document.querySelector('{}');
                             if (!sel) return 'Error: select element not found';
                             sel.value = '{}';
                             sel.dispatchEvent(new Event('change', {{bubbles: true}}));
                             return 'Selected option: {}';
                         }})()"#,
-                        selector.replace('\'', "\\'"),
-                        value.replace('\'', "\\'"),
-                        value.replace('\'', "\\'")
-                    );
-                    let (response_tx_inner, response_rx) = tokio::sync::oneshot::channel();
-                    let tx = std::sync::Mutex::new(Some(response_tx_inner));
-                    wry_pane.execute_js_with_callback(&js, move |result| {
+                    selector.replace('\'', "\\'"),
+                    value.replace('\'', "\\'"),
+                    value.replace('\'', "\\'")
+                );
+                let (response_tx_inner, response_rx) = tokio::sync::oneshot::channel();
+                let tx = std::sync::Mutex::new(Some(response_tx_inner));
+                let dispatched = dispatch_active_js_with_callback(
+                    wry_panes,
+                    offscreen_panes,
+                    &active_id,
+                    &js,
+                    move |result| {
                         if let Ok(mut guard) = tx.lock()
                             && let Some(sender) = guard.take()
                         {
                             let _ = sender.send(result);
                         }
-                    });
+                    },
+                );
+                let result = if dispatched {
                     match response_rx.blocking_recv() {
                         Ok(r) => r,
                         Err(_) => "Error: select option timed out".into(),
@@ -723,9 +809,8 @@ pub fn process_mcp_commands(
                 let _ = response_tx.send(result);
             }
             McpCommand::ReadPageStructure { response_tx } => {
-                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
-                    let js = r#"(() => {
-                        const tree = {headings: [], landmarks: [], links: [], buttons: [], forms: []};
+                let js = r#"(() => {
+                    const tree = {headings: [], landmarks: [], links: [], buttons: [], forms: []};
                         document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(h => {
                             tree.headings.push({level: parseInt(h.tagName[1]), text: h.innerText.trim().slice(0, 200)});
                         });
@@ -749,15 +834,22 @@ pub fn process_mcp_commands(
                         });
                         return JSON.stringify(tree);
                     })()"#;
-                    let (response_tx_inner, response_rx) = tokio::sync::oneshot::channel();
-                    let tx = std::sync::Mutex::new(Some(response_tx_inner));
-                    wry_pane.execute_js_with_callback(js, move |result| {
+                let (response_tx_inner, response_rx) = tokio::sync::oneshot::channel();
+                let tx = std::sync::Mutex::new(Some(response_tx_inner));
+                let dispatched = dispatch_active_js_with_callback(
+                    wry_panes,
+                    offscreen_panes,
+                    &active_id,
+                    js,
+                    move |result| {
                         if let Ok(mut guard) = tx.lock()
                             && let Some(sender) = guard.take()
                         {
                             let _ = sender.send(result);
                         }
-                    });
+                    },
+                );
+                let result = if dispatched {
                     match response_rx.blocking_recv() {
                         Ok(r) => r,
                         Err(_) => "Error: page structure read timed out".into(),
@@ -768,9 +860,8 @@ pub fn process_mcp_commands(
                 let _ = response_tx.send(result);
             }
             McpCommand::ExtractStructuredData { response_tx } => {
-                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
-                    let js = r#"(() => {
-                        const data = {jsonLd: [], openGraph: {}, tables: []};
+                let js = r#"(() => {
+                    const data = {jsonLd: [], openGraph: {}, tables: []};
                         document.querySelectorAll('script[type="application/ld+json"]').forEach(s => {
                             try { data.jsonLd.push(JSON.parse(s.textContent)); } catch(e) {}
                         });
@@ -792,15 +883,22 @@ pub fn process_mcp_commands(
                         });
                         return JSON.stringify(data);
                     })()"#;
-                    let (response_tx_inner, response_rx) = tokio::sync::oneshot::channel();
-                    let tx = std::sync::Mutex::new(Some(response_tx_inner));
-                    wry_pane.execute_js_with_callback(js, move |result| {
+                let (response_tx_inner, response_rx) = tokio::sync::oneshot::channel();
+                let tx = std::sync::Mutex::new(Some(response_tx_inner));
+                let dispatched = dispatch_active_js_with_callback(
+                    wry_panes,
+                    offscreen_panes,
+                    &active_id,
+                    js,
+                    move |result| {
                         if let Ok(mut guard) = tx.lock()
                             && let Some(sender) = guard.take()
                         {
                             let _ = sender.send(result);
                         }
-                    });
+                    },
+                );
+                let result = if dispatched {
                     match response_rx.blocking_recv() {
                         Ok(r) => r,
                         Err(_) => "Error: structured data extraction timed out".into(),
@@ -811,40 +909,49 @@ pub fn process_mcp_commands(
                 let _ = response_tx.send(result);
             }
             McpCommand::SummarizePage { response_tx } => {
-                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
+                let result = {
                     let (text_tx, text_rx) = tokio::sync::oneshot::channel();
                     let text_tx_mutex = std::sync::Mutex::new(Some(text_tx));
-                    wry_pane.execute_js_with_callback("document.body.innerText", move |result| {
-                        if let Ok(mut guard) = text_tx_mutex.lock()
-                            && let Some(sender) = guard.take()
-                        {
-                            let _ = sender.send(result);
-                        }
-                    });
-                    match text_rx.blocking_recv() {
-                        Ok(text) if !text.is_empty() && text != "null" => {
-                            let config = crate::config::Config::load();
-                            if config.llm_base_url.is_empty() {
-                                "Error: LLM not configured (llm_base_url is empty)".into()
-                            } else {
-                                let client =
-                                    crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
-                                        base_url: config.llm_base_url,
-                                        default_model: config.llm_model,
-                                        timeout_secs: config.llm_timeout_secs,
-                                        temperature: config.llm_temperature,
-                                        max_tokens: config.llm_max_tokens,
-                                    });
-                                match client.summarize(&text) {
-                                    Ok(summary) => format!("## Summary\n\n{summary}"),
-                                    Err(e) => format!("Error: LLM summarization failed: {e}"),
+                    let dispatched = dispatch_active_js_with_callback(
+                        wry_panes,
+                        offscreen_panes,
+                        &active_id,
+                        "document.body.innerText",
+                        move |result| {
+                            if let Ok(mut guard) = text_tx_mutex.lock()
+                                && let Some(sender) = guard.take()
+                            {
+                                let _ = sender.send(result);
+                            }
+                        },
+                    );
+
+                    if dispatched {
+                        match wait_for_js_result(text_rx, std::time::Duration::from_secs(120)) {
+                            Some(text) if !text.is_empty() && text != "null" => {
+                                let config = crate::config::Config::load();
+                                if config.llm_base_url.is_empty() {
+                                    "Error: LLM not configured (llm_base_url is empty)".into()
+                                } else {
+                                    let client =
+                                        crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
+                                            base_url: config.llm_base_url,
+                                            default_model: config.llm_model,
+                                            timeout_secs: config.llm_timeout_secs,
+                                            temperature: config.llm_temperature,
+                                            max_tokens: config.llm_max_tokens,
+                                        });
+                                    match client.summarize(&text) {
+                                        Ok(summary) => format!("## Summary\n\n{summary}"),
+                                        Err(e) => format!("Error: LLM summarization failed: {e}"),
+                                    }
                                 }
                             }
+                            _ => "Error: could not extract page text".into(),
                         }
-                        _ => "Error: could not extract page text".into(),
+                    } else {
+                        "Error: no active pane".into()
                     }
-                } else {
-                    "Error: no active pane".into()
                 };
                 let _ = response_tx.send(result);
             }
@@ -852,80 +959,100 @@ pub fn process_mcp_commands(
                 target_lang,
                 response_tx,
             } => {
-                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
+                let result = {
                     let (text_tx, text_rx) = tokio::sync::oneshot::channel();
                     let text_tx_mutex = std::sync::Mutex::new(Some(text_tx));
-                    wry_pane.execute_js_with_callback("document.body.innerText", move |result| {
-                        if let Ok(mut guard) = text_tx_mutex.lock()
-                            && let Some(sender) = guard.take()
-                        {
-                            let _ = sender.send(result);
-                        }
-                    });
-                    match text_rx.blocking_recv() {
-                        Ok(text) if !text.is_empty() && text != "null" => {
-                            let config = crate::config::Config::load();
-                            if config.llm_base_url.is_empty() {
-                                "Error: LLM not configured (llm_base_url is empty)".into()
-                            } else {
-                                let client =
-                                    crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
-                                        base_url: config.llm_base_url,
-                                        default_model: config.llm_model,
-                                        timeout_secs: config.llm_timeout_secs,
-                                        temperature: config.llm_temperature,
-                                        max_tokens: config.llm_max_tokens,
-                                    });
-                                match client.translate(&text, &target_lang) {
-                                    Ok(translated) => {
-                                        format!("## Translation ({target_lang})\n\n{translated}")
+                    let dispatched = dispatch_active_js_with_callback(
+                        wry_panes,
+                        offscreen_panes,
+                        &active_id,
+                        "document.body.innerText",
+                        move |result| {
+                            if let Ok(mut guard) = text_tx_mutex.lock()
+                                && let Some(sender) = guard.take()
+                            {
+                                let _ = sender.send(result);
+                            }
+                        },
+                    );
+
+                    if dispatched {
+                        match wait_for_js_result(text_rx, std::time::Duration::from_secs(120)) {
+                            Some(text) if !text.is_empty() && text != "null" => {
+                                let config = crate::config::Config::load();
+                                if config.llm_base_url.is_empty() {
+                                    "Error: LLM not configured (llm_base_url is empty)".into()
+                                } else {
+                                    let client =
+                                        crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
+                                            base_url: config.llm_base_url,
+                                            default_model: config.llm_model,
+                                            timeout_secs: config.llm_timeout_secs,
+                                            temperature: config.llm_temperature,
+                                            max_tokens: config.llm_max_tokens,
+                                        });
+                                    match client.translate(&text, &target_lang) {
+                                        Ok(translated) => {
+                                            format!(
+                                                "## Translation ({target_lang})\n\n{translated}"
+                                            )
+                                        }
+                                        Err(e) => format!("Error: LLM translation failed: {e}"),
                                     }
-                                    Err(e) => format!("Error: LLM translation failed: {e}"),
                                 }
                             }
+                            _ => "Error: could not extract page text".into(),
                         }
-                        _ => "Error: could not extract page text".into(),
+                    } else {
+                        "Error: no active pane".into()
                     }
-                } else {
-                    "Error: no active pane".into()
                 };
                 let _ = response_tx.send(result);
             }
             McpCommand::AnalyzePage { response_tx } => {
-                let result = if let Some(wry_pane) = wry_panes.get(&active_id) {
+                let result = {
                     let (text_tx, text_rx) = tokio::sync::oneshot::channel();
                     let text_tx_mutex = std::sync::Mutex::new(Some(text_tx));
-                    wry_pane.execute_js_with_callback("document.body.innerText", move |result| {
-                        if let Ok(mut guard) = text_tx_mutex.lock()
-                            && let Some(sender) = guard.take()
-                        {
-                            let _ = sender.send(result);
-                        }
-                    });
-                    match text_rx.blocking_recv() {
-                        Ok(text) if !text.is_empty() && text != "null" => {
-                            let config = crate::config::Config::load();
-                            if config.llm_base_url.is_empty() {
-                                "Error: LLM not configured (llm_base_url is empty)".into()
-                            } else {
-                                let client =
-                                    crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
-                                        base_url: config.llm_base_url,
-                                        default_model: config.llm_model,
-                                        timeout_secs: config.llm_timeout_secs,
-                                        temperature: config.llm_temperature,
-                                        max_tokens: config.llm_max_tokens,
-                                    });
-                                match client.analyze(&text) {
-                                    Ok(analysis) => format!("## Analysis\n\n{analysis}"),
-                                    Err(e) => format!("Error: LLM analysis failed: {e}"),
+                    let dispatched = dispatch_active_js_with_callback(
+                        wry_panes,
+                        offscreen_panes,
+                        &active_id,
+                        "document.body.innerText",
+                        move |result| {
+                            if let Ok(mut guard) = text_tx_mutex.lock()
+                                && let Some(sender) = guard.take()
+                            {
+                                let _ = sender.send(result);
+                            }
+                        },
+                    );
+
+                    if dispatched {
+                        match wait_for_js_result(text_rx, std::time::Duration::from_secs(120)) {
+                            Some(text) if !text.is_empty() && text != "null" => {
+                                let config = crate::config::Config::load();
+                                if config.llm_base_url.is_empty() {
+                                    "Error: LLM not configured (llm_base_url is empty)".into()
+                                } else {
+                                    let client =
+                                        crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
+                                            base_url: config.llm_base_url,
+                                            default_model: config.llm_model,
+                                            timeout_secs: config.llm_timeout_secs,
+                                            temperature: config.llm_temperature,
+                                            max_tokens: config.llm_max_tokens,
+                                        });
+                                    match client.analyze(&text) {
+                                        Ok(analysis) => format!("## Analysis\n\n{analysis}"),
+                                        Err(e) => format!("Error: LLM analysis failed: {e}"),
+                                    }
                                 }
                             }
+                            _ => "Error: could not extract page text".into(),
                         }
-                        _ => "Error: could not extract page text".into(),
+                    } else {
+                        "Error: no active pane".into()
                     }
-                } else {
-                    "Error: no active pane".into()
                 };
                 let _ = response_tx.send(result);
             }
