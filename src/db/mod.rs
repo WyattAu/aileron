@@ -111,6 +111,17 @@ fn init_schema(conn: &Connection) -> Result<()> {
         );",
     )?;
     migrate_downloads_table(conn)?;
+    migrate_bookmarks_folder_column(conn)?;
+    Ok(())
+}
+
+fn migrate_bookmarks_folder_column(conn: &Connection) -> Result<()> {
+    let has_folder: bool = conn.prepare("SELECT folder FROM bookmarks LIMIT 0").is_ok();
+    if !has_folder {
+        conn.execute_batch("ALTER TABLE bookmarks ADD COLUMN folder TEXT NOT NULL DEFAULT '';")
+            .expect("bookmarks folder column migration must succeed or database is corrupt");
+        tracing::info!("migrated bookmarks table: added folder column");
+    }
     Ok(())
 }
 
