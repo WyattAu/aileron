@@ -469,6 +469,29 @@ fn dispatch_active_js_with_callback(
     js: &str,
     callback: impl Fn(String) + Send + 'static,
 ) -> bool {
+    // Offscreen (Wayland) reads must not race a pending navigation: JS fired
+    // mid-load evaluates on the outgoing document and returns stale/empty
+    // content. Wait (while pumping) until the pane stops loading, plus a
+    // short settle so the new document's initial layout runs.
+    if wry_panes.get(pane_id).is_none() {
+        let settle_deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        loop {
+            let loading = offscreen_panes
+                .get(pane_id)
+                .map(|p| p.is_loading())
+                .unwrap_or(false);
+            if !loading || std::time::Instant::now() >= settle_deadline {
+                break;
+            }
+            pump_gtk_loop();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let settle_end = std::time::Instant::now() + std::time::Duration::from_millis(250);
+        while std::time::Instant::now() < settle_end {
+            pump_gtk_loop();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+    }
     if let Some(pane) = wry_panes.get(pane_id) {
         pane.execute_js_with_callback(js, callback);
         true
@@ -621,16 +644,24 @@ pub fn process_mcp_commands(
                             .pending_mcp_pane_creations
                             .push_back((active_id, parsed));
                         app_state.session.session_dirty = true;
-                    } else {
-                        // Backend-aware navigation (same path as ARP/keyboard):
-                        // wry_panes only exist on X11; on Wayland panes live in
-                        // offscreen_panes and only the WryAction queue reaches
-                        // them. Was a silent no-op on Wayland before.
+                    } else if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                        // X11 native pane.
                         info!("MCP: navigating to {}", url);
-                        app_state
-                            .pending_wry_actions
-                            .push_back(WryAction::Navigate(parsed));
+                        wry_pane.navigate(&parsed);
                         app_state.session.session_dirty = true;
+                    } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
+                        // Wayland: navigate the offscreen webview directly.
+                        // Queueing a WryAction would execute it AFTER this
+                        // batch, so reads issued in the same batch as the
+                        // navigate raced the navigation and returned the
+                        // outgoing document. Direct navigation + the
+                        // dispatch settle-wait (pane.is_loading()) keeps
+                        // same-batch reads correct.
+                        info!("MCP: navigating offscreen pane to {}", url);
+                        pane.navigate(&parsed);
+                        app_state.session.session_dirty = true;
+                    } else {
+                        warn!("MCP: navigate target pane vanished");
                     }
                 } else {
                     warn!("MCP: invalid navigate URL: {}", url);

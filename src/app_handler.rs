@@ -1217,8 +1217,34 @@ impl ApplicationHandler for AileronApp {
             // WebKitGTK texture capture). On other platforms this branch is
             // dead at runtime (`uses_offscreen_compositing()` is false), but
             // the call must still type-check, hence the cfg gate.
+            //
+            // Idle gate: when no pane was dirty, nothing changed - skip
+            // compositing and redraw entirely. Previously this block ran and
+            // requested a redraw every iteration, spinning the loop at
+            // ~1000fps while idle.
             #[cfg(target_os = "linux")]
-            self.offscreen_panes.capture_dirty_frames();
+            let dirty_panes = self.offscreen_panes.capture_dirty_frames();
+            #[cfg(not(target_os = "linux"))]
+            let dirty_panes = 0usize;
+            let any_wry_panes = !self.wry_panes.is_empty();
+            // Terminal panes render outside the offscreen capture path; while
+            // any are open, keep the continuous loop so they don't freeze.
+            #[cfg(feature = "terminal")]
+            let has_terminals = self
+                .app_state
+                .as_ref()
+                .map(|s| !s.terminal_pane_ids.is_empty())
+                .unwrap_or(false);
+            #[cfg(not(feature = "terminal"))]
+            let has_terminals = false;
+            if !any_wry_panes && dirty_panes == 0 && !has_terminals && !self.first_frame {
+                // Nothing changed: keep presenting the last frame.
+                if let Some(app_state) = &mut self.app_state {
+                    app_state.input_latency.record_frame_end();
+                    app_state.profiler.end_frame("about_to_wait");
+                }
+                return;
+            }
 
             // Render captured frames to the main window via wgpu.
             //

@@ -1391,12 +1391,20 @@ impl OffscreenWebViewManager {
 
     /// Capture frames for all dirty panes.
     #[cfg(target_os = "linux")]
-    pub fn capture_dirty_frames(&mut self) {
+    /// Capture frames for dirty panes. Returns how many panes were dirty
+    /// (captured or pending capture) this cycle - zero means nothing changed
+    /// and the caller can skip compositing/redraw entirely.
+    pub fn capture_dirty_frames(&mut self) -> usize {
+        let mut dirty_count = 0usize;
         for pane in self.panes.values_mut() {
-            if pane.is_dirty() && pane.capture_frame().is_none() {
-                warn!("Frame capture returned no data");
+            if pane.is_dirty() {
+                dirty_count += 1;
+                if pane.capture_frame().is_none() {
+                    warn!("Frame capture returned no data");
+                }
             }
         }
+        dirty_count
     }
 
     /// Navigate back in a pane.
