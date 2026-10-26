@@ -434,7 +434,16 @@ fn wait_for_js_result(
     let deadline = std::time::Instant::now() + timeout;
     loop {
         match rx.try_recv() {
-            Ok(v) => return Some(v),
+            Ok(v) => {
+                // wry delivers evaluate_script results JSON-encoded
+                // (js_value().to_json()): a JS string arrives as "\"...\"".
+                // Decode the outer wrapper once for every callback tool.
+                let decoded = serde_json::from_str::<serde_json::Value>(&v)
+                    .ok()
+                    .and_then(|val| val.as_str().map(str::to_string))
+                    .unwrap_or(v);
+                return Some(decoded);
+            }
             Err(tokio::sync::oneshot::error::TryRecvError::Closed) => return None,
             Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
         }
@@ -512,6 +521,19 @@ pub fn process_mcp_commands(
     app_state: &mut AppState,
     offscreen_panes: &mut OffscreenWebViewManager,
 ) {
+    // MCP tools target web content, not the browser chrome overlay. When the
+    // wm reports the chrome pane (nil UUID) as active - which happens on
+    // Wayland during page loads - fall back to the first real content pane,
+    // otherwise read/click tools silently operate on the chrome UI.
+    let active_id = if active_id == uuid::Uuid::nil() {
+        offscreen_panes
+            .iter()
+            .map(|(id, _)| *id)
+            .find(|id| *id != uuid::Uuid::nil())
+            .unwrap_or(active_id)
+    } else {
+        active_id
+    };
     // Load-phase deadlock guard: pump-waiting commands (wait_for_js_result
     // pumps the GTK loop) must not run while the active page is loading -
     // load-phase IPC handlers re-enter the state this function holds &mut,
@@ -568,7 +590,15 @@ pub fn process_mcp_commands(
                         ) {
                             Ok(new_id) => {
                                 info!("MCP: opening in new tab {}", url);
-                                app_state.engines.create_pane(new_id, parsed, None);
+                                // Queue real webview creation: engines.create_pane
+                                // builds a wry-engine pane which never renders on
+                                // Wayland (phantom pane, all tools dead on it).
+                                app_state
+                                    .pending_mcp_pane_creations
+                                    .push_back((new_id, parsed.clone()));
+                                app_state
+                                    .pending_wry_actions
+                                    .push_back(WryAction::Navigate(parsed));
                                 app_state.wm.set_active_pane(new_id);
                                 app_state.session.session_dirty = true;
                             }
@@ -576,6 +606,21 @@ pub fn process_mcp_commands(
                                 warn!("MCP: failed to create new tab: {}", e);
                             }
                         }
+                    } else if wry_panes.get(&active_id).is_none()
+                        && offscreen_panes.get(&active_id).is_none()
+                    {
+                        // Phantom pane (wm entry without a webview - e.g. an
+                        // MCP-created tab from a previous session or a crashed
+                        // webview): a navigate cannot reach it. Attach a real
+                        // webview pointed at the target URL instead.
+                        warn!(
+                            "MCP: navigating phantom pane {} - creating webview",
+                            &active_id.to_string()[..8]
+                        );
+                        app_state
+                            .pending_mcp_pane_creations
+                            .push_back((active_id, parsed));
+                        app_state.session.session_dirty = true;
                     } else {
                         // Backend-aware navigation (same path as ARP/keyboard):
                         // wry_panes only exist on X11; on Wayland panes live in

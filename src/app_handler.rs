@@ -188,8 +188,12 @@ impl ApplicationHandler for AileronApp {
             WindowEvent::RedrawRequested => {
                 let _frame_start = std::time::Instant::now();
                 self.frame_count += 1;
-                if self.frame_count <= 3 || self.frame_count.is_multiple_of(300) {
-                    info!("Frame #{}", self.frame_count);
+                // Sampled + debug-level: the redraw loop can spin at ~1000fps
+                // on Wayland (continuous offscreen compositing), and this line
+                // previously flooded journald with hundreds of thousands of
+                // INFO records.
+                if self.frame_count <= 3 || self.frame_count.is_multiple_of(3000) {
+                    tracing::debug!("Frame #{}", self.frame_count);
                 }
             }
 
@@ -1098,6 +1102,23 @@ impl ApplicationHandler for AileronApp {
                     app_state,
                     &mut self.offscreen_panes,
                 );
+            }
+            // MCP-requested panes: create the real offscreen webview with the
+            // full AileronApp wiring (adblock, interceptors, devtools) - the
+            // wry-engine creation the MCP path used before never rendered on
+            // Wayland.
+            let mut mcp_creations = Vec::new();
+            if let Some(app_state) = self.app_state.as_mut() {
+                while let Some(creation) = app_state.pending_mcp_pane_creations.pop_front() {
+                    mcp_creations.push(creation);
+                }
+            }
+            for (pane_id, url) in mcp_creations {
+                info!(
+                    "MCP: creating offscreen webview for pane {}",
+                    &pane_id.to_string()[..8]
+                );
+                self.create_offscreen_pane_for(pane_id, &url);
             }
         }
 
