@@ -576,9 +576,16 @@ pub fn process_mcp_commands(
                                 warn!("MCP: failed to create new tab: {}", e);
                             }
                         }
-                    } else if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
+                    } else {
+                        // Backend-aware navigation (same path as ARP/keyboard):
+                        // wry_panes only exist on X11; on Wayland panes live in
+                        // offscreen_panes and only the WryAction queue reaches
+                        // them. Was a silent no-op on Wayland before.
                         info!("MCP: navigating to {}", url);
-                        wry_pane.navigate(&parsed);
+                        app_state
+                            .pending_wry_actions
+                            .push_back(WryAction::Navigate(parsed));
+                        app_state.session.session_dirty = true;
                     }
                 } else {
                     warn!("MCP: invalid navigate URL: {}", url);
@@ -594,10 +601,18 @@ pub fn process_mcp_commands(
                     &active_id,
                     &code,
                     move |result| {
+                        // wry delivers evaluate_script results JSON-encoded
+                        // (js_value().to_json()): a JS string arrives as
+                        // "\"...\"". Decode that outer wrapper so consumers
+                        // (get_text, wait_for, ...) see the raw value.
+                        let decoded = serde_json::from_str::<serde_json::Value>(&result)
+                            .ok()
+                            .and_then(|v| v.as_str().map(str::to_string))
+                            .unwrap_or(result);
                         if let Ok(mut guard) = tx_for_cb.lock()
                             && let Some(sender) = guard.take()
                         {
-                            let _ = sender.send(result);
+                            let _ = sender.send(decoded);
                         }
                     },
                 );
@@ -705,9 +720,17 @@ pub fn process_mcp_commands(
                     .enumerate()
                     .map(|(i, id)| {
                         let marker = if *id == active { " [active]" } else { "" };
+                        // wry pane (X11) first, offscreen pane (Wayland)
+                        // fallback — offscreen panes report real state instead
+                        // of a permanent "about:blank /(untitled)".
                         let (url, title) = wry_panes
                             .get(id)
                             .map(|p| (p.url().to_string(), p.title().to_string()))
+                            .or_else(|| {
+                                offscreen_panes
+                                    .get(id)
+                                    .map(|p| (p.url().as_str().to_string(), p.title().to_string()))
+                            })
                             .unwrap_or_else(|| ("about:blank".into(), "(untitled)".into()));
                         format!("{}. {} - {}{}", i + 1, title, url, marker)
                     })
@@ -756,6 +779,30 @@ pub fn process_mcp_commands(
                         }
                         _ => "Error: no frame available".into(),
                     }
+                } else if wry_panes.get(&active_id).is_some() {
+                    // Native wry pane (X11 / non-composited Wayland): Canvas
+                    // API capture. The result arrives via the GTK main loop,
+                    // so wait with the same pump used for JS results.
+                    let buffer = std::sync::Arc::new(std::sync::Mutex::new(None));
+                    if let Some(pane) = wry_panes.get(&active_id) {
+                        pane.start_capture_screenshot(std::sync::Arc::clone(&buffer));
+                    }
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                    let mut out = "Error: screenshot capture timed out".into();
+                    while std::time::Instant::now() < deadline {
+                        if let Some(data) =
+                            crate::servo::wry_engine::WryPane::pending_screenshot_result(&buffer)
+                        {
+                            out = data;
+                            break;
+                        }
+                        pump_gtk_loop();
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                    }
+                    if out.starts_with("ERROR:") {
+                        warn!("Screenshot canvas capture failed: {out}");
+                    }
+                    out
                 } else {
                     "Error: no active pane".into()
                 };

@@ -823,20 +823,51 @@ impl McpTool for WaitForTool {
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.command_tx
-            .send(McpCommand::ExecuteJs { code, response_tx })
+            .send(McpCommand::ExecuteJs {
+                code: code.clone(),
+                response_tx,
+            })
             .map_err(|e| anyhow::anyhow!("Send failed: {e}"))?;
 
         let result = response_rx
             .blocking_recv()
             .map_err(|_| anyhow::anyhow!("Wait cancelled"))?;
 
-        if result == "found" {
-            Ok(format!("Element '{selector}' is present on the page."))
-        } else {
-            Ok(format!(
-                "Element '{selector}' not found. Retry after a delay or check the selector."
-            ))
+        // wry wraps string results JSON-encoded ("\"found\""); strip it.
+        let unquoted = result.trim().trim_matches('"').to_string();
+        if unquoted == "found" {
+            return Ok(format!("Element '{selector}' is present on the page."));
         }
+
+        // Not there yet: actually wait — re-check every 250ms up to 10s.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+            if self
+                .command_tx
+                .send(McpCommand::ExecuteJs {
+                    code: code.clone(),
+                    response_tx,
+                })
+                .is_err()
+            {
+                break;
+            }
+            let Ok(result) = response_rx.blocking_recv() else {
+                break;
+            };
+            if result.trim().trim_matches('"') == "found" {
+                return Ok(format!(
+                    "Element '{selector}' appeared after {:.1}s.",
+                    deadline.elapsed().as_secs_f32()
+                ));
+            }
+        }
+
+        Ok(format!(
+            "Element '{selector}' not found after 10s. Retry after a delay or check the selector."
+        ))
     }
 }
 
