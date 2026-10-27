@@ -314,6 +314,11 @@ pub struct AppState {
     /// Uses a queue so multiple actions per frame are not silently dropped.
     pub pending_wry_actions: VecDeque<WryAction>,
 
+    /// MCP-requested pane creations: (pane_id, url). Consumed by main.rs
+    /// which creates the real offscreen webview (adblock/interceptor wiring
+    /// lives on AileronApp, not reachable from process_mcp_commands).
+    pub pending_mcp_pane_creations: VecDeque<(uuid::Uuid, url::Url)>,
+
     /// Workspace name requested for restore. Set by `:ws-load <name>`.
     /// Consumed by main.rs which rebuilds the wry panes.
     pub pending_workspace_restore: Option<String>,
@@ -595,6 +600,7 @@ impl AppState {
             lua_engine,
             config,
             pending_wry_actions: VecDeque::new(),
+            pending_mcp_pane_creations: VecDeque::new(),
             pending_workspace_restore: None,
             current_workspace_name: "default".into(),
             #[cfg(feature = "terminal")]
