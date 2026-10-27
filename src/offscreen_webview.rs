@@ -535,6 +535,22 @@ a {{ color: #4db4ff; }}
         &self.url
     }
 
+    /// WebKitGTK's live load-state for the current navigation.
+    ///
+    /// Unlike the `loading` flag (which only updates when events are
+    /// drained by the frame loop), this reads the webview property directly
+    /// and is accurate from inside a frame callback.
+    #[cfg(target_os = "linux")]
+    #[must_use]
+    pub fn webview_is_loading(&self) -> bool {
+        self.gtk_fixed
+            .children()
+            .into_iter()
+            .find_map(|w| w.downcast::<webkit2gtk::WebView>().ok())
+            .map(|wv| wv.is_loading())
+            .unwrap_or(false)
+    }
+
     /// Get the pane ID.
     pub fn pane_id(&self) -> &Uuid {
         &self.pane_id

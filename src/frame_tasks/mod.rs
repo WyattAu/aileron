@@ -660,6 +660,24 @@ pub fn process_mcp_commands(
                         info!("MCP: navigating offscreen pane to {}", url);
                         pane.navigate(&parsed);
                         app_state.session.session_dirty = true;
+                        // Navigation-epoch settle: hold this command until
+                        // WebKit reports the NEW navigation complete, so
+                        // same-batch reads see the committed page. Bounded
+                        // at 15s; slow pages fall through and reads may use
+                        // wait_for for content-level certainty.
+                        let nav_deadline =
+                            std::time::Instant::now() + std::time::Duration::from_secs(15);
+                        let mut saw_loading = false;
+                        while std::time::Instant::now() < nav_deadline {
+                            let loading = pane.webview_is_loading();
+                            if loading {
+                                saw_loading = true;
+                            } else if saw_loading {
+                                break; // new navigation committed
+                            }
+                            crate::frame_tasks::pump_gtk_loop();
+                            std::thread::sleep(std::time::Duration::from_millis(2));
+                        }
                     } else {
                         warn!("MCP: navigate target pane vanished");
                     }
