@@ -85,4 +85,4 @@ navigation_epoch, read_your_writes, session_guarantees, linearizability, monoton
 - [x] Read-your-writes guarantee formalized
 - [x] Cross-ecosystem survey (session guarantees, linearizability, epoch reclamation)
 - [x] Lean proof: monotonicity, freshness, defect model (Aileron/MCP/ProofNavEpoch.lean)
-- [ ] Runtime wiring in frame_tasks (next iteration)
+- [x] Runtime wiring: AppState.mcp_nav_epoch per-pane counter, advanced by MCP navigates (frame_tasks); read-side freshness gate pending (reads rely on the dispatch settle-wait; heavy pages may exceed the 15s settle - use wait_for or a second read)

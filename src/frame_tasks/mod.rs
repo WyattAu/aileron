@@ -564,6 +564,8 @@ pub fn process_mcp_commands(
                                     .pending_wry_actions
                                     .push_back(WryAction::Navigate(parsed));
                                 app_state.wm.set_active_pane(new_id);
+                                // YP-MCP-NAV-EPOCH-001: advance the pane epoch.
+                                *app_state.mcp_nav_epoch.entry(new_id).or_insert(0) += 1;
                                 app_state.session.session_dirty = true;
                             }
                             Err(e) => {
@@ -600,6 +602,8 @@ pub fn process_mcp_commands(
                         // same-batch reads correct.
                         info!("MCP: navigating offscreen pane to {}", url);
                         pane.navigate(&parsed);
+                        // YP-MCP-NAV-EPOCH-001: advance the pane epoch.
+                        *app_state.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
                         app_state.session.session_dirty = true;
                         // Navigation-epoch settle: hold this command until
                         // WebKit reports the NEW navigation complete, so

@@ -319,6 +319,10 @@ pub struct AppState {
     /// lives on AileronApp, not reachable from process_mcp_commands).
     pub pending_mcp_pane_creations: VecDeque<(uuid::Uuid, url::Url)>,
 
+    /// Per-pane navigation epoch (YP-MCP-NAV-EPOCH-001): advanced by every
+    /// MCP navigate; reads can check freshness against the committed value.
+    pub mcp_nav_epoch: HashMap<uuid::Uuid, u64>,
+
     /// Workspace name requested for restore. Set by `:ws-load <name>`.
     /// Consumed by main.rs which rebuilds the wry panes.
     pub pending_workspace_restore: Option<String>,
@@ -601,6 +605,7 @@ impl AppState {
             config,
             pending_wry_actions: VecDeque::new(),
             pending_mcp_pane_creations: VecDeque::new(),
+            mcp_nav_epoch: HashMap::new(),
             pending_workspace_restore: None,
             current_workspace_name: "default".into(),
             #[cfg(feature = "terminal")]
