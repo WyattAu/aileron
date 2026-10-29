@@ -228,4 +228,5 @@ sync = ["dep:fastcdc", "dep:blake3", "dep:age", "dep:notify", "dep:notify-deboun
 passwords = ["dep:keyring", "dep:age"]
 lua = ["dep:mlua"]
 terminal = ["dep:portable-pty", "dep:alacritty_terminal"]
+native-chrome = []
 llm = []

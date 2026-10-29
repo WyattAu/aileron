@@ -323,6 +323,10 @@ pub struct AppState {
     /// MCP navigate; reads can check freshness against the committed value.
     pub mcp_nav_epoch: HashMap<uuid::Uuid, u64>,
 
+    /// Highest navigation epoch known to have finished loading per pane.
+    /// Reads gate on nav_epoch <= settled_epoch (read-your-writes).
+    pub mcp_settled_epoch: HashMap<uuid::Uuid, u64>,
+
     /// Workspace name requested for restore. Set by `:ws-load <name>`.
     /// Consumed by main.rs which rebuilds the wry panes.
     pub pending_workspace_restore: Option<String>,
@@ -606,6 +610,7 @@ impl AppState {
             pending_wry_actions: VecDeque::new(),
             pending_mcp_pane_creations: VecDeque::new(),
             mcp_nav_epoch: HashMap::new(),
+            mcp_settled_epoch: HashMap::new(),
             pending_workspace_restore: None,
             current_workspace_name: "default".into(),
             #[cfg(feature = "terminal")]
