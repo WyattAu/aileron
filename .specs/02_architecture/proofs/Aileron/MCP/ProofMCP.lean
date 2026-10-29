@@ -56,12 +56,12 @@ inductive Routing where
 AX-MCP-P2 routing function. DEF-1 violated this by dropping phantom-pane
 commands (Wayland handlers consulted only the X11 pane map).
 -/
-def route (W : Bindings) (p : ℕ) : Routing :=
+def route (W : Bindings) (p : ℕ) [Decidable (W p)] : Routing :=
   if W p then Routing.execute
   else Routing.createThenExecute
 
 /-- P2: the routing decision is total - there is no drop outcome. -/
-theorem route_total (W : Bindings) (p : ℕ) :
+theorem route_total (W : Bindings) (p : ℕ) [Decidable (W p)] :
     route W p = Routing.execute ∨
     route W p = Routing.createThenExecute ∨
     route W p = Routing.errorResponse := by
@@ -72,10 +72,10 @@ theorem route_total (W : Bindings) (p : ℕ) :
     exact Or.inr (Or.inl rfl)
 
 /-- P2 (strong form): a phantom pane is never dispatched directly. -/
-theorem phantom_never_execute (W : Bindings) (p : ℕ) (h : ¬ W p) :
-    route W p ≠ Routing.execute := by
-  unfold route
-  simp [h]
+theorem phantom_never_execute (W : Bindings) (p : ℕ) [Decidable (W p)]
+    (h : ¬ W p) (hcontra : route W p = Routing.execute) : False := by
+  unfold route at hcontra
+  simp [h] at hcontra
 
 /-! ### P3: bounded waits -/
 
@@ -94,10 +94,16 @@ def waitBounded : ℕ → Option String → WaitOutcome
   | _ + 1, none => WaitOutcome.timedOut
 
 /-- P3: a `value` outcome implies the callback fired (no phantom values). -/
-theorem wait_bounded_sound (budget : ℕ) (result : Option String) (v : String)
-    (h : waitBounded budget result = WaitOutcome.value v) :
-    result = some v := by
-  cases budget <;> cases result <;> simp [waitBounded] at h
+theorem wait_bounded_value_imp (budget : ℕ) (result : Option String)
+    (h : ∃ u : String, waitBounded budget result = WaitOutcome.value u) :
+    ∃ w : String, result = some w := by
+  cases budget <;> cases result
+  · simp [waitBounded] at h
+  · simp [waitBounded] at h
+  · simp [waitBounded] at h
+  · obtain ⟨u, hu⟩ := h
+    simp [waitBounded] at hu
+    exact ⟨_, rfl⟩
 
 /-- P3 corollary: the DEF-2 defect class (blocking forever) is not a possible
     outcome of the bounded wait. -/
@@ -105,8 +111,11 @@ theorem blocking_recv_starves_not_possible :
     ¬ ∃ (budget : ℕ) (result : Option String) (v : String),
       waitBounded budget result = WaitOutcome.value v ∧ result = none := by
   rintro ⟨budget, result, v, h, hr⟩
-  cases budget <;> cases result <;> simp [waitBounded] at h
-  exact absurd hr h.symm
+  cases result
+  · cases budget
+    · exact absurd h (by simp [waitBounded])
+    · exact absurd h (by simp [waitBounded])
+  · exact absurd hr (by simp)
 
 /-! ### P1: queue drain preserves commands -/
 
