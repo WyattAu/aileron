@@ -474,7 +474,10 @@ fn dispatch_active_js_with_callback(
     // content. Wait (while pumping) until the pane stops loading, plus a
     // short settle so the new document's initial layout runs.
     if wry_panes.get(pane_id).is_none() {
-        let settle_deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        // 60s: heavy pages (en.wikipedia et al) under machine load have taken
+        // longer than 15s to commit; a too-short window made same-batch reads
+        // return the outgoing document.
+        let settle_deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         loop {
             let loading = offscreen_panes
                 .get(pane_id)
