@@ -7,7 +7,7 @@ Method (per iteration, per the standing directive):
 4. **Adjust the Lean proof** — extend `.specs/02_architecture/proofs/Aileron/`, keep `lake build` green.
 5. **Log** — record adopt/reject decisions and the novel-contribution claim here.
 
-Status: **iterations 1–2 complete, 3–10 specified.**
+Status: **iterations 1–4 complete (3: pointwise core; 4: spec+proof, runtime wiring next), 5–10 specified.**
 
 ---
 
@@ -31,14 +31,14 @@ Status: **iterations 1–2 complete, 3–10 specified.**
 - **Proof:** modelled as `waitBounded` (PROP-MCP-003); capture cooldown itself verified by soak.
 - **Field defects closed:** OOM (50GB shmem), 8-minute snapshot callbacks.
 
-## Iteration 3 — Pane lifecycle resource invariant 📋
+## Iteration 3 — Pane lifecycle resource invariant ✅ (pointwise core; list-level PL-002/003 proofs deferred)
 - **Research targets:** linear/affine capabilities for resource tracking (Rust typestate, fractional
   permissions), workspace-restore lifecycle.
 - **Spec target:** YP-WM-PANE-LIFECYCLE-002 — invariant `∀ p ∈ wm, p ∈ webviews ∨ p ∈ creationQueue`
   (the phantom-pane defect was a violation).
 - **Proof target:** `Aileron/WM/ProofPaneLifecycle.lean` — creation/consume correspondence.
 
-## Iteration 4 — Navigation epoch & read-your-writes 📋
+## Iteration 4 — Navigation epoch & read-your-writes ✅ (spec + Lean proof; runtime wiring in frame_tasks is the next step)
 - **Research targets:** linearizability (Herlihy & Wing), session guarantees (Terry et al.),
   epoch-based reclamation.
 - **Spec target:** YP-MCP-NAV-EPOCH-001 — per-pane navigation epoch counter; reads gated on epoch
