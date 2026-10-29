@@ -691,14 +691,21 @@ pub fn process_mcp_commands(
                             crate::frame_tasks::pump_gtk_loop();
                             std::thread::sleep(std::time::Duration::from_millis(2));
                         }
-                        // The navigation committed (or timed out): promote the
-                        // settled epoch so same-batch reads proceed.
-                        let epoch_now = app_state
-                            .mcp_nav_epoch
-                            .get(&active_id)
-                            .copied()
-                            .unwrap_or(0);
-                        app_state.mcp_settled_epoch.insert(active_id, epoch_now);
+                        // Promotion rule: only when the commit-hold OBSERVED
+                        // the load running and finishing. On timeout (load
+                        // never observed), leave the settled epoch behind so
+                        // the next read's wait pumps until the real commit -
+                        // promoting here would let same-batch reads evaluate
+                        // an uncommitted navigation.
+                        let loading_now = pane.webview_is_loading();
+                        if !loading_now {
+                            let epoch_now = app_state
+                                .mcp_nav_epoch
+                                .get(&active_id)
+                                .copied()
+                                .unwrap_or(0);
+                            app_state.mcp_settled_epoch.insert(active_id, epoch_now);
+                        }
                     } else {
                         warn!("MCP: navigate target pane vanished");
                     }
