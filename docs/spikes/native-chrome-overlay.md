@@ -10,10 +10,39 @@ chrome-pane MCP hijacks, trunk-build startup degradation) to one architectural
 choice: rendering the browser chrome as a Leptos-WASM app in an offscreen
 WebKitGTK webview, composited over page content via a hand-built wgpu pipeline.
 
-## Spike hypothesis
+## Windowing constraint (2026-10-30 correction — material)
 
-Native GTK widgets (Overlay: live WebKitGTK webviews as base, native chrome
-stack on top) deliver equivalent UX with:
+On Wayland, the primary window is winit-owned; GTK widgets cannot be hosted
+in it. A GTK HeaderBar chrome therefore requires replacing winit with a
+GTK-primary window — an architecture change beyond this spike's scope. Two
+viable native paths remain:
+
+1. **egui chrome layer (recommended):** draw the chrome in the existing wgpu
+   pass (`gfx::render_frame`), exactly as the terminal panes already render
+   (egui + portable_pty are proven in this codebase). No windowing change;
+   the chrome webview, its capture, and the updateChromeState IPC are
+   deleted. Fits YP-GFX-SCHED-002's gate unchanged.
+2. **GTK-primary window:** full GTK chrome + native WebKitGTK widgets (the
+   classic GTK browser shape). Deletes winit. Bigger rewrite; deferred
+   until egui proves insufficient.
+
+The compositing of WEB CONTENT stays in both paths — only the chrome
+layer changes substrate.
+
+## Spike hypothesis (revised)
+
+Two native paths, both replacing the Leptos-WASM chrome webview:
+
+- **egui chrome layer (recommended):** the chrome drawn as an egui pass in
+  the existing wgpu compositing — the same mechanism the terminal panes
+  already render through (egui + portable_pty are proven in this codebase).
+  No windowing change; deletes the chrome webview, its capture, and the
+  updateChromeState IPC. Fits YP-GFX-SCHED-002's gate unchanged.
+- **GTK-primary chrome:** native GTK widgets and a GTK-owned window (the
+  classic GTK browser shape). Deletes winit — an architecture change
+  beyond this spike; revisit if the egui path proves insufficient.
+
+Both deliver equivalent UX with:
 
 - idle memory flat (vs ~3GB baseline that grew to 50GB)
 - idle CPU ~0 (no compositing loop, no capture)
