@@ -38,7 +38,7 @@ Status: **iterations 1–5 complete and pushed (1: protocol session-typing+proof
   (the phantom-pane defect was a violation).
 - **Proof target:** `Aileron/WM/ProofPaneLifecycle.lean` — creation/consume correspondence.
 
-## Iteration 4 — Navigation epoch & read-your-writes ✅ (spec + Lean proof; runtime wiring in frame_tasks is the next step)
+## Iteration 4 — Navigation epoch & read-your-writes ✅ COMPLETE (spec + Lean proof + runtime, incl. the settle-hold stale-event fix 7fb19f5: flush queued load events before the hold, require this load's Started->Complete pair; trace-validated same-connection on heavy pages)
 - **Research targets:** linearizability (Herlihy & Wing), session guarantees (Terry et al.),
   epoch-based reclamation.
 - **Spec target:** YP-MCP-NAV-EPOCH-001 — per-pane navigation epoch counter; reads gated on epoch
