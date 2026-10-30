@@ -1,0 +1,16 @@
+[Unit]
+Description=Aileron agent daemon (headless MCP browser, Era-1 S3)
+# The agent daemon binds 127.0.0.1:9543 - conflicts with ailon.service
+# (the headed browser). Run one or the other; use Conflicts= to enforce.
+Conflicts=aileron.service
+
+[Service]
+ExecStart=/usr/bin/xvfb-run -a --server-num=91 -s "-screen 0 1280x800x24" /home/wyatt/.local/share/aileron-build/debug/aileron --agent
+Environment=LD_LIBRARY_PATH=/usr/lib
+Environment=RUST_LOG=info
+Restart=on-failure
+RestartSec=5s
+OOMScoreAdjust=100
+
+[Install]
+WantedBy=default.target

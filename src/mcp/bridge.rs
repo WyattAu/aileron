@@ -108,6 +108,11 @@ pub struct McpState {
     pub active_url: Arc<RwLock<String>>,
     /// Title of the active wry pane.
     pub active_title: Arc<RwLock<String>>,
+    /// Navigation epoch of the active pane (YP-MCP-NAV-EPOCH-001); the
+    /// settled-generation counter agents use as a staleness token.
+    pub active_epoch: Arc<std::sync::atomic::AtomicU64>,
+    /// Whether the active pane is mid-load (YP-AGENT-ACI-001 T0 field).
+    pub active_loading: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Bridge between MCP background thread and main thread.
@@ -128,10 +133,22 @@ impl McpBridge {
             state: McpState {
                 active_url: Arc::new(RwLock::new(String::new())),
                 active_title: Arc::new(RwLock::new(String::new())),
+                active_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+                active_loading: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             },
             command_tx,
             command_rx,
         }
+    }
+
+    /// Update the active pane's epoch/loading metadata (T0 observation).
+    pub fn update_active_meta(&self, epoch: u64, loading: bool) {
+        self.state
+            .active_epoch
+            .store(epoch, std::sync::atomic::Ordering::Relaxed);
+        self.state
+            .active_loading
+            .store(loading, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Update the shared state (called from main thread each frame).
@@ -156,6 +173,8 @@ impl Default for McpState {
         Self {
             active_url: Arc::new(RwLock::new(String::new())),
             active_title: Arc::new(RwLock::new(String::new())),
+            active_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            active_loading: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 }

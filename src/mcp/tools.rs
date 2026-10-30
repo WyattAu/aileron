@@ -73,6 +73,107 @@ impl McpTool for ReadActivePaneTool {
     }
 }
 
+/// Tool: Structured observation of the active pane (YP-AGENT-ACI-001 tiers).
+///
+/// T0: url/title/epoch/loading — the staleness token agents bind actions to.
+/// T3: readable text (adblock-filtered) + the T0 header.
+/// T1/T2 (AX snapshots) arrive with the S8-S10 walker.
+struct BrowserObserveTool {
+    state: McpState,
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl BrowserObserveTool {
+    fn new(state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { state, command_tx }
+    }
+
+    fn t0(&self) -> String {
+        use std::sync::atomic::Ordering;
+        let url = self
+            .state
+            .active_url
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        let title = self
+            .state
+            .active_title
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        let epoch = self.state.active_epoch.load(Ordering::Relaxed);
+        let loading = self.state.active_loading.load(Ordering::Relaxed);
+        serde_json::json!({
+            "url": url,
+            "title": title,
+            "epoch": epoch,
+            "loading": loading,
+        })
+        .to_string()
+    }
+}
+
+impl McpTool for BrowserObserveTool {
+    fn name(&self) -> &str {
+        "browser_observe"
+    }
+    fn description(&self) -> &str {
+        "Structured page observation by tier: T0 = url/title/epoch/loading metadata (JSON, the staleness token for refs), T3 = readable text of the page (adblock-filtered) with the T0 header"
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "tier": {
+                    "type": "string",
+                    "enum": ["T0", "T3"],
+                    "description": "Observation tier (default T0)"
+                },
+                "max_length": {
+                    "type": "integer",
+                    "description": "T3 only: maximum characters of text (default 10000)"
+                }
+            },
+            "required": []
+        })
+    }
+    fn execute(&self, args: &Value) -> anyhow::Result<String> {
+        let tier = args
+            .get("tier")
+            .and_then(|v| v.as_str())
+            .unwrap_or("T0")
+            .to_ascii_uppercase();
+        match tier.as_str() {
+            "T0" => Ok(self.t0()),
+            "T3" => {
+                let max_length = args
+                    .get("max_length")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(10_000);
+                let code = format!(
+                    "(function() {{ \
+                        var text = document.body ? document.body.innerText : ''; \
+                        if (text.length > {max_length}) {{ text = text.substring(0, {max_length}) + '... [truncated]'; }} \
+                        return text; \
+                    }})()"
+                );
+                let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+                self.command_tx
+                    .send(McpCommand::ExecuteJs { code, response_tx })
+                    .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+                let text = response_rx
+                    .blocking_recv()
+                    .map_err(|_| anyhow::anyhow!("Observation cancelled"))?;
+                Ok(format!("{} (text follows)\n\n{}", self.t0(), text))
+            }
+            other => Err(anyhow::anyhow!(
+                "Unknown tier {other}; supported: T0, T3 (T1/T2 ship with the S8 walker)"
+            )),
+        }
+    }
+}
+
 /// Tool: Search the web using DuckDuckGo HTML lite endpoint.
 /// Performs a real HTTP request to DuckDuckGo's lite HTML interface
 /// and extracts search result titles and URLs.
@@ -1356,6 +1457,7 @@ pub fn create_tools(
 ) -> Vec<Box<dyn McpTool + Send + Sync>> {
     vec![
         Box::new(ReadActivePaneTool::new(state.clone())),
+        Box::new(BrowserObserveTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserGetTextTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserFillFormTool::new(state.clone(), command_tx.clone())),
         Box::new(SearchWebTool),
@@ -1450,7 +1552,7 @@ mod tests {
         let state = McpState::default();
         let (tx, _) = std::sync::mpsc::channel();
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 24);
+        assert_eq!(tools.len(), 25);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_get_text"));

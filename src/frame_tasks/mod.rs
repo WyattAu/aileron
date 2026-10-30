@@ -263,6 +263,14 @@ pub fn process_wry_events(
     let active_id = app_state.wm.active_pane_id();
     if let Some(wry_pane) = wry_panes.get(&active_id) {
         mcp_bridge.update_state(wry_pane.url().as_str(), wry_pane.title());
+        mcp_bridge.update_active_meta(
+            app_state
+                .mcp_settled_epoch
+                .get(&active_id)
+                .copied()
+                .unwrap_or(0),
+            false,
+        );
     }
 }
 
@@ -344,6 +352,14 @@ pub fn process_offscreen_events(
     let active_id = app_state.wm.active_pane_id();
     if let Some(pane) = offscreen_panes.get(&active_id) {
         mcp_bridge.update_state(pane.url().as_str(), pane.title());
+        mcp_bridge.update_active_meta(
+            app_state
+                .mcp_settled_epoch
+                .get(&active_id)
+                .copied()
+                .unwrap_or(0),
+            pane.is_loading(),
+        );
     }
 }
 
