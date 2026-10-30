@@ -606,6 +606,15 @@ pub fn process_mcp_commands(
         active_id
     };
     let _ = original_id;
+    // Workspace-restore guard (YP-WORKSPACE-002): a pending restore rebuilds
+    // every pane (wry_panes.remove_all + fresh offscreen manager), so
+    // commands must not execute against the dying pane set. Check BEFORE
+    // polling: commands stay queued in the bridge channel and process once
+    // the restore completes (the flag is consumed within a frame or two,
+    // so this deferral is bounded).
+    if app_state.pending_workspace_restore.is_some() {
+        return;
+    }
     let mcp_commands: Vec<McpCommand> = mcp_bridge.poll_commands().collect();
     if mcp_commands.is_empty() {
         return;
