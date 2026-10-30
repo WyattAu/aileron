@@ -60,6 +60,16 @@ pub struct FrameData {
     pub pixels: Vec<u8>,
 }
 
+/// Whether MCP diagnostic tracing is enabled (`AILERON_MCP_TRACE=1`).
+///
+/// Traces the navigation-settle path (flush/start/commit decisions) to
+/// stderr; the supported way to watch the read-your-writes gate live
+/// (systemd swallows service stderr - run the browser in the foreground).
+#[must_use]
+pub fn mcp_trace_enabled() -> bool {
+    std::env::var("AILERON_MCP_TRACE").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+}
+
 /// A single webview pane rendered offscreen.
 ///
 /// The wry `WebView` is embedded in a `gtk::OffscreenWindow` via
@@ -543,12 +553,75 @@ a {{ color: #4db4ff; }}
     #[cfg(target_os = "linux")]
     #[must_use]
     pub fn webview_is_loading(&self) -> bool {
-        self.gtk_fixed
+        let found = self
+            .gtk_fixed
             .children()
             .into_iter()
-            .find_map(|w| w.downcast::<webkit2gtk::WebView>().ok())
-            .map(|wv| wv.is_loading())
-            .unwrap_or(false)
+            .find_map(|w| w.downcast::<webkit2gtk::WebView>().ok());
+        if found.is_none() && mcp_trace_enabled() {
+            eprintln!(
+                "[mcp-trace] pane {} webview_is_loading: no direct webkit child (wry container?)",
+                &self.pane_id.to_string()[..8]
+            );
+        }
+        found.map(|wv| wv.is_loading()).unwrap_or(false)
+    }
+
+    /// Navigate and hold until the load commits (YP-MCP-NAV-EPOCH-001).
+    ///
+    /// Deterministic same-batch read-your-writes for MCP navigate: flush the
+    /// pane's queued load events FIRST (a `LoadComplete` buffered from an
+    /// earlier load would otherwise satisfy the hold instantly - the
+    /// same-batch staleness class, confirmed by the 2026-10-30 foreground
+    /// trace), then wait for THIS load's `LoadStarted -> LoadComplete` pair
+    /// while pumping GTK. Bounded; on timeout returns false and the caller
+    /// proceeds best-effort (promotes the epoch anyway - reads must never
+    /// wedge).
+    ///
+    /// Returns `true` when the load's completion event was observed.
+    pub fn navigate_settled(&mut self, url: &Url, budget: std::time::Duration) -> bool {
+        // Flush events queued before this navigation. Only pairs observed
+        // after the flush can belong to the load we are about to start.
+        // Runs on the main thread before any pump, so nothing new is
+        // delivered between the flush and the load request.
+        let mut flushed = 0usize;
+        while self.event_rx.try_recv().is_ok() {
+            flushed += 1;
+        }
+        self.navigate(url);
+        let deadline = std::time::Instant::now() + budget;
+        let mut started = false;
+        let mut committed = false;
+        while std::time::Instant::now() < deadline {
+            for ev in self.drain_events() {
+                match ev {
+                    WryEvent::LoadStarted { .. } => started = true,
+                    WryEvent::LoadComplete { .. } if started => {
+                        committed = true;
+                    }
+                    // A completion with no observed start belongs to an
+                    // earlier load (in-flight fallback of the flush) - ignore.
+                    WryEvent::LoadComplete { .. } => {}
+                    _ => {}
+                }
+            }
+            if committed {
+                break;
+            }
+            crate::frame_tasks::pump_gtk_loop();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        if mcp_trace_enabled() {
+            eprintln!(
+                "[mcp-trace] pane {} navigate_settled: flushed={} started={} committed={} ({}ms)",
+                &self.pane_id.to_string()[..8],
+                flushed,
+                started,
+                committed,
+                (std::time::Instant::now() - (deadline - budget)).as_millis()
+            );
+        }
+        committed
     }
 
     /// Get the pane ID.
