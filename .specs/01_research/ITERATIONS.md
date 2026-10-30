@@ -75,3 +75,25 @@ Status: **iterations 1–5 complete and pushed (1: protocol session-typing+proof
   testing (Pact).
 - **Spec target:** per-tool input/output contracts in the YP + Lean pre/post-conditions mirroring
   `read_page_structure` etc.
+
+---
+
+# Program II (2027) — mapped to ROADMAP-2027-2031 Era 1
+
+Literature base: `00_meta/RESEARCH-BASE-2026-Q4.md`. Rule: no algorithm or
+architecture enters a YP without a citation or a measured departure.
+
+| Iteration | YP | Sprint (roadmap) |
+|---|---|---|
+| 11 | YP-AGENT-ACI-001 (page abstraction, observation tiers) | S6 |
+| 12 | YP-AGENT-ACI-001 runtime: walker + `browser_snapshot` (T1/T2) | S8–S10 |
+| 13 | Epoch-unified refs + actuation tools; `ProofACI.lean` ACT-ACI-001 | S11–S12 |
+| 14 | Bulk transactions + waits + dialogs/uploads | S14–S16 |
+| 15 | Console/network/cookies/downloads/PDF observability | S17–S19 |
+| 16 | YP-MCP-SESSIONS-002 runtime: focus sets, per-session epochs | S24 |
+| 17 | YP-SEC-CONFINEMENT-001: dispatcher classes, structural taint | Era-2 Q2 |
+| 18 | Workspace memory tools (checkpoint/restore/diff/query) | Era-2 Q3 |
+| 19 | WebMCP broker spike | Era-2 Q4 |
+| 20 | `ProofConfine.lean` ACT-CONF-001 + full contract model | Era-2 Q4 |
+
+Status: **iterations 1–10 complete (Program I). Program II opens with Era 1, S1.**
