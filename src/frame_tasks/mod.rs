@@ -15,6 +15,7 @@ use crate::git::GitStatus;
 use crate::mcp::{McpBridge, McpCommand};
 use crate::offscreen_webview::OffscreenWebViewManager;
 use crate::scripts::ContentScriptManager;
+use crate::servo::wry_engine::WryEvent;
 use crate::servo::{WryPaneManager, pump_gtk};
 #[cfg(feature = "terminal")]
 use crate::terminal::NativeTerminalManager;
@@ -495,6 +496,11 @@ fn dispatch_active_js_with_callback(
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
     }
+    eprintln!(
+        "[mcpdbg] dispatch pane {} wry={} offscreen=yes",
+        &pane_id.to_string()[..8],
+        wry_panes.get(pane_id).is_some()
+    );
     if let Some(pane) = wry_panes.get(pane_id) {
         pane.execute_js_with_callback(js, callback);
         true
@@ -529,10 +535,16 @@ fn wait_mcp_nav_settled(
 ) {
     let deadline = std::time::Instant::now() + budget;
     let mut saw_loading = false;
+    eprintln!(
+        "[mcpdbg] wait enter nav={} settled={}",
+        app_state.mcp_nav_epoch.get(pane).copied().unwrap_or(0),
+        app_state.mcp_settled_epoch.get(pane).copied().unwrap_or(0)
+    );
     loop {
         let nav = *app_state.mcp_nav_epoch.get(pane).unwrap_or(&0);
         let settled = *app_state.mcp_settled_epoch.get(pane).unwrap_or(&0);
         if nav <= settled {
+            eprintln!("[mcpdbg] wait exit: settled (load committed)");
             return;
         }
         // Live WebKitGTK load-state: accurate inside frame callbacks, unlike
@@ -546,7 +558,7 @@ fn wait_mcp_nav_settled(
             if loading {
                 saw_loading = true;
             } else if saw_loading {
-                // Observed the load run and finish: committed.
+                eprintln!("[mcpdbg] wait exit: observed commit -> promote");
                 app_state.mcp_settled_epoch.insert(*pane, nav);
                 return;
             }
@@ -656,9 +668,24 @@ pub fn process_mcp_commands(
                             .push_back((active_id, parsed));
                         app_state.session.session_dirty = true;
                     } else if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
-                        // X11 native pane.
+                        // X11 / GTK-window-embedded native pane.
                         info!("MCP: navigating to {}", url);
                         wry_pane.navigate(&parsed);
+                        // Settle: pump until the webview's URL property
+                        // reflects the target (navigation committed), so
+                        // same-batch reads do not evaluate the outgoing
+                        // document. Bounded at 15s.
+                        let nav_deadline =
+                            std::time::Instant::now() + std::time::Duration::from_secs(15);
+                        while std::time::Instant::now() < nav_deadline {
+                            crate::frame_tasks::pump_gtk_loop();
+                            if wry_pane.url().as_str() == parsed.as_str() {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(2));
+                        }
+                        // YP-MCP-NAV-EPOCH-001: advance the pane epoch.
+                        *app_state.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
                         app_state.session.session_dirty = true;
                     } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
                         // Wayland: navigate the offscreen webview directly.
@@ -668,44 +695,54 @@ pub fn process_mcp_commands(
                         // outgoing document. Direct navigation + the
                         // dispatch settle-wait (pane.is_loading()) keeps
                         // same-batch reads correct.
+                        eprintln!(
+                            "[mcpdbg] nav arm: offscreen pane {} -> {}",
+                            &active_id.to_string()[..8],
+                            parsed.as_str()
+                        );
                         info!("MCP: navigating offscreen pane to {}", url);
                         pane.navigate(&parsed);
                         // YP-MCP-NAV-EPOCH-001: advance the pane epoch.
                         *app_state.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
                         app_state.session.session_dirty = true;
-                        // Navigation-epoch settle: hold this command until
-                        // WebKit reports the NEW navigation complete, so
-                        // same-batch reads see the committed page. Bounded
-                        // at 15s; slow pages fall through and reads may use
-                        // wait_for for content-level certainty.
+                        // Navigation-epoch settle (YP-MCP-NAV-EPOCH-001):
+                        // deterministic hold — wait for the pane's
+                        // LoadComplete EVENT, drained from the pane's own
+                        // event channel while pumping GTK. This is immune to
+                        // the `loading`-flag lag that made same-batch reads
+                        // evaluate on the outgoing document (and to the
+                        // cold-start case where is_loading stays false until
+                        // the web process spins up). Bounded at 60s; slow
+                        // pages fall through and reads may use wait_for for
+                        // content-level certainty.
                         let nav_deadline =
-                            std::time::Instant::now() + std::time::Duration::from_secs(15);
-                        let mut saw_loading = false;
+                            std::time::Instant::now() + std::time::Duration::from_secs(60);
+                        let mut committed = false;
                         while std::time::Instant::now() < nav_deadline {
-                            let loading = pane.webview_is_loading();
-                            if loading {
-                                saw_loading = true;
-                            } else if saw_loading {
-                                break; // new navigation committed
+                            let events = pane.drain_events();
+                            for ev in &events {
+                                match ev {
+                                    WryEvent::LoadStarted { .. } => {}
+                                    WryEvent::LoadComplete { .. } => {
+                                        committed = true;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            if committed {
+                                break;
                             }
                             crate::frame_tasks::pump_gtk_loop();
                             std::thread::sleep(std::time::Duration::from_millis(2));
                         }
-                        // Promotion rule: only when the commit-hold OBSERVED
-                        // the load running and finishing. On timeout (load
-                        // never observed), leave the settled epoch behind so
-                        // the next read's wait pumps until the real commit -
-                        // promoting here would let same-batch reads evaluate
-                        // an uncommitted navigation.
-                        let loading_now = pane.webview_is_loading();
-                        if !loading_now {
-                            let epoch_now = app_state
-                                .mcp_nav_epoch
-                                .get(&active_id)
-                                .copied()
-                                .unwrap_or(0);
-                            app_state.mcp_settled_epoch.insert(active_id, epoch_now);
-                        }
+                        // The load committed (or the deadline passed): promote
+                        // the settled epoch so same-batch reads proceed.
+                        let epoch_now = app_state
+                            .mcp_nav_epoch
+                            .get(&active_id)
+                            .copied()
+                            .unwrap_or(0);
+                        app_state.mcp_settled_epoch.insert(active_id, epoch_now);
                     } else {
                         warn!("MCP: navigate target pane vanished");
                     }
