@@ -174,6 +174,268 @@ impl McpTool for BrowserObserveTool {
     }
 }
 
+/// Tool: Accessibility snapshot with epoch-stamped refs (YP-AGENT-ACI-001).
+struct BrowserSnapshotTool {
+    state: McpState,
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+
+impl BrowserSnapshotTool {
+    fn new(state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { state, command_tx }
+    }
+}
+
+impl McpTool for BrowserSnapshotTool {
+    fn name(&self) -> &str {
+        "browser_snapshot"
+    }
+    fn description(&self) -> &str {
+        "Accessibility snapshot of the active pane: interactive elements as a compact JSON list with epoch-stamped integer refs. Pass (epoch, ref) to browser_click/browser_type/etc; on STALE_EPOCH take a fresh snapshot. tier T1 = interactive+named, T2 = all interactive"
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "tier": {"type": "string", "enum": ["T1", "T2"], "description": "T1 (default): interactive+named only. T2: all interactive"},
+                "max_refs": {"type": "integer", "description": "Cap on refs returned (default 150)"}
+            },
+            "required": []
+        })
+    }
+    fn execute(&self, args: &Value) -> anyhow::Result<String> {
+        use std::sync::atomic::Ordering;
+        let tier = args.get("tier").and_then(|v| v.as_str()).unwrap_or("T1");
+        let max_refs = args.get("max_refs").and_then(|v| v.as_u64()).unwrap_or(150) as usize;
+        let epoch = self.state.active_epoch.load(Ordering::Relaxed);
+        let code = crate::mcp::aci::walker_js(epoch, tier, max_refs);
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::ExecuteJs { code, response_tx })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        let result = response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Snapshot cancelled"))?;
+        if result.is_empty() {
+            return Err(anyhow::anyhow!(
+                "Snapshot returned empty (page still loading? retry)"
+            ));
+        }
+        Ok(result)
+    }
+}
+
+/// Shared dispatch for the ref-actuation tools: build the JS, send ExecuteJs,
+/// decode the {ok, err} envelope, surface STALE_EPOCH with guidance.
+fn dispatch_act(
+    state: &McpState,
+    command_tx: &std::sync::mpsc::Sender<McpCommand>,
+    code: String,
+) -> anyhow::Result<String> {
+    let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+    command_tx
+        .send(McpCommand::ExecuteJs { code, response_tx })
+        .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+    let result = response_rx
+        .blocking_recv()
+        .map_err(|_| anyhow::anyhow!("Actuation cancelled"))?;
+    if result.contains("STALE_EPOCH") {
+        use std::sync::atomic::Ordering;
+        return Err(anyhow::anyhow!(
+            "STALE_EPOCH: the page navigated since this snapshot (current epoch {}). Re-snapshot and retry with the new refs.",
+            state.active_epoch.load(Ordering::Relaxed)
+        ));
+    }
+    if result.contains("DETACHED") {
+        return Err(anyhow::anyhow!(
+            "DETACHED: the referenced element left the DOM (page re-rendered). Re-snapshot and retry."
+        ));
+    }
+    Ok(result)
+}
+
+fn ref_args_schema() -> Value {
+    json!({
+        "epoch": {"type": "integer", "description": "Snapshot epoch the ref was taken at (from browser_snapshot / browser_observe T0)"},
+        "ref": {"type": "integer", "description": "Element ref from browser_snapshot"}
+    })
+}
+
+fn with_refs(mut schema: Value) -> Value {
+    if let Some(props) = schema.get_mut("properties").and_then(|p| p.as_object_mut())
+        && let Some(r) = ref_args_schema().as_object()
+    {
+        for (k, v) in r {
+            props.insert(k.clone(), v.clone());
+        }
+    }
+    if let Some(req) = schema.get_mut("required").and_then(|r| r.as_array_mut()) {
+        req.push(json!("epoch"));
+        req.push(json!("ref"));
+    }
+    schema
+}
+
+macro_rules! act_tool {
+    ($tool:ident, $name:literal, $desc:literal, $schema:expr, |$self_id:ident, $args:ident| $code:expr) => {
+        struct $tool {
+            state: McpState,
+            command_tx: std::sync::mpsc::Sender<McpCommand>,
+        }
+        impl $tool {
+            fn new(state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+                Self { state, command_tx }
+            }
+        }
+        impl McpTool for $tool {
+            fn name(&self) -> &str {
+                $name
+            }
+            fn description(&self) -> &str {
+                $desc
+            }
+            fn input_schema(&self) -> Value {
+                $schema
+            }
+            fn execute(&self, $args: &Value) -> anyhow::Result<String> {
+                let $self_id = self;
+                $code
+            }
+        }
+    };
+}
+
+act_tool!(
+    BrowserClickTool,
+    "browser_click",
+    "Click the epoch-stamped element; fails closed on STALE_EPOCH/DETACHED",
+    with_refs(json!({"type":"object","properties":{},"required":[]})),
+    |self_, args| {
+        let epoch = args.get("epoch").and_then(|v| v.as_u64()).unwrap_or(0);
+        let ref_idx = args.get("ref").and_then(|v| v.as_u64()).unwrap_or(0);
+        dispatch_act(
+            &self_.state,
+            &self_.command_tx,
+            crate::mcp::aci::actuator_js("click", epoch, ref_idx),
+        )
+    }
+);
+
+act_tool!(
+    BrowserHoverTool,
+    "browser_hover",
+    "Hover the epoch-stamped element (reveals menus/tooltips)",
+    with_refs(json!({"type":"object","properties":{},"required":[]})),
+    |self_, args| {
+        let epoch = args.get("epoch").and_then(|v| v.as_u64()).unwrap_or(0);
+        let ref_idx = args.get("ref").and_then(|v| v.as_u64()).unwrap_or(0);
+        dispatch_act(
+            &self_.state,
+            &self_.command_tx,
+            crate::mcp::aci::actuator_js("hover", epoch, ref_idx),
+        )
+    }
+);
+
+act_tool!(
+    BrowserFocusTool,
+    "browser_focus",
+    "Focus the epoch-stamped element and scroll it into view",
+    with_refs(json!({"type":"object","properties":{},"required":[]})),
+    |self_, args| {
+        let epoch = args.get("epoch").and_then(|v| v.as_u64()).unwrap_or(0);
+        let ref_idx = args.get("ref").and_then(|v| v.as_u64()).unwrap_or(0);
+        dispatch_act(
+            &self_.state,
+            &self_.command_tx,
+            crate::mcp::aci::actuator_js("focus", epoch, ref_idx),
+        )
+    }
+);
+
+act_tool!(
+    BrowserTypeTool,
+    "browser_type",
+    "Type text into the epoch-stamped input (native value setter + input/change events; frameworks see it as real typing)",
+    with_refs(json!({"type":"object","properties":{
+        "text": {"type":"string","description":"Text to enter"},
+        "clear": {"type":"boolean","description":"Clear existing content first (default false)"},
+        "submit": {"type":"boolean","description":"Press Enter after typing (default false)"}
+    },"required":["text"]})),
+    |self_, args| {
+        let epoch = args.get("epoch").and_then(|v| v.as_u64()).unwrap_or(0);
+        let ref_idx = args.get("ref").and_then(|v| v.as_u64()).unwrap_or(0);
+        let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
+        let clear = args.get("clear").and_then(|v| v.as_bool()).unwrap_or(false);
+        let result = dispatch_act(
+            &self_.state,
+            &self_.command_tx,
+            crate::mcp::aci::type_js(epoch, ref_idx, text, clear),
+        )?;
+        if args
+            .get("submit")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            // Synthetic Enter events don't trigger native form submission
+            // (untrusted events); submit explicitly via requestSubmit.
+            let submit = dispatch_act(
+                &self_.state,
+                &self_.command_tx,
+                crate::mcp::aci::submit_js(),
+            )?;
+            return Ok(format!(
+                "{{\"type_result\":{result},\"submit_result\":{submit}}}"
+            ));
+        }
+        Ok(result)
+    }
+);
+
+act_tool!(
+    BrowserPressKeyTool,
+    "browser_press_key",
+    "Press a key on the focused element (ENTER, TAB, ESCAPE, ARROW keys, single characters)",
+    json!({"type":"object","properties":{
+        "key": {"type":"string","description":"Key name, e.g. ENTER, TAB, ESCAPE, ArrowDown, a"}
+    },"required":["key"]}),
+    |self_, args| {
+        let key = args.get("key").and_then(|v| v.as_str()).unwrap_or("");
+        dispatch_act(
+            &self_.state,
+            &self_.command_tx,
+            crate::mcp::aci::key_js(key),
+        )
+    }
+);
+
+act_tool!(
+    BrowserSelectTool,
+    "browser_select",
+    "Select option(s) on the epoch-stamped <select> by value or visible text",
+    with_refs(json!({"type":"object","properties":{
+        "values": {"type":"array","items":{"type":"string"},"description":"Values or visible texts to select"}
+    },"required":["values"]})),
+    |self_, args| {
+        let epoch = args.get("epoch").and_then(|v| v.as_u64()).unwrap_or(0);
+        let ref_idx = args.get("ref").and_then(|v| v.as_u64()).unwrap_or(0);
+        let values: Vec<String> = args
+            .get("values")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        dispatch_act(
+            &self_.state,
+            &self_.command_tx,
+            crate::mcp::aci::select_js(epoch, ref_idx, &values),
+        )
+    }
+);
+
 /// Tool: Search the web using DuckDuckGo HTML lite endpoint.
 /// Performs a real HTTP request to DuckDuckGo's lite HTML interface
 /// and extracts search result titles and URLs.
@@ -1458,6 +1720,13 @@ pub fn create_tools(
     vec![
         Box::new(ReadActivePaneTool::new(state.clone())),
         Box::new(BrowserObserveTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserSnapshotTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserClickTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserHoverTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserFocusTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserTypeTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserPressKeyTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserSelectTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserGetTextTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserFillFormTool::new(state.clone(), command_tx.clone())),
         Box::new(SearchWebTool),
@@ -1552,7 +1821,7 @@ mod tests {
         let state = McpState::default();
         let (tx, _) = std::sync::mpsc::channel();
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 25);
+        assert_eq!(tools.len(), 32);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_get_text"));
