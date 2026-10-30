@@ -608,7 +608,7 @@ pub fn process_mcp_commands(
             app_state,
             offscreen_panes,
             &active_id,
-            std::time::Duration::from_secs(45),
+            std::time::Duration::from_secs(90),
         );
         match command {
             McpCommand::Navigate { url, new_tab } => {
