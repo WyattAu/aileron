@@ -7,7 +7,7 @@ Method (per iteration, per the standing directive):
 4. **Adjust the Lean proof** — extend `.specs/02_architecture/proofs/Aileron/`, keep `lake build` green.
 5. **Log** — record adopt/reject decisions and the novel-contribution claim here.
 
-Status: **iterations 1–4 complete (3: pointwise core; 4: spec+proof, runtime wiring next), 5–10 specified.**
+Status: **iterations 1–5 complete and pushed (1: protocol session-typing+proofs; 2: backpressure shipped+soaked; 3: pane lifecycle pointwise proofs; 4: nav epochs spec+proof, runtime wired; 5: idle scheduling gate spec+shipped+measured). 6: YP-WORKSPACE-002 shipped + restore-ordering guard in runtime. 7–10: YPs complete (pacing, contracts, adblock indexing, fuzzy benchmarks). Remaining: PL-002/003 list-level proofs, frame-pacing vsync implementation, adblock indexed matcher, epoch runtime exposure in read results.**
 
 ---
 
@@ -58,7 +58,7 @@ Status: **iterations 1–4 complete (3: pointwise core; 4: spec+proof, runtime w
 - **Spec target:** YP-WORKSPACE-002 — restore-overwrite hazard (navigations racing startup restore,
   observed 2026-10-29) formalized and eliminated.
 
-## Iteration 7 — Compositor frame pacing 📋
+## Iteration 7 — Compositor frame pacing ✅ YP-GFX-PACING-001 (present bounds + vsync as future work)
 - **Research targets:** present-mode literature (wgpu), frame pacing in Android/Chrome compositor.
 - **Spec target:** YP-GFX-PACING-001 — presentation modes vs the pooled-compositing path.
 
