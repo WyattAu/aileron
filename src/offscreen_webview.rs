@@ -634,6 +634,14 @@ a {{ color: #4db4ff; }}
         &self.title
     }
 
+    /// Store the page title (from `TitleChanged`) so `LoadComplete` syncs and
+    /// MCP reads see the real title instead of an empty string — offscreen
+    /// panes had no title setter, so `sync_tab_url_title` read `""` and
+    /// overwrote the tab title cached from the event payload.
+    pub fn set_title(&mut self, title: &str) {
+        self.title = title.to_string();
+    }
+
     /// Get the current dimensions.
     pub fn dimensions(&self) -> (i32, i32) {
         (self.width, self.height)

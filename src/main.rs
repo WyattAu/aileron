@@ -20,6 +20,7 @@ use aileron::terminal::NativeTerminalManager;
 use aileron::test_harness::TestHarness;
 use aileron::wm::Rect;
 
+mod agent;
 mod app_handler;
 mod bootstrap;
 mod event_handlers;

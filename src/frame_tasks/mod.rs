@@ -326,7 +326,7 @@ pub fn process_offscreen_events(
     app_state: &mut AppState,
     offscreen_panes: &mut OffscreenWebViewManager,
     content_scripts: &ContentScriptManager,
-    _mcp_bridge: &mut McpBridge,
+    mcp_bridge: &McpBridge,
     adblocker: &crate::net::adblock::AdBlocker,
     interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
 ) {
@@ -337,6 +337,14 @@ pub fn process_offscreen_events(
         adblocker,
         interceptor_registry,
     );
+    // Mirror the wry-pane path (process_wry_events): push the active pane's
+    // url/title into the shared MCP state so read_active_pane and friends see
+    // offscreen panes. The headed runtime masked this via its wry panes; the
+    // agent runtime (offscreen-only) has no wry panes to mask it.
+    let active_id = app_state.wm.active_pane_id();
+    if let Some(pane) = offscreen_panes.get(&active_id) {
+        mcp_bridge.update_state(pane.url().as_str(), pane.title());
+    }
 }
 
 #[cfg(not(feature = "mcp"))]

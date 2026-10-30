@@ -26,6 +26,9 @@ pub trait EventPane: ipc::ExecuteJs {
     fn navigate(&mut self, url: &url::Url);
     fn url(&self) -> &url::Url;
     fn title(&self) -> &str;
+    /// Cache a `TitleChanged` payload so later `LoadComplete` syncs carry the
+    /// real title. Default no-op (wry updates its own title).
+    fn set_title(&mut self, _title: &str) {}
     fn mark_dirty(&mut self);
     fn suppress_context_menu(&self);
 }
@@ -57,6 +60,9 @@ impl EventPane for crate::offscreen_webview::OffscreenWebView {
     }
     fn title(&self) -> &str {
         crate::offscreen_webview::OffscreenWebView::title(self)
+    }
+    fn set_title(&mut self, title: &str) {
+        crate::offscreen_webview::OffscreenWebView::set_title(self, title);
     }
     fn mark_dirty(&mut self) {
         crate::offscreen_webview::OffscreenWebView::mark_dirty(self);
@@ -415,6 +421,11 @@ pub fn process_events<M: EventPaneManager>(
             WryEvent::TitleChanged { title, .. } => {
                 app_state.update_a11y(&title[..title.len().min(60)]);
                 app_state.tabs.tab_display_dirty = true;
+                // Cache the title on the pane so the LoadComplete sync (which
+                // reads pane.title()) carries the real title instead of "".
+                if let Some(pane) = manager.get_mut(&pane_id) {
+                    pane.set_title(&title);
+                }
                 let url = manager
                     .get(&pane_id)
                     .map(|p| p.url().to_string())

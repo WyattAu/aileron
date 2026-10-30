@@ -4,6 +4,9 @@ use std::path::PathBuf;
 
 /// Command-line arguments parsed from std::env::args().
 pub struct CliArgs {
+    /// Run the headless agent daemon (MCP-only; no window, compositor, chrome,
+    /// terminal, or input routing). See `agent.rs` / ROADMAP-2027-2031 Era-1.
+    pub agent: bool,
     /// Enable debug logging (sets RUST_LOG=debug).
     pub debug: bool,
     /// Custom profiling output directory.
@@ -22,6 +25,7 @@ impl CliArgs {
     /// Parse command-line arguments from std::env::args().
     pub fn parse() -> Self {
         let args: Vec<String> = std::env::args().collect();
+        let mut agent = false;
         let mut debug = false;
         let mut profile_dir = None;
         let mut dump_config = false;
@@ -32,6 +36,9 @@ impl CliArgs {
         let mut i = 1;
         while i < args.len() {
             match args[i].as_str() {
+                "--agent" => {
+                    agent = true;
+                }
                 "--debug" | "-d" => {
                     debug = true;
                 }
@@ -62,6 +69,9 @@ impl CliArgs {
                     eprintln!("Usage: aileron [OPTIONS]");
                     eprintln!();
                     eprintln!("Options:");
+                    eprintln!(
+                        "  --agent                  Run the headless agent daemon (MCP-only, no UI)"
+                    );
                     eprintln!("  --debug, -d              Enable debug logging");
                     eprintln!("  --profile <dir>          Set profiling output directory");
                     eprintln!("  --dump-config            Print current config and exit");
@@ -84,6 +94,7 @@ impl CliArgs {
         }
 
         Self {
+            agent,
             debug,
             profile_dir,
             dump_config,
@@ -339,6 +350,13 @@ pub fn run() -> anyhow::Result<()> {
     info!("Keyboard-Driven Web Environment");
     info!("OS: {} {}", std::env::consts::OS, std::env::consts::ARCH);
     info!("PID: {}", std::process::id());
+
+    // Agent-native runtime (Era-1 S1): headless MCP-only daemon. Dispatched
+    // after panic-hook + tracing init (crash reporting and logging parity),
+    // before any winit/GPU initialization (the agent profile creates neither).
+    if cli_args.agent {
+        return super::agent::run();
+    }
 
     // D1-05: Log profiling directory if set
     if let Some(ref profile_dir) = cli_args.profile_dir {
