@@ -29,6 +29,16 @@ viable native paths remain:
 The compositing of WEB CONTENT stays in both paths — only the chrome
 layer changes substrate.
 
+## Ecosystem note (2026-10-30): egui was here before
+
+`src/gfx/renderer.rs` is documented as "a simplified version of the old
+egui-based renderer" — an egui pipeline existed and was removed when the
+current wgpu compositor landed. The spike is therefore a re-introduction:
+the wgpu surface, the composited frame path, and the terminal grid's
+rendering all remain; only the chrome draws through a re-added egui pass.
+Risk: re-learning the removal's reasons (git history in the renderer
+docs) before committing to the dependency re-add.
+
 ## Spike hypothesis (revised)
 
 Two native paths, both replacing the Leptos-WASM chrome webview:
