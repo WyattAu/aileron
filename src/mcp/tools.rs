@@ -410,6 +410,24 @@ act_tool!(
 );
 
 act_tool!(
+    BrowserDragTool,
+    "browser_drag",
+    "Drag from one epoch-stamped element to another (mouse-event synthesis; HTML5 DnD handlers and canvas apps may need additional setup)",
+    json!({"type":"object","properties":{},"required":[]}),
+    |self_, args| {
+        let se = args.get("epoch").and_then(|v| v.as_u64()).unwrap_or(0);
+        let sr = args.get("ref").and_then(|v| v.as_u64()).unwrap_or(0);
+        let ee = args.get("end_epoch").and_then(|v| v.as_u64()).unwrap_or(se);
+        let er = args.get("end_ref").and_then(|v| v.as_u64()).unwrap_or(0);
+        dispatch_act(
+            &self_.state,
+            &self_.command_tx,
+            crate::mcp::aci::drag_js(se, sr, ee, er),
+        )
+    }
+);
+
+act_tool!(
     BrowserSelectTool,
     "browser_select",
     "Select option(s) on the epoch-stamped <select> by value or visible text",
@@ -435,6 +453,192 @@ act_tool!(
         )
     }
 );
+
+act_tool!(
+    BrowserBulkActTool,
+    "bulk_act",
+    "Execute up to 50 actions in ONE page evaluation with per-action status (74% fewer round-trips vs sequential; 2511.19477). Actions reference the last snapshot's refs: {op:'click'|'hover'|'focus', epoch, ref}, {op:'type', epoch, ref, text, clear?}, {op:'key', key}, {op:'select', epoch, ref, values[]}, {op:'submit'}",
+    json!({"type":"object","properties":{
+        "actions": {"type":"array","items":{"type":"object"},"description":"Ordered action list","minItems":1,"maxItems":50}
+    },"required":["actions"]}),
+    |self_, args| {
+        let actions = args.get("actions").cloned().unwrap_or(Value::Array(vec![]));
+        let actions_json = serde_json::to_string(&actions)?;
+        dispatch_act(
+            &self_.state,
+            &self_.command_tx,
+            crate::mcp::aci::bulk_js(&actions_json),
+        )
+    }
+);
+
+/// Tool: browser_wait_for - poll-side wait (no page-JV spin): evaluates a
+/// cheap condition repeatedly from the tool thread until met or deadline.
+struct BrowserWaitForTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+impl BrowserWaitForTool {
+    fn new(_state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+    fn check(&self, contains: Option<&str>, gone: Option<&str>) -> anyhow::Result<bool> {
+        let cond = match (contains, gone) {
+            (Some(t), _) => format!(
+                "(document.body ? document.body.innerText.includes({}) : false)",
+                serde_json::to_string(t)?
+            ),
+            (_, Some(t)) => format!(
+                "(document.body ? !document.body.innerText.includes({}) : true)",
+                serde_json::to_string(t)?
+            ),
+            _ => "true".into(),
+        };
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::ExecuteJs {
+                code: cond,
+                response_tx,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        let r = response_rx.blocking_recv().unwrap_or_default();
+        Ok(r.trim() == "true" || r.trim() == "1")
+    }
+}
+impl McpTool for BrowserWaitForTool {
+    fn name(&self) -> &str {
+        "browser_wait_for"
+    }
+    fn description(&self) -> &str {
+        "Wait until text appears (text), disappears (textGone), or a timeout - whichever first. Polls the page from the browser side; use after actions that trigger async loads"
+    }
+    fn input_schema(&self) -> Value {
+        json!({"type":"object","properties":{
+            "text": {"type":"string","description":"Wait until this text appears"},
+            "textGone": {"type":"string","description":"Wait until this text disappears"},
+            "timeout_ms": {"type":"integer","description":"Deadline in ms (default 10000, max 30000)"}
+        },"required":[]})
+    }
+    fn execute(&self, args: &Value) -> anyhow::Result<String> {
+        let contains = args.get("text").and_then(|v| v.as_str());
+        let gone = args.get("textGone").and_then(|v| v.as_str());
+        if contains.is_none() && gone.is_none() {
+            anyhow::bail!("provide 'text' or 'textGone'");
+        }
+        let timeout = args
+            .get("timeout_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(10_000)
+            .min(30_000);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout);
+        loop {
+            if self.check(contains, gone)? {
+                return Ok(format!(
+                    "{{\"met\":true,\"elapsed_ms\":{}}}",
+                    (std::time::Instant::now()
+                        - (deadline - std::time::Duration::from_millis(timeout)))
+                    .as_millis()
+                ));
+            }
+            if std::time::Instant::now() >= deadline {
+                return Ok(format!("{{\"met\":false,\"timeout_ms\":{timeout}}}"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(80));
+        }
+    }
+}
+
+/// Shared page-ring reader: evaluates a JS snippet returning JSON.
+fn read_page_ring(
+    state: &McpState,
+    command_tx: &std::sync::mpsc::Sender<McpCommand>,
+    code: String,
+) -> anyhow::Result<String> {
+    dispatch_act(state, command_tx, code)
+}
+
+act_tool!(
+    BrowserConsoleTool,
+    "browser_console_messages",
+    "Console messages of the active page (page-side ring, cap 500; levels log/info/warn/error/debug). Captured since page load",
+    json!({"type":"object","properties":{
+        "level": {"type":"string","enum":["all","error","warn","info","log","debug"],"description":"Filter (default all)"}
+    },"required":[]}),
+    |self_, args| {
+        let filter = args.get("level").and_then(|v| v.as_str()).unwrap_or("all");
+        let code = if filter == "all" {
+            "JSON.stringify(window.__aileron_console || [])".to_string()
+        } else {
+            format!(
+                "JSON.stringify((window.__aileron_console || []).filter(m => m.level === {}))",
+                serde_json::to_string(filter)?
+            )
+        };
+        read_page_ring(&self_.state, &self_.command_tx, code)
+    }
+);
+
+act_tool!(
+    BrowserNetworkTool,
+    "browser_network_requests",
+    "Network activity of the active page (fetch + XHR ring, cap 500): url, method, status, kind, duration ms. Response bodies are not captured (cross-origin)",
+    json!({"type":"object","properties":{
+        "limit": {"type":"integer","description":"Return only the last N entries (default all)"}
+    },"required":[]}),
+    |self_, args| {
+        let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(0);
+        let code = if limit == 0 {
+            "JSON.stringify(window.__aileron_net || [])".to_string()
+        } else {
+            format!("JSON.stringify((window.__aileron_net || []).slice(-{limit}))")
+        };
+        read_page_ring(&self_.state, &self_.command_tx, code)
+    }
+);
+
+act_tool!(
+    BrowserCookiesTool,
+    "browser_cookies",
+    "Cookies visible to the active page (document.cookie). NOTE: HttpOnly cookies are invisible to page JS by design - this shows exactly what the page can see",
+    json!({"type":"object","properties":{},"required":[]}),
+    |self_, args| {
+        let _ = args;
+        read_page_ring(
+            &self_.state,
+            &self_.command_tx,
+            "JSON.stringify({cookie: document.cookie})".to_string(),
+        )
+    }
+);
+
+/// Tool: browser_downloads - list download tasks with progress.
+struct BrowserDownloadsTool {
+    command_tx: std::sync::mpsc::Sender<McpCommand>,
+}
+impl BrowserDownloadsTool {
+    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+impl McpTool for BrowserDownloadsTool {
+    fn name(&self) -> &str {
+        "browser_downloads"
+    }
+    fn description(&self) -> &str {
+        "List browser download tasks: id, state, filename, progress, url"
+    }
+    fn input_schema(&self) -> Value {
+        json!({"type":"object","properties":{},"required":[]})
+    }
+    fn execute(&self, _args: &Value) -> anyhow::Result<String> {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(McpCommand::ListDownloads { response_tx })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Downloads query cancelled"))
+    }
+}
 
 /// Tool: Search the web using DuckDuckGo HTML lite endpoint.
 /// Performs a real HTTP request to DuckDuckGo's lite HTML interface
@@ -1727,6 +1931,13 @@ pub fn create_tools(
         Box::new(BrowserTypeTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserPressKeyTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserSelectTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserDragTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserBulkActTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserWaitForTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserConsoleTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserNetworkTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserCookiesTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserDownloadsTool::new(command_tx.clone())),
         Box::new(BrowserGetTextTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserFillFormTool::new(state.clone(), command_tx.clone())),
         Box::new(SearchWebTool),
@@ -1821,7 +2032,7 @@ mod tests {
         let state = McpState::default();
         let (tx, _) = std::sync::mpsc::channel();
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 32);
+        assert_eq!(tools.len(), 39);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_get_text"));

@@ -1277,6 +1277,58 @@ pub(crate) fn is_pdf_url(url: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Agent observability (Era-1 S17): console + network rings, page-side.
+/// Console calls are captured in a capped ring (`window.__aileron_console`)
+/// and network activity (fetch + XHR) in `window.__aileron_net`; the MCP
+/// tools read the rings on demand - no IPC per event, so pages with chatty
+/// consoles cost nothing until observed.
+pub const OBSERVABILITY_MONITOR_JS: &str = r#"
+(function() {
+    if (window.__aileron_obs) return;
+    window.__aileron_obs = true;
+    window.__aileron_console = [];
+    ['log','info','warn','error','debug'].forEach(function(level){
+        var orig = console[level].bind(console);
+        console[level] = function(){
+            try {
+                var text = Array.prototype.map.call(arguments, function(a){
+                    try { return typeof a === 'object' ? JSON.stringify(a).slice(0,200) : String(a); }
+                    catch(e){ return String(a); }
+                }).join(' ');
+                window.__aileron_console.push({level: level, text: text.slice(0,300), t: Date.now()});
+                if (window.__aileron_console.length > 500) window.__aileron_console.shift();
+            } catch(e) {}
+            orig.apply(console, arguments);
+        };
+    });
+    window.__aileron_net = [];
+    function netPush(e){ try {
+        window.__aileron_net.push({url: String(e.url||'').slice(0,200), method: e.method||'', status: e.status||0, kind: e.kind||'', ms: e.ms||0});
+        if (window.__aileron_net.length > 500) window.__aileron_net.shift();
+    } catch(e2){} }
+    var of = window.fetch;
+    if (of) { window.fetch = function(input, init){
+        var url = (typeof input === 'string') ? input : (input && input.url) || '';
+        var method = (init && init.method) || (input && input.method) || 'GET';
+        var t0 = performance.now();
+        return of.apply(this, arguments).then(function(res){
+            netPush({url: url, method: method, status: res.status, kind: 'fetch', ms: Math.round(performance.now()-t0)});
+            return res;
+        }, function(err){
+            netPush({url: url, method: method, status: 0, kind: 'fetch', ms: Math.round(performance.now()-t0)});
+            throw err;
+        });
+    }; }
+    var oo = XMLHttpRequest.prototype.open, os = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function(m, u){ this.__aurl = u; this.__am = m; return oo.apply(this, arguments); };
+    XMLHttpRequest.prototype.send = function(){ var t0 = performance.now(); var xhr = this;
+        xhr.addEventListener('loadend', function(){
+            netPush({url: xhr.__aurl, method: xhr.__am, status: xhr.status, kind: 'xhr', ms: Math.round(performance.now()-t0)});
+        });
+        return os.apply(this, arguments); };
+})();
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;

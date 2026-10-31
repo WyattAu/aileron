@@ -159,6 +159,36 @@ pub fn key_js(key: &str) -> String {
         .replace("__C__", &code.to_string())
 }
 
+/// `drag` actuator: mouse-event synthesis from `start` to `end` refs
+/// (untrusted events — canvas apps with pointer capture may need T4+vision).
+#[must_use]
+pub fn drag_js(start_epoch: u64, start_ref: u64, end_epoch: u64, end_ref: u64) -> String {
+    r#"(() => {
+  const se = __SE__, sr = __SR__, ee = __EE__, er = __ER__;
+  if (window.__aileron_epoch !== se || window.__aileron_epoch !== ee)
+    return JSON.stringify({ok:false, err:'STALE_EPOCH', snapshot_epoch: window.__aileron_epoch ?? 0});
+  const a = (window.__aileron_refs || {})[sr], b = (window.__aileron_refs || {})[er];
+  if (!a || !a.isConnected || !b || !b.isConnected) return JSON.stringify({ok:false, err:'DETACHED'});
+  const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+  const ax = ra.x + ra.width/2, ay = ra.y + ra.height/2, bx = rb.x + rb.width/2, by = rb.y + rb.height/2;
+  const base = {bubbles:true, cancelable:true, clientX:ax, clientY:ay, button:0};
+  a.dispatchEvent(new MouseEvent('mousedown', base));
+  const steps = 5;
+  for (let i = 1; i <= steps; i++) {
+    base.clientX = ax + (bx-ax)*i/steps; base.clientY = ay + (by-ay)*i/steps;
+    document.elementFromPoint(base.clientX, base.clientY)?.dispatchEvent(new MouseEvent('mousemove', base));
+  }
+  base.clientX = bx; base.clientY = by;
+  b.dispatchEvent(new MouseEvent('mouseup', base));
+  a.dispatchEvent(new DragEvent('dragend', {bubbles:true}));
+  return JSON.stringify({ok:true, from:{x:Math.round(ax),y:Math.round(ay)}, to:{x:Math.round(bx),y:Math.round(by)}});
+})()"#
+    .replace("__SE__", &start_epoch.to_string())
+    .replace("__SR__", &start_ref.to_string())
+    .replace("__EE__", &end_epoch.to_string())
+    .replace("__ER__", &end_ref.to_string())
+}
+
 /// `submit` actuator: Enter keydown + native form submission (synthetic
 /// KeyboardEvents are untrusted and do not trigger default form submit, so
 /// the form is submitted explicitly via `requestSubmit`).
@@ -202,9 +232,115 @@ pub fn select_js(epoch: u64, ref_idx: u64, values: &[String]) -> String {
     js
 }
 
+/// `bulk_act` program (YP-AGENT-ACI-001 §bulk): executes an ordered action
+/// list in ONE page evaluation with per-action try/catch. Actions reference
+/// the page's cached ref map; every result carries ok/err so partial failures
+/// are reported, not fatal (the 2511.19477 bulk pattern: 74% fewer calls,
+/// 57% faster, 41% fewer tokens).
+///
+/// `actions_json` is a JSON array of `{op, ...}`:
+/// click/hover/focus {e,r} · type {e,r,text,clear} · key {key} ·
+/// select {e,r,values[]} · submit
+#[must_use]
+pub fn bulk_js(actions_json: &str) -> String {
+    r#"(() => {
+  const actions = __ACTIONS__;
+  const results = [];
+  // Accept both the tool-schema keys (epoch/ref) and the compact ones (e/r).
+  for (const a of actions) { a.e = a.e ?? a.epoch; a.r = a.r ?? a.ref; }
+  const guard = (e, r) => {
+    if (window.__aileron_epoch !== e) return {ok:false, err:'STALE_EPOCH', snapshot_epoch: window.__aileron_epoch ?? 0};
+    const el = (window.__aileron_refs || {})[r];
+    if (!el || !el.isConnected) return {ok:false, err:'DETACHED'};
+    return null;
+  };
+  for (const a of actions) {
+    try {
+      switch (a.op) {
+        case 'click': case 'hover': case 'focus': {
+          const g = guard(a.e, a.r);
+          if (g) { results.push({op:a.op, ref:a.r, ...g}); break; }
+          const el = window.__aileron_refs[a.r];
+          el.scrollIntoView({block:'center'});
+          if (a.op === 'click') el.click();
+          else if (a.op === 'focus') el.focus();
+          else {
+            el.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));
+            el.dispatchEvent(new MouseEvent('mouseenter',{bubbles:true}));
+          }
+          results.push({op:a.op, ref:a.r, ok:true});
+          break;
+        }
+        case 'type': {
+          const g = guard(a.e, a.r);
+          if (g) { results.push({op:'type', ref:a.r, ...g}); break; }
+          const el = window.__aileron_refs[a.r];
+          el.scrollIntoView({block:'center'}); el.focus();
+          if (el.disabled || el.readOnly) { results.push({op:'type', ref:a.r, ok:false, err:'READONLY'}); break; }
+          if (a.clear) el.value = '';
+          const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : (el.isContentEditable ? null : HTMLInputElement.prototype);
+          if (proto) { const set = Object.getOwnPropertyDescriptor(proto, 'value').set; set.call(el, a.text); }
+          else { el.textContent = a.text; }
+          el.dispatchEvent(new Event('input', {bubbles:true}));
+          el.dispatchEvent(new Event('change', {bubbles:true}));
+          results.push({op:'type', ref:a.r, ok:true, v: String(el.value ?? '').slice(0,40)});
+          break;
+        }
+        case 'key': {
+          const t = document.activeElement || document.body;
+          const code = {Enter:13,Tab:9,Escape:27,Backspace:8,Delete:46,ArrowDown:40,ArrowUp:38,ArrowLeft:37,ArrowRight:39,Home:36,End:35,PageUp:33,PageDown:34,' ':32}[a.key] ?? 0;
+          const opts = {key: a.key, keyCode: code, which: code, bubbles: true, cancelable: true};
+          t.dispatchEvent(new KeyboardEvent('keydown', opts));
+          t.dispatchEvent(new KeyboardEvent('keyup', opts));
+          results.push({op:'key', key:a.key, ok:true});
+          break;
+        }
+        case 'select': {
+          const g = guard(a.e, a.r);
+          if (g) { results.push({op:'select', ref:a.r, ...g}); break; }
+          const el = window.__aileron_refs[a.r];
+          if (el.tagName !== 'SELECT') { results.push({op:'select', ref:a.r, ok:false, err:'NOT_SELECT'}); break; }
+          const want = new Set(a.values || []);
+          let picked = 0;
+          for (const o of el.options) { const hit = want.has(o.value) || want.has(o.text); o.selected = hit; if (hit) picked++; }
+          el.dispatchEvent(new Event('input', {bubbles:true}));
+          el.dispatchEvent(new Event('change', {bubbles:true}));
+          results.push({op:'select', ref:a.r, ok:true, picked});
+          break;
+        }
+        case 'submit': {
+          const t = document.activeElement || document.body;
+          const f = t.closest && t.closest('form');
+          if (f) { if (f.requestSubmit) { f.requestSubmit(); } else { f.submit(); } }
+          results.push({op:'submit', ok:true, form: !!f});
+          break;
+        }
+        default:
+          results.push({op: String(a.op ?? '?'), ok:false, err:'UNKNOWN_OP'});
+      }
+    } catch (ex) {
+      results.push({op: String(a.op ?? '?'), ok:false, err:'EXCEPTION', detail: String(ex).slice(0,80)});
+    }
+    if (results.length >= 50) { results.push({op:'truncated', ok:false, err:'MAX_50_ACTIONS'}); break; }
+  }
+  return JSON.stringify({ok: results.every(r => r.ok), results});
+})()"#
+        .replace("__ACTIONS__", actions_json)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "manual: prints bulk_js for node --check"]
+    fn print_bulk_js() {
+        let js = bulk_js(
+            r#"[{"op":"type","epoch":2,"ref":4,"text":"webassembly","clear":true},{"op":"submit"}]"#,
+        );
+        println!("LEN={}", js.len());
+        println!("{js}");
+    }
 
     #[test]
     fn walker_embeds_epoch_and_tier_filter() {

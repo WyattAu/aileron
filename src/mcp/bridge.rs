@@ -23,6 +23,10 @@ pub enum McpCommand {
     GetActivePane {
         response_tx: oneshot::Sender<(String, String)>,
     },
+    /// List download tasks (Era-1 S18): id, url, filename, progress.
+    ListDownloads {
+        response_tx: oneshot::Sender<String>,
+    },
     /// List all bookmarks from the database.
     ListBookmarks {
         response_tx: oneshot::Sender<String>,

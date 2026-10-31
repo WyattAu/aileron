@@ -815,6 +815,30 @@ pub fn process_mcp_commands(
                 });
                 let _ = response_tx.send((url, title));
             }
+            McpCommand::ListDownloads { response_tx } => {
+                let rows: Vec<String> = app_state
+                    .download_manager
+                    .progress_all()
+                    .iter()
+                    .map(|d| {
+                        format!(
+                            "#{} {} {} {}/{} ({:.0}%) {:?}",
+                            d.id,
+                            d.state,
+                            d.filename,
+                            crate::downloads::DownloadProgress::format_bytes(d.received_bytes),
+                            crate::downloads::DownloadProgress::format_bytes(d.total_bytes),
+                            d.fraction * 100.0,
+                            d.url
+                        )
+                    })
+                    .collect();
+                let _ = response_tx.send(if rows.is_empty() {
+                    "No downloads.".into()
+                } else {
+                    rows.join("\n")
+                });
+            }
             McpCommand::ListBookmarks { response_tx } => {
                 let result = if let Some(db) = app_state.db.as_ref() {
                     match crate::db::bookmarks::all_bookmarks(db) {

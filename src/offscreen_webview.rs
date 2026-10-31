@@ -36,8 +36,9 @@ use crate::servo::texture_share::TexturePool;
 use crate::servo::wry_engine::WryEvent;
 #[cfg(target_os = "linux")]
 use crate::servo::wry_pages::{
-    ERROR_MONITOR_JS, aileron_new_tab_page, aileron_reader_page, aileron_settings_page,
-    aileron_welcome_page, file_browser_page, html_escape, is_pdf_url, percent_decode,
+    ERROR_MONITOR_JS, OBSERVABILITY_MONITOR_JS, aileron_new_tab_page, aileron_reader_page,
+    aileron_settings_page, aileron_welcome_page, file_browser_page, html_escape, is_pdf_url,
+    percent_decode,
 };
 
 #[cfg(target_os = "linux")]
@@ -243,6 +244,7 @@ impl OffscreenWebView {
             })
             .with_initialization_script(&privacy_script)
             .with_initialization_script(ERROR_MONITOR_JS)
+            .with_initialization_script(OBSERVABILITY_MONITOR_JS)
             .with_custom_protocol("aileron".into(), {
                 let open_tx = event_tx.clone();
                 crate::servo::protocol::aileron_protocol_handler(Box::new(move |page_name, uri| {
