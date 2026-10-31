@@ -1073,6 +1073,39 @@ pub fn process_mcp_commands(
                     "Error: could not set user agent (no webkit child)".into()
                 });
             }
+            McpCommand::SetViewport {
+                width,
+                height,
+                response_tx,
+            } => {
+                // Era-3 mobile lane: the layout viewport is what responsive
+                // sites key on (media queries) - a mobile UA alone keeps a
+                // desktop layout. Resize, then re-load under the settle hold.
+                let (w, h) = (width.max(200), height.max(200));
+                let reloaded = offscreen_panes
+                    .get_mut(&active_id)
+                    .map(|p| {
+                        p.set_viewport(w, h);
+                        let current = p.url().clone();
+                        p.navigate_settled(&current, std::time::Duration::from_secs(60));
+                    })
+                    .is_some();
+                if reloaded {
+                    *app_state.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
+                    let epoch_now = app_state
+                        .mcp_nav_epoch
+                        .get(&active_id)
+                        .copied()
+                        .unwrap_or(0);
+                    app_state.mcp_settled_epoch.insert(active_id, epoch_now);
+                    app_state.session.session_dirty = true;
+                }
+                let _ = response_tx.send(if reloaded {
+                    format!("Viewport set to {w}x{h} and page reloaded")
+                } else {
+                    "Error: no active pane".into()
+                });
+            }
             McpCommand::ReadAudit { limit, response_tx } => {
                 let log = app_state.audit_log.borrow();
                 let skip = log.len().saturating_sub(limit);

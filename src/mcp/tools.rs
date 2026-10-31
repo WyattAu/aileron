@@ -822,6 +822,32 @@ act_tool!(
     }
 );
 
+act_tool!(
+    BrowserSetViewportTool,
+    "browser_set_viewport",
+    "Resize the active pane's layout viewport and reload - what responsive sites actually key on (media queries); pair with browser_set_ua android/ios for true mobile emulation. Presets: mobile 412x853, phone 390x844, tablet 768x1024",
+    json!({"type":"object","properties":{
+        "width": {"type":"integer","description":"Viewport width in CSS px (min 200)"},
+        "height": {"type":"integer","description":"Viewport height in CSS px (min 200)"}
+    },"required":["width","height"]}),
+    |self_, args| {
+        let width = args.get("width").and_then(|v| v.as_i64()).unwrap_or(412) as i32;
+        let height = args.get("height").and_then(|v| v.as_i64()).unwrap_or(853) as i32;
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self_
+            .command_tx
+            .send(crate::mcp::bridge::McpCommand::SetViewport {
+                width,
+                height,
+                response_tx,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Viewport change cancelled"))
+    }
+);
+
 /// Tool: Search the web using DuckDuckGo HTML lite endpoint.
 /// Performs a real HTTP request to DuckDuckGo's lite HTML interface
 /// and extracts search result titles and URLs.
@@ -2121,6 +2147,10 @@ pub fn create_tools(state: McpState, command_tx: CommandTx) -> Vec<Box<dyn McpTo
         Box::new(WorkspaceListTool::new(state.clone(), command_tx.clone())),
         Box::new(AuditLogTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserSetUaTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserSetViewportTool::new(
+            state.clone(),
+            command_tx.clone(),
+        )),
         Box::new(BrowserBulkActTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserWaitForTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserConsoleTool::new(state.clone(), command_tx.clone())),
@@ -2222,7 +2252,7 @@ mod tests {
         let (tx, _) = std::sync::mpsc::channel();
         let tx = CommandTx::new(tx, None);
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 46);
+        assert_eq!(tools.len(), 47);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_get_text"));

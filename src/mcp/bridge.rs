@@ -85,6 +85,7 @@ impl McpCommand {
             McpCommand::WorkspaceDiff { .. } => "workspace_diff",
             McpCommand::WorkspaceList { .. } => "workspace_list",
             McpCommand::SetUserAgent { .. } => "browser_set_ua",
+            McpCommand::SetViewport { .. } => "browser_set_viewport",
             _ => "execute_js",
         }
     }
@@ -225,6 +226,12 @@ pub enum McpCommand {
     /// Set the pane's WebKit user agent and reload (Era-3 mobile lane).
     SetUserAgent {
         ua: String,
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Resize the pane's layout viewport (Era-3 mobile lane).
+    SetViewport {
+        width: i32,
+        height: i32,
         response_tx: oneshot::Sender<String>,
     },
     /// List all bookmarks from the database.

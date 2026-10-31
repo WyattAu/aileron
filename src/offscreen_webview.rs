@@ -1140,6 +1140,23 @@ a {{ color: #4db4ff; }}
         })
     }
 
+    /// Resize the pane's layout viewport (Era-3 mobile lane): the real
+    /// difference between mobile and desktop rendering is the viewport width
+    /// (media queries) - a mobile UA alone keeps a desktop layout. Mirrors
+    /// the force_redraw sizing pattern; marks dirty for the frame loop.
+    #[cfg(target_os = "linux")]
+    pub fn set_viewport(&mut self, w: i32, h: i32) {
+        self.width = w;
+        self.height = h;
+        self.gtk_fixed.set_size_request(w, h);
+        for child in self.gtk_fixed.children() {
+            child.set_size_request(w, h);
+            self.gtk_fixed.move_(&child, 0, 0);
+        }
+        self.offscreen.queue_resize();
+        self.dirty = true;
+    }
+
     /// Force a redraw by doing a micro-resize (shrink then restore).
     /// This triggers WebKitGTK's GL paint cycle which is required for
     /// snapshot/pixbuf capture to work on GL-composited content.
