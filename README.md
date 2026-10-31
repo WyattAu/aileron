@@ -449,6 +449,31 @@ return [[
 
 Use `:scripts` to list loaded scripts.
 
+## Agent Mode (headless MCP daemon)
+
+`aileron --agent` runs the agent-native profile (Era-1 of
+[ROADMAP-2027-2031](docs/roadmap/ROADMAP-2027-2031.md)): the leanest,
+most feature-complete browser MCP server — no window, compositor, chrome,
+terminal, or input routing. Offscreen WebKitGTK panes + storage + the MCP
+relay on 127.0.0.1:9543 (same `scripts/aileron-mcp` client as the headed
+runtime; `deploy/aileron-agent.service` runs it under Xvfb).
+
+39 tools, all core — observation tiers (`browser_observe` T0/T3,
+`browser_snapshot` T1/T2), epoch-stamped element refs with fail-closed
+actuation (`browser_click/type/hover/focus/select/press_key/drag`),
+bulk transactions (`bulk_act`, per-action status), waits
+(`browser_wait_for`), console/network rings (`browser_console_messages`,
+`browser_network_requests`), cookies, downloads, bookmarks, workspaces.
+
+Guarantees, not heuristics: read-your-writes is enforced by navigation
+epochs (spec: `.specs/01_research/YP-MCP-NAV-EPOCH-001.md`; proofs:
+`.specs/02_architecture/proofs/Aileron/MCP/`), and every action reference
+carries its snapshot epoch — stale refs fail closed (YP-AGENT-ACI-001).
+
+Measured (Xvfb, 1 pane, this machine): navigate→content p50 ~300ms,
+idle RSS ~235MB. Same-machine headless baseline: node + headless
+Chromium stack ~1GB RSS at init 2.4s + first-page launch 1.6s.
+
 ## Architecture
 
 ```
