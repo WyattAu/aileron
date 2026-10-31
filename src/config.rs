@@ -91,6 +91,12 @@ pub struct Config {
 
     /// Enable automatic HTTPS upgrade for known-safe domains.
     pub https_upgrade_enabled: bool,
+    /// MCP session policy profile (Era-3): "permissive" = new sessions
+    /// unrestricted; "balanced" = new sessions scoped to read+mutate
+    /// (irreversible requires explicit session_scope re-grant... narrowing
+    /// only, so this is the default ceiling); "strict" = read-only by
+    /// default. Applied to NEW TCP sessions at accept.
+    pub mcp_policy: String,
 
     /// Enable tracking protection (block known tracker domains, strip referrer, send DNT/GPC).
     pub tracking_protection_enabled: bool,
@@ -446,6 +452,7 @@ impl Default for Config {
             render_mode: "native".into(),
             adaptive_quality: true,
             https_upgrade_enabled: true,
+            mcp_policy: "permissive".to_string(),
             tracking_protection_enabled: true,
             config_version: 2,
             popup_blocker_enabled: true,
@@ -624,6 +631,9 @@ adblock_enabled = true
 
 # Enable automatic HTTPS upgrade for known-safe domains
 https_upgrade_enabled = true
+
+# MCP session policy: permissive | balanced | strict
+mcp_policy = "permissive"
 
 # Enable tracking protection (blocks trackers, sends DNT/GPC, strict referrer)
 tracking_protection_enabled = true

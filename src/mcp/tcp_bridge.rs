@@ -51,6 +51,7 @@ pub fn start_tcp_mcp_server(
     mcp_state: McpState,
     command_tx: crate::mcp::bridge::CommandTx,
     registry: crate::mcp::bridge::SessionRegistry,
+    initial_caps: Option<crate::mcp::bridge::SessionCaps>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let listener = match TcpListener::bind((MCP_TCP_BIND_ADDR, MCP_TCP_PORT)) {
@@ -73,20 +74,32 @@ pub fn start_tcp_mcp_server(
                 Ok(stream) => {
                     // YP-MCP-SESSIONS-002 (Era-2 S27): every connection is a
                     // session - fresh id, own tool set over the shared
-                    // channel (tags route commands back to the right caps).
+                    // channel. Sessions are LONG-LIVED (the relay holds one
+                    // connection), so each is served on its own thread: the
+                    // accept loop must not sit in one session's blocking
+                    // read loop or every other session starves.
                     let sid = uuid::Uuid::new_v4();
-                    info!("[tcp-mcp] session {} connected", &sid.to_string()[..8]);
-                    let tools = crate::mcp::tools::create_tools(
-                        mcp_state.clone(),
-                        command_tx.with_session(sid),
-                    );
-                    let mut server = McpServer::new();
-                    for tool in tools {
-                        server.register_tool(tool);
-                    }
-                    handle_tcp_connection(stream, &server, sid, &registry);
-                    registry.lock().ok().map(|mut r| r.remove(&sid));
-                    info!("[tcp-mcp] session {} disconnected", &sid.to_string()[..8]);
+                    let state = mcp_state.clone();
+                    let tx = command_tx.clone();
+                    let registry = registry.clone();
+                    let initial_caps = initial_caps.clone();
+                    let handle = std::thread::spawn(move || {
+                        // Policy profile (Era-3 S38): seed the session's caps
+                        // per the configured profile before first dispatch.
+                        if let Some(caps) = initial_caps {
+                            registry.lock().ok().map(|mut r| r.insert(sid, caps));
+                        }
+                        info!("[tcp-mcp] session {} connected", &sid.to_string()[..8]);
+                        let tools = crate::mcp::tools::create_tools(state, tx.with_session(sid));
+                        let mut server = McpServer::new();
+                        for tool in tools {
+                            server.register_tool(tool);
+                        }
+                        handle_tcp_connection(stream, &server, sid, &registry);
+                        registry.lock().ok().map(|mut r| r.remove(&sid));
+                        info!("[tcp-mcp] session {} disconnected", &sid.to_string()[..8]);
+                    });
+                    let _ = handle; // sessions outlive the accept iteration
                 }
                 Err(e) => warn!("[tcp-mcp] Connection accept error: {e}"),
             }

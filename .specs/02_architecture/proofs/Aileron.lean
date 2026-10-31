@@ -4,4 +4,5 @@ import Aileron.MCP.ProofMCP
 import Aileron.MCP.ProofNavEpoch
 import Aileron.MCP.ProofACI
 import Aileron.MCP.ProofSessions
+import Aileron.MCP.ProofConfine
 import Aileron.WM.ProofPaneLifecycle

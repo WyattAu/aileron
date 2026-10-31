@@ -615,6 +615,36 @@ fn wait_mcp_nav_settled(
     }
 }
 
+/// Append one entry to the enterprise audit ring (Era-3): provenance per
+/// dispatched or denied command. Cap 1000, oldest dropped.
+#[cfg(feature = "mcp")]
+fn audit_record(
+    app_state: &mut AppState,
+    session: Option<Uuid>,
+    command: &McpCommand,
+    pane: Uuid,
+    denied: bool,
+) {
+    let epoch = app_state.mcp_settled_epoch.get(&pane).copied().unwrap_or(0);
+    let entry = format!(
+        "{} session={} tool={} class={} pane={} epoch={} outcome={}",
+        chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
+        session
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "default".into()),
+        command.tool_name(),
+        crate::mcp::bridge::tool_class(command.tool_name()),
+        &pane.to_string()[..8],
+        epoch,
+        if denied { "DENIED" } else { "ok" }
+    );
+    let mut log = app_state.audit_log.borrow_mut();
+    if log.len() >= 1000 {
+        log.pop_front();
+    }
+    log.push_back(entry);
+}
+
 #[cfg(feature = "mcp")]
 pub fn process_mcp_commands(
     mcp_bridge: &McpBridge,
@@ -672,6 +702,7 @@ pub fn process_mcp_commands(
                     &sid.to_string()[..8],
                     &active_id.to_string()[..8]
                 );
+                audit_record(app_state, session, &command, active_id, true);
                 if let McpCommand::ExecuteJs { response_tx, .. } = command {
                     let _ = response_tx.send(format!(
                         "FORBIDDEN: pane {} is outside this session's scope (session_scope to adjust)",
@@ -685,6 +716,7 @@ pub fn process_mcp_commands(
         // the pane's outstanding navigation before executing. Navigations
         // pass through instantly (nav <= settled when nothing is outstanding
         // from before) and advance the epoch themselves.
+        audit_record(app_state, session, &command, active_id, false);
         wait_mcp_nav_settled(
             app_state,
             offscreen_panes,
@@ -1008,6 +1040,16 @@ pub fn process_mcp_commands(
                         }
                     }
                     Err(e) => format!("Error: {e}"),
+                });
+            }
+            McpCommand::ReadAudit { limit, response_tx } => {
+                let log = app_state.audit_log.borrow();
+                let skip = log.len().saturating_sub(limit);
+                let lines: Vec<String> = log.iter().skip(skip).cloned().collect();
+                let _ = response_tx.send(if lines.is_empty() {
+                    "Audit log empty.".into()
+                } else {
+                    lines.join("\n")
                 });
             }
             McpCommand::ListDownloads { response_tx } => {
@@ -1634,10 +1676,30 @@ pub fn load_default_adblock_rules(adblocker: &mut crate::net::adblock::AdBlocker
 }
 
 #[cfg(feature = "mcp")]
-pub fn spawn_mcp_server(mcp_bridge: &McpBridge, registry: crate::mcp::bridge::SessionRegistry) {
+pub fn spawn_mcp_server(
+    mcp_bridge: &McpBridge,
+    registry: crate::mcp::bridge::SessionRegistry,
+    policy: &str,
+) {
     use crate::mcp::tools;
     let mcp_state = mcp_bridge.state.clone();
     let mcp_command_tx = mcp_bridge.command_tx.clone();
+
+    // Policy profile (Era-3 S38): the default ceiling for NEW sessions.
+    let initial_caps = match policy {
+        "strict" => Some(crate::mcp::bridge::SessionCaps {
+            panes: None,
+            tool_classes: Some(std::collections::HashSet::from(["read".to_string()])),
+        }),
+        "balanced" => Some(crate::mcp::bridge::SessionCaps {
+            panes: None,
+            tool_classes: Some(std::collections::HashSet::from([
+                "read".to_string(),
+                "mutate".to_string(),
+            ])),
+        }),
+        _ => None, // permissive (default)
+    };
 
     // TCP bridge (Era-2 S27): per-connection session tool sets are built
     // inside the accept loop from this shared state; the registry carries
@@ -1646,6 +1708,7 @@ pub fn spawn_mcp_server(mcp_bridge: &McpBridge, registry: crate::mcp::bridge::Se
         mcp_state.clone(),
         mcp_command_tx.clone(),
         registry,
+        initial_caps,
     );
 
     // A separate tool set backs the in-process stdio transport; both transports

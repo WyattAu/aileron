@@ -758,6 +758,26 @@ act_tool!(
     }
 );
 
+act_tool!(
+    AuditLogTool,
+    "audit_log",
+    "Enterprise audit trail: every dispatched or denied MCP command with provenance (timestamp, session, tool, class, pane, epoch, outcome). Cap 1000 entries, oldest dropped",
+    json!({"type":"object","properties":{
+        "limit": {"type":"integer","description":"Return the last N entries (default 50)"}
+    },"required":[]}),
+    |self_, args| {
+        let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self_
+            .command_tx
+            .send(crate::mcp::bridge::McpCommand::ReadAudit { limit, response_tx })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Audit read cancelled"))
+    }
+);
+
 /// Tool: Search the web using DuckDuckGo HTML lite endpoint.
 /// Performs a real HTTP request to DuckDuckGo's lite HTML interface
 /// and extracts search result titles and URLs.
@@ -2055,6 +2075,7 @@ pub fn create_tools(state: McpState, command_tx: CommandTx) -> Vec<Box<dyn McpTo
         )),
         Box::new(WorkspaceDiffTool::new(state.clone(), command_tx.clone())),
         Box::new(WorkspaceListTool::new(state.clone(), command_tx.clone())),
+        Box::new(AuditLogTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserBulkActTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserWaitForTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserConsoleTool::new(state.clone(), command_tx.clone())),
@@ -2156,7 +2177,7 @@ mod tests {
         let (tx, _) = std::sync::mpsc::channel();
         let tx = CommandTx::new(tx, None);
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 44);
+        assert_eq!(tools.len(), 45);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_get_text"));

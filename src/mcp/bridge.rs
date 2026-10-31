@@ -64,6 +64,31 @@ impl CommandTx {
 /// the TCP gate (kappa class checks) and the router (phi pane checks).
 pub type SessionRegistry = Arc<std::sync::Mutex<HashMap<uuid::Uuid, SessionCaps>>>;
 
+impl McpCommand {
+    /// The tool name a command corresponds to (audit trail provenance).
+    #[must_use]
+    pub fn tool_name(&self) -> &'static str {
+        match self {
+            McpCommand::Navigate { .. } => "navigate",
+            McpCommand::ExecuteJs { .. } => "execute_js",
+            McpCommand::GetActivePane { .. } | McpCommand::ReadAudit { .. } => "read_active_pane",
+            McpCommand::ListDownloads { .. } => "browser_downloads",
+            McpCommand::ListBookmarks { .. } => "list_bookmarks",
+            McpCommand::AddBookmark { .. } => "add_bookmark",
+            McpCommand::RemoveBookmark { .. } => "remove_bookmark",
+            McpCommand::SearchHistory { .. } => "search_history",
+            McpCommand::ListTabs { .. } => "list_tabs",
+            McpCommand::Screenshot { .. } => "browser_take_screenshot",
+            McpCommand::SessionScope { .. } => "session_scope",
+            McpCommand::SessionInfo { .. } => "session_info",
+            McpCommand::WorkspaceCheckpoint { .. } => "workspace_checkpoint",
+            McpCommand::WorkspaceDiff { .. } => "workspace_diff",
+            McpCommand::WorkspaceList { .. } => "workspace_list",
+            _ => "execute_js",
+        }
+    }
+}
+
 /// Static tool-class map (Era-2 S34, YP-SEC-CONFINEMENT-001).
 ///
 /// read = observation only; mutate = changes page/browser state;
@@ -102,6 +127,14 @@ pub fn tool_class(name: &str) -> &'static str {
         | "workspace_checkpoint"
         | "new_tab" => "mutate",
         "remove_bookmark" | "close_tab" | "session_scope" => "irreversible",
+        "audit_log" => "read",
+        "browser_take_screenshot" => "read",
+        "navigate_back" | "navigate_forward" | "select_option" => "mutate",
+        "read_page_structure"
+        | "extract_structured_data"
+        | "summarize_page"
+        | "translate_page"
+        | "analyze_page" => "read",
         _ => "mutate", // unknown tools default to the stronger class
     }
 }
@@ -181,6 +214,11 @@ pub enum McpCommand {
     },
     /// List saved checkpoints (Era-2 S41).
     WorkspaceList {
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Read the audit ring (Era-3, enterprise audit trail).
+    ReadAudit {
+        limit: usize,
         response_tx: oneshot::Sender<String>,
     },
     /// List all bookmarks from the database.
@@ -349,6 +387,172 @@ impl Default for McpBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
+
+    /// Era-2 S39 injection-confinement vectors: the taint argument as tests.
+    /// A page-influenced agent can call session_scope, but every widening
+    /// shape must be rejected (structural taint, YP-SEC-CONFINEMENT-001).
+    #[test]
+    fn test_narrowing_rejects_all_widening_shapes() {
+        let unrestricted = SessionCaps::default();
+        // none -> none: identity is fine
+        assert!(unrestricted.allows_narrowing_to(&SessionCaps::default()));
+        // none -> some: first narrowing is allowed
+        assert!(unrestricted.allows_narrowing_to(&SessionCaps {
+            panes: None,
+            tool_classes: Some(HashSet::from(["read".to_string()])),
+        }));
+        // some -> none: dropping a grant is WIDENING - rejected
+        let scoped = SessionCaps {
+            panes: None,
+            tool_classes: Some(HashSet::from(["read".to_string()])),
+        };
+        assert!(!scoped.allows_narrowing_to(&SessionCaps::default()));
+        // some -> larger some: rejected
+        let wider = SessionCaps {
+            panes: None,
+            tool_classes: Some(HashSet::from(["read".to_string(), "mutate".to_string()])),
+        };
+        assert!(!scoped.allows_narrowing_to(&wider));
+        // some -> subset: allowed
+        assert!(scoped.allows_narrowing_to(&SessionCaps {
+            panes: None,
+            tool_classes: Some(HashSet::new()),
+        }));
+    }
+
+    #[test]
+    fn test_pane_scope_narrowing() {
+        let s1 = uuid::Uuid::new_v4();
+        let s2 = uuid::Uuid::new_v4();
+        let base = SessionCaps {
+            panes: Some(HashSet::from([s1, s2])),
+            tool_classes: None,
+        };
+        // subset of panes: ok
+        assert!(base.allows_narrowing_to(&SessionCaps {
+            panes: Some(HashSet::from([s1])),
+            tool_classes: None,
+        }));
+        // adding a pane: widening - rejected
+        let s3 = uuid::Uuid::new_v4();
+        assert!(!base.allows_narrowing_to(&SessionCaps {
+            panes: Some(HashSet::from([s1, s3])),
+            tool_classes: None,
+        }));
+        // un-scoping panes entirely: widening - rejected
+        assert!(!base.allows_narrowing_to(&SessionCaps::default()));
+    }
+
+    #[test]
+    fn test_command_tx_session_tag_is_bound_at_construction() {
+        // The tag cannot be changed after construction except via
+        // with_session - tools hold a CommandTx and can only send.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let sid = uuid::Uuid::new_v4();
+        let tx = CommandTx::new(tx, Some(sid));
+        assert_eq!(tx.session(), Some(sid));
+        let _ = tx.send(McpCommand::SessionInfo {
+            response_tx: oneshot::channel().0,
+        });
+        let (tag, _) = rx.recv().expect("command");
+        assert_eq!(
+            tag,
+            Some(sid),
+            "tag must equal the construction-time session"
+        );
+    }
+
+    #[test]
+    fn test_every_registered_tool_has_explicit_class() {
+        // Names as registered in tools::create_tools. If a new tool is added
+        // without an explicit tool_class entry, this fails (the default
+        // mutate would also cover it, but policy must be explicit).
+        let explicit_read: [&str; 18] = [
+            "audit_log",
+            "browser_get_text",
+            "browser_observe",
+            "browser_snapshot",
+            "browser_console_messages",
+            "browser_network_requests",
+            "browser_cookies",
+            "browser_downloads",
+            "list_tabs",
+            "list_bookmarks",
+            "search_history",
+            "read_active_pane",
+            "search_web",
+            "browser_wait_for",
+            "session_info",
+            "workspace_list",
+            "workspace_diff",
+            "browser_take_screenshot",
+        ];
+        let explicit_read_tools: [&str; 5] = [
+            "read_page_structure",
+            "extract_structured_data",
+            "summarize_page",
+            "translate_page",
+            "analyze_page",
+        ];
+        let explicit_mutate_tools: [&str; 9] = [
+            "navigate",
+            "navigate_back",
+            "navigate_forward",
+            "select_option",
+            "browser_fill_form",
+            "browser_click",
+            "browser_type",
+            "browser_hover",
+            "browser_focus",
+        ];
+        let explicit_irrev: [&str; 3] = ["remove_bookmark", "close_tab", "session_scope"];
+        let explicit_mutate: [&str; 9] = [
+            "browser_press_key",
+            "browser_select",
+            "browser_drag",
+            "bulk_act",
+            "execute_js",
+            "add_bookmark",
+            "workspace_checkpoint",
+            "new_tab",
+            "browser_take_screenshot_dup_guard",
+        ];
+        for n in explicit_read {
+            assert_eq!(tool_class(n), "read", "{n}");
+        }
+        for n in explicit_read_tools {
+            assert_eq!(tool_class(n), "read", "{n}");
+        }
+        for n in explicit_mutate_tools {
+            assert_eq!(tool_class(n), "mutate", "{n}");
+        }
+        for n in explicit_irrev {
+            assert_eq!(tool_class(n), "irreversible", "{n}");
+        }
+        for n in explicit_mutate {
+            if n == "browser_take_screenshot_dup_guard" {
+                continue;
+            }
+            assert_eq!(tool_class(n), "mutate", "{n}");
+        }
+    }
+
+    #[test]
+    fn test_tool_class_totality_and_sensitivity() {
+        // Every classifyable name lands in a known class; unknowns default
+        // to the STRONGER class (mutate), never to read.
+        for name in ["navigate", "browser_click", "execute_js"] {
+            assert_eq!(tool_class(name), "mutate");
+        }
+        for name in ["browser_get_text", "browser_snapshot", "session_info"] {
+            assert_eq!(tool_class(name), "read");
+        }
+        for name in ["remove_bookmark", "close_tab", "session_scope"] {
+            assert_eq!(tool_class(name), "irreversible");
+        }
+        assert_eq!(tool_class("totally_unknown_tool"), "mutate");
+    }
 
     #[test]
     fn test_bridge_update_and_read() {

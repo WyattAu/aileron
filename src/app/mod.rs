@@ -286,6 +286,10 @@ pub struct AppState {
     /// Session capability registry (Era-2, YP-MCP-SESSIONS-002): shared with
     /// the TCP MCP server thread; the router enforces phi from here.
     pub session_registry: crate::mcp::bridge::SessionRegistry,
+    /// Enterprise audit ring (Era-3): every dispatched or denied MCP command
+    /// with provenance (session, tool, class, pane, epoch). Cap 1000, main-
+    /// thread only (the router writes; the audit tool reads via command arm).
+    pub audit_log: std::cell::RefCell<std::collections::VecDeque<String>>,
 
     /// Web engine manager — one engine instance per pane.
     pub engines: PaneStateManager,
@@ -615,6 +619,7 @@ impl AppState {
             mcp_nav_epoch: HashMap::new(),
             mcp_settled_epoch: HashMap::new(),
             session_registry: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
+            audit_log: std::cell::RefCell::new(std::collections::VecDeque::new()),
             pending_workspace_restore: None,
             current_workspace_name: "default".into(),
             #[cfg(feature = "terminal")]

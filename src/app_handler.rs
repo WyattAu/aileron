@@ -109,7 +109,8 @@ impl ApplicationHandler for AileronApp {
                 .as_ref()
                 .map(|s| s.session_registry.clone())
                 .expect("app state must exist before MCP server spawn");
-            frame_tasks::spawn_mcp_server(&self.mcp_bridge, registry);
+            let policy = self.config.mcp_policy.clone();
+            frame_tasks::spawn_mcp_server(&self.mcp_bridge, registry, &policy);
         }
 
         info!(

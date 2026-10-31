@@ -74,7 +74,11 @@ pub fn run() -> anyhow::Result<()> {
 
     // MCP surface: TCP 127.0.0.1:9543 (the `aileron-mcp` relay target) plus the
     // in-process stdio transport, identical tools on both.
-    frame_tasks::spawn_mcp_server(&mcp_bridge, app_state.session_registry.clone());
+    frame_tasks::spawn_mcp_server(
+        &mcp_bridge,
+        app_state.session_registry.clone(),
+        &config.mcp_policy,
+    );
 
     // Initial pane: the BSP root AppState::new created from the homepage.
     let root_pane = app_state.wm.active_pane_id();
