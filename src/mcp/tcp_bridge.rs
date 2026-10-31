@@ -54,7 +54,11 @@ pub fn start_tcp_mcp_server(
     initial_caps: Option<crate::mcp::bridge::SessionCaps>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        let listener = match TcpListener::bind((MCP_TCP_BIND_ADDR, MCP_TCP_PORT)) {
+        // Container deployments must bind 0.0.0.0 (docker port publish
+        // connects from the gateway IP, which 127.0.0.1 refuses).
+        let bind_addr = std::env::var("AILERON_MCP_BIND_ADDR")
+            .unwrap_or_else(|_| MCP_TCP_BIND_ADDR.to_string());
+        let listener = match TcpListener::bind((bind_addr.as_str(), MCP_TCP_PORT)) {
             Ok(l) => l,
             Err(e) => {
                 warn!(

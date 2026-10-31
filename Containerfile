@@ -26,6 +26,7 @@ COPY --from=build /src/target/debug/aileron /usr/local/bin/aileron
 COPY --from=build /src/target/debug/aileron-mcp /usr/local/bin/aileron-mcp
 COPY --from=build /src/scripts/aileron-mcp /usr/local/bin/aileron-mcp-wrapper
 ENV LD_LIBRARY_PATH=/usr/lib
+ENV AILERON_MCP_BIND_ADDR=0.0.0.0
 ENV RUST_LOG=info
 # Container runs its own Xvfb; the MCP port is the only interface.
 EXPOSE 9543

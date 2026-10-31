@@ -465,6 +465,21 @@ bulk transactions (`bulk_act`, per-action status), waits
 (`browser_wait_for`), console/network rings (`browser_console_messages`,
 `browser_network_requests`), cookies, downloads, bookmarks, workspaces.
 
+**Sessions & policy:** every MCP connection is a session — `session_scope`
+narrows it monotonically (pane focus sets + tool classes read/mutate/
+irreversible; widening structurally impossible), `session_info` reports it,
+`mcp_policy` config sets the default ceiling (permissive/balanced/strict),
+and `audit_log` exposes the full provenance trail (who/what/where/when/
+outcome). Formal backing: ProofSessions.lean, ProofConfine.lean.
+
+**Mobile emulation:** `browser_set_ua` (android/ios/desktop presets) +
+`browser_set_viewport` (real layout-viewport resize — what responsive
+sites key on). Verified against a real Chrome-on-Android device over CDP.
+
+**Workspace memory:** `workspace_checkpoint` / `workspace_diff` /
+`workspace_list` / `workspace_query` — named, restorable page-states with
+programmatic query (the environment-side memory agents lack elsewhere).
+
 Guarantees, not heuristics: read-your-writes is enforced by navigation
 epochs (spec: `.specs/01_research/YP-MCP-NAV-EPOCH-001.md`; proofs:
 `.specs/02_architecture/proofs/Aileron/MCP/`), and every action reference
