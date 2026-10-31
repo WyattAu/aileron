@@ -283,6 +283,9 @@ pub struct AppState {
     pub mode: Mode,
     pub keybindings: KeybindingRegistry,
     pub db: Option<rusqlite::Connection>,
+    /// Session capability registry (Era-2, YP-MCP-SESSIONS-002): shared with
+    /// the TCP MCP server thread; the router enforces phi from here.
+    pub session_registry: crate::mcp::bridge::SessionRegistry,
 
     /// Web engine manager — one engine instance per pane.
     pub engines: PaneStateManager,
@@ -611,6 +614,7 @@ impl AppState {
             pending_mcp_pane_creations: VecDeque::new(),
             mcp_nav_epoch: HashMap::new(),
             mcp_settled_epoch: HashMap::new(),
+            session_registry: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             pending_workspace_restore: None,
             current_workspace_name: "default".into(),
             #[cfg(feature = "terminal")]

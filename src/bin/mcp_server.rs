@@ -1,17 +1,12 @@
-//! Standalone MCP server binary for external client (e.g. OpenCode) integration.
+//! Standalone Aileron MCP relay: bridges MCP clients speaking JSON-RPC over
+//! stdio to the browser's loopback MCP TCP bridge (`aileron::mcp::tcp_bridge`).
 //!
-//! Architecture: this binary is a thin TCP relay. It reads line-delimited
-//! JSON-RPC 2.0 requests from stdin, forwards each one to the running Aileron
-//! browser over the loopback MCP bridge (see [`aileron::mcp::tcp_bridge`]), and
-//! writes the line-delimited response to stdout. The browser process owns the
-//! canonical [`aileron::mcp::server::McpServer`] with all tool implementations
-//! registered, so dispatch behaviour is identical to the in-process stdio
-//! transport.
-//!
-//! Each request opens a fresh TCP connection. This is deliberate: it lets the
-//! standalone server tolerate browser restarts (e.g. crashes and `:crash-reload`)
-//! without the MCP client having to reconnect, at negligible cost given MCP's
-//! low request frequency.
+//! The relay holds ONE TCP connection to the browser for the lifetime of the
+//! stdio session (Era-2, YP-MCP-SESSIONS-002): the connection IS the session,
+//! and its capability set (`session_scope`) applies to every request on it.
+//! On I/O failure the relay reconnects once per request and retries - browser
+//! restarts (crash-reload, watchdog) are transparent, at the documented cost
+//! that a retried mutation may have executed before the failure.
 
 use aileron::mcp::server::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 use aileron::mcp::tcp_bridge::{MCP_TCP_BIND_ADDR, MCP_TCP_PORT};
@@ -32,6 +27,10 @@ fn main() {
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
 
+    // Persistent session connection: created lazily, reused across requests,
+    // re-established (once per request) after any I/O failure.
+    let mut conn: Option<(TcpStream, BufReader<TcpStream>)> = None;
+
     for line in stdin.lock().lines() {
         let line = match line {
             Ok(l) => l,
@@ -47,7 +46,7 @@ fn main() {
         }
 
         let response = match serde_json::from_str::<JsonRpcRequest>(&line) {
-            Ok(request) => forward_to_browser(&tcp_addr, &request),
+            Ok(request) => forward_session(&tcp_addr, &mut conn, &request),
             Err(e) => {
                 JsonRpcResponse::error(None, JsonRpcError::new(-32700, format!("Parse error: {e}")))
             }
@@ -65,74 +64,76 @@ fn main() {
     }
 }
 
-/// Forward one JSON-RPC request to the browser bridge and read one response line.
-///
-/// Any I/O or transport error is mapped to a JSON-RPC error response so the
-/// client always receives a well-formed reply on its single-line channel.
-fn forward_to_browser(tcp_addr: &str, request: &JsonRpcRequest) -> JsonRpcResponse {
-    let mut stream = match TcpStream::connect(tcp_addr) {
-        Ok(s) => s,
-        Err(e) => {
-            return JsonRpcResponse::error(
-                request.id.clone(),
-                JsonRpcError::internal_error(format!(
-                    "Cannot connect to browser at {tcp_addr}: {e}. Is the browser running?"
-                )),
-            );
+/// Ensure the session connection exists (or reconnect), then forward the
+/// request over it. One reconnect+retry per request on I/O failure.
+fn forward_session(
+    tcp_addr: &str,
+    conn: &mut Option<(TcpStream, BufReader<TcpStream>)>,
+    request: &JsonRpcRequest,
+) -> JsonRpcResponse {
+    if conn.is_none() {
+        match connect(tcp_addr) {
+            Ok(c) => *conn = Some(c),
+            Err(e) => {
+                return JsonRpcResponse::error(
+                    request.id.clone(),
+                    JsonRpcError::internal_error(format!(
+                        "Cannot connect to browser at {tcp_addr}: {e}. Is the browser running?"
+                    )),
+                );
+            }
         }
-    };
-
-    let req_str = match serde_json::to_string(request) {
-        Ok(s) => s,
-        Err(e) => {
-            return JsonRpcResponse::error(
-                request.id.clone(),
-                JsonRpcError::internal_error(format!("Failed to serialize request: {e}")),
-            );
-        }
-    };
-
-    if let Err(e) = writeln!(stream, "{req_str}") {
-        return JsonRpcResponse::error(
-            request.id.clone(),
-            JsonRpcError::internal_error(format!("TCP write error: {e}")),
-        );
-    }
-    if let Err(e) = stream.flush() {
-        return JsonRpcResponse::error(
-            request.id.clone(),
-            JsonRpcError::internal_error(format!("TCP flush error: {e}")),
-        );
     }
 
-    // Clone the stream to obtain an independent read half for line reading.
-    let read_half = match stream.try_clone() {
-        Ok(s) => s,
-        Err(e) => {
-            return JsonRpcResponse::error(
-                request.id.clone(),
-                JsonRpcError::internal_error(format!("TCP clone error: {e}")),
-            );
+    // First attempt on the existing connection; on I/O failure, reconnect
+    // once and retry (session re-attaches fresh - caps are per-connection
+    // by design and must be re-applied with session_scope after a reconnect).
+    let attempt = |conn: &mut Option<(TcpStream, BufReader<TcpStream>)>,
+                   request: &JsonRpcRequest|
+     -> Result<JsonRpcResponse, String> {
+        let Some((stream, reader)) = conn.as_mut() else {
+            return Err("no connection".into());
+        };
+        let req_str = serde_json::to_string(request)
+            .map_err(|e| format!("Failed to serialize request: {e}"))?;
+        writeln!(stream, "{req_str}").map_err(|e| format!("TCP write error: {e}"))?;
+        stream
+            .flush()
+            .map_err(|e| format!("TCP flush error: {e}"))?;
+        let mut response_line = String::new();
+        let n = reader
+            .read_line(&mut response_line)
+            .map_err(|e| format!("TCP read error: {e}"))?;
+        if n == 0 {
+            return Err("Browser closed the MCP bridge connection".into());
         }
+        serde_json::from_str::<JsonRpcResponse>(response_line.trim())
+            .map_err(|e| format!("Malformed browser response: {e}"))
     };
-    let mut reader = BufReader::new(read_half);
-    let mut response_line = String::new();
 
-    match reader.read_line(&mut response_line) {
-        Ok(0) => JsonRpcResponse::error(
-            request.id.clone(),
-            JsonRpcError::internal_error("Browser closed the MCP bridge connection"),
-        ),
-        Ok(_) => match serde_json::from_str::<JsonRpcResponse>(response_line.trim()) {
-            Ok(resp) => resp,
-            Err(e) => JsonRpcResponse::error(
-                request.id.clone(),
-                JsonRpcError::internal_error(format!("Malformed browser response: {e}")),
-            ),
-        },
-        Err(e) => JsonRpcResponse::error(
-            request.id.clone(),
-            JsonRpcError::internal_error(format!("TCP read error: {e}")),
-        ),
+    match attempt(conn, request) {
+        Ok(resp) => resp,
+        Err(first_err) => {
+            *conn = None;
+            if let Ok(c) = connect(tcp_addr) {
+                *conn = Some(c);
+            }
+            match attempt(conn, request) {
+                Ok(resp) => resp,
+                Err(_) => JsonRpcResponse::error(
+                    request.id.clone(),
+                    JsonRpcError::internal_error(format!(
+                        "Browser unreachable at {tcp_addr} ({first_err}); session re-attach: re-apply session_scope if scoped"
+                    )),
+                ),
+            }
+        }
     }
+}
+
+/// Open a session connection to the browser bridge.
+fn connect(tcp_addr: &str) -> Result<(TcpStream, BufReader<TcpStream>), String> {
+    let stream = TcpStream::connect(tcp_addr).map_err(|e| e.to_string())?;
+    let read_half = stream.try_clone().map_err(|e| e.to_string())?;
+    Ok((stream, BufReader::new(read_half)))
 }

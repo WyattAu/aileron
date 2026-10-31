@@ -647,12 +647,40 @@ pub fn process_mcp_commands(
     if app_state.pending_workspace_restore.is_some() {
         return;
     }
-    let mcp_commands: Vec<McpCommand> = mcp_bridge.poll_commands().collect();
+    let mcp_commands: Vec<(Option<Uuid>, McpCommand)> = mcp_bridge.poll_commands().collect();
     if mcp_commands.is_empty() {
         return;
     }
 
-    for command in mcp_commands {
+    for (session, command) in mcp_commands {
+        // YP-MCP-SESSIONS-002 (Era-2 S27): capability gate. A scoped session
+        // may only act on panes within its focus set (phi); violations fail
+        // closed - ExecuteJs gets an explicit FORBIDDEN response, others are
+        // dropped with a warn. Unscoped (default) sessions are unrestricted.
+        if let Some(sid) = session {
+            let caps = app_state
+                .session_registry
+                .lock()
+                .ok()
+                .and_then(|r| r.get(&sid).cloned());
+            if let Some(caps) = caps
+                && let Some(allowed) = &caps.panes
+                && !allowed.contains(&active_id)
+            {
+                warn!(
+                    "MCP: session {} FORBIDDEN on pane {} (phi scope)",
+                    &sid.to_string()[..8],
+                    &active_id.to_string()[..8]
+                );
+                if let McpCommand::ExecuteJs { response_tx, .. } = command {
+                    let _ = response_tx.send(format!(
+                        "FORBIDDEN: pane {} is outside this session's scope (session_scope to adjust)",
+                        &active_id.to_string()[..8]
+                    ));
+                }
+                continue;
+            }
+        }
         // YP-MCP-NAV-EPOCH-001 read-your-writes: every command settles behind
         // the pane's outstanding navigation before executing. Navigations
         // pass through instantly (nav <= settled when nothing is outstanding
@@ -814,6 +842,173 @@ pub fn process_mcp_commands(
                         .unwrap_or_default()
                 });
                 let _ = response_tx.send((url, title));
+            }
+            McpCommand::SessionScope {
+                panes,
+                tool_classes,
+                response_tx,
+            } => {
+                // Era-2 S28 (YP-MCP-SESSIONS-002 / YP-SEC-CONFINEMENT-001):
+                // narrowing-only capability update. The command's tag is the
+                // authoritative session identity (assigned inside the TCP
+                // accept loop) - a page cannot forge it, so the only paths
+                // into this arm carry the caller's own tag and every write
+                // must be a subset (structural taint: grants only shrink).
+                if let Some(sid) = session {
+                    let narrowed = crate::mcp::bridge::SessionCaps {
+                        panes: panes.map(|v| v.into_iter().collect()),
+                        tool_classes: tool_classes.map(|v| v.into_iter().collect()),
+                    };
+                    let result = app_state
+                        .session_registry
+                        .lock()
+                        .map(|mut reg| {
+                            let current = reg.get(&sid).cloned().unwrap_or_default();
+                            if current.allows_narrowing_to(&narrowed) {
+                                reg.insert(sid, narrowed.clone());
+                                Ok::<_, String>(narrowed)
+                            } else {
+                                Err("REJECTED: session_scope can only narrow (monotone)".into())
+                            }
+                        })
+                        .unwrap_or_else(|_| Err("registry poisoned".into()));
+                    let _ = response_tx.send(match result {
+                        Ok(caps) => format!(
+                            "{{\"session\":\"{sid}\",\"panes\":{:?},\"tool_classes\":{:?}}}",
+                            caps.panes.map(|p| p.into_iter().collect::<Vec<_>>()),
+                            caps.tool_classes.map(|c| c.into_iter().collect::<Vec<_>>())
+                        ),
+                        Err(e) => format!("Error: {e}"),
+                    });
+                }
+            }
+            McpCommand::SessionInfo { response_tx } => {
+                let caps = session
+                    .and_then(|sid| {
+                        app_state
+                            .session_registry
+                            .lock()
+                            .ok()
+                            .and_then(|r| r.get(&sid).cloned())
+                    })
+                    .unwrap_or_default();
+                let _ = response_tx.send(format!(
+                    "{{\"session\":\"{}\",\"scoped\":{},\"panes\":{:?},\"tool_classes\":{:?}}}",
+                    session
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| "default".into()),
+                    session.is_some(),
+                    caps.panes.map(|p| p.into_iter().collect::<Vec<_>>()),
+                    caps.tool_classes.map(|c| c.into_iter().collect::<Vec<_>>())
+                ));
+            }
+            McpCommand::WorkspaceCheckpoint { name, response_tx } => {
+                // Era-2 S41 (AgentRewind environment-memory pattern): save the
+                // live pane tree as a named checkpoint over the existing
+                // workspace persistence.
+                let url_of = |id: Uuid| -> Option<String> {
+                    offscreen_panes
+                        .get(&id)
+                        .map(|p| p.url().to_string())
+                        .or_else(|| wry_panes.get(&id).map(|p| p.url().to_string()))
+                };
+                let result = app_state
+                    .wm
+                    .to_workspace_data(url_of)
+                    .map_err(|e| e.to_string())
+                    .and_then(|data| {
+                        app_state
+                            .db
+                            .as_ref()
+                            .ok_or_else(|| "no database".to_string())
+                            .and_then(|db| {
+                                crate::db::workspaces::save_workspace(db, &name, &data)
+                                    .map(|_| format!("checkpoint '{name}' saved"))
+                                    .map_err(|e| e.to_string())
+                            })
+                    });
+                let _ = response_tx.send(match result {
+                    Ok(msg) => msg,
+                    Err(e) => format!("Error: {e}"),
+                });
+            }
+            McpCommand::WorkspaceDiff { name, response_tx } => {
+                // Era-2 S43: saved checkpoint vs live tree, as flat URL sets.
+                let url_of = |id: Uuid| -> Option<String> {
+                    offscreen_panes
+                        .get(&id)
+                        .map(|p| p.url().to_string())
+                        .or_else(|| wry_panes.get(&id).map(|p| p.url().to_string()))
+                };
+                let result = app_state
+                    .wm
+                    .to_workspace_data(url_of)
+                    .map_err(|e| e.to_string())
+                    .and_then(|live| {
+                        app_state
+                            .db
+                            .as_ref()
+                            .ok_or_else(|| "no database".to_string())
+                            .and_then(|db| {
+                                crate::db::workspaces::load_workspace(db, &name)
+                                    .map_err(|e| e.to_string())
+                                    .and_then(|saved| {
+                                        match saved {
+                                            None => Err(format!("no checkpoint '{name}'")),
+                                            Some((_, data)) => {
+                                                let saved_urls: std::collections::HashSet<String> =
+                                                    crate::db::workspaces::collect_urls(
+                                                        &data.tree,
+                                                    )
+                                                    .into_iter()
+                                                    .collect();
+                                                let live_urls: std::collections::HashSet<String> =
+                                                    crate::db::workspaces::collect_urls(&live.tree)
+                                                        .into_iter()
+                                                        .collect();
+                                                let added: Vec<&String> =
+                                                    live_urls.difference(&saved_urls).collect();
+                                                let removed: Vec<&String> =
+                                                    saved_urls.difference(&live_urls).collect();
+                                                Ok(format!(
+                                                    "{{\"checkpoint\":\"{name}\",\"added\":{:?},\"removed\":{:?},\"same\":{}}}",
+                                                    added, removed,
+                                                    added.is_empty() && removed.is_empty()
+                                                ))
+                                            }
+                                        }
+                                    })
+                            })
+                    });
+                let _ = response_tx.send(match result {
+                    Ok(msg) => msg,
+                    Err(e) => format!("Error: {e}"),
+                });
+            }
+            McpCommand::WorkspaceList { response_tx } => {
+                let result = app_state
+                    .db
+                    .as_ref()
+                    .ok_or_else(|| "no database".to_string())
+                    .and_then(|db| {
+                        crate::db::workspaces::list_workspaces(db).map_err(|e| e.to_string())
+                    })
+                    .map(|list| {
+                        list.iter()
+                            .map(|w| format!("{} ({})", w.name, w.updated_at))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    });
+                let _ = response_tx.send(match result {
+                    Ok(msg) => {
+                        if msg.is_empty() {
+                            "No checkpoints.".into()
+                        } else {
+                            msg
+                        }
+                    }
+                    Err(e) => format!("Error: {e}"),
+                });
             }
             McpCommand::ListDownloads { response_tx } => {
                 let rows: Vec<String> = app_state
@@ -1439,17 +1634,19 @@ pub fn load_default_adblock_rules(adblocker: &mut crate::net::adblock::AdBlocker
 }
 
 #[cfg(feature = "mcp")]
-pub fn spawn_mcp_server(mcp_bridge: &McpBridge) {
+pub fn spawn_mcp_server(mcp_bridge: &McpBridge, registry: crate::mcp::bridge::SessionRegistry) {
     use crate::mcp::tools;
     let mcp_state = mcp_bridge.state.clone();
     let mcp_command_tx = mcp_bridge.command_tx.clone();
 
-    // Tools for the TCP bridge: constructed with their own `command_tx` clone so
-    // they can forward main-thread work. The bridge delegates every JSON-RPC
-    // request to a registered `McpServer`, so this set is the single source of
-    // truth for TCP-driven tool dispatch.
-    let tcp_tools = tools::create_tools(mcp_state.clone(), mcp_command_tx.clone());
-    crate::mcp::tcp_bridge::start_tcp_mcp_server(tcp_tools, mcp_command_tx);
+    // TCP bridge (Era-2 S27): per-connection session tool sets are built
+    // inside the accept loop from this shared state; the registry carries
+    // each session's capability set.
+    crate::mcp::tcp_bridge::start_tcp_mcp_server(
+        mcp_state.clone(),
+        mcp_command_tx.clone(),
+        registry,
+    );
 
     // A separate tool set backs the in-process stdio transport; both transports
     // therefore behave identically without sharing mutable state.

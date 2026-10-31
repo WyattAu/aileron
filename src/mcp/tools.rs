@@ -2,7 +2,7 @@
 //!
 //! Tools access pane state via McpBridge (shared state + command channel).
 
-use crate::mcp::bridge::{McpCommand, McpState};
+use crate::mcp::bridge::{CommandTx, McpCommand, McpState};
 use serde_json::{Value, json};
 
 #[allow(unused_imports)]
@@ -80,11 +80,11 @@ impl McpTool for ReadActivePaneTool {
 /// T1/T2 (AX snapshots) arrive with the S8-S10 walker.
 struct BrowserObserveTool {
     state: McpState,
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl BrowserObserveTool {
-    fn new(state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(state: McpState, command_tx: CommandTx) -> Self {
         Self { state, command_tx }
     }
 
@@ -177,11 +177,11 @@ impl McpTool for BrowserObserveTool {
 /// Tool: Accessibility snapshot with epoch-stamped refs (YP-AGENT-ACI-001).
 struct BrowserSnapshotTool {
     state: McpState,
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl BrowserSnapshotTool {
-    fn new(state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(state: McpState, command_tx: CommandTx) -> Self {
         Self { state, command_tx }
     }
 }
@@ -227,11 +227,7 @@ impl McpTool for BrowserSnapshotTool {
 
 /// Shared dispatch for the ref-actuation tools: build the JS, send ExecuteJs,
 /// decode the {ok, err} envelope, surface STALE_EPOCH with guidance.
-fn dispatch_act(
-    state: &McpState,
-    command_tx: &std::sync::mpsc::Sender<McpCommand>,
-    code: String,
-) -> anyhow::Result<String> {
+fn dispatch_act(state: &McpState, command_tx: &CommandTx, code: String) -> anyhow::Result<String> {
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
     command_tx
         .send(McpCommand::ExecuteJs { code, response_tx })
@@ -279,11 +275,12 @@ fn with_refs(mut schema: Value) -> Value {
 macro_rules! act_tool {
     ($tool:ident, $name:literal, $desc:literal, $schema:expr, |$self_id:ident, $args:ident| $code:expr) => {
         struct $tool {
+            #[allow(dead_code)] // available to bodies; some tools are pure dispatch
             state: McpState,
-            command_tx: std::sync::mpsc::Sender<McpCommand>,
+            command_tx: CommandTx,
         }
         impl $tool {
-            fn new(state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+            fn new(state: McpState, command_tx: CommandTx) -> Self {
                 Self { state, command_tx }
             }
         }
@@ -475,10 +472,10 @@ act_tool!(
 /// Tool: browser_wait_for - poll-side wait (no page-JV spin): evaluates a
 /// cheap condition repeatedly from the tool thread until met or deadline.
 struct BrowserWaitForTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 impl BrowserWaitForTool {
-    fn new(_state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(_state: McpState, command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
     fn check(&self, contains: Option<&str>, gone: Option<&str>) -> anyhow::Result<bool> {
@@ -550,7 +547,7 @@ impl McpTool for BrowserWaitForTool {
 /// Shared page-ring reader: evaluates a JS snippet returning JSON.
 fn read_page_ring(
     state: &McpState,
-    command_tx: &std::sync::mpsc::Sender<McpCommand>,
+    command_tx: &CommandTx,
     code: String,
 ) -> anyhow::Result<String> {
     dispatch_act(state, command_tx, code)
@@ -612,10 +609,10 @@ act_tool!(
 
 /// Tool: browser_downloads - list download tasks with progress.
 struct BrowserDownloadsTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 impl BrowserDownloadsTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -639,6 +636,127 @@ impl McpTool for BrowserDownloadsTool {
             .map_err(|_| anyhow::anyhow!("Downloads query cancelled"))
     }
 }
+
+act_tool!(
+    SessionScopeTool,
+    "session_scope",
+    "Narrow THIS session's capabilities (monotone - only subsets of the current grant are accepted; widening is structurally impossible). panes: allowed pane UUIDs; tool_classes: subset of read|mutate|irreversible. Applies to all subsequent calls on this connection",
+    json!({"type":"object","properties":{
+        "panes": {"type":"array","items":{"type":"string"},"description":"Allowed pane UUIDs (from list_tabs)"},
+        "tool_classes": {"type":"array","items":{"type":"string","enum":["read","mutate","irreversible"]},"description":"Allowed tool classes"}
+    },"required":[]}),
+    |self_, args| {
+        let panes = args.get("panes").and_then(|v| v.as_array()).map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().and_then(|s| uuid::Uuid::parse_str(s).ok()))
+                .collect::<Vec<_>>()
+        });
+        let classes = args
+            .get("tool_classes")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect::<Vec<_>>()
+            });
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self_
+            .command_tx
+            .send(crate::mcp::bridge::McpCommand::SessionScope {
+                panes,
+                tool_classes: classes,
+                response_tx,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Session scope update cancelled"))
+    }
+);
+
+act_tool!(
+    SessionInfoTool,
+    "session_info",
+    "Report this connection's session id and capability set (panes scope, tool classes)",
+    json!({"type":"object","properties":{},"required":[]}),
+    |self_, args| {
+        let _ = args;
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self_
+            .command_tx
+            .send(crate::mcp::bridge::McpCommand::SessionInfo { response_tx })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Session info cancelled"))
+    }
+);
+
+act_tool!(
+    WorkspaceCheckpointTool,
+    "workspace_checkpoint",
+    "Save the live pane tree (all panes + URLs) as a named checkpoint - the environment-memory primitive (AgentRewind pattern); restore via the workspaces UI or a later diff",
+    json!({"type":"object","properties":{
+        "name": {"type":"string","description":"Checkpoint name"}
+    },"required":["name"]}),
+    |self_, args| {
+        let name = args
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self_
+            .command_tx
+            .send(crate::mcp::bridge::McpCommand::WorkspaceCheckpoint { name, response_tx })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Checkpoint cancelled"))
+    }
+);
+
+act_tool!(
+    WorkspaceDiffTool,
+    "workspace_diff",
+    "Diff a saved checkpoint against the live pane tree: added/removed URLs, same flag",
+    json!({"type":"object","properties":{
+        "name": {"type":"string","description":"Checkpoint name"}
+    },"required":["name"]}),
+    |self_, args| {
+        let name = args
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self_
+            .command_tx
+            .send(crate::mcp::bridge::McpCommand::WorkspaceDiff { name, response_tx })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Diff cancelled"))
+    }
+);
+
+act_tool!(
+    WorkspaceListTool,
+    "workspace_list",
+    "List saved checkpoints/workspaces",
+    json!({"type":"object","properties":{},"required":[]}),
+    |self_, args| {
+        let _ = args;
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self_
+            .command_tx
+            .send(crate::mcp::bridge::McpCommand::WorkspaceList { response_tx })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("List cancelled"))
+    }
+);
 
 /// Tool: Search the web using DuckDuckGo HTML lite endpoint.
 /// Performs a real HTTP request to DuckDuckGo's lite HTML interface
@@ -759,11 +877,11 @@ impl McpTool for SearchWebTool {
 /// Tool: Extract visible text content from the active pane.
 /// A convenience wrapper around `run_js` that returns `document.body.innerText`.
 pub struct BrowserGetTextTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl BrowserGetTextTool {
-    pub fn new(_state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    pub fn new(_state: McpState, command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -823,11 +941,11 @@ impl McpTool for BrowserGetTextTool {
 // ── List Tabs Tool ──────────────────────────────────────────────
 
 struct ListTabsTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl ListTabsTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -856,11 +974,11 @@ impl McpTool for ListTabsTool {
 // ── Bookmark CRUD Tool ──────────────────────────────────────────
 
 struct BookmarkCrudTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl BookmarkCrudTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -938,11 +1056,11 @@ impl McpTool for BookmarkCrudTool {
 // ── History Search Tool ──────────────────────────────────────────
 
 struct HistorySearchTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl HistorySearchTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -987,11 +1105,11 @@ impl McpTool for HistorySearchTool {
 /// Sets the value, dispatches input/change events so frameworks (React, Vue)
 /// pick up the change, and optionally submits the form.
 pub struct BrowserFillFormTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl BrowserFillFormTool {
-    pub fn new(_state: McpState, command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    pub fn new(_state: McpState, command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1087,11 +1205,11 @@ impl McpTool for BrowserFillFormTool {
 // ── Navigate Tool ──────────────────────────────────────────────
 
 struct NavigateTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl NavigateTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1146,11 +1264,11 @@ impl McpTool for NavigateTool {
 // ── Execute JS Tool ────────────────────────────────────────────
 
 struct ExecuteJsTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl ExecuteJsTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1194,11 +1312,11 @@ impl McpTool for ExecuteJsTool {
 // ── Screenshot Tool ────────────────────────────────────────────
 
 struct ScreenshotTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl ScreenshotTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1227,11 +1345,11 @@ impl McpTool for ScreenshotTool {
 // ── Click Tool ────────────────────────────────────────────────
 
 struct ClickTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl ClickTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1281,11 +1399,11 @@ impl McpTool for ClickTool {
 // ── Get Cookies Tool ──────────────────────────────────────────
 
 struct GetCookiesTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl GetCookiesTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1349,11 +1467,11 @@ impl McpTool for GetCookiesTool {
 // ── Wait For Tool ────────────────────────────────────────────
 
 struct WaitForTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl WaitForTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1441,11 +1559,11 @@ impl McpTool for WaitForTool {
 // ── Create Tab Tool ──────────────────────────────────────────
 
 struct CreateTabTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl CreateTabTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1485,11 +1603,11 @@ impl McpTool for CreateTabTool {
 // ── Close Tab Tool ───────────────────────────────────────────
 
 struct CloseTabTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl CloseTabTool {
-    fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1532,11 +1650,11 @@ impl McpTool for CloseTabTool {
 
 /// Tool: Scroll the active pane by pixel deltas.
 pub struct ScrollTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl ScrollTool {
-    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    pub fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1587,11 +1705,11 @@ impl McpTool for ScrollTool {
 
 /// Tool: Navigate back in browser history.
 pub struct NavigateBackTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl NavigateBackTool {
-    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    pub fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1624,11 +1742,11 @@ impl McpTool for NavigateBackTool {
 
 /// Tool: Navigate forward in browser history.
 pub struct NavigateForwardTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl NavigateForwardTool {
-    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    pub fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1661,11 +1779,11 @@ impl McpTool for NavigateForwardTool {
 
 /// Tool: Select an option in a `&lt;select&gt;` element.
 pub struct SelectOptionTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl SelectOptionTool {
-    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    pub fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1720,11 +1838,11 @@ impl McpTool for SelectOptionTool {
 
 /// Tool: Read the accessibility tree of the active pane.
 pub struct ReadPageStructureTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl ReadPageStructureTool {
-    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    pub fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1757,11 +1875,11 @@ impl McpTool for ReadPageStructureTool {
 
 /// Tool: Extract structured data (JSON-LD, OpenGraph, tables) from active pane.
 pub struct ExtractStructuredDataTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl ExtractStructuredDataTool {
-    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    pub fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1794,11 +1912,11 @@ impl McpTool for ExtractStructuredDataTool {
 
 /// Tool: Summarize the active page content using local LLM.
 pub struct SummarizePageTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl SummarizePageTool {
-    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    pub fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1831,11 +1949,11 @@ impl McpTool for SummarizePageTool {
 
 /// Tool: Translate the active page content to a target language.
 pub struct TranslatePageTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl TranslatePageTool {
-    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    pub fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1881,11 +1999,11 @@ impl McpTool for TranslatePageTool {
 
 /// Tool: Analyze the active page content using local LLM.
 pub struct AnalyzePageTool {
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
+    command_tx: CommandTx,
 }
 
 impl AnalyzePageTool {
-    pub fn new(command_tx: std::sync::mpsc::Sender<McpCommand>) -> Self {
+    pub fn new(command_tx: CommandTx) -> Self {
         Self { command_tx }
     }
 }
@@ -1917,10 +2035,7 @@ impl McpTool for AnalyzePageTool {
 }
 
 /// Create all MCP tools wired to the given bridge.
-pub fn create_tools(
-    state: McpState,
-    command_tx: std::sync::mpsc::Sender<McpCommand>,
-) -> Vec<Box<dyn McpTool + Send + Sync>> {
+pub fn create_tools(state: McpState, command_tx: CommandTx) -> Vec<Box<dyn McpTool + Send + Sync>> {
     vec![
         Box::new(ReadActivePaneTool::new(state.clone())),
         Box::new(BrowserObserveTool::new(state.clone(), command_tx.clone())),
@@ -1932,6 +2047,14 @@ pub fn create_tools(
         Box::new(BrowserPressKeyTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserSelectTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserDragTool::new(state.clone(), command_tx.clone())),
+        Box::new(SessionScopeTool::new(state.clone(), command_tx.clone())),
+        Box::new(SessionInfoTool::new(state.clone(), command_tx.clone())),
+        Box::new(WorkspaceCheckpointTool::new(
+            state.clone(),
+            command_tx.clone(),
+        )),
+        Box::new(WorkspaceDiffTool::new(state.clone(), command_tx.clone())),
+        Box::new(WorkspaceListTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserBulkActTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserWaitForTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserConsoleTool::new(state.clone(), command_tx.clone())),
@@ -1972,11 +2095,11 @@ pub fn default_tools() -> Vec<Box<dyn McpTool + Send + Sync>> {
         Box::new(ReadActivePaneTool::new(McpState::default())),
         Box::new(BrowserGetTextTool::new(
             McpState::default(),
-            std::sync::mpsc::channel().0,
+            CommandTx::new(std::sync::mpsc::channel().0, None),
         )),
         Box::new(BrowserFillFormTool::new(
             McpState::default(),
-            std::sync::mpsc::channel().0,
+            CommandTx::new(std::sync::mpsc::channel().0, None),
         )),
         Box::new(SearchWebTool),
     ]
@@ -2031,8 +2154,9 @@ mod tests {
     fn test_create_tools() {
         let state = McpState::default();
         let (tx, _) = std::sync::mpsc::channel();
+        let tx = CommandTx::new(tx, None);
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 39);
+        assert_eq!(tools.len(), 44);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_get_text"));
@@ -2071,11 +2195,12 @@ mod tests {
     #[test]
     fn test_browser_get_text_missing_body() {
         let state = McpState::default();
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         // Simulate a page with no body
         std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
+            if let Ok((_, McpCommand::ExecuteJs { response_tx, .. })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 let _ = response_tx.send("String(\"\")".to_string());
@@ -2091,10 +2216,11 @@ mod tests {
     #[test]
     fn test_browser_get_text_with_max_length() {
         let state = McpState::default();
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, code }) =
+            if let Ok((_, McpCommand::ExecuteJs { response_tx, code })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 // Verify max_length is in the JS code
@@ -2113,6 +2239,7 @@ mod tests {
     fn test_browser_fill_form_missing_selector() {
         let state = McpState::default();
         let (tx, _) = std::sync::mpsc::channel();
+        let tx = CommandTx::new(tx, None);
         let tool = BrowserFillFormTool::new(state, tx);
         let args = json!({"value": "test"});
         let result = tool.execute(&args);
@@ -2124,6 +2251,7 @@ mod tests {
     fn test_browser_fill_form_missing_value() {
         let state = McpState::default();
         let (tx, _) = std::sync::mpsc::channel();
+        let tx = CommandTx::new(tx, None);
         let tool = BrowserFillFormTool::new(state, tx);
         let args = json!({"selector": "#email"});
         let result = tool.execute(&args);
@@ -2134,10 +2262,11 @@ mod tests {
     #[test]
     fn test_browser_fill_form_success() {
         let state = McpState::default();
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, code }) =
+            if let Ok((_, McpCommand::ExecuteJs { response_tx, code })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 // Verify selector and value are in the JS code
@@ -2160,10 +2289,11 @@ mod tests {
     #[test]
     fn test_browser_fill_form_no_submit() {
         let state = McpState::default();
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, code }) =
+            if let Ok((_, McpCommand::ExecuteJs { response_tx, code })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 // When submit is false, should NOT contain submit()
@@ -2184,10 +2314,11 @@ mod tests {
     #[test]
     fn test_browser_fill_form_element_not_found() {
         let state = McpState::default();
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
+            if let Ok((_, McpCommand::ExecuteJs { response_tx, .. })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 let _ = response_tx.send("String(\"Error: element not found\")".to_string());
@@ -2202,7 +2333,8 @@ mod tests {
 
     #[test]
     fn test_navigate_tool_active_tab() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
         let tool = NavigateTool::new(tx);
         let args = json!({"url": "https://example.com"});
         let result = tool.execute(&args).unwrap();
@@ -2211,7 +2343,7 @@ mod tests {
             .recv_timeout(std::time::Duration::from_millis(100))
             .unwrap();
         match cmd {
-            McpCommand::Navigate { url, new_tab } => {
+            (_, McpCommand::Navigate { url, new_tab }) => {
                 assert_eq!(url, "https://example.com");
                 assert!(!new_tab);
             }
@@ -2221,7 +2353,8 @@ mod tests {
 
     #[test]
     fn test_navigate_tool_new_tab() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
         let tool = NavigateTool::new(tx);
         let args = json!({"url": "https://example.com", "new_tab": true});
         let result = tool.execute(&args).unwrap();
@@ -2230,7 +2363,7 @@ mod tests {
             .recv_timeout(std::time::Duration::from_millis(100))
             .unwrap();
         match cmd {
-            McpCommand::Navigate { url, new_tab } => {
+            (_, McpCommand::Navigate { url, new_tab }) => {
                 assert_eq!(url, "https://example.com");
                 assert!(new_tab);
             }
@@ -2241,6 +2374,7 @@ mod tests {
     #[test]
     fn test_navigate_tool_invalid_url() {
         let (tx, _) = std::sync::mpsc::channel();
+        let tx = CommandTx::new(tx, None);
         let tool = NavigateTool::new(tx);
         let args = json!({"url": "not-a-url"});
         let result = tool.execute(&args);
@@ -2249,10 +2383,11 @@ mod tests {
 
     #[test]
     fn test_execute_js_tool() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
+            if let Ok((_, McpCommand::ExecuteJs { response_tx, .. })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 let _ = response_tx.send("42".to_string());
@@ -2268,6 +2403,7 @@ mod tests {
     #[test]
     fn test_execute_js_tool_missing_code() {
         let (tx, _) = std::sync::mpsc::channel();
+        let tx = CommandTx::new(tx, None);
         let tool = ExecuteJsTool::new(tx);
         let args = json!({});
         let result = tool.execute(&args);
@@ -2277,10 +2413,11 @@ mod tests {
 
     #[test]
     fn test_screenshot_tool() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::Screenshot { response_tx }) =
+            if let Ok((_, McpCommand::Screenshot { response_tx })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 let _ = response_tx.send("data:image/png;base64,test".to_string());
@@ -2294,10 +2431,11 @@ mod tests {
 
     #[test]
     fn test_screenshot_tool_no_pane() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::Screenshot { response_tx }) =
+            if let Ok((_, McpCommand::Screenshot { response_tx })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 let _ = response_tx.send("Error: no active pane".to_string());
@@ -2311,10 +2449,11 @@ mod tests {
 
     #[test]
     fn test_click_tool() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, code }) =
+            if let Ok((_, McpCommand::ExecuteJs { response_tx, code })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 assert!(
@@ -2335,6 +2474,7 @@ mod tests {
     #[test]
     fn test_click_tool_missing_selector() {
         let (tx, _) = std::sync::mpsc::channel();
+        let tx = CommandTx::new(tx, None);
         let tool = ClickTool::new(tx);
         let args = json!({});
         let result = tool.execute(&args);
@@ -2344,10 +2484,11 @@ mod tests {
 
     #[test]
     fn test_get_cookies_no_cookies() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
+            if let Ok((_, McpCommand::ExecuteJs { response_tx, .. })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 let _ = response_tx.send("".to_string());
@@ -2361,10 +2502,11 @@ mod tests {
 
     #[test]
     fn test_get_cookies_with_cookies() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
+            if let Ok((_, McpCommand::ExecuteJs { response_tx, .. })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 let _ = response_tx.send("session=abc123; user=john".to_string());
@@ -2383,10 +2525,11 @@ mod tests {
 
     #[test]
     fn test_get_cookies_with_domain_filter() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
+            if let Ok((_, McpCommand::ExecuteJs { response_tx, .. })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 let _ = response_tx.send("session=abc123; _ga=GA123".to_string());
@@ -2402,10 +2545,11 @@ mod tests {
 
     #[test]
     fn test_wait_for_found() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, code }) =
+            if let Ok((_, McpCommand::ExecuteJs { response_tx, code })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 assert!(code.contains("#result"), "JS should contain selector");
@@ -2420,10 +2564,11 @@ mod tests {
 
     #[test]
     fn test_wait_for_not_found() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::ExecuteJs { response_tx, .. }) =
+            if let Ok((_, McpCommand::ExecuteJs { response_tx, .. })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 let _ = response_tx.send("not_found".to_string());
@@ -2438,6 +2583,7 @@ mod tests {
     #[test]
     fn test_wait_for_missing_selector() {
         let (tx, _) = std::sync::mpsc::channel();
+        let tx = CommandTx::new(tx, None);
         let tool = WaitForTool::new(tx);
         let result = tool.execute(&json!({}));
         assert!(result.is_err());
@@ -2446,7 +2592,8 @@ mod tests {
 
     #[test]
     fn test_create_tab_default_url() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
         let tool = CreateTabTool::new(tx);
         let result = tool.execute(&json!({})).unwrap();
         assert!(result.contains("aileron://new"));
@@ -2454,7 +2601,7 @@ mod tests {
             .recv_timeout(std::time::Duration::from_millis(100))
             .unwrap();
         match cmd {
-            McpCommand::Navigate { url, new_tab } => {
+            (_, McpCommand::Navigate { url, new_tab }) => {
                 assert_eq!(url, "aileron://new");
                 assert!(new_tab);
             }
@@ -2464,7 +2611,8 @@ mod tests {
 
     #[test]
     fn test_create_tab_custom_url() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
         let tool = CreateTabTool::new(tx);
         let result = tool
             .execute(&json!({"url": "https://example.com"}))
@@ -2474,7 +2622,7 @@ mod tests {
             .recv_timeout(std::time::Duration::from_millis(100))
             .unwrap();
         match cmd {
-            McpCommand::Navigate { url, new_tab } => {
+            (_, McpCommand::Navigate { url, new_tab }) => {
                 assert_eq!(url, "https://example.com");
                 assert!(new_tab);
             }
@@ -2484,10 +2632,11 @@ mod tests {
 
     #[test]
     fn test_close_tab() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<(Option<uuid::Uuid>, McpCommand)>();
+        let tx = CommandTx::new(tx, None);
 
         std::thread::spawn(move || {
-            if let Ok(McpCommand::CloseTab { index, response_tx }) =
+            if let Ok((_, McpCommand::CloseTab { index, response_tx })) =
                 rx.recv_timeout(std::time::Duration::from_secs(5))
             {
                 assert_eq!(index, 2);
@@ -2503,6 +2652,7 @@ mod tests {
     #[test]
     fn test_close_tab_missing_index() {
         let (tx, _) = std::sync::mpsc::channel();
+        let tx = CommandTx::new(tx, None);
         let tool = CloseTabTool::new(tx);
         let result = tool.execute(&json!({}));
         assert!(result.is_err());

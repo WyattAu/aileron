@@ -14,12 +14,10 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::mpsc;
 use tracing::{info, warn};
 
-use super::bridge::McpCommand;
+use super::bridge::McpState;
 use super::server::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpServer};
-use super::tools::McpTool;
 
 /// Default TCP port for the MCP bridge.
 ///
@@ -50,8 +48,9 @@ const _: () = {
 /// stable for future shutdown signalling).
 #[allow(clippy::needless_pass_by_value)]
 pub fn start_tcp_mcp_server(
-    tool_list: Vec<Box<dyn McpTool + Send + Sync>>,
-    _command_tx: mpsc::Sender<McpCommand>,
+    mcp_state: McpState,
+    command_tx: crate::mcp::bridge::CommandTx,
+    registry: crate::mcp::bridge::SessionRegistry,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let listener = match TcpListener::bind((MCP_TCP_BIND_ADDR, MCP_TCP_PORT)) {
@@ -69,17 +68,26 @@ pub fn start_tcp_mcp_server(
             MCP_TCP_BIND_ADDR, MCP_TCP_PORT
         );
 
-        // Single registered server: the canonical dispatcher for all MCP methods,
-        // including `tools/call`. This deliberately avoids re-implementing tool
-        // dispatch here (see commit history / Phase 7 deduplication).
-        let mut server = McpServer::new();
-        for tool in tool_list {
-            server.register_tool(tool);
-        }
-
         for stream in listener.incoming() {
             match stream {
-                Ok(stream) => handle_tcp_connection(stream, &server),
+                Ok(stream) => {
+                    // YP-MCP-SESSIONS-002 (Era-2 S27): every connection is a
+                    // session - fresh id, own tool set over the shared
+                    // channel (tags route commands back to the right caps).
+                    let sid = uuid::Uuid::new_v4();
+                    info!("[tcp-mcp] session {} connected", &sid.to_string()[..8]);
+                    let tools = crate::mcp::tools::create_tools(
+                        mcp_state.clone(),
+                        command_tx.with_session(sid),
+                    );
+                    let mut server = McpServer::new();
+                    for tool in tools {
+                        server.register_tool(tool);
+                    }
+                    handle_tcp_connection(stream, &server, sid, &registry);
+                    registry.lock().ok().map(|mut r| r.remove(&sid));
+                    info!("[tcp-mcp] session {} disconnected", &sid.to_string()[..8]);
+                }
                 Err(e) => warn!("[tcp-mcp] Connection accept error: {e}"),
             }
         }
@@ -91,7 +99,12 @@ pub fn start_tcp_mcp_server(
 /// Each line on the stream is one JSON-RPC request; each response is written as a
 /// single line. Delegates every request to `server.handle_request`, which is the
 /// same path used by the stdio transport.
-fn handle_tcp_connection(mut stream: TcpStream, server: &McpServer) {
+fn handle_tcp_connection(
+    mut stream: TcpStream,
+    server: &McpServer,
+    session: uuid::Uuid,
+    registry: &crate::mcp::bridge::SessionRegistry,
+) {
     // A read half is needed for line iteration; the original `stream` is retained
     // as the write half. Cloning a `TcpStream` duplicates the file descriptor,
     // which is the documented way to obtain independent read/write halves for
@@ -119,8 +132,44 @@ fn handle_tcp_connection(mut stream: TcpStream, server: &McpServer) {
             continue;
         }
 
-        let response = match serde_json::from_str::<JsonRpcRequest>(&line) {
-            Ok(request) => server.handle_request(&request),
+        let parsed = serde_json::from_str::<JsonRpcRequest>(&line);
+        let response = match parsed {
+            Ok(request) => {
+                // Kappa gate (Era-2 S28/S34): a scoped session cannot call
+                // tools outside its granted classes. Read the tool name from
+                // the raw params before dispatch.
+                if request.method == "tools/call"
+                    && let Some(name) = request
+                        .params
+                        .as_ref()
+                        .and_then(|v| v.get("name"))
+                        .and_then(|v| v.as_str())
+                {
+                    let class = crate::mcp::bridge::tool_class(name);
+                    let denied = registry
+                        .lock()
+                        .ok()
+                        .and_then(|r| r.get(&session).cloned())
+                        .and_then(|caps| caps.tool_classes)
+                        .map(|allowed| !allowed.contains(class))
+                        .unwrap_or(false);
+                    if denied {
+                        let resp = JsonRpcResponse::error(
+                            request.id,
+                            JsonRpcError::new(
+                                -32603,
+                                format!(
+                                    "FORBIDDEN: tool '{name}' (class {class}) is outside this session's scope (session_scope to adjust)"
+                                ),
+                            ),
+                        );
+                        let out = serde_json::to_string(&resp).unwrap_or_default();
+                        let _ = writeln!(stream, "{out}");
+                        continue;
+                    }
+                }
+                server.handle_request(&request)
+            }
             Err(e) => {
                 JsonRpcResponse::error(None, JsonRpcError::new(-32700, format!("Parse error: {e}")))
             }
@@ -140,6 +189,8 @@ fn handle_tcp_connection(mut stream: TcpStream, server: &McpServer) {
 
 #[cfg(test)]
 mod tests {
+    use crate::mcp::tools::McpTool;
+
     use super::*;
     use serde_json::Value;
     use std::sync::Arc;
@@ -198,7 +249,9 @@ mod tests {
             if let Ok((stream, _)) = listener.accept() {
                 let _ = stream.set_read_timeout(Some(TEST_IO_TIMEOUT));
                 let _ = stream.set_write_timeout(Some(TEST_IO_TIMEOUT));
-                handle_tcp_connection(stream, &server_clone);
+                let test_registry: crate::mcp::bridge::SessionRegistry =
+                    std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+                handle_tcp_connection(stream, &server_clone, uuid::Uuid::new_v4(), &test_registry);
             }
         });
 

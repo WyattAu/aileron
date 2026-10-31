@@ -88,7 +88,14 @@ impl ApplicationHandler for AileronApp {
         frame_tasks::load_default_adblock_rules(&mut self.adblocker);
 
         #[cfg(feature = "mcp")]
-        frame_tasks::spawn_mcp_server(&self.mcp_bridge);
+        {
+            let registry = self
+                .app_state
+                .as_ref()
+                .map(|s| s.session_registry.clone())
+                .expect("app state must exist before MCP server spawn");
+            frame_tasks::spawn_mcp_server(&self.mcp_bridge, registry);
+        }
 
         if let Some(w) = &self.window {
             w.request_redraw();

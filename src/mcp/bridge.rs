@@ -5,8 +5,139 @@
 //! - Shared read-only state (active URL, title) via `Arc<RwLock>`
 //! - Command channel for mutations (navigate, run JS) processed on main thread
 
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock, mpsc};
 use tokio::sync::oneshot;
+
+/// A session-tagged command sender (YP-MCP-SESSIONS-002).
+///
+/// Wraps the shared channel and stamps every command with the owning
+/// session's id (`None` = the unrestricted default session, e.g. stdio).
+/// The `send` signature matches `mpsc::Sender::send`, so tool call sites
+/// are unchanged; the router reads the tag and enforces the session's
+/// capability set. Tags are assigned at construction inside the per-
+/// connection server - tools cannot forge another session's identity.
+#[derive(Clone, Debug)]
+pub struct CommandTx {
+    tx: mpsc::Sender<(Option<uuid::Uuid>, McpCommand)>,
+    session: Option<uuid::Uuid>,
+}
+
+impl CommandTx {
+    #[must_use]
+    pub fn new(
+        tx: mpsc::Sender<(Option<uuid::Uuid>, McpCommand)>,
+        session: Option<uuid::Uuid>,
+    ) -> Self {
+        Self { tx, session }
+    }
+
+    /// Send a command tagged with this sender's session.
+    ///
+    /// # Errors
+    /// Propagates the channel send error (bridge closed).
+    pub fn send(
+        &self,
+        command: McpCommand,
+    ) -> Result<(), mpsc::SendError<(Option<uuid::Uuid>, McpCommand)>> {
+        self.tx.send((self.session, command))
+    }
+
+    #[must_use]
+    pub fn session(&self) -> Option<uuid::Uuid> {
+        self.session
+    }
+
+    /// Derive a sender for a specific session over the same channel.
+    #[must_use]
+    pub fn with_session(&self, session: uuid::Uuid) -> Self {
+        Self {
+            tx: self.tx.clone(),
+            session: Some(session),
+        }
+    }
+}
+
+/// Shared session capability registry (YP-MCP-SESSIONS-002).
+///
+/// Written by the router on `session_scope` (narrowing only) and read by
+/// the TCP gate (kappa class checks) and the router (phi pane checks).
+pub type SessionRegistry = Arc<std::sync::Mutex<HashMap<uuid::Uuid, SessionCaps>>>;
+
+/// Static tool-class map (Era-2 S34, YP-SEC-CONFINEMENT-001).
+///
+/// read = observation only; mutate = changes page/browser state;
+/// irreversible = destructive or externally-visible actions.
+#[must_use]
+pub fn tool_class(name: &str) -> &'static str {
+    match name {
+        "browser_get_text"
+        | "browser_observe"
+        | "browser_snapshot"
+        | "browser_console_messages"
+        | "browser_network_requests"
+        | "browser_cookies"
+        | "browser_downloads"
+        | "list_tabs"
+        | "list_bookmarks"
+        | "search_history"
+        | "read_active_pane"
+        | "search_web"
+        | "browser_wait_for"
+        | "session_info"
+        | "workspace_list"
+        | "workspace_diff" => "read",
+        "navigate"
+        | "browser_click"
+        | "browser_type"
+        | "browser_hover"
+        | "browser_focus"
+        | "browser_press_key"
+        | "browser_select"
+        | "browser_drag"
+        | "bulk_act"
+        | "execute_js"
+        | "browser_fill_form"
+        | "add_bookmark"
+        | "workspace_checkpoint"
+        | "new_tab" => "mutate",
+        "remove_bookmark" | "close_tab" | "session_scope" => "irreversible",
+        _ => "mutate", // unknown tools default to the stronger class
+    }
+}
+
+/// Capability set for one agent session (YP-MCP-SESSIONS-002 kappa/phi).
+///
+/// `None` = unrestricted (the default session and fresh connections).
+/// Narrowing is monotone: `session_scope` can only shrink a set that is
+/// already `Some`, and can convert `None` to `Some` once. Web content has
+/// no path to widen a grant - the only writers are MCP tools carrying the
+/// session's own tag, and the router validates every write is a subset.
+#[derive(Debug, Clone, Default)]
+pub struct SessionCaps {
+    /// Allowed pane ids; `None` = every pane (phi).
+    pub panes: Option<HashSet<uuid::Uuid>>,
+    /// Allowed tool classes (read | mutate | irreversible); `None` = all (kappa).
+    pub tool_classes: Option<HashSet<String>>,
+}
+
+impl SessionCaps {
+    /// True when `self` can be narrowed to `narrower` (monotone shrinking).
+    #[must_use]
+    pub fn allows_narrowing_to(&self, narrower: &SessionCaps) -> bool {
+        let panes_ok = match (&self.panes, &narrower.panes) {
+            (None, _) => true,
+            (Some(base), Some(new)) => new.is_subset(base),
+            (Some(_), None) => false, // widening None->Some back is a widen
+        };
+        let classes_ok = match (&self.tool_classes, &narrower.tool_classes) {
+            (None, _) => true,
+            (Some(base), Some(new)) => new.is_subset(base),
+            (Some(_), None) => false,
+        };
+        panes_ok && classes_ok
+    }
+}
 
 /// Commands that MCP tools can send to the main thread.
 /// These are processed each frame in `about_to_wait`.
@@ -25,6 +156,31 @@ pub enum McpCommand {
     },
     /// List download tasks (Era-1 S18): id, url, filename, progress.
     ListDownloads {
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Narrow the calling session's capabilities (Era-2 S28). Monotone:
+    /// rejected unless a strict subset of the current grant.
+    SessionScope {
+        panes: Option<Vec<uuid::Uuid>>,
+        tool_classes: Option<Vec<String>>,
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Report the calling session's identity and capability set (Era-2 S28).
+    SessionInfo {
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Save the live pane tree as a named checkpoint (Era-2 S41).
+    WorkspaceCheckpoint {
+        name: String,
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Diff a saved checkpoint against the live tree (Era-2 S43).
+    WorkspaceDiff {
+        name: String,
+        response_tx: oneshot::Sender<String>,
+    },
+    /// List saved checkpoints (Era-2 S41).
+    WorkspaceList {
         response_tx: oneshot::Sender<String>,
     },
     /// List all bookmarks from the database.
@@ -124,15 +280,16 @@ pub struct McpBridge {
     /// Shared state for MCP tools to read.
     pub state: McpState,
     /// Channel for MCP tools to send commands to main thread.
-    pub command_tx: mpsc::Sender<McpCommand>,
+    pub command_tx: CommandTx,
     /// Receiver for commands (consumed on main thread each frame).
-    command_rx: mpsc::Receiver<McpCommand>,
+    command_rx: mpsc::Receiver<(Option<uuid::Uuid>, McpCommand)>,
 }
 
 impl McpBridge {
     /// Create a new bridge.
     pub fn new() -> Self {
-        let (command_tx, command_rx) = mpsc::channel();
+        let (tx, rx) = mpsc::channel();
+        let command_tx = CommandTx::new(tx, None);
         Self {
             state: McpState {
                 active_url: Arc::new(RwLock::new(String::new())),
@@ -141,7 +298,7 @@ impl McpBridge {
                 active_loading: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             },
             command_tx,
-            command_rx,
+            command_rx: rx,
         }
     }
 
@@ -165,9 +322,9 @@ impl McpBridge {
         }
     }
 
-    /// Poll pending commands from MCP tools. Returns an iterator.
-    /// Call this from the main thread each frame.
-    pub fn poll_commands(&self) -> mpsc::TryIter<'_, McpCommand> {
+    /// Poll pending commands from MCP tools. Returns an iterator of
+    /// (session tag, command) pairs. Call this from the main thread.
+    pub fn poll_commands(&self) -> mpsc::TryIter<'_, (Option<uuid::Uuid>, McpCommand)> {
         self.command_rx.try_iter()
     }
 }
