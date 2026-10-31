@@ -1042,6 +1042,37 @@ pub fn process_mcp_commands(
                     Err(e) => format!("Error: {e}"),
                 });
             }
+            McpCommand::SetUserAgent { ua, response_tx } => {
+                // Era-3 mobile lane: write the WebKit settings property, then
+                // re-load the current page through the settle hold so the
+                // epoch/read-your-writes discipline applies to the reload.
+                let reloaded = offscreen_panes
+                    .get_mut(&active_id)
+                    .map(|p| {
+                        let ok = p.set_user_agent(&ua);
+                        if ok {
+                            let current = p.url().clone();
+                            p.navigate_settled(&current, std::time::Duration::from_secs(60));
+                        }
+                        ok
+                    })
+                    .unwrap_or(false);
+                if reloaded {
+                    *app_state.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
+                    let epoch_now = app_state
+                        .mcp_nav_epoch
+                        .get(&active_id)
+                        .copied()
+                        .unwrap_or(0);
+                    app_state.mcp_settled_epoch.insert(active_id, epoch_now);
+                    app_state.session.session_dirty = true;
+                }
+                let _ = response_tx.send(if reloaded {
+                    format!("User agent set and page reloaded: {ua}")
+                } else {
+                    "Error: could not set user agent (no webkit child)".into()
+                });
+            }
             McpCommand::ReadAudit { limit, response_tx } => {
                 let log = app_state.audit_log.borrow();
                 let skip = log.len().saturating_sub(limit);

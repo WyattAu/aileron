@@ -84,6 +84,7 @@ impl McpCommand {
             McpCommand::WorkspaceCheckpoint { .. } => "workspace_checkpoint",
             McpCommand::WorkspaceDiff { .. } => "workspace_diff",
             McpCommand::WorkspaceList { .. } => "workspace_list",
+            McpCommand::SetUserAgent { .. } => "browser_set_ua",
             _ => "execute_js",
         }
     }
@@ -219,6 +220,11 @@ pub enum McpCommand {
     /// Read the audit ring (Era-3, enterprise audit trail).
     ReadAudit {
         limit: usize,
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Set the pane's WebKit user agent and reload (Era-3 mobile lane).
+    SetUserAgent {
+        ua: String,
         response_tx: oneshot::Sender<String>,
     },
     /// List all bookmarks from the database.

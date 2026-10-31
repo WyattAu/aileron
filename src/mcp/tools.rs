@@ -778,6 +778,50 @@ act_tool!(
     }
 );
 
+/// Preset user agents for the mobile-emulation lane (Era-3).
+#[must_use]
+pub fn ua_preset(name: &str) -> Option<String> {
+    let version = env!("CARGO_PKG_VERSION");
+    match name {
+        "desktop" => Some(format!(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 Aileron/{version}"
+        )),
+        "android" => Some(
+            "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36 Aileron/{version}"
+                .replace("{version}", version),
+        ),
+        "ios" => Some(format!(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1 Aileron/{version}"
+        )),
+        _ => None,
+    }
+}
+
+act_tool!(
+    BrowserSetUaTool,
+    "browser_set_ua",
+    "Set the active pane's user agent and reload (mobile-emulation lane): presets android/ios/desktop or a custom UA string. Verify with execute_js navigator.userAgent; responsive sites serve their mobile layout",
+    json!({"type":"object","properties":{
+        "ua": {"type":"string","description":"Preset (android|ios|desktop) or a custom user-agent string"}
+    },"required":["ua"]}),
+    |self_, args| {
+        let raw = args
+            .get("ua")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let ua = ua_preset(&raw).unwrap_or(raw);
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self_
+            .command_tx
+            .send(crate::mcp::bridge::McpCommand::SetUserAgent { ua, response_tx })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("UA change cancelled"))
+    }
+);
+
 /// Tool: Search the web using DuckDuckGo HTML lite endpoint.
 /// Performs a real HTTP request to DuckDuckGo's lite HTML interface
 /// and extracts search result titles and URLs.
@@ -2076,6 +2120,7 @@ pub fn create_tools(state: McpState, command_tx: CommandTx) -> Vec<Box<dyn McpTo
         Box::new(WorkspaceDiffTool::new(state.clone(), command_tx.clone())),
         Box::new(WorkspaceListTool::new(state.clone(), command_tx.clone())),
         Box::new(AuditLogTool::new(state.clone(), command_tx.clone())),
+        Box::new(BrowserSetUaTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserBulkActTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserWaitForTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserConsoleTool::new(state.clone(), command_tx.clone())),
@@ -2177,7 +2222,7 @@ mod tests {
         let (tx, _) = std::sync::mpsc::channel();
         let tx = CommandTx::new(tx, None);
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 45);
+        assert_eq!(tools.len(), 46);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_get_text"));

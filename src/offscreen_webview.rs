@@ -636,6 +636,30 @@ a {{ color: #4db4ff; }}
         &self.title
     }
 
+    /// Set the WebKit user agent for subsequent loads (mobile-emulation lane,
+    /// Era-3): downcasts the webkit child (the `webview_is_loading` pattern)
+    /// and writes the settings property directly - wry 0.55 has no dynamic
+    /// UA setter. Returns false when the child is not a WebKitWebView.
+    #[cfg(target_os = "linux")]
+    pub fn set_user_agent(&self, ua: &str) -> bool {
+        match self
+            .gtk_fixed
+            .children()
+            .into_iter()
+            .find_map(|w| w.downcast::<webkit2gtk::WebView>().ok())
+        {
+            Some(wv) => {
+                if let Some(settings) = webkit2gtk::WebViewExt::settings(&wv) {
+                    webkit2gtk::SettingsExt::set_user_agent(&settings, Some(ua));
+                    true
+                } else {
+                    false
+                }
+            }
+            None => false,
+        }
+    }
+
     /// Store the page title (from `TitleChanged`) so `LoadComplete` syncs and
     /// MCP reads see the real title instead of an empty string — offscreen
     /// panes had no title setter, so `sync_tab_url_title` read `""` and
