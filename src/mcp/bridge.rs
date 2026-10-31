@@ -86,6 +86,7 @@ impl McpCommand {
             McpCommand::WorkspaceList { .. } => "workspace_list",
             McpCommand::SetUserAgent { .. } => "browser_set_ua",
             McpCommand::SetViewport { .. } => "browser_set_viewport",
+            McpCommand::WorkspaceQuery { .. } => "workspace_query",
             _ => "execute_js",
         }
     }
@@ -226,6 +227,11 @@ pub enum McpCommand {
     /// Set the pane's WebKit user agent and reload (Era-3 mobile lane).
     SetUserAgent {
         ua: String,
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Query live panes by URL/title substring (Era-2 S44).
+    WorkspaceQuery {
+        contains: String,
         response_tx: oneshot::Sender<String>,
     },
     /// Resize the pane's layout viewport (Era-3 mobile lane).

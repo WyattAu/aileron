@@ -848,6 +848,33 @@ act_tool!(
     }
 );
 
+act_tool!(
+    WorkspaceQueryTool,
+    "workspace_query",
+    "Query the LIVE pane set by URL/title substring (case-insensitive) - returns pane UUIDs usable for navigation and (with session_scope) capability scoping. The programmatic-memory read primitive",
+    json!({"type":"object","properties":{
+        "contains": {"type":"string","description":"Substring to match against pane URLs and titles"}
+    },"required":["contains"]}),
+    |self_, args| {
+        let contains = args
+            .get("contains")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self_
+            .command_tx
+            .send(crate::mcp::bridge::McpCommand::WorkspaceQuery {
+                contains,
+                response_tx,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Query cancelled"))
+    }
+);
+
 /// Tool: Search the web using DuckDuckGo HTML lite endpoint.
 /// Performs a real HTTP request to DuckDuckGo's lite HTML interface
 /// and extracts search result titles and URLs.
@@ -2151,6 +2178,7 @@ pub fn create_tools(state: McpState, command_tx: CommandTx) -> Vec<Box<dyn McpTo
             state.clone(),
             command_tx.clone(),
         )),
+        Box::new(WorkspaceQueryTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserBulkActTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserWaitForTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserConsoleTool::new(state.clone(), command_tx.clone())),
@@ -2252,7 +2280,7 @@ mod tests {
         let (tx, _) = std::sync::mpsc::channel();
         let tx = CommandTx::new(tx, None);
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 47);
+        assert_eq!(tools.len(), 48);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_get_text"));

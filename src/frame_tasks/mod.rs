@@ -1106,6 +1106,32 @@ pub fn process_mcp_commands(
                     "Error: no active pane".into()
                 });
             }
+            McpCommand::WorkspaceQuery {
+                contains,
+                response_tx,
+            } => {
+                // Era-2 S44 (PRO-LONG programmatic-memory pattern): agents
+                // query the live pane set instead of dumping context.
+                let needle = contains.to_lowercase();
+                let mut hits: Vec<String> = Vec::new();
+                for (id, p) in offscreen_panes.iter() {
+                    let url = p.url().to_string();
+                    let title = p.title().to_string();
+                    if url.to_lowercase().contains(&needle)
+                        || title.to_lowercase().contains(&needle)
+                    {
+                        hits.push(format!(
+                            "{{\"pane\":\"{id}\",\"title\":{:?},\"url\":{:?}}}",
+                            title, url
+                        ));
+                    }
+                }
+                let _ = response_tx.send(if hits.is_empty() {
+                    format!("No panes matching '{contains}'.")
+                } else {
+                    format!("[{}]", hits.join(","))
+                });
+            }
             McpCommand::ReadAudit { limit, response_tx } => {
                 let log = app_state.audit_log.borrow();
                 let skip = log.len().saturating_sub(limit);
