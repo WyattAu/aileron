@@ -151,13 +151,13 @@ impl AgentTick {
         }
         for (pane_id, url) in creations {
             tracing::info!("agent: MCP pane {} -> {}", &pane_id.to_string()[..8], url);
-            create_agent_pane(
+            create_agent_pane_at(
                 &mut self.app_state,
                 &mut self.offscreen_panes,
                 &mut self.adblocker,
                 pane_id,
+                Some(&url),
             );
-            let _ = url;
         }
 
         // Workspace restore deferral (YP-WORKSPACE-002 parity with headed mode).
@@ -182,6 +182,18 @@ fn create_agent_pane(
     adblocker: &mut AdBlocker,
     pane_id: uuid::Uuid,
 ) {
+    create_agent_pane_at(app_state, offscreen_panes, adblocker, pane_id, None)
+}
+
+/// Create the pane's webview at an explicit URL (queued MCP creations);
+/// `None` resolves to the configured homepage (the initial BSP root).
+fn create_agent_pane_at(
+    app_state: &mut AppState,
+    offscreen_panes: &mut OffscreenWebViewManager,
+    adblocker: &mut AdBlocker,
+    pane_id: uuid::Uuid,
+    target: Option<&url::Url>,
+) {
     let rect = app_state
         .wm
         .panes_ref()
@@ -190,10 +202,10 @@ fn create_agent_pane(
         .map(|(_, r)| *r)
         .unwrap_or_else(|| Rect::new(0.0, 0.0, VIEWPORT_W, VIEWPORT_H));
     let (width, height) = (rect.w.round() as i32, rect.h.round() as i32);
-    let url = {
+    let url = target.cloned().unwrap_or_else(|| {
         let homepage = app_state.config.homepage.clone();
         url::Url::parse(&homepage).unwrap_or_else(|_| url::Url::parse("aileron://welcome").unwrap())
-    };
+    });
     let blocked_domains: Vec<String> = adblocker.blocked_domains_iter();
     let https_safe_list = if app_state.config.https_upgrade_enabled {
         app_state.get_cached_https_safe_list()

@@ -875,6 +875,30 @@ act_tool!(
     }
 );
 
+act_tool!(
+    WorkspaceRestoreTool,
+    "workspace_restore",
+    "Restore a named checkpoint as the live pane tree: closes current panes, rebuilds the BSP tree and webviews from the checkpoint. The write half of workspace_checkpoint (AgentRewind pattern)",
+    json!({"type":"object","properties":{
+        "name": {"type":"string","description":"Checkpoint name (see workspace_list)"}
+    },"required":["name"]}),
+    |self_, args| {
+        let name = args
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self_
+            .command_tx
+            .send(crate::mcp::bridge::McpCommand::WorkspaceRestore { name, response_tx })
+            .map_err(|e| anyhow::anyhow!("Failed to send command: {e}"))?;
+        response_rx
+            .blocking_recv()
+            .map_err(|_| anyhow::anyhow!("Restore cancelled"))
+    }
+);
+
 /// Tool: Search the web using DuckDuckGo HTML lite endpoint.
 /// Performs a real HTTP request to DuckDuckGo's lite HTML interface
 /// and extracts search result titles and URLs.
@@ -2179,6 +2203,7 @@ pub fn create_tools(state: McpState, command_tx: CommandTx) -> Vec<Box<dyn McpTo
             command_tx.clone(),
         )),
         Box::new(WorkspaceQueryTool::new(state.clone(), command_tx.clone())),
+        Box::new(WorkspaceRestoreTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserBulkActTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserWaitForTool::new(state.clone(), command_tx.clone())),
         Box::new(BrowserConsoleTool::new(state.clone(), command_tx.clone())),
@@ -2280,7 +2305,7 @@ mod tests {
         let (tx, _) = std::sync::mpsc::channel();
         let tx = CommandTx::new(tx, None);
         let tools = create_tools(state, tx);
-        assert_eq!(tools.len(), 48);
+        assert_eq!(tools.len(), 49);
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         assert!(names.contains(&"read_active_pane"));
         assert!(names.contains(&"browser_get_text"));

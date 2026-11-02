@@ -18,6 +18,7 @@ use crate::scripts::ContentScriptManager;
 use crate::servo::{WryPaneManager, pump_gtk};
 #[cfg(feature = "terminal")]
 use crate::terminal::NativeTerminalManager;
+use crate::wm::Rect;
 
 mod event_proc;
 mod ipc;
@@ -1105,6 +1106,47 @@ pub fn process_mcp_commands(
                 } else {
                     "Error: no active pane".into()
                 });
+            }
+            McpCommand::WorkspaceRestore { name, response_tx } => {
+                // Era-2 S42: full restore via the shared workspace_restore
+                // flow (fresh pane managers, tree rebuild, webviews queued).
+                // The headed runtime's pattern: fresh managers -> restore ->
+                // queue (pid, url) creations; in agent mode the tick's
+                // pending_mcp_pane_creations drain performs creation.
+                let viewport = Rect::new(0.0, 0.0, 1280.0, 800.0);
+                *offscreen_panes = OffscreenWebViewManager::new();
+                // Agent mode has no terminal manager: a fresh, empty one
+                // satisfies the signature (no terminal panes exist to remove).
+                let mut restore_terminal_manager = crate::terminal::NativeTerminalManager::new();
+                let outcome = crate::workspace_restore::restore_workspace(
+                    &name,
+                    viewport,
+                    app_state.db.as_ref(),
+                    &mut app_state.terminal_pane_ids,
+                    &mut app_state.engines,
+                    &mut app_state.wm,
+                    &mut restore_terminal_manager,
+                );
+                let msg = match outcome {
+                    crate::workspace_restore::RestoreOutcome::Restored(result) => {
+                        for (pid, url) in &result.panes_to_create {
+                            app_state
+                                .pending_mcp_pane_creations
+                                .push_back((*pid, url.clone()));
+                        }
+                        format!("restored '{}' ({} panes queued)", name, result.pane_count)
+                    }
+                    crate::workspace_restore::RestoreOutcome::NotFound => {
+                        format!("Error: checkpoint '{name}' not found")
+                    }
+                    crate::workspace_restore::RestoreOutcome::NoDatabase => {
+                        "Error: no database".into()
+                    }
+                    crate::workspace_restore::RestoreOutcome::TreeError(e) => {
+                        format!("Error (tree): {e}")
+                    }
+                };
+                let _ = response_tx.send(msg);
             }
             McpCommand::WorkspaceQuery {
                 contains,

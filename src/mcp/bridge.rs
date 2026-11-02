@@ -87,6 +87,7 @@ impl McpCommand {
             McpCommand::SetUserAgent { .. } => "browser_set_ua",
             McpCommand::SetViewport { .. } => "browser_set_viewport",
             McpCommand::WorkspaceQuery { .. } => "workspace_query",
+            McpCommand::WorkspaceRestore { .. } => "workspace_restore",
             _ => "execute_js",
         }
     }
@@ -232,6 +233,11 @@ pub enum McpCommand {
     /// Query live panes by URL/title substring (Era-2 S44).
     WorkspaceQuery {
         contains: String,
+        response_tx: oneshot::Sender<String>,
+    },
+    /// Restore a named checkpoint as the live pane tree (Era-2 S42).
+    WorkspaceRestore {
+        name: String,
         response_tx: oneshot::Sender<String>,
     },
     /// Resize the pane's layout viewport (Era-3 mobile lane).
