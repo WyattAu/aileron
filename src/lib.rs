@@ -1,6 +1,7 @@
 pub mod app;
 #[cfg(feature = "arp")]
 pub mod arp;
+#[cfg(feature = "headed")]
 pub mod chrome_bridge;
 #[cfg(feature = "native-chrome")]
 pub mod chrome_native;
@@ -10,9 +11,11 @@ pub mod debug_capturer;
 pub mod downloads;
 pub mod extensions;
 pub mod frame_tasks;
+#[cfg(feature = "headed")]
 pub mod gfx;
 pub mod git;
 pub mod i18n;
+#[cfg(feature = "headed")]
 pub mod input;
 #[cfg(feature = "llm")]
 pub mod llm;
@@ -25,6 +28,7 @@ pub mod offscreen_webview;
 #[cfg(feature = "passwords")]
 pub mod passwords;
 pub mod platform;
+#[cfg(feature = "headed")]
 pub mod popup;
 pub mod profiling;
 pub mod scripts;
@@ -34,6 +38,7 @@ pub mod sync;
 #[cfg(feature = "terminal")]
 pub mod terminal;
 pub mod test_harness;
+#[cfg(feature = "headed")]
 pub mod ui;
 pub mod update_check;
 pub mod wm;
