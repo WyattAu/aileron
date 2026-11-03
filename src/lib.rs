@@ -5,6 +5,7 @@ pub mod arp;
 pub mod chrome_bridge;
 #[cfg(feature = "native-chrome")]
 pub mod chrome_native;
+pub mod color;
 pub mod config;
 pub mod db;
 pub mod debug_capturer;
