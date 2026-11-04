@@ -54,3 +54,37 @@ minus headed fields is the work).
   engine.
 - The estate's shared-checkout rule: this refactor must run in a worktree
   (`opencode worktree_create`), not the shared tree.
+
+## S1 findings (2026-11-04, worktree `gate1-headed-gate`)
+
+Measured while driving `cargo build --no-default-features --features mcp`
+from red to green (error count 76 → 27 → 13 → 5):
+
+| Module | Headed coupling | Verdict |
+|---|---|---|
+| `input` (2,396 lines) | 0 refs to wgpu/webkit/gtk | **core-safe** — the `headed` gate was over-broad |
+| `ui` (palette, search) | 0 refs | **core-safe** |
+| `llm` (ollama client) | 0 refs | **core-safe** (feature-gated by `llm`, not `headed`) |
+| `terminal` | `alacritty_terminal` + PTY only | `terminal` feature; `grid` types migrate to core |
+| `chrome_bridge`, `popup` | wry/gtk types | truly headed |
+| `gfx` (wgpu) | all | truly headed |
+
+Consequences for the crate split:
+
+1. Three modules planned for `aileron-headed` (`input`, `ui`, `llm`) belong
+   in `aileron-core` — the headed binary just uses them. That shrinks the
+   headed surface to `gfx` + `chrome_bridge` + `popup` + terminal PTY.
+2. `config.rs` only needed `terminal::grid::Color`; extracting `color.rs`
+   to core (already done) removes the last config→terminal edge.
+3. Two cfg patterns are enough for the remaining seams:
+   - **feature-split helper functions** (`llm_summarize/translate/analyze`
+     with `#[cfg(feature = "llm")]` + no-op fallbacks) instead of cfg-ing
+     call sites inside big match arms;
+   - **cfg-split signatures** where a core function takes a headed-only
+     argument (`restore_workspace` gains a `#[cfg(not(feature = "terminal"))]`
+     variant without the terminal manager).
+4. `test_harness` and `AppState` are the long tail: test-only helpers need
+   the same cfg gates as production call sites, or tests must move with
+   their module.
+
+Gate for S1 remains: both binaries build, full test suite green.
