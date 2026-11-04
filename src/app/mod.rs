@@ -7,12 +7,14 @@ use tracing::{info, warn};
 pub mod cmd;
 pub mod commands;
 pub mod dispatch;
+#[cfg(feature = "headed")]
 pub mod event_handler;
 pub mod events;
 pub mod instance;
 pub mod omnibox;
 pub mod palette;
 pub mod panes;
+#[cfg(feature = "headed")]
 pub mod popup;
 
 use crate::config::Config;

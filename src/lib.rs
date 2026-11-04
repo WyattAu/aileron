@@ -16,7 +16,6 @@ pub mod frame_tasks;
 pub mod gfx;
 pub mod git;
 pub mod i18n;
-#[cfg(feature = "headed")]
 pub mod input;
 #[cfg(feature = "llm")]
 pub mod llm;
@@ -38,8 +37,8 @@ pub mod servo;
 pub mod sync;
 #[cfg(feature = "terminal")]
 pub mod terminal;
-pub mod test_harness;
 #[cfg(feature = "headed")]
+pub mod test_harness;
 pub mod ui;
 pub mod update_check;
 pub mod wm;

@@ -9,6 +9,7 @@ use url::Url;
 use crate::db::workspaces;
 use crate::servo::PaneStateManager;
 #[cfg(feature = "terminal")]
+#[cfg(feature = "terminal")]
 use crate::terminal::NativeTerminalManager;
 use crate::wm::{BspTree, Rect};
 

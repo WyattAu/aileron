@@ -1,6 +1,80 @@
 use std::sync::Arc;
 
 use tracing::{info, warn};
+
+/// LLM bridge: feature-split helpers so the no-llm build has type-correct
+/// fallbacks instead of cfg-tangled call sites (Era-2 S38 pattern).
+#[cfg(feature = "llm")]
+fn llm_summarize(text: &str) -> String {
+    let config = crate::config::Config::load();
+    if config.llm_base_url.is_empty() {
+        return "Error: LLM not configured (llm_base_url is empty)".into();
+    }
+    let client = crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
+        base_url: config.llm_base_url,
+        default_model: config.llm_model,
+        timeout_secs: config.llm_timeout_secs,
+        temperature: config.llm_temperature,
+        max_tokens: config.llm_max_tokens,
+    });
+    match client.summarize(text) {
+        Ok(summary) => format!("## Summary\n\n{summary}"),
+        Err(e) => format!("Error: LLM summarization failed: {e}"),
+    }
+}
+
+#[cfg(not(feature = "llm"))]
+fn llm_summarize(_text: &str) -> String {
+    "Error: LLM feature disabled".into()
+}
+
+#[cfg(feature = "llm")]
+fn llm_translate(text: &str, target_lang: &str) -> String {
+    let config = crate::config::Config::load();
+    if config.llm_base_url.is_empty() {
+        return "Error: LLM not configured (llm_base_url is empty)".into();
+    }
+    let client = crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
+        base_url: config.llm_base_url,
+        default_model: config.llm_model,
+        timeout_secs: config.llm_timeout_secs,
+        temperature: config.llm_temperature,
+        max_tokens: config.llm_max_tokens,
+    });
+    match client.translate(text, target_lang) {
+        Ok(translated) => format!("## Translation ({target_lang})\n\n{translated}"),
+        Err(e) => format!("Error: LLM translation failed: {e}"),
+    }
+}
+
+#[cfg(not(feature = "llm"))]
+fn llm_translate(_text: &str, _target_lang: &str) -> String {
+    "Error: LLM feature disabled".into()
+}
+
+#[cfg(feature = "llm")]
+fn llm_analyze(text: &str) -> String {
+    let config = crate::config::Config::load();
+    if config.llm_base_url.is_empty() {
+        return "Error: LLM not configured (llm_base_url is empty)".into();
+    }
+    let client = crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
+        base_url: config.llm_base_url,
+        default_model: config.llm_model,
+        timeout_secs: config.llm_timeout_secs,
+        temperature: config.llm_temperature,
+        max_tokens: config.llm_max_tokens,
+    });
+    match client.analyze(text) {
+        Ok(analysis) => format!("## Analysis\n\n{analysis}"),
+        Err(e) => format!("Error: LLM analysis failed: {e}"),
+    }
+}
+
+#[cfg(not(feature = "llm"))]
+fn llm_analyze(_text: &str) -> String {
+    "Error: LLM feature disabled".into()
+}
 use uuid::Uuid;
 
 #[cfg(feature = "mcp")]
@@ -16,6 +90,7 @@ use crate::mcp::{McpBridge, McpCommand};
 use crate::offscreen_webview::OffscreenWebViewManager;
 use crate::scripts::ContentScriptManager;
 use crate::servo::{WryPaneManager, pump_gtk};
+#[cfg(feature = "terminal")]
 #[cfg(feature = "terminal")]
 use crate::terminal::NativeTerminalManager;
 use crate::wm::Rect;
@@ -1117,15 +1192,27 @@ pub fn process_mcp_commands(
                 *offscreen_panes = OffscreenWebViewManager::new();
                 // Agent mode has no terminal manager: a fresh, empty one
                 // satisfies the signature (no terminal panes exist to remove).
-                let mut restore_terminal_manager = crate::terminal::NativeTerminalManager::new();
+                #[cfg(feature = "terminal")]
+                let outcome = {
+                    let mut restore_terminal_manager =
+                        crate::terminal::NativeTerminalManager::new();
+                    crate::workspace_restore::restore_workspace(
+                        &name,
+                        viewport,
+                        app_state.db.as_ref(),
+                        &mut app_state.terminal_pane_ids,
+                        &mut app_state.engines,
+                        &mut app_state.wm,
+                        &mut restore_terminal_manager,
+                    )
+                };
+                #[cfg(not(feature = "terminal"))]
                 let outcome = crate::workspace_restore::restore_workspace(
                     &name,
                     viewport,
                     app_state.db.as_ref(),
-                    &mut app_state.terminal_pane_ids,
                     &mut app_state.engines,
                     &mut app_state.wm,
-                    &mut restore_terminal_manager,
                 );
                 let msg = match outcome {
                     crate::workspace_restore::RestoreOutcome::Restored(result) => {
@@ -1613,23 +1700,7 @@ pub fn process_mcp_commands(
                     if dispatched {
                         match wait_for_js_result(text_rx, std::time::Duration::from_secs(120)) {
                             Some(text) if !text.is_empty() && text != "null" => {
-                                let config = crate::config::Config::load();
-                                if config.llm_base_url.is_empty() {
-                                    "Error: LLM not configured (llm_base_url is empty)".into()
-                                } else {
-                                    let client =
-                                        crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
-                                            base_url: config.llm_base_url,
-                                            default_model: config.llm_model,
-                                            timeout_secs: config.llm_timeout_secs,
-                                            temperature: config.llm_temperature,
-                                            max_tokens: config.llm_max_tokens,
-                                        });
-                                    match client.summarize(&text) {
-                                        Ok(summary) => format!("## Summary\n\n{summary}"),
-                                        Err(e) => format!("Error: LLM summarization failed: {e}"),
-                                    }
-                                }
+                                llm_summarize(&text)
                             }
                             _ => "Error: could not extract page text".into(),
                         }
@@ -1663,27 +1734,7 @@ pub fn process_mcp_commands(
                     if dispatched {
                         match wait_for_js_result(text_rx, std::time::Duration::from_secs(120)) {
                             Some(text) if !text.is_empty() && text != "null" => {
-                                let config = crate::config::Config::load();
-                                if config.llm_base_url.is_empty() {
-                                    "Error: LLM not configured (llm_base_url is empty)".into()
-                                } else {
-                                    let client =
-                                        crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
-                                            base_url: config.llm_base_url,
-                                            default_model: config.llm_model,
-                                            timeout_secs: config.llm_timeout_secs,
-                                            temperature: config.llm_temperature,
-                                            max_tokens: config.llm_max_tokens,
-                                        });
-                                    match client.translate(&text, &target_lang) {
-                                        Ok(translated) => {
-                                            format!(
-                                                "## Translation ({target_lang})\n\n{translated}"
-                                            )
-                                        }
-                                        Err(e) => format!("Error: LLM translation failed: {e}"),
-                                    }
-                                }
+                                llm_translate(&text, &target_lang)
                             }
                             _ => "Error: could not extract page text".into(),
                         }
@@ -1713,25 +1764,7 @@ pub fn process_mcp_commands(
 
                     if dispatched {
                         match wait_for_js_result(text_rx, std::time::Duration::from_secs(120)) {
-                            Some(text) if !text.is_empty() && text != "null" => {
-                                let config = crate::config::Config::load();
-                                if config.llm_base_url.is_empty() {
-                                    "Error: LLM not configured (llm_base_url is empty)".into()
-                                } else {
-                                    let client =
-                                        crate::llm::OllamaClient::new(crate::llm::OllamaConfig {
-                                            base_url: config.llm_base_url,
-                                            default_model: config.llm_model,
-                                            timeout_secs: config.llm_timeout_secs,
-                                            temperature: config.llm_temperature,
-                                            max_tokens: config.llm_max_tokens,
-                                        });
-                                    match client.analyze(&text) {
-                                        Ok(analysis) => format!("## Analysis\n\n{analysis}"),
-                                        Err(e) => format!("Error: LLM analysis failed: {e}"),
-                                    }
-                                }
-                            }
+                            Some(text) if !text.is_empty() && text != "null" => llm_analyze(&text),
                             _ => "Error: could not extract page text".into(),
                         }
                     } else {

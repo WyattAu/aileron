@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use tracing::info;
 
 use crate::app::AppState;
+#[cfg(feature = "headed")]
 use crate::chrome_bridge::{ChromeSnapshotInput, build_chrome_state};
 use crate::input::{Key, KeyEvent, Modifiers};
 

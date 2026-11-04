@@ -218,13 +218,11 @@ pub struct ThemeColors {
 
 impl ThemeColors {
     /// Resolve a color field, falling back to the provided default.
-    pub fn resolve(field: &Option<String>, default: &str) -> crate::terminal::grid::Color {
+    pub fn resolve(field: &Option<String>, default: &str) -> crate::color::Color {
         field
             .as_deref()
             .and_then(parse_hex_color)
-            .unwrap_or_else(|| {
-                parse_hex_color(default).unwrap_or(crate::terminal::grid::Color::WHITE)
-            })
+            .unwrap_or_else(|| parse_hex_color(default).unwrap_or(crate::color::Color::WHITE))
     }
 }
 
@@ -233,16 +231,16 @@ impl ThemeColors {
 pub struct CachedThemeColors {
     /// The theme name these colors were resolved from.
     pub theme_name: String,
-    pub tab_bar_bg: crate::terminal::grid::Color,
-    pub tab_bar_fg: crate::terminal::grid::Color,
-    pub status_bar_bg: crate::terminal::grid::Color,
-    pub status_bar_fg: crate::terminal::grid::Color,
-    pub url_bar_bg: crate::terminal::grid::Color,
-    pub url_bar_fg: crate::terminal::grid::Color,
-    pub accent: crate::terminal::grid::Color,
-    pub bg: crate::terminal::grid::Color,
-    pub fg: crate::terminal::grid::Color,
-    pub border: crate::terminal::grid::Color,
+    pub tab_bar_bg: crate::color::Color,
+    pub tab_bar_fg: crate::color::Color,
+    pub status_bar_bg: crate::color::Color,
+    pub status_bar_fg: crate::color::Color,
+    pub url_bar_bg: crate::color::Color,
+    pub url_bar_fg: crate::color::Color,
+    pub accent: crate::color::Color,
+    pub bg: crate::color::Color,
+    pub fg: crate::color::Color,
+    pub border: crate::color::Color,
 }
 
 impl CachedThemeColors {
@@ -270,7 +268,7 @@ impl CachedThemeColors {
 }
 
 /// Parse a hex color string like "#1a1a2e" into a Color.
-fn parse_hex_color(s: &str) -> Option<crate::terminal::grid::Color> {
+fn parse_hex_color(s: &str) -> Option<crate::color::Color> {
     let s = s.trim().trim_start_matches('#');
     if s.len() != 6 {
         return None;
@@ -278,7 +276,7 @@ fn parse_hex_color(s: &str) -> Option<crate::terminal::grid::Color> {
     let r = u8::from_str_radix(&s[0..2], 16).ok()?;
     let g = u8::from_str_radix(&s[2..4], 16).ok()?;
     let b = u8::from_str_radix(&s[4..6], 16).ok()?;
-    Some(crate::terminal::grid::Color::from_rgb(r, g, b))
+    Some(crate::color::Color::from_rgb(r, g, b))
 }
 
 fn built_in_themes() -> std::collections::HashMap<String, ThemeColors> {

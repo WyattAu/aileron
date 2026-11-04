@@ -8,6 +8,7 @@ use crate::input::Modifiers;
 #[cfg(feature = "mcp")]
 use crate::mcp::McpBridge;
 use crate::net::adblock::AdBlocker;
+#[cfg(feature = "headed")]
 use crate::popup::PopupManager;
 use crate::profiling::AdaptiveQuality;
 use crate::servo::WryPaneManager;
@@ -39,6 +40,7 @@ pub struct AileronApp {
 
     pub(crate) git_poller: Option<crate::git::GitPoller>,
 
+    #[cfg(feature = "headed")]
     pub(crate) popup: PopupManager,
 
     pub(crate) first_frame: bool,
@@ -90,6 +92,7 @@ impl AileronApp {
                 std::path::PathBuf::from("."),
                 std::time::Duration::from_secs(1),
             )),
+            #[cfg(feature = "headed")]
             popup: PopupManager::new(),
             first_frame: true,
             frame_count: 0,

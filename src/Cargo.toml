@@ -4,6 +4,7 @@ path = "lib.rs"
 [[bin]]
 name = "aileron"
 path = "main.rs"
+required-features = ["headed"]
 
 [[bin]]
 name = "aileron-mcp"
