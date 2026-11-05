@@ -5,6 +5,11 @@ members = [
     "shared",
     "chrome",
 ]
+# S3 (GATE-1): default builds are the browser crates only. `chrome` (the
+# Leptos shell) is headed-distribution and has zero tests, so it stays a
+# member but leaves the default build: the agent profile no longer compiles
+# it at all. Build it explicitly with -p aileron-chrome.
+default-members = ["src", "shared"]
 
 # === Compile Timing Profile (2026-06-09, `cargo build --timings`) ===
 #
