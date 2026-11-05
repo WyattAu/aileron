@@ -39,7 +39,7 @@ crossbeam-channel = "0.5.15"
 parking_lot = "0.12"
 
 # Windowing
-winit = "0.30.8"
+winit = { version = "0.30.8", optional = true }
 
 # Fuzzy matching
 nucleo = "0.5.0"
@@ -90,10 +90,10 @@ zeroize = { version = "1.8.1", features = ["derive"] }
 uuid = { version = "1.16.0", features = ["v4"] }
 
 # Async block-on for wgpu init
-pollster = "0.4.0"
+pollster = { version = "0.4.0", optional = true }
 
 # GPU rendering for offscreen frame display
-wgpu = "24"
+wgpu = { version = "24", optional = true }
 
 # PTY management for embedded terminal panes
 portable-pty = { version = "0.8", optional = true }
@@ -223,7 +223,7 @@ path = "../tests/terminal_integration.rs"
 
 [features]
 default = ["headed", "mcp", "arp", "sync", "passwords", "lua", "terminal", "llm"]
-headed = []
+headed = ["dep:wgpu", "dep:pollster", "dep:winit"]
 mcp = ["dep:image", "dep:base64"]
 arp = ["dep:tokio-tungstenite"]
 sync = ["dep:fastcdc", "dep:blake3", "dep:age", "dep:notify", "dep:notify-debouncer-mini"]

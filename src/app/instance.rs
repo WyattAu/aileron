@@ -1,5 +1,7 @@
+#[cfg(feature = "headed")]
 use std::sync::Arc;
 use tracing::info;
+#[cfg(feature = "headed")]
 use winit::window::Window;
 
 use crate::app::AppState;
@@ -18,7 +20,11 @@ use crate::terminal::NativeTerminalManager;
 pub const STATUS_BAR_HEIGHT: f64 = 32.0;
 pub const URL_BAR_HEIGHT: f64 = 32.0;
 
+// In the agent profile the headed write-paths (event_handler, app_handler,
+// panes) are compiled out, so several fields are written but never read here.
+#[cfg_attr(not(feature = "headed"), allow(dead_code))]
 pub struct AileronApp {
+    #[cfg(feature = "headed")]
     pub(crate) window: Option<Arc<Window>>,
     pub(crate) app_state: Option<AppState>,
     pub(crate) modifiers: Modifiers,
@@ -76,6 +82,7 @@ impl AileronApp {
         let mut adaptive_quality = AdaptiveQuality::new();
         adaptive_quality.set_enabled(config.adaptive_quality);
         Self {
+            #[cfg(feature = "headed")]
             window: None,
             app_state: None,
             modifiers: Modifiers::none(),

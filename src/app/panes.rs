@@ -1,10 +1,16 @@
+#[cfg(feature = "headed")]
 use std::sync::Arc;
+#[cfg(feature = "headed")]
 use tracing::warn;
 
-use super::instance::{AileronApp, STATUS_BAR_HEIGHT, URL_BAR_HEIGHT};
+use super::instance::AileronApp;
+#[cfg(feature = "headed")]
+use super::instance::{STATUS_BAR_HEIGHT, URL_BAR_HEIGHT};
+#[cfg(feature = "headed")]
 use crate::servo::{EmbedMode, bsp_rect_to_wry_rect};
 
 impl AileronApp {
+    #[cfg(feature = "headed")]
     pub(crate) fn create_wry_pane_for(&mut self, pane_id: uuid::Uuid, url: &url::Url) {
         let window = match &self.window {
             Some(w) => Arc::clone(w),
@@ -124,6 +130,7 @@ impl AileronApp {
         }
     }
 
+    #[cfg(feature = "headed")]
     pub(crate) fn remove_wry_pane_for(&mut self, pane_id: &uuid::Uuid) {
         #[cfg(feature = "terminal")]
         self.terminal_manager.remove(pane_id);
@@ -133,6 +140,7 @@ impl AileronApp {
         }
     }
 
+    #[cfg(feature = "headed")]
     pub(crate) fn reposition_all_panes(&mut self) {
         let app_state = match &self.app_state {
             Some(s) => s,
