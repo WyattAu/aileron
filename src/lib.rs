@@ -1,3 +1,10 @@
+// ---- GATE-1 S4 stage 1a: core modules moved to aileron-core ------------
+// One-for-one re-exports: every `crate::x::` and `aileron::x::` call site
+// keeps working while the physical crates settle.
+pub use aileron_core::{
+    color, config, db, debug_capturer, extensions, git, i18n, net, profiling, update_check, wm,
+};
+
 pub mod app;
 #[cfg(feature = "arp")]
 pub mod arp;
@@ -5,17 +12,10 @@ pub mod arp;
 pub mod chrome_bridge;
 #[cfg(feature = "native-chrome")]
 pub mod chrome_native;
-pub mod color;
-pub mod config;
-pub mod db;
-pub mod debug_capturer;
 pub mod downloads;
-pub mod extensions;
 pub mod frame_tasks;
 #[cfg(feature = "headed")]
 pub mod gfx;
-pub mod git;
-pub mod i18n;
 pub mod input;
 #[cfg(feature = "llm")]
 pub mod llm;
@@ -23,14 +23,12 @@ pub mod llm;
 pub mod lua;
 #[cfg(feature = "mcp")]
 pub mod mcp;
-pub mod net;
 pub mod offscreen_webview;
 #[cfg(feature = "passwords")]
 pub mod passwords;
 pub mod platform;
 #[cfg(feature = "headed")]
 pub mod popup;
-pub mod profiling;
 pub mod scripts;
 pub mod servo;
 #[cfg(feature = "sync")]
@@ -40,7 +38,5 @@ pub mod terminal;
 #[cfg(feature = "headed")]
 pub mod test_harness;
 pub mod ui;
-pub mod update_check;
-pub mod wm;
 pub mod workspace_restore;
 pub mod wry_actions;

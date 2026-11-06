@@ -22,6 +22,7 @@ keywords = ["browser", "web-browser", "tiling", "keyboard-driven", "developer-to
 categories = ["development-tools", "web-programming"]
 
 [dependencies]
+aileron-core = { path = "../core" }
 aileron-shared = { path = "../shared" }
 
 # Error handling

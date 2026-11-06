@@ -16,7 +16,7 @@ use tracing::{info, warn};
 /// # Example
 ///
 /// ```
-/// use aileron::config::Config;
+/// use aileron_core::config::Config;
 ///
 /// let config = Config::default();
 /// assert_eq!(config.homepage, "aileron://new");

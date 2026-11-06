@@ -8,7 +8,7 @@
 //! - Notifications
 
 pub mod config;
-pub mod paths;
+pub use aileron_core::platform::paths;
 pub mod traits;
 
 #[cfg(target_os = "linux")]

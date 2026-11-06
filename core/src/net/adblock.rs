@@ -13,7 +13,7 @@ use crate::net::filter_list::{CosmeticFilter, FilterList, NetworkFilter, Resourc
 /// # Example
 ///
 /// ```
-/// use aileron::net::adblock::AdBlocker;
+/// use aileron_core::net::adblock::AdBlocker;
 ///
 /// let mut blocker = AdBlocker::new();
 /// blocker.load_filter_list("||ads.example.com^\n||tracker.evil.net^").unwrap();

@@ -44,7 +44,7 @@ pub struct CosmeticFilter {
 /// # Example
 ///
 /// ```
-/// use aileron::net::filter_list::FilterList;
+/// use aileron_core::net::filter_list::FilterList;
 ///
 /// let list = FilterList::parse("||ads.example.com^\n##div.ad-banner");
 /// assert_eq!(list.network_filters.len(), 1);

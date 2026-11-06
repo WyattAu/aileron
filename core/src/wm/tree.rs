@@ -44,7 +44,7 @@ pub enum TileError {
 /// # Example
 ///
 /// ```
-/// use aileron::wm::{BspTree, Rect, SplitDirection};
+/// use aileron_core::wm::{BspTree, Rect, SplitDirection};
 ///
 /// let mut tree = BspTree::new(
 ///     Rect::new(0.0, 0.0, 1920.0, 1080.0),
