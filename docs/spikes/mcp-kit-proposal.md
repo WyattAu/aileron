@@ -43,6 +43,30 @@ itself — Rust, single binary, 49 tools.
 4. The rest opportunistically; third-party servers stay until their Rust
    replacement reaches tool parity (per-server parity checklists).
 
+## Status update (2026-11-06)
+
+Deliverables 1 and 2 SHIPPED ahead of the core extraction:
+
+- **memory-kit** (WyattAu/memory-kit): SQLite knowledge-graph MCP server,
+  drop-in 9-tool API, live in opencode as the `memory` server since
+  2026-11-06. Data migrated from mcp-server-memory (26 entities, 336
+  observations, 1 relation); original export untouched. Full 9-tool
+  suite tested (create/search/delete round-trip, duplicate dedupe,
+  FK-enforced relations).
+- **github-kit** (WyattAu/github-kit): 18-tool REST server replacing
+  github-mcp-server (whose mid-session restarts churned the tool
+  catalog). Live in opencode as the `github` server. Live-tested:
+  get_me, get_file_contents (decoded), list_commits, search, workflow
+  runs against real estate repos.
+- **mcp-sentinel serve**: the supply-chain gate became an MCP server too
+  (scan/pin/verify/verify_chain), registered in opencode, drift-verify
+  armed; opencode-config command-array shape support added.
+
+Both servers share the same stdio line-JSON framing, tools/list schema,
+and call dispatch — the mcp-kit-core pattern now has THREE data points
+(memory-kit, github-kit, sentinel serve). Core extraction is due at the
+fourth (proposal rule), likely when filesystem or osint is rewritten.
+
 ## Non-goals
 
 - Not replacing aileron's own MCP surface (it IS the flagship).
