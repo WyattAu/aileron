@@ -73,9 +73,39 @@ pub fn start_tcp_mcp_server(
             MCP_TCP_BIND_ADDR, MCP_TCP_PORT
         );
 
+        // GATE-9 follow-up (2026-11-05 incident): an unbounded thread-per-
+        // session accept loop let a burst of ~40 client connections push the
+        // daemon into a zombie state (runtime workers gone, listener dead,
+        // process alive). Cap concurrent sessions; beyond the cap the
+        // connection gets a clean JSON-RPC error instead of a silent hang.
+        let max_sessions: usize = std::env::var("AILERON_MCP_MAX_SESSIONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(24);
+        let live_sessions = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        // Drops decrement; a panicking session thread still decrements.
+        struct SessionGuard(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+        impl Drop for SessionGuard {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
+                    if live_sessions.load(std::sync::atomic::Ordering::SeqCst) >= max_sessions {
+                        warn!(
+                            "[tcp-mcp] session limit {max_sessions} reached - refusing connection"
+                        );
+                        let mut s = stream;
+                        let _ = std::io::Write::write_all(
+                            &mut s,
+                            b"{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32000,\"message\":\"session limit reached; retry later\"}}\n",
+                        );
+                        continue;
+                    }
+                    live_sessions.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     // YP-MCP-SESSIONS-002 (Era-2 S27): every connection is a
                     // session - fresh id, own tool set over the shared
                     // channel. Sessions are LONG-LIVED (the relay holds one
@@ -87,7 +117,9 @@ pub fn start_tcp_mcp_server(
                     let tx = command_tx.clone();
                     let registry = registry.clone();
                     let initial_caps = initial_caps.clone();
+                    let guard = SessionGuard(live_sessions.clone());
                     let handle = std::thread::spawn(move || {
+                        let _guard = guard;
                         // Policy profile (Era-3 S38): seed the session's caps
                         // per the configured profile before first dispatch.
                         if let Some(caps) = initial_caps {
