@@ -26,6 +26,7 @@ use crate::lua::LuaEngine;
 #[cfg(feature = "passwords")]
 use crate::passwords::BitwardenClient;
 use crate::servo::PaneStateManager;
+use crate::state::{CacheState, SessionState};
 use crate::ui::palette::CommandPalette;
 use crate::ui::search::SearchCategory;
 use crate::ui::search::SearchItem;
@@ -185,17 +186,6 @@ pub struct PanelState {
     pub sync_conflict_selected: usize,
 }
 
-pub struct SessionState {
-    pub should_quit: bool,
-    pub session_dirty: bool,
-    pub last_auto_save: std::time::Instant,
-    marks: HashMap<Uuid, HashMap<char, f64>>,
-    pending_mark_action: Option<char>,
-    pub pending_mark_set: Option<char>,
-    pub pending_mark_jump: Option<f64>,
-    pub quickmarks: HashMap<String, String>,
-}
-
 pub struct TabState {
     pub closed_tab_stack: VecDeque<(String, String)>,
     pub tab_names: HashMap<Uuid, String>,
@@ -226,30 +216,6 @@ pub struct UiState {
     pub accessibility_text: String,
 }
 
-pub struct CacheState {
-    pub cached_pane_count: usize,
-    pub pane_count_dirty: bool,
-    pub config_json_cache: String,
-    pub config_json_dirty: bool,
-    pub https_safe_list_cache: Option<std::sync::Arc<HashSet<String>>>,
-    https_safe_list_debug_flag: bool,
-}
-
-impl Default for SessionState {
-    fn default() -> Self {
-        Self {
-            should_quit: false,
-            session_dirty: false,
-            last_auto_save: std::time::Instant::now(),
-            marks: HashMap::new(),
-            pending_mark_action: None,
-            pending_mark_set: None,
-            pending_mark_jump: None,
-            quickmarks: HashMap::new(),
-        }
-    }
-}
-
 impl Default for TabState {
     fn default() -> Self {
         Self {
@@ -263,19 +229,6 @@ impl Default for TabState {
             last_active_pane_id: None,
             tab_display_cache: HashMap::new(),
             tab_display_dirty: true,
-        }
-    }
-}
-
-impl Default for CacheState {
-    fn default() -> Self {
-        Self {
-            cached_pane_count: 0,
-            pane_count_dirty: true,
-            config_json_cache: String::new(),
-            config_json_dirty: true,
-            https_safe_list_cache: None,
-            https_safe_list_debug_flag: false,
         }
     }
 }

@@ -5,7 +5,6 @@
 //! - Shared read-only state (active URL, title) via `Arc<RwLock>`
 //! - Command channel for mutations (navigate, run JS) processed on main thread
 
-use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock, mpsc};
 use tokio::sync::oneshot;
 
@@ -62,7 +61,11 @@ impl CommandTx {
 ///
 /// Written by the router on `session_scope` (narrowing only) and read by
 /// the TCP gate (kappa class checks) and the router (phi pane checks).
-pub type SessionRegistry = Arc<std::sync::Mutex<HashMap<uuid::Uuid, SessionCaps>>>;
+///
+/// S4 stage 1b: `SessionRegistry` + `SessionCaps` moved to aileron-core
+/// (`core/src/state.rs`) so CoreState can hold the registry; re-exported
+/// here for API compatibility.
+pub use aileron_core::state::{SessionCaps, SessionRegistry};
 
 impl McpCommand {
     /// The tool name a command corresponds to (audit trail provenance).
@@ -140,39 +143,6 @@ pub fn tool_class(name: &str) -> &'static str {
         | "translate_page"
         | "analyze_page" => "read",
         _ => "mutate", // unknown tools default to the stronger class
-    }
-}
-
-/// Capability set for one agent session (YP-MCP-SESSIONS-002 kappa/phi).
-///
-/// `None` = unrestricted (the default session and fresh connections).
-/// Narrowing is monotone: `session_scope` can only shrink a set that is
-/// already `Some`, and can convert `None` to `Some` once. Web content has
-/// no path to widen a grant - the only writers are MCP tools carrying the
-/// session's own tag, and the router validates every write is a subset.
-#[derive(Debug, Clone, Default)]
-pub struct SessionCaps {
-    /// Allowed pane ids; `None` = every pane (phi).
-    pub panes: Option<HashSet<uuid::Uuid>>,
-    /// Allowed tool classes (read | mutate | irreversible); `None` = all (kappa).
-    pub tool_classes: Option<HashSet<String>>,
-}
-
-impl SessionCaps {
-    /// True when `self` can be narrowed to `narrower` (monotone shrinking).
-    #[must_use]
-    pub fn allows_narrowing_to(&self, narrower: &SessionCaps) -> bool {
-        let panes_ok = match (&self.panes, &narrower.panes) {
-            (None, _) => true,
-            (Some(base), Some(new)) => new.is_subset(base),
-            (Some(_), None) => false, // widening None->Some back is a widen
-        };
-        let classes_ok = match (&self.tool_classes, &narrower.tool_classes) {
-            (None, _) => true,
-            (Some(base), Some(new)) => new.is_subset(base),
-            (Some(_), None) => false,
-        };
-        panes_ok && classes_ok
     }
 }
 
@@ -412,62 +382,9 @@ impl Default for McpBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
-    /// Era-2 S39 injection-confinement vectors: the taint argument as tests.
-    /// A page-influenced agent can call session_scope, but every widening
-    /// shape must be rejected (structural taint, YP-SEC-CONFINEMENT-001).
-    #[test]
-    fn test_narrowing_rejects_all_widening_shapes() {
-        let unrestricted = SessionCaps::default();
-        // none -> none: identity is fine
-        assert!(unrestricted.allows_narrowing_to(&SessionCaps::default()));
-        // none -> some: first narrowing is allowed
-        assert!(unrestricted.allows_narrowing_to(&SessionCaps {
-            panes: None,
-            tool_classes: Some(HashSet::from(["read".to_string()])),
-        }));
-        // some -> none: dropping a grant is WIDENING - rejected
-        let scoped = SessionCaps {
-            panes: None,
-            tool_classes: Some(HashSet::from(["read".to_string()])),
-        };
-        assert!(!scoped.allows_narrowing_to(&SessionCaps::default()));
-        // some -> larger some: rejected
-        let wider = SessionCaps {
-            panes: None,
-            tool_classes: Some(HashSet::from(["read".to_string(), "mutate".to_string()])),
-        };
-        assert!(!scoped.allows_narrowing_to(&wider));
-        // some -> subset: allowed
-        assert!(scoped.allows_narrowing_to(&SessionCaps {
-            panes: None,
-            tool_classes: Some(HashSet::new()),
-        }));
-    }
-
-    #[test]
-    fn test_pane_scope_narrowing() {
-        let s1 = uuid::Uuid::new_v4();
-        let s2 = uuid::Uuid::new_v4();
-        let base = SessionCaps {
-            panes: Some(HashSet::from([s1, s2])),
-            tool_classes: None,
-        };
-        // subset of panes: ok
-        assert!(base.allows_narrowing_to(&SessionCaps {
-            panes: Some(HashSet::from([s1])),
-            tool_classes: None,
-        }));
-        // adding a pane: widening - rejected
-        let s3 = uuid::Uuid::new_v4();
-        assert!(!base.allows_narrowing_to(&SessionCaps {
-            panes: Some(HashSet::from([s1, s3])),
-            tool_classes: None,
-        }));
-        // un-scoping panes entirely: widening - rejected
-        assert!(!base.allows_narrowing_to(&SessionCaps::default()));
-    }
+    /// Era-2 S39 injection-confinement vectors: moved to aileron-core
+    /// `state::tests` alongside SessionCaps (S4 stage 1b).
 
     #[test]
     fn test_command_tx_session_tag_is_bound_at_construction() {

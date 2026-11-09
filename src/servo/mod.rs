@@ -7,7 +7,8 @@ pub mod texture_share;
 pub mod wry_engine;
 pub mod wry_pages;
 
-pub use engine::{EngineType, PaneRenderer, PaneState, PaneStateManager};
+pub use aileron_core::state::{EngineType, PaneState, PaneStateManager};
+pub use engine::PaneRenderer;
 pub use engine_selection::EngineSelection;
 pub use fallback::open_in_system_browser;
 pub use servo_engine::ServoPane;

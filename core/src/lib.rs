@@ -15,5 +15,6 @@ pub mod i18n;
 pub mod net;
 pub mod platform;
 pub mod profiling;
+pub mod state;
 pub mod update_check;
 pub mod wm;

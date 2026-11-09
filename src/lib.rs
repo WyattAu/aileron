@@ -2,7 +2,8 @@
 // One-for-one re-exports: every `crate::x::` and `aileron::x::` call site
 // keeps working while the physical crates settle.
 pub use aileron_core::{
-    color, config, db, debug_capturer, extensions, git, i18n, net, profiling, update_check, wm,
+    color, config, db, debug_capturer, extensions, git, i18n, net, profiling, state, update_check,
+    wm,
 };
 
 pub mod app;
