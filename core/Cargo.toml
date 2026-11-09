@@ -23,6 +23,8 @@ chrono = "0.4"
 urlencoding = "2"
 smol_str = "0.2"
 directories = "6.0.0"
+tokio = { version = "1", features = ["rt-multi-thread", "fs", "io-util"] }
+futures-util = "0.3"
 zeroize = { version = "1.8.1", features = ["derive"] }
 toml = "0.8.20"
 open = "5.3.2"

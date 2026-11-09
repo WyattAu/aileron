@@ -304,13 +304,13 @@ impl TestHarness {
 
     /// Serialize the current ChromeState to JSON.
     pub fn capture_dom(&self, app_state: &AppState) -> String {
-        let active_id = app_state.wm.active_pane_id();
-        let panes_ref = app_state.wm.panes_ref();
+        let active_id = app_state.core.wm.active_pane_id();
+        let panes_ref = app_state.core.wm.panes_ref();
 
         let panes: Vec<aileron_shared::PaneInfo> = panes_ref
             .iter()
             .map(|(pid, _)| {
-                let (url, title) = if let Some(pane) = app_state.wm.find_pane(*pid) {
+                let (url, title) = if let Some(pane) = app_state.core.wm.find_pane(*pid) {
                     (pane.url().to_string(), pane.title().to_string())
                 } else {
                     (String::new(), String::new())
@@ -327,15 +327,16 @@ impl TestHarness {
             .collect();
 
         let snapshot = ChromeSnapshotInput {
-            mode: app_state.mode,
+            mode: app_state.headed().mode,
             active_pane_id: active_id,
             pane_count: panes_ref.len(),
             panes,
-            status_message: &app_state.ui.status_message,
-            find_bar_open: app_state.ui.find_bar_open,
-            find_query: &app_state.ui.find_query,
-            command_palette_open: app_state.palette.open,
+            status_message: &app_state.headed().ui.status_message,
+            find_bar_open: app_state.headed().ui.find_bar_open,
+            find_query: &app_state.headed().ui.find_query,
+            command_palette_open: app_state.headed().palette.open,
             palette_results: app_state
+                .headed()
                 .palette
                 .results()
                 .iter()
@@ -346,18 +347,19 @@ impl TestHarness {
                     category: crate::chrome_bridge::to_shared_category(item.category),
                 })
                 .collect(),
-            palette_selected: app_state.palette.selected_item().map_or(0, |s| {
+            palette_selected: app_state.headed().palette.selected_item().map_or(0, |s| {
                 app_state
+                    .headed()
                     .palette
                     .results()
                     .iter()
                     .position(|r| r.id == s.id)
                     .unwrap_or(0)
             }),
-            url_bar_focused: app_state.ui.url_bar_focused,
-            tab_layout: &app_state.config.tab_layout,
-            tab_sidebar_width: app_state.config.tab_sidebar_width as f64,
-            tab_sidebar_right: app_state.config.tab_sidebar_right,
+            url_bar_focused: app_state.headed().ui.url_bar_focused,
+            tab_layout: &app_state.core.config.tab_layout,
+            tab_sidebar_width: app_state.core.config.tab_sidebar_width as f64,
+            tab_sidebar_right: app_state.core.config.tab_sidebar_right,
             version: format!("v{} (test-harness)", env!("CARGO_PKG_VERSION")),
         };
 
@@ -787,7 +789,7 @@ mod tests {
 
         // Tick to start the step (command will execute)
         assert!(!harness.tick(&mut state));
-        assert!(!state.config.adblock_enabled);
+        assert!(!state.core.config.adblock_enabled);
 
         // Wait and tick to capture
         std::thread::sleep(Duration::from_millis(250));
@@ -809,11 +811,11 @@ mod tests {
         let config = crate::config::Config::default();
         let mut state = AppState::new(viewport, config).unwrap();
 
-        assert_eq!(state.mode, crate::input::Mode::Normal);
+        assert_eq!(state.headed().mode, crate::input::Mode::Normal);
 
         // Tick to execute key event — 'i' enters Insert mode
         assert!(!harness.tick(&mut state));
-        assert_eq!(state.mode, crate::input::Mode::Insert);
+        assert_eq!(state.headed().mode, crate::input::Mode::Insert);
 
         // Wait and tick to capture
         std::thread::sleep(Duration::from_millis(250));

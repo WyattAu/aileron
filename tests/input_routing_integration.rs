@@ -36,10 +36,10 @@ fn test_j_key_in_normal_produces_scroll_down() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('j'), Modifiers::none()));
     assert!(
-        !state.pending_wry_actions.is_empty(),
+        !state.core.pending_wry_actions.is_empty(),
         "'j' in Normal mode should queue a WryAction"
     );
-    match &state.pending_wry_actions[0] {
+    match &state.core.pending_wry_actions[0] {
         WryAction::SmoothScroll { y, .. } => assert_eq!(*y, 120.0),
         other => panic!("Expected SmoothScroll(y=120), got {other:?}"),
     }
@@ -49,7 +49,7 @@ fn test_j_key_in_normal_produces_scroll_down() {
 fn test_k_key_in_normal_produces_scroll_up() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('k'), Modifiers::none()));
-    match &state.pending_wry_actions[0] {
+    match &state.core.pending_wry_actions[0] {
         WryAction::SmoothScroll { y, .. } => assert_eq!(*y, -120.0),
         other => panic!("Expected SmoothScroll(y=-120), got {other:?}"),
     }
@@ -59,7 +59,7 @@ fn test_k_key_in_normal_produces_scroll_up() {
 fn test_ctrl_d_produces_half_page_down() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('d'), Modifiers::ctrl()));
-    match &state.pending_wry_actions[0] {
+    match &state.core.pending_wry_actions[0] {
         WryAction::SmoothScroll { y, .. } => assert_eq!(*y, 400.0),
         other => panic!("Expected SmoothScroll(y=400), got {other:?}"),
     }
@@ -69,7 +69,7 @@ fn test_ctrl_d_produces_half_page_down() {
 fn test_ctrl_u_produces_half_page_up() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('u'), Modifiers::ctrl()));
-    match &state.pending_wry_actions[0] {
+    match &state.core.pending_wry_actions[0] {
         WryAction::SmoothScroll { y, .. } => assert_eq!(*y, -400.0),
         other => panic!("Expected SmoothScroll(y=-400), got {other:?}"),
     }
@@ -79,7 +79,7 @@ fn test_ctrl_u_produces_half_page_up() {
 fn test_g_capital_produces_scroll_to_bottom() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('G'), Modifiers::none()));
-    match &state.pending_wry_actions[0] {
+    match &state.core.pending_wry_actions[0] {
         WryAction::SmoothScroll { y, .. } => assert_eq!(*y, 999999.0),
         other => panic!("Expected SmoothScroll(y=999999), got {other:?}"),
     }
@@ -89,7 +89,7 @@ fn test_g_capital_produces_scroll_to_bottom() {
 fn test_ctrl_g_produces_scroll_to_top() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('g'), Modifiers::ctrl()));
-    match &state.pending_wry_actions[0] {
+    match &state.core.pending_wry_actions[0] {
         WryAction::SmoothScroll { y, .. } => assert_eq!(*y, -999999.0),
         other => panic!("Expected SmoothScroll(y=-999999), got {other:?}"),
     }
@@ -102,7 +102,7 @@ fn test_r_key_reloads_page() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('r'), Modifiers::none()));
     assert!(
-        state.pending_wry_actions.contains(&WryAction::Reload),
+        state.core.pending_wry_actions.contains(&WryAction::Reload),
         "'r' should queue Reload"
     );
 }
@@ -112,7 +112,7 @@ fn test_h_capital_navigates_back() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('H'), Modifiers::none()));
     assert!(
-        state.pending_wry_actions.contains(&WryAction::Back),
+        state.core.pending_wry_actions.contains(&WryAction::Back),
         "'H' should queue Back"
     );
 }
@@ -122,7 +122,7 @@ fn test_l_capital_navigates_forward() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('L'), Modifiers::none()));
     assert!(
-        state.pending_wry_actions.contains(&WryAction::Forward),
+        state.core.pending_wry_actions.contains(&WryAction::Forward),
         "'L' should queue Forward"
     );
 }
@@ -134,27 +134,27 @@ fn test_insert_mode_suppresses_normal_keybindings() {
     let mut state = make_state();
     // Enter insert mode
     state.process_key_event(key_event(Key::Character('i'), Modifiers::none()));
-    assert_eq!(state.mode, Mode::Insert);
-    state.pending_wry_actions.clear();
+    assert_eq!(state.headed().mode, Mode::Insert);
+    state.core.pending_wry_actions.clear();
 
     // 'j' in Insert should NOT scroll
     state.process_key_event(key_event(Key::Character('j'), Modifiers::none()));
     assert!(
-        state.pending_wry_actions.is_empty(),
+        state.core.pending_wry_actions.is_empty(),
         "'j' in Insert mode should produce no WryActions"
     );
 
     // 'k' in Insert should NOT scroll
     state.process_key_event(key_event(Key::Character('k'), Modifiers::none()));
     assert!(
-        state.pending_wry_actions.is_empty(),
+        state.core.pending_wry_actions.is_empty(),
         "'k' in Insert mode should produce no WryActions"
     );
 
     // 'r' in Insert should NOT reload
     state.process_key_event(key_event(Key::Character('r'), Modifiers::none()));
     assert!(
-        state.pending_wry_actions.is_empty(),
+        state.core.pending_wry_actions.is_empty(),
         "'r' in Insert mode should produce no WryActions"
     );
 }
@@ -164,15 +164,15 @@ fn test_mode_round_trip_restores_keybindings() {
     let mut state = make_state();
     // Normal -> Insert -> Normal
     state.process_key_event(key_event(Key::Character('i'), Modifiers::none()));
-    assert_eq!(state.mode, Mode::Insert);
+    assert_eq!(state.headed().mode, Mode::Insert);
     state.process_key_event(key_event(Key::Escape, Modifiers::none()));
-    assert_eq!(state.mode, Mode::Normal);
+    assert_eq!(state.headed().mode, Mode::Normal);
 
     // 'j' should scroll again
-    state.pending_wry_actions.clear();
+    state.core.pending_wry_actions.clear();
     state.process_key_event(key_event(Key::Character('j'), Modifiers::none()));
     assert!(
-        !state.pending_wry_actions.is_empty(),
+        !state.core.pending_wry_actions.is_empty(),
         "After Normal -> Insert -> Normal, 'j' should scroll again"
     );
 }
@@ -183,15 +183,15 @@ fn test_mode_round_trip_restores_keybindings() {
 fn test_ctrl_p_opens_palette_and_routes_keys_there() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('p'), Modifiers::ctrl()));
-    assert!(state.palette.open);
+    assert!(state.headed().palette.open);
 
     // Typing into palette should not produce wry actions
-    state.pending_wry_actions.clear();
+    state.core.pending_wry_actions.clear();
     state.process_key_event(key_event(Key::Character('x'), Modifiers::none()));
     state.process_key_event(key_event(Key::Character('y'), Modifiers::none()));
     state.process_key_event(key_event(Key::Character('z'), Modifiers::none()));
     assert!(
-        state.pending_wry_actions.is_empty(),
+        state.core.pending_wry_actions.is_empty(),
         "Keys typed into palette should not produce WryActions"
     );
 }
@@ -200,27 +200,33 @@ fn test_ctrl_p_opens_palette_and_routes_keys_there() {
 fn test_colon_opens_palette() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character(':'), Modifiers::none()));
-    assert!(state.palette.open, "':' should open the command palette");
+    assert!(
+        state.headed().palette.open,
+        "':' should open the command palette"
+    );
 }
 
 #[test]
 fn test_escape_closes_palette() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('p'), Modifiers::ctrl()));
-    assert!(state.palette.open);
+    assert!(state.headed().palette.open);
 
     state.process_key_event(key_event(Key::Escape, Modifiers::none()));
-    assert!(!state.palette.open, "Escape should close the palette");
+    assert!(
+        !state.headed().palette.open,
+        "Escape should close the palette"
+    );
 }
 
 #[test]
 fn test_palette_quit_sequence() {
     let mut state = make_state();
-    assert!(!state.session.should_quit);
+    assert!(!state.core.session.should_quit);
 
     // Open palette via Ctrl+P
     state.process_key_event(key_event(Key::Character('p'), Modifiers::ctrl()));
-    assert!(state.palette.open);
+    assert!(state.headed().palette.open);
 
     // Type 'quit'
     state.process_key_event(key_event(Key::Character('q'), Modifiers::none()));
@@ -231,7 +237,7 @@ fn test_palette_quit_sequence() {
     // Submit
     state.process_key_event(key_event(Key::Enter, Modifiers::none()));
     assert!(
-        state.session.should_quit,
+        state.core.session.should_quit,
         "typing 'quit' + Enter in palette should set should_quit"
     );
 }
@@ -239,17 +245,17 @@ fn test_palette_quit_sequence() {
 #[test]
 fn test_colon_quit_sequence() {
     let mut state = make_state();
-    assert!(!state.session.should_quit);
+    assert!(!state.core.session.should_quit);
 
     // Open palette with ':'
     state.process_key_event(key_event(Key::Character(':'), Modifiers::none()));
-    assert!(state.palette.open);
+    assert!(state.headed().palette.open);
 
     // Type 'q' and Enter
     state.process_key_event(key_event(Key::Character('q'), Modifiers::none()));
     state.process_key_event(key_event(Key::Enter, Modifiers::none()));
     assert!(
-        state.session.should_quit,
+        state.core.session.should_quit,
         "typing ':q' + Enter should set should_quit"
     );
 }
@@ -259,14 +265,14 @@ fn test_colon_quit_sequence() {
 #[test]
 fn test_unbound_key_in_normal_produces_no_effects() {
     let mut state = make_state();
-    state.pending_wry_actions.clear();
+    state.core.pending_wry_actions.clear();
 
     let unbound_keys = ['z', 'x', '1', '2', '3'];
     for key in &unbound_keys {
         state.process_key_event(key_event(Key::Character(*key), Modifiers::none()));
     }
     assert!(
-        state.pending_wry_actions.is_empty(),
+        state.core.pending_wry_actions.is_empty(),
         "unbound keys should produce no WryActions"
     );
 }
@@ -278,7 +284,7 @@ fn test_ctrl_w_splits_vertical() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('w'), Modifiers::ctrl()));
     assert_eq!(
-        state.wm.leaf_count(),
+        state.core.wm.leaf_count(),
         2,
         "Ctrl+W should split the tree into 2 panes"
     );
@@ -289,7 +295,7 @@ fn test_ctrl_s_splits_horizontal() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('s'), Modifiers::ctrl()));
     assert_eq!(
-        state.wm.leaf_count(),
+        state.core.wm.leaf_count(),
         2,
         "Ctrl+S should split the tree into 2 panes"
     );
@@ -301,8 +307,8 @@ fn test_ctrl_t_creates_new_tab() {
     state.process_key_event(key_event(Key::Character('t'), Modifiers::ctrl()));
     // Ctrl+T = NewTab, which now creates a new tab within the active pane.
     // The pane should now have 2 tabs.
-    let active_id = state.wm.active_pane_id();
-    if let Some(root) = state.wm.root_mut()
+    let active_id = state.core.wm.active_pane_id();
+    if let Some(root) = state.core.wm.root_mut()
         && let Some(pane) = aileron::wm::BspTree::find_pane_mut(root, active_id)
     {
         assert_eq!(
@@ -322,7 +328,7 @@ fn test_config_override_remapping() {
 
     let mut state = AppState::new(test_viewport(), config).unwrap();
     state.process_key_event(key_event(Key::Character('j'), Modifiers::ctrl()));
-    match &state.pending_wry_actions[0] {
+    match &state.core.pending_wry_actions[0] {
         WryAction::SmoothScroll { y, .. } => {
             assert_eq!(*y, -120.0, "Ctrl+J remapped to ScrollUp should scroll up")
         }
@@ -346,7 +352,7 @@ fn test_config_override_new_binding() {
         },
     ));
     assert!(
-        state.session.should_quit,
+        state.core.session.should_quit,
         "Ctrl+Shift+Q remapped to Quit should set should_quit"
     );
 }
@@ -437,14 +443,20 @@ fn test_router_returns_destination_for_all_mode_key_combinations() {
 fn test_slash_opens_find_bar() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('/'), Modifiers::none()));
-    assert!(state.ui.find_bar_open, "'/' should open the find bar");
+    assert!(
+        state.headed().ui.find_bar_open,
+        "'/' should open the find bar"
+    );
 }
 
 #[test]
 fn test_ctrl_f_opens_find_bar() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('f'), Modifiers::ctrl()));
-    assert!(state.ui.find_bar_open, "Ctrl+F should open the find bar");
+    assert!(
+        state.headed().ui.find_bar_open,
+        "Ctrl+F should open the find bar"
+    );
 }
 
 // ─── 11. DevTools toggle ───────────────────────────────────────────
@@ -455,6 +467,7 @@ fn test_f12_toggles_devtools() {
     state.process_key_event(key_event(Key::F(12), Modifiers::none()));
     assert!(
         state
+            .core
             .pending_wry_actions
             .contains(&WryAction::ToggleDevTools),
         "F12 should toggle devtools"
@@ -466,35 +479,39 @@ fn test_f12_toggles_devtools() {
 #[test]
 fn test_split_then_close_via_frame_tasks() {
     let mut state = make_state();
-    assert_eq!(state.wm.leaf_count(), 1);
+    assert_eq!(state.core.wm.leaf_count(), 1);
 
     // Split
     state.process_key_event(key_event(Key::Character('w'), Modifiers::ctrl()));
-    assert_eq!(state.wm.leaf_count(), 2);
-    let new_id = state.wm.active_pane_id();
+    assert_eq!(state.core.wm.leaf_count(), 2);
+    let new_id = state.core.wm.active_pane_id();
 
     // Close via frame_tasks handle_pending_tab_close
     aileron::frame_tasks::handle_pending_tab_close(&mut state, new_id);
-    assert_eq!(state.wm.leaf_count(), 1, "closed pane should be removed");
+    assert_eq!(
+        state.core.wm.leaf_count(),
+        1,
+        "closed pane should be removed"
+    );
 }
 
 #[test]
 fn test_multiple_splits_and_navigations() {
     let mut state = make_state();
-    assert_eq!(state.wm.leaf_count(), 1);
+    assert_eq!(state.core.wm.leaf_count(), 1);
 
     // Split twice for 3 panes
     state.process_key_event(key_event(Key::Character('w'), Modifiers::ctrl()));
-    assert_eq!(state.wm.leaf_count(), 2);
+    assert_eq!(state.core.wm.leaf_count(), 2);
 
     state.process_key_event(key_event(Key::Character('w'), Modifiers::ctrl()));
-    assert_eq!(state.wm.leaf_count(), 3);
+    assert_eq!(state.core.wm.leaf_count(), 3);
 
     // Navigate between panes (hjkl direction keys)
     state.process_key_event(key_event(Key::Character('h'), Modifiers::none()));
     // h/j/k/l navigation modifies AppState.wm.active_pane, not WryActions
     assert_eq!(
-        state.wm.leaf_count(),
+        state.core.wm.leaf_count(),
         3,
         "navigation should not change pane count"
     );
@@ -506,21 +523,21 @@ fn test_full_workflow_split_navigate_quit() {
 
     // Split vertically
     state.process_key_event(key_event(Key::Character('w'), Modifiers::ctrl()));
-    assert_eq!(state.wm.leaf_count(), 2);
+    assert_eq!(state.core.wm.leaf_count(), 2);
 
     // Scroll down in the active pane
     state.process_key_event(key_event(Key::Character('j'), Modifiers::none()));
     assert!(
-        !state.pending_wry_actions.is_empty(),
+        !state.core.pending_wry_actions.is_empty(),
         "should have scroll action"
     );
 
     // Open palette and quit
     state.process_key_event(key_event(Key::Character('p'), Modifiers::ctrl()));
-    assert!(state.palette.open);
+    assert!(state.headed().palette.open);
     state.process_key_event(key_event(Key::Character('q'), Modifiers::none()));
     state.process_key_event(key_event(Key::Enter, Modifiers::none()));
-    assert!(state.session.should_quit);
+    assert!(state.core.session.should_quit);
 }
 
 // ─── 13. Ctrl+B toggles bookmark ───────────────────────────────────
@@ -531,6 +548,7 @@ fn test_ctrl_b_toggles_bookmark() {
     state.process_key_event(key_event(Key::Character('b'), Modifiers::ctrl()));
     assert!(
         state
+            .core
             .pending_wry_actions
             .contains(&WryAction::ToggleBookmark),
         "Ctrl+B should toggle bookmark"
@@ -545,6 +563,7 @@ fn test_ctrl_equals_zooms_in() {
     state.process_key_event(key_event(Key::Character('='), Modifiers::ctrl()));
     assert!(
         state
+            .core
             .pending_wry_actions
             .iter()
             .any(|a| matches!(a, WryAction::RunJs(js) if js.contains("zoom"))),
@@ -558,6 +577,7 @@ fn test_ctrl_minus_zooms_out() {
     state.process_key_event(key_event(Key::Character('-'), Modifiers::ctrl()));
     assert!(
         state
+            .core
             .pending_wry_actions
             .iter()
             .any(|a| matches!(a, WryAction::RunJs(js) if js.contains("zoom"))),
@@ -571,6 +591,7 @@ fn test_ctrl_zero_resets_zoom() {
     state.process_key_event(key_event(Key::Character('0'), Modifiers::ctrl()));
     assert!(
         state
+            .core
             .pending_wry_actions
             .iter()
             .any(|a| matches!(a, WryAction::RunJs(js) if js.contains("zoom"))),

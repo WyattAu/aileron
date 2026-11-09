@@ -23,7 +23,7 @@ fn test_app_state_creates_with_defaults() {
     let config = Config::default();
     let viewport = Rect::new(0.0, 0.0, 1280.0, 800.0);
     let state = AppState::new(viewport, config).unwrap();
-    assert!(state.wm.active_pane_id() != uuid::Uuid::nil());
+    assert!(state.core.wm.active_pane_id() != uuid::Uuid::nil());
 }
 
 #[test]

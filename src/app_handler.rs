@@ -51,8 +51,9 @@ impl ApplicationHandler for AileronApp {
 
         // Create initial wry pane for the root BSP leaf
         if let Some(app_state) = &self.app_state {
-            let root_pane_id = app_state.wm.active_pane_id();
+            let root_pane_id = app_state.core.wm.active_pane_id();
             let root_url = app_state
+                .core
                 .engines
                 .get(&root_pane_id)
                 .and_then(|e| e.current_url().cloned())
@@ -66,7 +67,7 @@ impl ApplicationHandler for AileronApp {
             let was_unclean = Config::was_previous_session_unclean();
 
             if (!self.config.restore_session || !was_unclean)
-                && let Some(db) = app_state.db.as_ref()
+                && let Some(db) = app_state.core.db.as_ref()
                 && let Err(e) = aileron::db::workspaces::delete_workspace(db, "_autosave")
             {
                 tracing::warn!("Failed to delete autosave workspace: {}", e);
@@ -74,6 +75,7 @@ impl ApplicationHandler for AileronApp {
 
             if self.config.restore_session {
                 let all_workspaces = app_state
+                    .core
                     .db
                     .as_ref()
                     .and_then(|conn| aileron::db::workspaces::list_workspaces(conn).ok())
@@ -93,9 +95,9 @@ impl ApplicationHandler for AileronApp {
 
                 if let Some(workspace) = to_restore {
                     info!("Auto-restoring workspace: {}", workspace.name);
-                    app_state.pending_workspace_restore = Some(workspace.name.clone());
-                    app_state.current_workspace_name = workspace.name;
-                    app_state.session.session_dirty = true;
+                    app_state.core.pending_workspace_restore = Some(workspace.name.clone());
+                    app_state.core.current_workspace_name = workspace.name;
+                    app_state.core.session.session_dirty = true;
                 }
             }
         }
@@ -107,7 +109,7 @@ impl ApplicationHandler for AileronApp {
             let registry = self
                 .app_state
                 .as_ref()
-                .map(|s| s.session_registry.clone())
+                .map(|s| s.core.session_registry.clone())
                 .expect("app state must exist before MCP server spawn");
             let policy = self.config.mcp_policy.clone();
             frame_tasks::spawn_mcp_server(&self.mcp_bridge, registry, &policy);
@@ -170,7 +172,7 @@ impl ApplicationHandler for AileronApp {
                 .as_ref()
                 .map(|w| w.scale_factor())
                 .unwrap_or(1.0);
-            app_state.wm.resize(Rect::new(
+            app_state.core.wm.resize(Rect::new(
                 0.0,
                 0.0,
                 physical_size.width as f64 / scale,
@@ -222,7 +224,7 @@ impl ApplicationHandler for AileronApp {
             } => {
                 if *repeat && let Some(_app_state) = &self.app_state {
                     #[cfg(feature = "terminal")]
-                    let active_id = _app_state.wm.active_pane_id();
+                    let active_id = _app_state.core.wm.active_pane_id();
                     #[cfg(feature = "terminal")]
                     if !self.terminal_manager.is_terminal(&active_id) {
                         return;
@@ -252,19 +254,19 @@ impl ApplicationHandler for AileronApp {
                 let pane_ids_before: std::collections::HashSet<uuid::Uuid> = self
                     .app_state
                     .as_ref()
-                    .map(|s| s.wm.panes_ref().iter().map(|(id, _)| *id).collect())
+                    .map(|s| s.core.wm.panes_ref().iter().map(|(id, _)| *id).collect())
                     .unwrap_or_default();
 
                 if let Some(app_state) = &mut self.app_state {
                     // ─── Hint mode: intercept letter keys to follow hinted links ───
-                    if app_state.ui.hint_mode {
+                    if app_state.headed_mut().ui.hint_mode {
                         match &key {
                             aileron::input::Key::Character(c) if c.is_ascii_lowercase() => {
-                                app_state.ui.hint_buffer.push(*c);
-                                let hint_buf = app_state.ui.hint_buffer.clone();
-                                let new_tab = app_state.ui.hint_new_tab;
+                                app_state.headed_mut().ui.hint_buffer.push(*c);
+                                let hint_buf = app_state.headed_mut().ui.hint_buffer.clone();
+                                let new_tab = app_state.headed_mut().ui.hint_new_tab;
                                 let js = hint_click_js(&hint_buf, new_tab);
-                                let active_id = app_state.wm.active_pane_id();
+                                let active_id = app_state.core.wm.active_pane_id();
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                     wry_pane.execute_js(&js);
                                 }
@@ -272,11 +274,11 @@ impl ApplicationHandler for AileronApp {
                             }
                             _ => {
                                 // Any non-letter key exits hint mode
-                                let active_id = app_state.wm.active_pane_id();
-                                app_state.ui.hint_mode = false;
-                                app_state.ui.hint_new_tab = false;
-                                app_state.ui.hint_buffer.clear();
-                                app_state.ui.status_message.clear();
+                                let active_id = app_state.core.wm.active_pane_id();
+                                app_state.headed_mut().ui.hint_mode = false;
+                                app_state.headed_mut().ui.hint_new_tab = false;
+                                app_state.headed_mut().ui.hint_buffer.clear();
+                                app_state.headed_mut().ui.status_message.clear();
                                 let clear_js = clear_hints_js();
                                 if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                                     wry_pane.execute_js(clear_js);
@@ -287,53 +289,69 @@ impl ApplicationHandler for AileronApp {
                     }
 
                     // Escape closes find bar first, then URL bar, then history panel
-                    if app_state.ui.find_bar_open && key == aileron::input::Key::Escape {
-                        app_state.ui.find_bar_open = false;
-                        app_state.ui.find_query.clear();
-                        let active_id = app_state.wm.active_pane_id();
+                    if app_state.headed_mut().ui.find_bar_open && key == aileron::input::Key::Escape
+                    {
+                        app_state.headed_mut().ui.find_bar_open = false;
+                        app_state.headed_mut().ui.find_query.clear();
+                        let active_id = app_state.core.wm.active_pane_id();
                         if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                             wry_pane.execute_js("window.getSelection().removeAllRanges()");
                         }
                         return;
                     }
-                    if app_state.ui.url_bar_focused && key == aileron::input::Key::Escape {
-                        app_state.ui.url_bar_focused = false;
-                        app_state.ui.url_bar_input.clear();
+                    if app_state.headed_mut().ui.url_bar_focused
+                        && key == aileron::input::Key::Escape
+                    {
+                        app_state.headed_mut().ui.url_bar_focused = false;
+                        app_state.headed_mut().ui.url_bar_input.clear();
                         return;
                     }
-                    if app_state.panels.history_panel_open && key == aileron::input::Key::Escape {
-                        app_state.panels.history_panel_open = false;
-                        app_state.panels.history_entries.clear();
+                    if app_state.headed_mut().panels.history_panel_open
+                        && key == aileron::input::Key::Escape
+                    {
+                        app_state.headed_mut().panels.history_panel_open = false;
+                        app_state.headed_mut().panels.history_entries.clear();
                         return;
                     }
-                    if app_state.panels.tab_search_open && key == aileron::input::Key::Escape {
-                        app_state.panels.tab_search_open = false;
+                    if app_state.headed_mut().panels.tab_search_open
+                        && key == aileron::input::Key::Escape
+                    {
+                        app_state.headed_mut().panels.tab_search_open = false;
                         return;
                     }
-                    if app_state.panels.bookmarks_panel_open && key == aileron::input::Key::Escape {
-                        app_state.panels.bookmarks_panel_open = false;
-                        app_state.panels.bookmarks_entries.clear();
+                    if app_state.headed_mut().panels.bookmarks_panel_open
+                        && key == aileron::input::Key::Escape
+                    {
+                        app_state.headed_mut().panels.bookmarks_panel_open = false;
+                        app_state.headed_mut().panels.bookmarks_entries.clear();
                         return;
                     }
-                    if app_state.panels.help_panel_open && key == aileron::input::Key::Escape {
-                        app_state.panels.help_panel_open = false;
+                    if app_state.headed_mut().panels.help_panel_open
+                        && key == aileron::input::Key::Escape
+                    {
+                        app_state.headed_mut().panels.help_panel_open = false;
                         return;
                     }
                     // Track pane count before processing key.
-                    let pane_count_before = app_state.wm.leaf_count();
+                    let pane_count_before = app_state.core.wm.leaf_count();
 
                     app_state.process_key_event(aileron_event);
-                    app_state.input_latency.record_key_press();
+                    app_state.headed_mut().input_latency.record_key_press();
                     self.chrome_dirty = true;
 
-                    let pane_count_after = app_state.wm.leaf_count();
+                    let pane_count_after = app_state.core.wm.leaf_count();
 
                     let (closed_pane_ids, new_pane_ids): (Vec<uuid::Uuid>, Vec<uuid::Uuid>) =
                         if pane_count_before == pane_count_after {
                             (Vec::new(), Vec::new())
                         } else {
-                            let pane_ids_after: std::collections::HashSet<uuid::Uuid> =
-                                app_state.wm.panes_ref().iter().map(|(id, _)| *id).collect();
+                            let pane_ids_after: std::collections::HashSet<uuid::Uuid> = app_state
+                                .core
+                                .wm
+                                .panes_ref()
+                                .iter()
+                                .map(|(id, _)| *id)
+                                .collect();
                             (
                                 pane_ids_before
                                     .difference(&pane_ids_after)
@@ -347,8 +365,9 @@ impl ApplicationHandler for AileronApp {
                         };
 
                     let need_reposition = pane_count_before != pane_count_after;
-                    let active_pane_id = app_state.wm.active_pane_id();
-                    let is_insert_mode = app_state.mode == aileron::input::Mode::Insert;
+                    let active_pane_id = app_state.core.wm.active_pane_id();
+                    let is_insert_mode =
+                        app_state.headed_mut().mode == aileron::input::Mode::Insert;
 
                     // Now sync wry panes (drop borrow on app_state first)
                     for pid in &new_pane_ids {
@@ -375,10 +394,14 @@ impl ApplicationHandler for AileronApp {
                         if !url.is_empty()
                             && let Some(app_state) = &mut self.app_state
                         {
-                            app_state.tabs.closed_tab_stack.push_back((url, title));
+                            app_state
+                                .headed_mut()
+                                .tabs
+                                .closed_tab_stack
+                                .push_back((url, title));
                             // Limit stack to 50 entries
-                            while app_state.tabs.closed_tab_stack.len() > 50 {
-                                app_state.tabs.closed_tab_stack.pop_front();
+                            while app_state.headed_mut().tabs.closed_tab_stack.len() > 50 {
+                                app_state.headed_mut().tabs.closed_tab_stack.pop_front();
                             }
                         }
                         self.remove_wry_pane_for(pid);
@@ -448,7 +471,7 @@ impl ApplicationHandler for AileronApp {
 
             WindowEvent::MouseWheel { delta, .. } => {
                 if let Some(app_state) = &self.app_state {
-                    let active_id = app_state.wm.active_pane_id();
+                    let active_id = app_state.core.wm.active_pane_id();
                     let (dx, dy) = match delta {
                         winit::event::MouseScrollDelta::LineDelta(x, y) => {
                             (*x as f64 * 40.0, *y as f64 * 40.0)
@@ -505,8 +528,8 @@ impl ApplicationHandler for AileronApp {
                             let chars: Vec<char> = text.chars().collect();
                             if chars.len() != 1 {
                                 // Multi-char IME results (emoji pickers, etc.)
-                                if app_state.mode == aileron::input::Mode::Insert {
-                                    let active_id = app_state.wm.active_pane_id();
+                                if app_state.headed_mut().mode == aileron::input::Mode::Insert {
+                                    let active_id = app_state.core.wm.active_pane_id();
                                     let text_owned = text.clone();
                                     #[cfg(feature = "terminal")]
                                     if self.terminal_manager.is_terminal(&active_id) {
@@ -519,27 +542,28 @@ impl ApplicationHandler for AileronApp {
                             let c = chars[0];
                             let is_newline = c == '\r' || c == '\n';
 
-                            if app_state.palette.open {
+                            if app_state.headed_mut().palette.open {
                                 // When the palette is open, the chrome webview's
                                 // TextEdit receives the IME commit and updates palette.query
                                 // automatically. We only need to intercept Enter
                                 // (submit) and Escape (close) ourselves.
                                 if is_newline {
                                     // Enter: submit the query from palette.query
-                                    let query = app_state.palette.query.trim().to_string();
+                                    let query =
+                                        app_state.headed_mut().palette.query.trim().to_string();
                                     app_state.execute_command_pub(&query);
-                                    app_state.palette.close();
-                                    app_state.ui.command_palette_input.clear();
+                                    app_state.headed_mut().palette.close();
+                                    app_state.headed_mut().ui.command_palette_input.clear();
                                 } else if c == '\x1b' {
                                     // Escape: close palette
-                                    app_state.palette.close();
-                                    app_state.ui.command_palette_input.clear();
+                                    app_state.headed_mut().palette.close();
+                                    app_state.headed_mut().ui.command_palette_input.clear();
                                 }
                                 // For regular characters, the chrome TextEdit
                                 // handles them — no action needed here.
                                 self.ime_just_committed = true;
                             } else {
-                                match app_state.mode {
+                                match app_state.headed_mut().mode {
                                     aileron::input::Mode::Normal
                                     | aileron::input::Mode::Command => {
                                         let key = if is_newline {
@@ -557,7 +581,7 @@ impl ApplicationHandler for AileronApp {
                                         self.chrome_dirty = true;
                                     }
                                     aileron::input::Mode::Insert => {
-                                        let active_id = app_state.wm.active_pane_id();
+                                        let active_id = app_state.core.wm.active_pane_id();
                                         let text_owned = text.clone();
 
                                         #[cfg(feature = "terminal")]
@@ -571,11 +595,17 @@ impl ApplicationHandler for AileronApp {
                         }
                         winit::event::Ime::Preedit(text, _cursor) => {
                             if text.is_empty() {
-                                if app_state.ui.status_message.starts_with("composing: ") {
-                                    app_state.ui.status_message.clear();
+                                if app_state
+                                    .headed_mut()
+                                    .ui
+                                    .status_message
+                                    .starts_with("composing: ")
+                                {
+                                    app_state.headed_mut().ui.status_message.clear();
                                 }
                             } else {
-                                app_state.ui.status_message = format!("composing: {text}");
+                                app_state.headed_mut().ui.status_message =
+                                    format!("composing: {text}");
                             }
                         }
                         _ => {}
@@ -588,7 +618,7 @@ impl ApplicationHandler for AileronApp {
 
         // Check if app wants to quit
         if let Some(app_state) = &self.app_state
-            && app_state.session.should_quit
+            && app_state.core.session.should_quit
         {
             event_loop.exit();
         }
@@ -605,7 +635,7 @@ impl ApplicationHandler for AileronApp {
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         if let Some(app_state) = &mut self.app_state {
-            app_state.profiler.start_frame();
+            app_state.headed_mut().profiler.start_frame();
         }
 
         // Capture offscreen flag before mutable borrow of test_harness.
@@ -645,7 +675,7 @@ impl ApplicationHandler for AileronApp {
 
             // When tick() completes a step, start the async captures.
             if harness.capture_count() > prev_capture_count {
-                let active_id = app_state.wm.active_pane_id();
+                let active_id = app_state.core.wm.active_pane_id();
                 tracing::debug!(
                     "capture_webview: active_id={}, wry_panes_len={}",
                     &active_id.to_string()[..8],
@@ -689,7 +719,7 @@ impl ApplicationHandler for AileronApp {
                 match cmd {
                     aileron::chrome_bridge::ChromeCommand::Navigate(url) => {
                         if let Some(app_state) = &self.app_state {
-                            let active_id = app_state.wm.active_pane_id();
+                            let active_id = app_state.core.wm.active_pane_id();
                             if let Some(pane) = self.wry_panes.get_mut(&active_id) {
                                 pane.navigate(&url);
                             }
@@ -697,13 +727,13 @@ impl ApplicationHandler for AileronApp {
                     }
                     aileron::chrome_bridge::ChromeCommand::Action(name) => {
                         if let Some(app_state) = &mut self.app_state {
-                            app_state.ui.status_message = format!(" [chrome:{name}]");
+                            app_state.headed_mut().ui.status_message = format!(" [chrome:{name}]");
                         }
                     }
                     aileron::chrome_bridge::ChromeCommand::FindSubmit(query) => {
                         if let Some(app_state) = &mut self.app_state {
-                            app_state.ui.find_query = query.clone();
-                            let active_id = app_state.wm.active_pane_id();
+                            app_state.headed_mut().ui.find_query = query.clone();
+                            let active_id = app_state.core.wm.active_pane_id();
                             if let Some(wry_pane) = self.wry_panes.get_mut(&active_id) {
                                 let q = query.replace('\'', "\\'");
                                 wry_pane.execute_js(&format!("window._aileronFindQuery='{q}'"));
@@ -718,7 +748,7 @@ impl ApplicationHandler for AileronApp {
                             &self
                                 .app_state
                                 .as_ref()
-                                .map(|s| s.wm.active_pane_id())
+                                .map(|s| s.core.wm.active_pane_id())
                                 .unwrap_or_default(),
                         ) {
                             wry_pane.execute_js(
@@ -731,7 +761,7 @@ impl ApplicationHandler for AileronApp {
                             &self
                                 .app_state
                                 .as_ref()
-                                .map(|s| s.wm.active_pane_id())
+                                .map(|s| s.core.wm.active_pane_id())
                                 .unwrap_or_default(),
                         ) {
                             wry_pane.execute_js(
@@ -741,9 +771,9 @@ impl ApplicationHandler for AileronApp {
                     }
                     aileron::chrome_bridge::ChromeCommand::FindClose => {
                         if let Some(app_state) = &mut self.app_state {
-                            app_state.ui.find_bar_open = false;
-                            app_state.ui.find_query.clear();
-                            let active_id = app_state.wm.active_pane_id();
+                            app_state.headed_mut().ui.find_bar_open = false;
+                            app_state.headed_mut().ui.find_query.clear();
+                            let active_id = app_state.core.wm.active_pane_id();
                             if let Some(wry_pane) = self.wry_panes.get_mut(&active_id) {
                                 wry_pane.execute_js("window.getSelection().removeAllRanges()");
                             }
@@ -751,27 +781,27 @@ impl ApplicationHandler for AileronApp {
                     }
                     aileron::chrome_bridge::ChromeCommand::PaletteInput(query) => {
                         if let Some(app_state) = &mut self.app_state {
-                            app_state.palette.update_query(&query);
-                            app_state.ui.command_palette_input = query;
+                            app_state.headed_mut().palette.update_query(&query);
+                            app_state.headed_mut().ui.command_palette_input = query;
                         }
                     }
                     aileron::chrome_bridge::ChromeCommand::PaletteSelect => {
                         if let Some(app_state) = &mut self.app_state {
-                            if let Some(item) = app_state.palette.confirm_selection() {
-                                app_state.ui.command_palette_input.clear();
+                            if let Some(item) = app_state.headed_mut().palette.confirm_selection() {
+                                app_state.headed_mut().ui.command_palette_input.clear();
                                 app_state.execute_palette_selection(&item);
-                            } else if !app_state.palette.query.trim().is_empty() {
-                                let query = app_state.palette.query.trim().to_string();
-                                app_state.palette.close();
-                                app_state.ui.command_palette_input.clear();
+                            } else if !app_state.headed_mut().palette.query.trim().is_empty() {
+                                let query = app_state.headed_mut().palette.query.trim().to_string();
+                                app_state.headed_mut().palette.close();
+                                app_state.headed_mut().ui.command_palette_input.clear();
                                 app_state.execute_command_pub(&query);
                             }
                         }
                     }
                     aileron::chrome_bridge::ChromeCommand::PaletteClose => {
                         if let Some(app_state) = &mut self.app_state {
-                            app_state.palette.close();
-                            app_state.ui.command_palette_input.clear();
+                            app_state.headed_mut().palette.close();
+                            app_state.headed_mut().ui.command_palette_input.clear();
                         }
                     }
                     aileron::chrome_bridge::ChromeCommand::TabReorder { from_id, to_id } => {
@@ -780,34 +810,38 @@ impl ApplicationHandler for AileronApp {
                                 uuid::Uuid::parse_str(&from_id),
                                 uuid::Uuid::parse_str(&to_id),
                             ) {
-                                if app_state.wm.swap_pane_ids(from_uuid, to_uuid) {
-                                    app_state.ui.status_message = "Tab reordered".into();
+                                if app_state.core.wm.swap_pane_ids(from_uuid, to_uuid) {
+                                    app_state.headed_mut().ui.status_message =
+                                        "Tab reordered".into();
                                     self.chrome_dirty = true;
                                 } else {
-                                    app_state.ui.status_message = "Failed to reorder tab".into();
+                                    app_state.headed_mut().ui.status_message =
+                                        "Failed to reorder tab".into();
                                 }
                             } else {
-                                app_state.ui.status_message = "Invalid tab ID for reorder".into();
+                                app_state.headed_mut().ui.status_message =
+                                    "Invalid tab ID for reorder".into();
                             }
                         }
                     }
                     aileron::chrome_bridge::ChromeCommand::TabClose(pane_id) => {
                         if let Some(app_state) = &mut self.app_state {
                             if let Ok(close_uuid) = uuid::Uuid::parse_str(&pane_id) {
-                                app_state.pending_tab_close = Some(close_uuid);
+                                app_state.core.pending_tab_close = Some(close_uuid);
                             } else {
-                                app_state.ui.status_message = "Invalid tab ID for close".into();
+                                app_state.headed_mut().ui.status_message =
+                                    "Invalid tab ID for close".into();
                             }
                         }
                     }
                     aileron::chrome_bridge::ChromeCommand::TabNew => {
                         if let Some(app_state) = &mut self.app_state {
-                            app_state.pending_new_tab = true;
+                            app_state.headed_mut().pending_new_tab = true;
                         }
                     }
                     aileron::chrome_bridge::ChromeCommand::StatusMessage(msg) => {
                         if let Some(app_state) = &mut self.app_state {
-                            app_state.ui.status_message.push_str(&msg);
+                            app_state.headed_mut().ui.status_message.push_str(&msg);
                         }
                     }
                     aileron::chrome_bridge::ChromeCommand::None => {}
@@ -820,8 +854,8 @@ impl ApplicationHandler for AileronApp {
         if self.chrome_dirty
             && let Some(app_state) = &self.app_state
         {
-            let active_id = app_state.wm.active_pane_id();
-            let panes_ref = app_state.wm.panes_ref();
+            let active_id = app_state.core.wm.active_pane_id();
+            let panes_ref = app_state.core.wm.panes_ref();
 
             let panes: Vec<aileron_shared::PaneInfo> = panes_ref
                 .iter()
@@ -848,15 +882,16 @@ impl ApplicationHandler for AileronApp {
                 .collect();
 
             let snapshot = aileron::chrome_bridge::ChromeSnapshotInput {
-                mode: app_state.mode,
+                mode: app_state.headed().mode,
                 active_pane_id: active_id,
                 pane_count: panes_ref.len(),
                 panes,
-                status_message: &app_state.ui.status_message,
-                find_bar_open: app_state.ui.find_bar_open,
-                find_query: &app_state.ui.find_query,
-                command_palette_open: app_state.palette.open,
+                status_message: &app_state.headed().ui.status_message,
+                find_bar_open: app_state.headed().ui.find_bar_open,
+                find_query: &app_state.headed().ui.find_query,
+                command_palette_open: app_state.headed().palette.open,
                 palette_results: app_state
+                    .headed()
                     .palette
                     .results()
                     .iter()
@@ -867,18 +902,19 @@ impl ApplicationHandler for AileronApp {
                         category: aileron::chrome_bridge::to_shared_category(item.category),
                     })
                     .collect(),
-                palette_selected: app_state.palette.selected_item().map_or(0, |s| {
+                palette_selected: app_state.headed().palette.selected_item().map_or(0, |s| {
                     app_state
+                        .headed()
                         .palette
                         .results()
                         .iter()
                         .position(|r| r.id == s.id)
                         .unwrap_or(0)
                 }),
-                url_bar_focused: app_state.ui.url_bar_focused,
-                tab_layout: &app_state.config.tab_layout,
-                tab_sidebar_width: app_state.config.tab_sidebar_width as f64,
-                tab_sidebar_right: app_state.config.tab_sidebar_right,
+                url_bar_focused: app_state.headed().ui.url_bar_focused,
+                tab_layout: &app_state.core.config.tab_layout,
+                tab_sidebar_width: app_state.core.config.tab_sidebar_width as f64,
+                tab_sidebar_right: app_state.core.config.tab_sidebar_right,
                 version: self.version_string.clone(),
             };
 
@@ -911,40 +947,51 @@ impl ApplicationHandler for AileronApp {
         }
 
         if let Some(app_state) = &mut self.app_state
-            && app_state.pending_new_window
+            && app_state.headed_mut().pending_new_window
         {
-            app_state.pending_new_window = false;
+            app_state.headed_mut().pending_new_window = false;
             self.popup.pending_new_window = true;
         }
 
         // Handle pending new tab request from UI ("+" button).
         if let Some(app_state) = &mut self.app_state
-            && app_state.pending_new_tab
+            && app_state.headed_mut().pending_new_tab
         {
-            app_state.pending_new_tab = false;
+            app_state.headed_mut().pending_new_tab = false;
             let new_url = url::Url::parse("aileron://new").unwrap();
-            let active_id = app_state.wm.active_pane_id();
-            if let Some(pane) = app_state
+            let active_id = app_state.core.wm.active_pane_id();
+            let pane_info = app_state
+                .core
                 .wm
                 .root_mut()
                 .and_then(|root| aileron::wm::BspTree::find_pane_mut(root, active_id))
-            {
-                let new_tab_id = pane.tabs.add(new_url.clone());
+                .map(|pane| {
+                    let new_tab_id = pane.tabs.add(new_url.clone());
+                    let active_url = pane.tabs.active().url.clone();
+                    (
+                        new_tab_id,
+                        active_url,
+                        pane.tabs.active_index() + 1,
+                        pane.tabs.len(),
+                    )
+                });
+            if let Some((new_tab_id, active_url, idx, total)) = pane_info {
                 app_state
+                    .core
                     .engines
-                    .create_pane(new_tab_id, pane.tabs.active().url.clone(), None);
+                    .create_pane(new_tab_id, active_url, None);
                 app_state
+                    .core
                     .pending_wry_actions
                     .push_back(aileron::app::WryAction::Navigate(new_url));
-                app_state.tabs.tab_display_dirty = true;
-                app_state.ui.status_message =
-                    format!("Tab {}/{}", pane.tabs.active_index() + 1, pane.tabs.len());
+                app_state.headed_mut().tabs.tab_display_dirty = true;
+                app_state.headed_mut().ui.status_message = format!("Tab {}/{}", idx, total);
             }
         }
 
         frame_tasks::poll_git_status(&mut self.git_status, &self.git_poller);
         if let Some(app_state) = &mut self.app_state {
-            app_state.adblock_blocked_count = self.adblocker.blocked_count();
+            app_state.headed_mut().adblock_blocked_count = self.adblocker.blocked_count();
             frame_tasks::auto_save_workspace(app_state, &self.wry_panes);
             #[cfg(feature = "arp")]
             frame_tasks::push_tabs_to_arp(app_state, &self.wry_panes);
@@ -974,7 +1021,7 @@ impl ApplicationHandler for AileronApp {
             {
                 frame_tasks::load_default_adblock_rules(&mut self.adblocker);
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.ui.status_message = "Filter lists updated".into();
+                    app_state.headed_mut().ui.status_message = "Filter lists updated".into();
                 }
             }
         }
@@ -983,7 +1030,7 @@ impl ApplicationHandler for AileronApp {
         let interceptor_registry = self
             .app_state
             .as_ref()
-            .map(|s| s.extension_manager.read().interceptor_registry.clone());
+            .map(|s| s.core.extension_manager.read().interceptor_registry.clone());
 
         {
             let app_state = match &mut self.app_state {
@@ -1017,12 +1064,12 @@ impl ApplicationHandler for AileronApp {
         let ws_name = self
             .app_state
             .as_mut()
-            .and_then(|s| s.pending_workspace_restore.take());
+            .and_then(|s| s.core.pending_workspace_restore.take());
 
         if let Some(ws_name) = ws_name {
             info!("Restoring workspace: {}", ws_name);
             if let Some(app_state) = self.app_state.as_mut() {
-                app_state.current_workspace_name = ws_name.clone();
+                app_state.core.current_workspace_name = ws_name.clone();
             }
 
             let viewport = match &self.window {
@@ -1038,7 +1085,8 @@ impl ApplicationHandler for AileronApp {
                 }
                 None => {
                     if let Some(app_state) = &mut self.app_state {
-                        app_state.ui.status_message = "Restore failed: no window".into();
+                        app_state.headed_mut().ui.status_message =
+                            "Restore failed: no window".into();
                     }
                     return;
                 }
@@ -1056,11 +1104,11 @@ impl ApplicationHandler for AileronApp {
             let outcome = aileron::workspace_restore::restore_workspace(
                 &ws_name,
                 viewport,
-                app_state.db.as_ref(),
+                app_state.core.db.as_ref(),
                 #[cfg(feature = "terminal")]
                 &mut app_state.terminal_pane_ids,
-                &mut app_state.engines,
-                &mut app_state.wm,
+                &mut app_state.core.engines,
+                &mut app_state.core.wm,
                 #[cfg(feature = "terminal")]
                 &mut self.terminal_manager,
             );
@@ -1071,7 +1119,7 @@ impl ApplicationHandler for AileronApp {
                         self.create_wry_pane_for(pid, &url);
                     }
                     if let Some(s) = self.app_state.as_mut() {
-                        s.ui.status_message = format!(
+                        s.headed_mut().ui.status_message = format!(
                             "Workspace restored: {} ({} panes)",
                             ws_name, result.pane_count
                         );
@@ -1079,17 +1127,18 @@ impl ApplicationHandler for AileronApp {
                 }
                 aileron::workspace_restore::RestoreOutcome::NotFound => {
                     if let Some(s) = self.app_state.as_mut() {
-                        s.ui.status_message = format!("Workspace '{ws_name}' not found");
+                        s.headed_mut().ui.status_message =
+                            format!("Workspace '{ws_name}' not found");
                     }
                 }
                 aileron::workspace_restore::RestoreOutcome::NoDatabase => {
                     if let Some(s) = self.app_state.as_mut() {
-                        s.ui.status_message = "Restore failed: no database".into();
+                        s.headed_mut().ui.status_message = "Restore failed: no database".into();
                     }
                 }
                 aileron::workspace_restore::RestoreOutcome::TreeError(e) => {
                     if let Some(s) = self.app_state.as_mut() {
-                        s.ui.status_message = format!("Restore failed (tree): {e}");
+                        s.headed_mut().ui.status_message = format!("Restore failed (tree): {e}");
                     }
                 }
             }
@@ -1100,7 +1149,7 @@ impl ApplicationHandler for AileronApp {
             let active_id = self
                 .app_state
                 .as_ref()
-                .map(|s| s.wm.active_pane_id())
+                .map(|s| s.core.wm.active_pane_id())
                 .unwrap_or_default();
             if let Some(app_state) = self.app_state.as_mut() {
                 frame_tasks::process_mcp_commands(
@@ -1117,7 +1166,7 @@ impl ApplicationHandler for AileronApp {
             // Wayland.
             let mut mcp_creations = Vec::new();
             if let Some(app_state) = self.app_state.as_mut() {
-                while let Some(creation) = app_state.pending_mcp_pane_creations.pop_front() {
+                while let Some(creation) = app_state.core.pending_mcp_pane_creations.pop_front() {
                     mcp_creations.push(creation);
                 }
             }
@@ -1133,7 +1182,7 @@ impl ApplicationHandler for AileronApp {
         if let Some(close_id) = self
             .app_state
             .as_mut()
-            .and_then(|s| s.pending_tab_close.take())
+            .and_then(|s| s.core.pending_tab_close.take())
         {
             if let Some(app_state) = &mut self.app_state {
                 frame_tasks::handle_pending_tab_close(app_state, close_id);
@@ -1152,9 +1201,9 @@ impl ApplicationHandler for AileronApp {
 
         // Handle pending mark jumps (scroll to stored position).
         if let Some(app_state) = &mut self.app_state
-            && let Some(frac) = app_state.session.pending_mark_jump.take()
+            && let Some(frac) = app_state.core.session.pending_mark_jump.take()
         {
-            let active_id = app_state.wm.active_pane_id();
+            let active_id = app_state.core.wm.active_pane_id();
             if let Some(wry_pane) = self.wry_panes.get_mut(&active_id) {
                 let js =
                     format!("window.scrollTo(0, document.documentElement.scrollHeight * {frac})");
@@ -1191,13 +1240,13 @@ impl ApplicationHandler for AileronApp {
                     );
                     self.remove_wry_pane_for(&evict_id);
                     if let Some(app_state) = &mut self.app_state {
-                        app_state
-                            .pending_wry_actions
-                            .push_back(aileron::app::WryAction::Navigate(
+                        app_state.core.pending_wry_actions.push_back(
+                            aileron::app::WryAction::Navigate(
                                 url::Url::parse(&url)
                                     .unwrap_or_else(|_| url::Url::parse("aileron://new").unwrap()),
-                            ));
-                        app_state.ui.status_message = format!(
+                            ),
+                        );
+                        app_state.headed_mut().ui.status_message = format!(
                             "Memory limit reached — evicted background tab ({})",
                             aileron::profiling::memory::format_human_bytes(rss_bytes)
                         );
@@ -1248,8 +1297,8 @@ impl ApplicationHandler for AileronApp {
             if !any_wry_panes && dirty_panes == 0 && !has_terminals && !self.first_frame {
                 // Nothing changed: keep presenting the last frame.
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.input_latency.record_frame_end();
-                    app_state.profiler.end_frame("about_to_wait");
+                    app_state.headed_mut().input_latency.record_frame_end();
+                    app_state.headed_mut().profiler.end_frame("about_to_wait");
                 }
                 return;
             }
@@ -1261,7 +1310,7 @@ impl ApplicationHandler for AileronApp {
             // call acquires and presents a separate swap-chain texture —
             // calling it twice means the second frame overwrites the first.
             if let Some(gfx) = &mut self.gfx {
-                let active_id = self.app_state.as_ref().map(|s| s.wm.active_pane_id());
+                let active_id = self.app_state.as_ref().map(|s| s.core.wm.active_pane_id());
                 let chrome_pane_id = uuid::Uuid::nil();
                 let has_chrome = self.offscreen_panes.get(&chrome_pane_id).is_some();
 
@@ -1358,8 +1407,8 @@ impl ApplicationHandler for AileronApp {
 
         // Record frame end for input latency measurement.
         if let Some(app_state) = &mut self.app_state {
-            app_state.input_latency.record_frame_end();
-            app_state.profiler.end_frame("about_to_wait");
+            app_state.headed_mut().input_latency.record_frame_end();
+            app_state.headed_mut().profiler.end_frame("about_to_wait");
         }
 
         // Request redraw if we have native wry panes (continuous repaint

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::Arc;
+#[cfg(feature = "lua")]
 use tracing::{info, warn};
 
 pub mod cmd;
@@ -10,6 +10,7 @@ pub mod dispatch;
 #[cfg(feature = "headed")]
 pub mod event_handler;
 pub mod events;
+pub mod headed_state;
 pub mod instance;
 pub mod omnibox;
 pub mod palette;
@@ -18,86 +19,20 @@ pub mod panes;
 pub mod popup;
 
 use crate::config::Config;
-use crate::db::bookmarks;
-use crate::extensions::ExtensionManager;
-use crate::input::{KeybindingRegistry, Mode};
 #[cfg(feature = "lua")]
 use crate::lua::LuaEngine;
 #[cfg(feature = "passwords")]
 use crate::passwords::BitwardenClient;
-use crate::servo::PaneStateManager;
-use crate::state::{CacheState, SessionState};
-use crate::ui::palette::CommandPalette;
+#[cfg(feature = "lua")]
 use crate::ui::search::SearchCategory;
 use crate::ui::search::SearchItem;
-use crate::wm::{BspTree, Rect};
+use crate::wm::Rect;
 use uuid::Uuid;
 
-/// Actions to be executed on wry panes by main.rs.
-/// Used as a bridge since AppState doesn't own WryPaneManager.
-#[derive(Debug, Clone, PartialEq)]
-pub enum WryAction {
-    /// Navigate the active pane to a URL.
-    Navigate(url::Url),
-    /// Go back in the active pane's history.
-    Back,
-    /// Go forward in the active pane's history.
-    Forward,
-    /// Reload the current page.
-    Reload,
-    /// Toggle bookmark on the current URL (main.rs will read URL from wry).
-    ToggleBookmark,
-    /// Auto-fill credentials into the active pane via JavaScript.
-    Autofill { js: String },
-    /// Open WebKit devtools for the active pane.
-    ToggleDevTools,
-    /// Scroll the active pane by a pixel offset.
-    ScrollBy { x: f64, y: f64 },
-    /// Smooth scroll the webview (uses CSS smooth behavior).
-    SmoothScroll { x: f64, y: f64 },
-    /// Scroll the active pane to a position (fraction of page height from top).
-    ScrollTo { fraction: f64 },
-    /// Run arbitrary JavaScript in the active pane.
-    RunJs(String),
-    /// Save workspace with live URLs from wry panes.
-    /// main.rs collects URLs from WryPaneManager and sends them back.
-    SaveWorkspace {
-        name: String,
-        /// Maps pane_id -> live URL string, collected from WryPaneManager.
-        pane_urls: std::collections::HashMap<uuid::Uuid, String>,
-    },
-    /// Enter reader mode: strip CSS, extract article content, display clean text.
-    EnterReaderMode,
-    /// Exit reader mode: reload the original URL.
-    ExitReaderMode,
-    /// Enter minimal mode: reload with JS disabled and images blocked.
-    EnterMinimalMode,
-    /// Exit minimal mode: reload with normal settings.
-    ExitMinimalMode,
-    /// Show an error page in the active pane (graceful pane error handling).
-    ShowPaneError { message: String },
-    /// List loaded content scripts (handled by main.rs).
-    ListContentScripts,
-    /// Get network log from active pane.
-    GetNetworkLog,
-    /// Clear network log from active pane.
-    ClearNetworkLog,
-    /// Get JS console log from active pane.
-    GetConsoleLog,
-    /// Clear JS console log from active pane.
-    ClearConsoleLog,
-    /// Save current config to disk.
-    SaveConfig,
-    /// Print the current page.
-    Print,
-    /// Toggle mute on the active pane (pause/mute media elements).
-    ToggleMute,
-    /// Capture the current scroll fraction via JS and send it back via IPC.
-    /// Used by the mark-set feature to record the actual scroll position.
-    CaptureScrollFraction,
-    /// Set the system clipboard contents.
-    SetClipboard(String),
-}
+/// S4 stage 1b: moved to aileron-core `state` (the MCP command arm in
+/// agent mode queues WryActions, so the type must live where CoreState
+/// lives). Re-exported for API compatibility.
+pub use aileron_core::state::WryAction;
 
 #[derive(Clone)]
 pub struct TabDisplayInfo {
@@ -234,68 +169,15 @@ impl Default for TabState {
 }
 
 pub struct AppState {
-    pub wm: BspTree,
-    pub mode: Mode,
-    pub keybindings: KeybindingRegistry,
-    pub db: Option<rusqlite::Connection>,
-    /// Session capability registry (Era-2, YP-MCP-SESSIONS-002): shared with
-    /// the TCP MCP server thread; the router enforces phi from here.
-    pub session_registry: crate::mcp::bridge::SessionRegistry,
-    /// Enterprise audit ring (Era-3): every dispatched or denied MCP command
-    /// with provenance (session, tool, class, pane, epoch). Cap 1000, main-
-    /// thread only (the router writes; the audit tool reads via command arm).
-    pub audit_log: std::cell::RefCell<std::collections::VecDeque<String>>,
-
-    /// Web engine manager — one engine instance per pane.
-    pub engines: PaneStateManager,
-
-    /// Command palette state.
-    pub palette: CommandPalette,
-
-    /// U1-06: Keyboard macro recorder.
-    pub macro_recorder: crate::input::macro_recorder::MacroRecorder,
-
-    /// U1-06: Keyboard macro player.
-    pub macro_player: crate::input::macro_recorder::MacroPlayer,
-
-    /// U1-06: Last recorded macro events (pending save).
-    pub last_macro_events: Option<Vec<crate::input::macro_recorder::RecordedEvent>>,
-
-    /// D1-04: Update checker state.
-    pub update_checker: crate::update_check::UpdateChecker,
+    /// Agent-runtime state (pane tree, db, MCP sessions, config, …).
+    pub core: crate::state::CoreState,
+    /// Headed-only state. `None` in agent mode — the agent runtime
+    /// never touches headed state (S4 stage 1b contract).
+    pub headed: Option<crate::app::headed_state::HeadedState>,
 
     /// Lua scripting engine (for init.lua and custom keybindings).
     #[cfg(feature = "lua")]
     lua_engine: Option<LuaEngine>,
-
-    /// User configuration.
-    pub config: Config,
-
-    /// Queue of pending wry actions requested by the user.
-    /// Consumed by main.rs each frame to drive the actual wry pane.
-    /// Uses a queue so multiple actions per frame are not silently dropped.
-    pub pending_wry_actions: VecDeque<WryAction>,
-
-    /// MCP-requested pane creations: (pane_id, url). Consumed by main.rs
-    /// which creates the real offscreen webview (adblock/interceptor wiring
-    /// lives on AileronApp, not reachable from process_mcp_commands).
-    pub pending_mcp_pane_creations: VecDeque<(uuid::Uuid, url::Url)>,
-
-    /// Per-pane navigation epoch (YP-MCP-NAV-EPOCH-001): advanced by every
-    /// MCP navigate; reads can check freshness against the committed value.
-    pub mcp_nav_epoch: HashMap<uuid::Uuid, u64>,
-
-    /// Highest navigation epoch known to have finished loading per pane.
-    /// Reads gate on nav_epoch <= settled_epoch (read-your-writes).
-    pub mcp_settled_epoch: HashMap<uuid::Uuid, u64>,
-
-    /// Workspace name requested for restore. Set by `:ws-load <name>`.
-    /// Consumed by main.rs which rebuilds the wry panes.
-    pub pending_workspace_restore: Option<String>,
-
-    /// Name of the currently active workspace. Displayed in status bar.
-    /// Updated on workspace save, load, and restore.
-    pub current_workspace_name: String,
 
     /// Set of pane IDs that should be terminal panes (not web panes).
     /// main.rs checks this when creating wry panes and uses the terminal
@@ -311,43 +193,9 @@ pub struct AppState {
     #[cfg(feature = "terminal")]
     pub pending_terminal_command: Option<String>,
 
-    /// Pane ID pending close from tab sidebar click.
-    /// Consumed by main.rs in about_to_wait.
-    pub pending_tab_close: Option<Uuid>,
-
-    /// Path to save reader mode content to (set by :reader-save command).
-    pub pending_reader_save_path: Option<std::path::PathBuf>,
-
-    /// When true, the next about_to_wait iteration requests a new popup window.
-    pub pending_new_window: bool,
-
-    /// URL to navigate a popup window to after creation (from pane detach).
-    pub pending_detach_url: Option<url::Url>,
-
-    /// Per-pane last-focus timestamp for LRU tab unloading.
-    /// Updated each time a pane becomes active.
-    pane_last_focus: HashMap<Uuid, std::time::Instant>,
-
-    /// Tracks key-to-frame latency for profiling.
-    pub input_latency: crate::profiling::InputLatencyTracker,
-
-    /// Frame timing profiler — collects per-phase duration samples.
-    /// Exposed on AppState so `:stats` command can read stats.
-    pub profiler: crate::profiling::Profiler,
-
-    /// Adblock blocked request count (updated by main.rs each frame).
-    pub adblock_blocked_count: u64,
-
-    /// Extension manager — loads and manages WebExtensions.
-    /// Wrapped in Arc<RwLock<>> so readers don't block each other.
-    pub extension_manager: Arc<parking_lot::RwLock<ExtensionManager>>,
-
     /// Sync filesystem watcher (started/stopped by sync commands).
     #[cfg(feature = "sync")]
     pub sync_watcher: crate::sync::watcher::SyncWatcher,
-
-    /// Download manager — handles file downloads with progress tracking.
-    pub download_manager: crate::downloads::DownloadManager,
 
     /// ARP server — Aileron Remote Protocol for mobile clients.
     /// Created on demand via `:arp-start` command.
@@ -359,104 +207,39 @@ pub struct AppState {
     #[cfg(feature = "arp")]
     pub arp_cmd_receiver:
         Option<std::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<crate::arp::ArpCommand>>>,
-
-    /// Pending bookmark import: "firefox" or "chrome".
-    pub pending_import: Option<String>,
-
-    /// Pending URL to open in a new tab (set by `:g <url>` command).
-    pub pending_new_tab_url: Option<url::Url>,
-
-    /// Set to true when the UI requests a new tab (e.g., "+" button).
-    pub pending_new_tab: bool,
-
-    /// Per-pane tracking of already-injected content script IDs.
-    /// Keys are pane IDs, values are sets of "extension_id:script_id" strings.
-    /// Cleared on each LoadStarted to allow re-injection on new navigations.
-    pub injected_content_script_ids: HashMap<Uuid, HashSet<String>>,
-
-    pub ui: UiState,
-    pub panels: PanelState,
-    pub tabs: TabState,
-    pub session: SessionState,
-    pub crash: CrashRecoveryState,
-    pub autofill: AutofillState,
-    pub cache: CacheState,
 }
 
 impl AppState {
+    /// Headed state accessor (read). Panics in agent mode by contract:
+    /// the agent runtime must never touch headed state.
+    #[must_use]
+    pub fn headed(&self) -> &crate::app::headed_state::HeadedState {
+        self.headed
+            .as_ref()
+            .expect("headed state accessed in agent mode")
+    }
+
+    /// Headed state accessor (mutate). Panics in agent mode by contract.
+    pub fn headed_mut(&mut self) -> &mut crate::app::headed_state::HeadedState {
+        self.headed
+            .as_mut()
+            .expect("headed state accessed in agent mode")
+    }
+
     #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn new(viewport: Rect, config: Config) -> Result<Self> {
-        // Use homepage from config
-        let initial_url = url::Url::parse(&config.homepage)
-            .unwrap_or_else(|_| url::Url::parse("aileron://welcome").unwrap());
-        let wm = BspTree::new(viewport, initial_url.clone());
-        let mode = Mode::Normal;
-        let mut keybindings = KeybindingRegistry::default();
-
-        // Apply custom keybinding overrides from config
-        if !config.keybindings.is_empty() {
-            let applied = keybindings.apply_config_overrides(&config.keybindings);
-            if applied > 0 {
-                info!("Applied {} custom keybinding(s)", applied);
-            }
-        }
-
-        let db_path = Self::db_path()?;
-        let db = match std::fs::create_dir_all(
-            db_path
-                .parent()
-                .expect("db_path must have a parent directory"),
-        ) {
-            Ok(_) => match crate::db::open_database(&db_path) {
-                Ok(conn) => Some(conn),
-                Err(e) => {
-                    warn!("Failed to open database: {}", e);
-                    None
-                }
-            },
-            Err(e) => {
-                warn!("Failed to create database directory: {}", e);
-                None
-            }
-        };
-
-        // Create web engine manager (wry via WebEngine trait; Servo planned per ADR-001)
-        let mut engines = PaneStateManager::new();
-        let root_pane_id = wm.active_pane_id();
-        engines.create_pane(root_pane_id, initial_url, None);
-
-        // Build command palette with history + bookmarks from DB
-        let mut palette = CommandPalette::new();
-        if let Some(ref conn) = db {
-            // History items
-            if let Ok(entries) = crate::db::history::recent_entries(conn, 50) {
-                for entry in entries {
-                    palette.add_item(SearchItem {
-                        id: format!("history:{}", entry.id),
-                        label: entry.title.clone(),
-                        description: entry.url.clone(),
-                        category: SearchCategory::History,
-                    });
-                }
-            }
-            // Bookmark items
-            if let Ok(bm_list) = bookmarks::all_bookmarks(conn) {
-                for bm in bm_list {
-                    palette.add_item(SearchItem {
-                        id: format!("bookmark:{}", bm.id),
-                        label: bm.title.clone(),
-                        description: bm.url.clone(),
-                        category: SearchCategory::Bookmark,
-                    });
-                }
-            }
-        }
+        let core = crate::state::CoreState::new(viewport, config)?;
+        #[cfg(feature = "lua")]
+        let mut headed =
+            crate::app::headed_state::HeadedState::new(core.db.as_ref(), &core.config)?;
+        #[cfg(not(feature = "lua"))]
+        let headed = crate::app::headed_state::HeadedState::new(core.db.as_ref(), &core.config)?;
 
         // Initialize Lua engine and load init.lua if present
         #[cfg(feature = "lua")]
         let lua_engine = match LuaEngine::new() {
             Ok(engine) => {
-                let init_lua = config.init_lua_path();
+                let init_lua = core.config.init_lua_path();
                 if init_lua.exists() {
                     match engine.load_file(&init_lua) {
                         Ok(()) => info!("Loaded init.lua from {}", init_lua.display()),
@@ -471,7 +254,7 @@ impl AppState {
                     if let Some(combo) = LuaEngine::parse_key_string(&bind.mode, &bind.key) {
                         if let Some(action) = LuaEngine::resolve_action(&bind.action) {
                             info!("Lua keybind: {} {} -> {:?}", bind.mode, bind.key, action);
-                            keybindings.register(combo, action);
+                            headed.keybindings.register(combo, action);
                         } else {
                             warn!("Lua keybind: unknown action '{}'", bind.action);
                         }
@@ -482,7 +265,7 @@ impl AppState {
 
                 // Populate palette with custom Lua commands
                 for cmd in engine.custom_commands() {
-                    palette.add_item(SearchItem {
+                    headed.palette.add_item(SearchItem {
                         id: format!("custom:{}", cmd.name),
                         label: cmd.name.clone(),
                         description: cmd.description,
@@ -501,123 +284,29 @@ impl AppState {
         #[cfg(not(feature = "lua"))]
         let _lua_engine: Option<std::convert::Infallible> = None;
 
-        // Load quickmarks from database
-        let mut quickmarks = if let Some(ref conn) = db {
-            crate::db::quickmarks::load_quickmarks(conn).unwrap_or_default()
-        } else {
-            HashMap::new()
-        };
-
-        // Seed default quickmarks if none exist
-        if quickmarks.is_empty() {
-            let defaults: &[(&str, &str)] = &[
-                ("gh", "https://github.com"),
-                ("gl", "https://gitlab.com"),
-                ("rd", "https://reddit.com"),
-            ];
-            if let Some(ref conn) = db {
-                for &(key, url) in defaults {
-                    if let Err(e) = crate::db::quickmarks::set_quickmark(conn, key, url) {
-                        warn!(%e, "Failed to set default quickmark");
-                    }
-                    quickmarks.insert(key.to_string(), url.to_string());
-                }
-            } else {
-                for &(key, url) in defaults {
-                    quickmarks.insert(key.to_string(), url.to_string());
-                }
-            }
-        }
-
-        // Load tab names from database
-        let tab_names = if let Some(ref conn) = db {
-            crate::db::tab_names::load_tab_names(conn).unwrap_or_default()
-        } else {
-            HashMap::new()
-        };
-
         // Create extension manager and inject into Lua engine
-        let extension_manager = Arc::new(parking_lot::RwLock::new(ExtensionManager::new(
-            Self::extensions_dir(),
-        )));
         #[cfg(feature = "lua")]
         if let Some(ref engine) = lua_engine {
-            engine.set_extension_manager(extension_manager.clone());
+            engine.set_extension_manager(core.extension_manager.clone());
         }
 
-        let session = SessionState {
-            quickmarks,
-            ..Default::default()
-        };
-
-        let tabs = TabState {
-            tab_names,
-            ..Default::default()
-        };
-
         Ok(Self {
-            wm,
-            mode,
-            keybindings,
-            db,
-            engines,
-            palette,
-            macro_recorder: crate::input::macro_recorder::MacroRecorder::new(),
-            macro_player: crate::input::macro_recorder::MacroPlayer::new(),
-            last_macro_events: None,
-            update_checker: crate::update_check::UpdateChecker::new(),
+            core,
+            headed: Some(headed),
             #[cfg(feature = "lua")]
             lua_engine,
-            config,
-            pending_wry_actions: VecDeque::new(),
-            pending_mcp_pane_creations: VecDeque::new(),
-            mcp_nav_epoch: HashMap::new(),
-            mcp_settled_epoch: HashMap::new(),
-            session_registry: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
-            audit_log: std::cell::RefCell::new(std::collections::VecDeque::new()),
-            pending_workspace_restore: None,
-            current_workspace_name: "default".into(),
             #[cfg(feature = "terminal")]
             terminal_pane_ids: HashSet::new(),
             #[cfg(feature = "passwords")]
             bitwarden: BitwardenClient::new(),
             #[cfg(feature = "terminal")]
             pending_terminal_command: None,
-            pending_tab_close: None,
-            pending_reader_save_path: None,
-            pending_new_window: false,
-            pending_detach_url: None,
-            pane_last_focus: HashMap::new(),
-            input_latency: crate::profiling::InputLatencyTracker::new(),
-            profiler: {
-                let mut p = crate::profiling::Profiler::new();
-                p.enable();
-                p
-            },
-            adblock_blocked_count: 0,
-            extension_manager: extension_manager.clone(),
             #[cfg(feature = "sync")]
             sync_watcher: crate::sync::watcher::SyncWatcher::new(),
-            download_manager: crate::downloads::DownloadManager::new(
-                directories::UserDirs::new()
-                    .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
-                    .unwrap_or_else(|| std::path::PathBuf::from("./Downloads")),
-            ),
             #[cfg(feature = "arp")]
             arp_server: None,
             #[cfg(feature = "arp")]
             arp_cmd_receiver: None,
-            pending_import: None,
-            pending_new_tab_url: None,
-            pending_new_tab: false,
-            injected_content_script_ids: HashMap::new(),
-            ui: UiState::default(),
-            panels: PanelState::default(),
-            tabs,
-            session,
-            crash: CrashRecoveryState::default(),
-            autofill: AutofillState::default(),
-            cache: CacheState::default(),
         })
     }
 
@@ -631,7 +320,9 @@ impl AppState {
             for url_str in navs {
                 match url::Url::parse(&url_str) {
                     Ok(url) => {
-                        self.pending_wry_actions.push_back(WryAction::Navigate(url));
+                        self.core
+                            .pending_wry_actions
+                            .push_back(WryAction::Navigate(url));
                     }
                     Err(e) => {
                         warn!("Lua navigate: invalid URL '{}': {}", url_str, e);
@@ -643,19 +334,21 @@ impl AppState {
 
     pub fn get_cached_https_safe_list(&mut self) -> std::sync::Arc<HashSet<String>> {
         let current_debug = std::env::var("AILERON_DEBUG").is_ok();
-        if self.cache.https_safe_list_cache.is_some()
-            && self.cache.https_safe_list_debug_flag == current_debug
+        if self.core.cache.https_safe_list_cache.is_some()
+            && self.core.cache.https_safe_list_debug_flag == current_debug
         {
             return self
+                .core
                 .cache
                 .https_safe_list_cache
                 .clone()
                 .expect("https safe list cache populated above");
         }
         let list = crate::net::privacy::load_https_safe_list();
-        self.cache.https_safe_list_debug_flag = current_debug;
-        self.cache.https_safe_list_cache = Some(std::sync::Arc::new(list));
-        self.cache
+        self.core.cache.https_safe_list_debug_flag = current_debug;
+        self.core.cache.https_safe_list_cache = Some(std::sync::Arc::new(list));
+        self.core
+            .cache
             .https_safe_list_cache
             .clone()
             .expect("https_safe_list_cache must be populated after set above")
@@ -664,7 +357,8 @@ impl AppState {
     /// Store a scroll mark fraction for a pane. Called from the IPC handler
     /// when the webview reports its scroll position back to Rust.
     pub fn store_mark_fraction(&mut self, pane_id: uuid::Uuid, mark: char, fraction: f64) {
-        self.session
+        self.core
+            .session
             .marks
             .entry(pane_id)
             .or_default()
@@ -673,18 +367,22 @@ impl AppState {
 
     /// Record that a pane was focused. Call when active pane changes.
     pub fn record_pane_focus(&mut self, pane_id: uuid::Uuid) {
-        self.pane_last_focus
+        self.headed_mut()
+            .pane_last_focus
             .insert(pane_id, std::time::Instant::now());
     }
 
     /// Clear injected script tracking for a pane (called on LoadStarted).
     pub fn clear_injected_scripts(&mut self, pane_id: uuid::Uuid) {
-        self.injected_content_script_ids.remove(&pane_id);
+        self.headed_mut()
+            .injected_content_script_ids
+            .remove(&pane_id);
     }
 
     /// Check if a content script has already been injected for a pane.
     pub fn is_script_injected(&self, pane_id: uuid::Uuid, script_key: &str) -> bool {
-        self.injected_content_script_ids
+        self.headed()
+            .injected_content_script_ids
             .get(&pane_id)
             .map(|s| s.contains(script_key))
             .unwrap_or(false)
@@ -692,7 +390,8 @@ impl AppState {
 
     /// Record that a content script was injected for a pane.
     pub fn mark_script_injected(&mut self, pane_id: uuid::Uuid, script_key: &str) {
-        self.injected_content_script_ids
+        self.headed_mut()
+            .injected_content_script_ids
             .entry(pane_id)
             .or_default()
             .insert(script_key.to_string());
@@ -701,9 +400,10 @@ impl AppState {
     /// Call each frame to track pane focus changes.
     /// Compares current active pane to last recorded and updates timestamps.
     pub fn update_pane_focus_tracking(&mut self) {
-        let active_id = self.wm.active_pane_id();
+        let active_id = self.core.wm.active_pane_id();
         let now = std::time::Instant::now();
-        self.pane_last_focus
+        self.headed_mut()
+            .pane_last_focus
             .entry(active_id)
             .and_modify(|t| {
                 // Only update if not recently recorded (avoid thrashing)
@@ -721,12 +421,13 @@ impl AppState {
     /// maximize memory savings.
     #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn find_lru_pane(&self) -> Option<uuid::Uuid> {
-        let active_id = self.wm.active_pane_id();
-        let total_panes = self.pane_last_focus.len();
+        let active_id = self.core.wm.active_pane_id();
+        let total_panes = self.headed().pane_last_focus.len();
         let rss_per_pane = crate::profiling::memory::estimate_per_pane_rss(total_panes);
 
         // Collect candidates with their timestamps (exclude active pane).
         let candidates: Vec<(uuid::Uuid, std::time::Instant)> = self
+            .headed()
             .pane_last_focus
             .iter()
             .filter(|(id, _)| **id != active_id)
@@ -778,16 +479,16 @@ impl AppState {
     /// the number of panes. Returns `None` on non-Linux platforms.
     #[must_use]
     pub fn estimate_pane_rss(&self, _pane_id: &uuid::Uuid) -> Option<u64> {
-        let total_panes = self.pane_last_focus.len();
+        let total_panes = self.headed().pane_last_focus.len();
         crate::profiling::memory::estimate_per_pane_rss(total_panes)
     }
 
     /// Clean up per-pane state when a pane is closed. Prevents memory leaks.
     pub fn cleanup_pane_state(&mut self, pane_id: &uuid::Uuid) {
-        self.pane_last_focus.remove(pane_id);
-        self.session.marks.remove(pane_id);
-        self.tabs.tab_names.remove(pane_id);
-        self.tabs.private_pane_ids.remove(pane_id);
+        self.headed_mut().pane_last_focus.remove(pane_id);
+        self.core.session.marks.remove(pane_id);
+        self.headed_mut().tabs.tab_names.remove(pane_id);
+        self.headed_mut().tabs.private_pane_ids.remove(pane_id);
     }
 
     /// Execute a command string (URL, keybind, etc.) from the command palette.
@@ -799,14 +500,16 @@ impl AppState {
     /// Look up a quickmark URL by its key string.
     #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn quickmarks_get(&self, key: &str) -> Option<url::Url> {
-        self.session
+        self.core
+            .session
             .quickmarks
             .get(key)
             .and_then(|s| url::Url::parse(s).ok())
     }
 
     pub fn quickmarks_list(&self) -> Vec<(String, String)> {
-        self.session
+        self.core
+            .session
             .quickmarks
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
@@ -848,29 +551,17 @@ impl AppState {
     /// Load persisted scroll marks from the database for a given URL into the
     /// in-memory pane marks. Called when a page finishes loading.
     pub fn load_scroll_marks_for_pane(&mut self, pane_id: uuid::Uuid, url: &str) {
-        if let Some(ref conn) = self.db
+        if let Some(ref conn) = self.core.db
             && let Ok(db_marks) = crate::db::scroll_marks::load_scroll_marks_for_url(conn, url)
             && !db_marks.is_empty()
         {
-            self.session
+            self.core
+                .session
                 .marks
                 .entry(pane_id)
                 .or_default()
                 .extend(db_marks);
         }
-    }
-
-    fn db_path() -> Result<PathBuf> {
-        let dirs = directories::ProjectDirs::from("com", "aileron", "Aileron")
-            .ok_or_else(|| anyhow::anyhow!("Failed to determine project directories"))?;
-        let data_dir = dirs.data_dir().to_path_buf();
-        Ok(data_dir.join("aileron.db"))
-    }
-
-    fn extensions_dir() -> PathBuf {
-        directories::ProjectDirs::from("com", "aileron", "Aileron")
-            .map(|dirs| dirs.data_dir().join("extensions"))
-            .unwrap_or_else(|| PathBuf::from("./extensions"))
     }
 
     /// U1-06: Save macros to disk as JSON.
@@ -881,10 +572,11 @@ impl AppState {
         std::fs::create_dir_all(&macros_dir)?;
 
         let macros: Vec<&crate::input::macro_recorder::SavedMacro> = self
+            .headed()
             .macro_recorder
             .list_macros()
             .iter()
-            .filter_map(|name| self.macro_recorder.get_macro(name))
+            .filter_map(|name| self.headed().macro_recorder.get_macro(name))
             .collect();
 
         let json = serde_json::to_string_pretty(&macros)?;
@@ -903,7 +595,9 @@ impl AppState {
                 serde_json::from_str::<Vec<crate::input::macro_recorder::SavedMacro>>(&json)
         {
             for saved in macros {
-                self.macro_recorder.save_macro(&saved.name, saved.events);
+                self.headed_mut()
+                    .macro_recorder
+                    .save_macro(&saved.name, saved.events);
             }
         }
     }
@@ -960,16 +654,19 @@ mod tests {
     fn test_pending_wry_actions_queue_drains() {
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
         let mut state = AppState::new(viewport, Config::default()).unwrap();
-        assert!(state.pending_wry_actions.is_empty());
+        assert!(state.core.pending_wry_actions.is_empty());
 
-        state.pending_wry_actions.push_back(WryAction::Navigate(
-            url::Url::parse("https://example.com").unwrap(),
-        ));
-        assert_eq!(state.pending_wry_actions.len(), 1);
+        state
+            .core
+            .pending_wry_actions
+            .push_back(WryAction::Navigate(
+                url::Url::parse("https://example.com").unwrap(),
+            ));
+        assert_eq!(state.core.pending_wry_actions.len(), 1);
 
-        let action = state.pending_wry_actions.pop_front();
+        let action = state.core.pending_wry_actions.pop_front();
         assert!(action.is_some());
-        assert!(state.pending_wry_actions.is_empty());
+        assert!(state.core.pending_wry_actions.is_empty());
     }
 
     #[test]
@@ -979,17 +676,19 @@ mod tests {
 
         // Simulate two actions firing in one frame
         state
+            .core
             .pending_wry_actions
             .push_back(WryAction::ScrollBy { x: 0.0, y: 120.0 });
         state
+            .core
             .pending_wry_actions
             .push_back(WryAction::ScrollBy { x: 0.0, y: 120.0 });
-        assert_eq!(state.pending_wry_actions.len(), 2);
+        assert_eq!(state.core.pending_wry_actions.len(), 2);
 
         // Both should be consumable (not dropped)
-        let _ = state.pending_wry_actions.pop_front();
-        let _ = state.pending_wry_actions.pop_front();
-        assert!(state.pending_wry_actions.is_empty());
+        let _ = state.core.pending_wry_actions.pop_front();
+        let _ = state.core.pending_wry_actions.pop_front();
+        assert!(state.core.pending_wry_actions.is_empty());
     }
 
     #[test]
@@ -997,7 +696,7 @@ mod tests {
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
         let mut state = AppState::new(viewport, Config::default()).unwrap();
         state.execute_command("quit && open example.com");
-        assert!(state.session.should_quit);
+        assert!(state.core.session.should_quit);
     }
 
     #[test]
@@ -1006,7 +705,7 @@ mod tests {
         let mut state = AppState::new(viewport, Config::default()).unwrap();
         state.handle_raw_command("vs && sp && swap");
         // vs and sp should have created splits; swap should show "No previous pane"
-        assert_eq!(state.ui.status_message, "No previous pane");
+        assert_eq!(state.headed().ui.status_message, "No previous pane");
     }
 
     #[test]
@@ -1022,7 +721,7 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert_eq!(state.session.pending_mark_action, Some('s'));
+        assert_eq!(state.core.session.pending_mark_action, Some('s'));
 
         // Press 'a' to set mark a
         state.process_key_event(KeyEvent {
@@ -1030,14 +729,15 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert!(state.session.pending_mark_action.is_none());
-        assert_eq!(state.ui.status_message, "Mark a set");
+        assert!(state.core.session.pending_mark_action.is_none());
+        assert_eq!(state.headed().ui.status_message, "Mark a set");
 
         // The mark is stored asynchronously via IPC. Verify the pending state
         // and that a CaptureScrollFraction action was queued.
-        assert_eq!(state.session.pending_mark_set, Some('a'));
+        assert_eq!(state.core.session.pending_mark_set, Some('a'));
         assert!(
             state
+                .core
                 .pending_wry_actions
                 .iter()
                 .any(|a| matches!(a, WryAction::CaptureScrollFraction))
@@ -1057,7 +757,7 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert_eq!(state.session.pending_mark_action, Some('g'));
+        assert_eq!(state.core.session.pending_mark_action, Some('g'));
 
         // Press 'z' (not set)
         state.process_key_event(KeyEvent {
@@ -1065,7 +765,7 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert_eq!(state.ui.status_message, "Mark z not set");
+        assert_eq!(state.headed().ui.status_message, "Mark z not set");
     }
 
     #[test]
@@ -1081,7 +781,7 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert_eq!(state.session.pending_mark_action, Some('s'));
+        assert_eq!(state.core.session.pending_mark_action, Some('s'));
 
         // Press Escape to cancel
         state.process_key_event(KeyEvent {
@@ -1089,7 +789,7 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert!(state.session.pending_mark_action.is_none());
+        assert!(state.core.session.pending_mark_action.is_none());
     }
 
     #[test]
@@ -1097,6 +797,6 @@ mod tests {
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
         let mut state = AppState::new(viewport, Config::default()).unwrap();
         state.execute_command("swap");
-        assert_eq!(state.ui.status_message, "No previous pane");
+        assert_eq!(state.headed().ui.status_message, "No previous pane");
     }
 }

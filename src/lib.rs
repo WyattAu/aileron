@@ -13,7 +13,7 @@ pub mod arp;
 pub mod chrome_bridge;
 #[cfg(feature = "native-chrome")]
 pub mod chrome_native;
-pub mod downloads;
+pub use aileron_core::downloads;
 pub mod frame_tasks;
 #[cfg(feature = "headed")]
 pub mod gfx;

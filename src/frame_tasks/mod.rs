@@ -112,17 +112,17 @@ pub fn auto_save_workspace(app_state: &mut AppState, wry_panes: &WryPaneManager)
     // Track pane focus changes for LRU unloading
     app_state.update_pane_focus_tracking();
 
-    if !app_state.config.auto_save {
+    if !app_state.core.config.auto_save {
         return;
     }
-    if !app_state.session.session_dirty {
+    if !app_state.core.session.session_dirty {
         return;
     }
-    let interval = std::time::Duration::from_secs(app_state.config.auto_save_interval);
-    if app_state.session.last_auto_save.elapsed() < interval {
+    let interval = std::time::Duration::from_secs(app_state.core.config.auto_save_interval);
+    if app_state.core.session.last_auto_save.elapsed() < interval {
         return;
     }
-    app_state.session.last_auto_save = std::time::Instant::now();
+    app_state.core.session.last_auto_save = std::time::Instant::now();
 
     let pane_urls: std::collections::HashMap<Uuid, String> = wry_panes
         .pane_ids()
@@ -134,7 +134,7 @@ pub fn auto_save_workspace(app_state: &mut AppState, wry_panes: &WryPaneManager)
         match app_state.save_workspace_with_urls("_autosave", &pane_urls) {
             Ok(()) => {
                 tracing::info!("Auto-saved workspace ({} panes)", pane_urls.len());
-                if let Some(ref conn) = app_state.db {
+                if let Some(ref conn) = app_state.core.db {
                     conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").ok();
                 }
             }
@@ -159,11 +159,11 @@ pub fn push_tabs_to_arp(app_state: &AppState, wry_panes: &WryPaneManager) {
     // Tab state changes only on user actions (navigate, create, close, pin, mute).
     // The tab_display_dirty flag is set by the same events that change ARP state.
     // On clean frames, skip the entire JSON construction + async lock.
-    if !app_state.tabs.tab_display_dirty {
+    if !app_state.headed().tabs.tab_display_dirty {
         return;
     }
 
-    let active_id = app_state.wm.active_pane_id();
+    let active_id = app_state.core.wm.active_pane_id();
     let pane_ids = wry_panes.pane_ids();
 
     let tabs: Vec<serde_json::Value> = pane_ids
@@ -179,8 +179,8 @@ pub fn push_tabs_to_arp(app_state: &AppState, wry_panes: &WryPaneManager) {
                 "url": url.as_str(),
                 "title": title,
                 "active": active_id == *id,
-                "muted": app_state.tabs.muted_pane_ids.contains(id),
-                "pinned": app_state.tabs.pinned_pane_ids.contains(id),
+                "muted": app_state.headed().tabs.muted_pane_ids.contains(id),
+                "pinned": app_state.headed().tabs.pinned_pane_ids.contains(id),
             }))
         })
         .collect();
@@ -218,8 +218,9 @@ pub fn process_arp_commands(app_state: &mut AppState) {
     while let Ok(cmd) = guard.try_recv() {
         match cmd {
             ArpCommand::TabCreate { url } => {
-                let active = app_state.wm.active_pane_id();
+                let active = app_state.core.wm.active_pane_id();
                 match app_state
+                    .core
                     .wm
                     .split(active, crate::wm::SplitDirection::Vertical, 0.5)
                 {
@@ -227,8 +228,8 @@ pub fn process_arp_commands(app_state: &mut AppState) {
                         let target_url = url
                             .and_then(|u| url::Url::parse(&u).ok())
                             .unwrap_or_else(|| url::Url::parse("aileron://newtab").unwrap());
-                        app_state.engines.create_pane(new_id, target_url, None);
-                        app_state.session.session_dirty = true;
+                        app_state.core.engines.create_pane(new_id, target_url, None);
+                        app_state.core.session.session_dirty = true;
                     }
                     Err(e) => {
                         warn!(target: "arp", "Tab create failed: {}", e);
@@ -238,19 +239,20 @@ pub fn process_arp_commands(app_state: &mut AppState) {
             ArpCommand::TabNavigate { tab_id: _, url } => match url::Url::parse(&url) {
                 Ok(parsed) => {
                     app_state
+                        .core
                         .pending_wry_actions
                         .push_back(WryAction::Navigate(parsed));
-                    app_state.session.session_dirty = true;
+                    app_state.core.session.session_dirty = true;
                 }
                 Err(e) => {
                     warn!(target: "arp", "Tab navigate invalid URL: {}", e);
                 }
             },
             ArpCommand::TabClose { tab_id } => {
-                let target = tab_id.unwrap_or_else(|| app_state.wm.active_pane_id());
-                match app_state.wm.close(target) {
+                let target = tab_id.unwrap_or_else(|| app_state.core.wm.active_pane_id());
+                match app_state.core.wm.close(target) {
                     Ok(_next) => {
-                        app_state.session.session_dirty = true;
+                        app_state.core.session.session_dirty = true;
                     }
                     Err(e) => {
                         warn!(target: "arp", "Tab close failed: {}", e);
@@ -258,19 +260,29 @@ pub fn process_arp_commands(app_state: &mut AppState) {
                 }
             }
             ArpCommand::TabActivate { tab_id } => {
-                app_state.wm.set_active_pane(tab_id);
+                app_state.core.wm.set_active_pane(tab_id);
             }
             ArpCommand::TabGoBack { tab_id: _ } => {
-                app_state.pending_wry_actions.push_back(WryAction::Back);
+                app_state
+                    .core
+                    .pending_wry_actions
+                    .push_back(WryAction::Back);
             }
             ArpCommand::TabGoForward { tab_id: _ } => {
-                app_state.pending_wry_actions.push_back(WryAction::Forward);
+                app_state
+                    .core
+                    .pending_wry_actions
+                    .push_back(WryAction::Forward);
             }
             ArpCommand::TabReload { tab_id: _ } => {
-                app_state.pending_wry_actions.push_back(WryAction::Reload);
+                app_state
+                    .core
+                    .pending_wry_actions
+                    .push_back(WryAction::Reload);
             }
             ArpCommand::ClipboardSet { text } => {
                 app_state
+                    .core
                     .pending_wry_actions
                     .push_back(WryAction::SetClipboard(text));
             }
@@ -291,6 +303,7 @@ pub fn process_arp_commands(app_state: &mut AppState) {
             ArpCommand::QuickmarkOpen { key } => {
                 if let Some(url) = app_state.quickmarks_get(&key) {
                     app_state
+                        .core
                         .pending_wry_actions
                         .push_back(WryAction::Navigate(url));
                 }
@@ -336,11 +349,12 @@ pub fn process_wry_events(
         adblocker,
         interceptor_registry,
     );
-    let active_id = app_state.wm.active_pane_id();
+    let active_id = app_state.core.wm.active_pane_id();
     if let Some(wry_pane) = wry_panes.get(&active_id) {
         mcp_bridge.update_state(wry_pane.url().as_str(), wry_pane.title());
         mcp_bridge.update_active_meta(
             app_state
+                .core
                 .mcp_settled_epoch
                 .get(&active_id)
                 .copied()
@@ -372,6 +386,7 @@ pub fn process_wry_events(
 /// so that tab switching navigates to the correct URL.
 fn sync_tab_url_title(app_state: &mut AppState, pane_id: uuid::Uuid, url: &str, title: &str) {
     if let Some(pane) = app_state
+        .core
         .wm
         .root_mut()
         .and_then(|root| crate::wm::BspTree::find_pane_mut(root, pane_id))
@@ -425,11 +440,12 @@ pub fn process_offscreen_events(
     // url/title into the shared MCP state so read_active_pane and friends see
     // offscreen panes. The headed runtime masked this via its wry panes; the
     // agent runtime (offscreen-only) has no wry panes to mask it.
-    let active_id = app_state.wm.active_pane_id();
+    let active_id = app_state.core.wm.active_pane_id();
     if let Some(pane) = offscreen_panes.get(&active_id) {
         mcp_bridge.update_state(pane.url().as_str(), pane.title());
         mcp_bridge.update_active_meta(
             app_state
+                .core
                 .mcp_settled_epoch
                 .get(&active_id)
                 .copied()
@@ -468,17 +484,17 @@ pub fn check_offscreen_crashes(
     let crash_timeout = std::time::Duration::from_secs(60);
 
     for (pane_id, pane) in offscreen_panes.iter_mut() {
-        if pane.is_crashed(crash_timeout) && !app_state.crash.webview_crash_detected {
+        if pane.is_crashed(crash_timeout) && !app_state.headed_mut().crash.webview_crash_detected {
             let url = pane.url().to_string();
             warn!(
                 "WebView crash detected in pane {}: stalled while loading {}",
                 &pane_id.to_string()[..8],
                 &url[..url.len().min(80)]
             );
-            app_state.crash.webview_crash_detected = true;
-            app_state.crash.crashed_pane_url = Some(url);
-            app_state.crash.crashed_pane_id = Some(*pane_id);
-            app_state.ui.status_message =
+            app_state.headed_mut().crash.webview_crash_detected = true;
+            app_state.headed_mut().crash.crashed_pane_url = Some(url);
+            app_state.headed_mut().crash.crashed_pane_id = Some(*pane_id);
+            app_state.headed_mut().ui.status_message =
                 "WebView appears crashed — type :crash-reload to recover".into();
             pane.set_loading(false);
         }
@@ -501,8 +517,8 @@ pub fn process_pending_wry_actions(
             Some(s) => s,
             None => return,
         };
-        let actions: Vec<WryAction> = app_state.pending_wry_actions.drain(..).collect();
-        let id = app_state.wm.active_pane_id();
+        let actions: Vec<WryAction> = app_state.core.pending_wry_actions.drain(..).collect();
+        let id = app_state.core.wm.active_pane_id();
         (actions, id)
     };
     for action in pending_actions {
@@ -516,7 +532,7 @@ pub fn process_pending_wry_actions(
         ) {
             warn!("WryAction error: {}", e);
             if let Some(app_state) = app_state {
-                app_state.ui.status_message = format!("Action failed: {e}");
+                app_state.headed_mut().ui.status_message = format!("Action failed: {e}");
             }
         }
     }
@@ -640,13 +656,18 @@ fn wait_mcp_nav_settled(
     if trace {
         eprintln!(
             "[mcp-trace] wait enter nav={} settled={}",
-            app_state.mcp_nav_epoch.get(pane).copied().unwrap_or(0),
-            app_state.mcp_settled_epoch.get(pane).copied().unwrap_or(0)
+            app_state.core.mcp_nav_epoch.get(pane).copied().unwrap_or(0),
+            app_state
+                .core
+                .mcp_settled_epoch
+                .get(pane)
+                .copied()
+                .unwrap_or(0)
         );
     }
     loop {
-        let nav = *app_state.mcp_nav_epoch.get(pane).unwrap_or(&0);
-        let settled = *app_state.mcp_settled_epoch.get(pane).unwrap_or(&0);
+        let nav = *app_state.core.mcp_nav_epoch.get(pane).unwrap_or(&0);
+        let settled = *app_state.core.mcp_settled_epoch.get(pane).unwrap_or(&0);
         if nav <= settled {
             if trace {
                 eprintln!("[mcp-trace] wait exit: settled (load committed)");
@@ -667,7 +688,7 @@ fn wait_mcp_nav_settled(
                 if trace {
                     eprintln!("[mcp-trace] wait exit: observed commit -> promote");
                 }
-                app_state.mcp_settled_epoch.insert(*pane, nav);
+                app_state.core.mcp_settled_epoch.insert(*pane, nav);
                 return;
             }
             // !loading && !saw: the navigation has not started yet (or the
@@ -682,8 +703,8 @@ fn wait_mcp_nav_settled(
             return;
         }
         if std::time::Instant::now() >= deadline {
-            let nav = *app_state.mcp_nav_epoch.get(pane).unwrap_or(&0);
-            app_state.mcp_settled_epoch.insert(*pane, nav);
+            let nav = *app_state.core.mcp_nav_epoch.get(pane).unwrap_or(&0);
+            app_state.core.mcp_settled_epoch.insert(*pane, nav);
             return;
         }
         pump_gtk_loop();
@@ -701,7 +722,12 @@ fn audit_record(
     pane: Uuid,
     denied: bool,
 ) {
-    let epoch = app_state.mcp_settled_epoch.get(&pane).copied().unwrap_or(0);
+    let epoch = app_state
+        .core
+        .mcp_settled_epoch
+        .get(&pane)
+        .copied()
+        .unwrap_or(0);
     let entry = format!(
         "{} session={} tool={} class={} pane={} epoch={} outcome={}",
         chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
@@ -714,7 +740,7 @@ fn audit_record(
         epoch,
         if denied { "DENIED" } else { "ok" }
     );
-    let mut log = app_state.audit_log.borrow_mut();
+    let mut log = app_state.core.audit_log.borrow_mut();
     if log.len() >= 1000 {
         log.pop_front();
     }
@@ -750,7 +776,7 @@ pub fn process_mcp_commands(
     // polling: commands stay queued in the bridge channel and process once
     // the restore completes (the flag is consumed within a frame or two,
     // so this deferral is bounded).
-    if app_state.pending_workspace_restore.is_some() {
+    if app_state.core.pending_workspace_restore.is_some() {
         return;
     }
     let mcp_commands: Vec<(Option<Uuid>, McpCommand)> = mcp_bridge.poll_commands().collect();
@@ -765,6 +791,7 @@ pub fn process_mcp_commands(
         // dropped with a warn. Unscoped (default) sessions are unrestricted.
         if let Some(sid) = session {
             let caps = app_state
+                .core
                 .session_registry
                 .lock()
                 .ok()
@@ -803,8 +830,8 @@ pub fn process_mcp_commands(
             McpCommand::Navigate { url, new_tab } => {
                 if let Ok(parsed) = url::Url::parse(&url) {
                     if new_tab {
-                        let current_active = app_state.wm.active_pane_id();
-                        match app_state.wm.split(
+                        let current_active = app_state.core.wm.active_pane_id();
+                        match app_state.core.wm.split(
                             current_active,
                             crate::wm::SplitDirection::Vertical,
                             0.5,
@@ -815,15 +842,17 @@ pub fn process_mcp_commands(
                                 // builds a wry-engine pane which never renders on
                                 // Wayland (phantom pane, all tools dead on it).
                                 app_state
+                                    .core
                                     .pending_mcp_pane_creations
                                     .push_back((new_id, parsed.clone()));
                                 app_state
+                                    .core
                                     .pending_wry_actions
                                     .push_back(WryAction::Navigate(parsed));
-                                app_state.wm.set_active_pane(new_id);
+                                app_state.core.wm.set_active_pane(new_id);
                                 // YP-MCP-NAV-EPOCH-001: advance the pane epoch.
-                                *app_state.mcp_nav_epoch.entry(new_id).or_insert(0) += 1;
-                                app_state.session.session_dirty = true;
+                                *app_state.core.mcp_nav_epoch.entry(new_id).or_insert(0) += 1;
+                                app_state.core.session.session_dirty = true;
                             }
                             Err(e) => {
                                 warn!("MCP: failed to create new tab: {}", e);
@@ -841,9 +870,10 @@ pub fn process_mcp_commands(
                             &active_id.to_string()[..8]
                         );
                         app_state
+                            .core
                             .pending_mcp_pane_creations
                             .push_back((active_id, parsed));
-                        app_state.session.session_dirty = true;
+                        app_state.core.session.session_dirty = true;
                     } else if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
                         // X11 / GTK-window-embedded native pane.
                         info!("MCP: navigating to {}", url);
@@ -862,8 +892,8 @@ pub fn process_mcp_commands(
                             std::thread::sleep(std::time::Duration::from_millis(2));
                         }
                         // YP-MCP-NAV-EPOCH-001: advance the pane epoch.
-                        *app_state.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
-                        app_state.session.session_dirty = true;
+                        *app_state.core.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
+                        app_state.core.session.session_dirty = true;
                     } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
                         // Wayland: navigate the offscreen webview directly.
                         // Queueing a WryAction would execute it AFTER this
@@ -892,14 +922,18 @@ pub fn process_mcp_commands(
                         // YP-MCP-NAV-EPOCH-001: advance the pane epoch and
                         // promote settled (the load committed or the budget
                         // expired - reads must never wedge on either path).
-                        *app_state.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
+                        *app_state.core.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
                         let epoch_now = app_state
+                            .core
                             .mcp_nav_epoch
                             .get(&active_id)
                             .copied()
                             .unwrap_or(0);
-                        app_state.mcp_settled_epoch.insert(active_id, epoch_now);
-                        app_state.session.session_dirty = true;
+                        app_state
+                            .core
+                            .mcp_settled_epoch
+                            .insert(active_id, epoch_now);
+                        app_state.core.session.session_dirty = true;
                     } else {
                         warn!("MCP: navigate target pane vanished");
                     }
@@ -968,6 +1002,7 @@ pub fn process_mcp_commands(
                         tool_classes: tool_classes.map(|v| v.into_iter().collect()),
                     };
                     let result = app_state
+                        .core
                         .session_registry
                         .lock()
                         .map(|mut reg| {
@@ -994,6 +1029,7 @@ pub fn process_mcp_commands(
                 let caps = session
                     .and_then(|sid| {
                         app_state
+                            .core
                             .session_registry
                             .lock()
                             .ok()
@@ -1021,11 +1057,13 @@ pub fn process_mcp_commands(
                         .or_else(|| wry_panes.get(&id).map(|p| p.url().to_string()))
                 };
                 let result = app_state
+                    .core
                     .wm
                     .to_workspace_data(url_of)
                     .map_err(|e| e.to_string())
                     .and_then(|data| {
                         app_state
+                            .core
                             .db
                             .as_ref()
                             .ok_or_else(|| "no database".to_string())
@@ -1049,12 +1087,12 @@ pub fn process_mcp_commands(
                         .or_else(|| wry_panes.get(&id).map(|p| p.url().to_string()))
                 };
                 let result = app_state
-                    .wm
+                    .core.wm
                     .to_workspace_data(url_of)
                     .map_err(|e| e.to_string())
                     .and_then(|live| {
                         app_state
-                            .db
+                            .core.db
                             .as_ref()
                             .ok_or_else(|| "no database".to_string())
                             .and_then(|db| {
@@ -1095,6 +1133,7 @@ pub fn process_mcp_commands(
             }
             McpCommand::WorkspaceList { response_tx } => {
                 let result = app_state
+                    .core
                     .db
                     .as_ref()
                     .ok_or_else(|| "no database".to_string())
@@ -1134,14 +1173,18 @@ pub fn process_mcp_commands(
                     })
                     .unwrap_or(false);
                 if reloaded {
-                    *app_state.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
+                    *app_state.core.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
                     let epoch_now = app_state
+                        .core
                         .mcp_nav_epoch
                         .get(&active_id)
                         .copied()
                         .unwrap_or(0);
-                    app_state.mcp_settled_epoch.insert(active_id, epoch_now);
-                    app_state.session.session_dirty = true;
+                    app_state
+                        .core
+                        .mcp_settled_epoch
+                        .insert(active_id, epoch_now);
+                    app_state.core.session.session_dirty = true;
                 }
                 let _ = response_tx.send(if reloaded {
                     format!("User agent set and page reloaded: {ua}")
@@ -1167,14 +1210,18 @@ pub fn process_mcp_commands(
                     })
                     .is_some();
                 if reloaded {
-                    *app_state.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
+                    *app_state.core.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
                     let epoch_now = app_state
+                        .core
                         .mcp_nav_epoch
                         .get(&active_id)
                         .copied()
                         .unwrap_or(0);
-                    app_state.mcp_settled_epoch.insert(active_id, epoch_now);
-                    app_state.session.session_dirty = true;
+                    app_state
+                        .core
+                        .mcp_settled_epoch
+                        .insert(active_id, epoch_now);
+                    app_state.core.session.session_dirty = true;
                 }
                 let _ = response_tx.send(if reloaded {
                     format!("Viewport set to {w}x{h} and page reloaded")
@@ -1199,10 +1246,10 @@ pub fn process_mcp_commands(
                     crate::workspace_restore::restore_workspace(
                         &name,
                         viewport,
-                        app_state.db.as_ref(),
+                        app_state.core.db.as_ref(),
                         &mut app_state.terminal_pane_ids,
-                        &mut app_state.engines,
-                        &mut app_state.wm,
+                        &mut app_state.core.engines,
+                        &mut app_state.core.wm,
                         &mut restore_terminal_manager,
                     )
                 };
@@ -1210,14 +1257,15 @@ pub fn process_mcp_commands(
                 let outcome = crate::workspace_restore::restore_workspace(
                     &name,
                     viewport,
-                    app_state.db.as_ref(),
-                    &mut app_state.engines,
-                    &mut app_state.wm,
+                    app_state.core.db.as_ref(),
+                    &mut app_state.core.engines,
+                    &mut app_state.core.wm,
                 );
                 let msg = match outcome {
                     crate::workspace_restore::RestoreOutcome::Restored(result) => {
                         for (pid, url) in &result.panes_to_create {
                             app_state
+                                .core
                                 .pending_mcp_pane_creations
                                 .push_back((*pid, url.clone()));
                         }
@@ -1262,7 +1310,7 @@ pub fn process_mcp_commands(
                 });
             }
             McpCommand::ReadAudit { limit, response_tx } => {
-                let log = app_state.audit_log.borrow();
+                let log = app_state.core.audit_log.borrow();
                 let skip = log.len().saturating_sub(limit);
                 let lines: Vec<String> = log.iter().skip(skip).cloned().collect();
                 let _ = response_tx.send(if lines.is_empty() {
@@ -1273,6 +1321,7 @@ pub fn process_mcp_commands(
             }
             McpCommand::ListDownloads { response_tx } => {
                 let rows: Vec<String> = app_state
+                    .core
                     .download_manager
                     .progress_all()
                     .iter()
@@ -1296,7 +1345,7 @@ pub fn process_mcp_commands(
                 });
             }
             McpCommand::ListBookmarks { response_tx } => {
-                let result = if let Some(db) = app_state.db.as_ref() {
+                let result = if let Some(db) = app_state.core.db.as_ref() {
                     match crate::db::bookmarks::all_bookmarks(db) {
                         Ok(bms) => {
                             let lines: Vec<String> = bms
@@ -1325,7 +1374,7 @@ pub fn process_mcp_commands(
                 folder,
                 response_tx,
             } => {
-                let result = if let Some(db) = app_state.db.as_ref() {
+                let result = if let Some(db) = app_state.core.db.as_ref() {
                     match crate::db::bookmarks::add_bookmark_with_folder(db, &url, &title, &folder)
                     {
                         Ok(id) => format!("Bookmarked (id={id}) {url}"),
@@ -1337,7 +1386,7 @@ pub fn process_mcp_commands(
                 let _ = response_tx.send(result);
             }
             McpCommand::RemoveBookmark { url, response_tx } => {
-                let result = if let Some(db) = app_state.db.as_ref() {
+                let result = if let Some(db) = app_state.core.db.as_ref() {
                     match crate::db::bookmarks::remove_bookmark(db, &url) {
                         Ok(true) => format!("Removed bookmark: {url}"),
                         Ok(false) => format!("Not bookmarked: {url}"),
@@ -1353,7 +1402,7 @@ pub fn process_mcp_commands(
                 limit,
                 response_tx,
             } => {
-                let result = if let Some(db) = app_state.db.as_ref() {
+                let result = if let Some(db) = app_state.core.db.as_ref() {
                     match crate::db::history::search(db, &query, limit) {
                         Ok(entries) => {
                             let lines: Vec<String> = entries
@@ -1372,9 +1421,14 @@ pub fn process_mcp_commands(
                 let _ = response_tx.send(result);
             }
             McpCommand::ListTabs { response_tx } => {
-                let active = app_state.wm.active_pane_id();
-                let pane_ids: Vec<Uuid> =
-                    app_state.wm.panes_ref().iter().map(|(id, _)| *id).collect();
+                let active = app_state.core.wm.active_pane_id();
+                let pane_ids: Vec<Uuid> = app_state
+                    .core
+                    .wm
+                    .panes_ref()
+                    .iter()
+                    .map(|(id, _)| *id)
+                    .collect();
                 let lines: Vec<String> = pane_ids
                     .iter()
                     .enumerate()
@@ -1469,22 +1523,22 @@ pub fn process_mcp_commands(
                 let _ = response_tx.send(result);
             }
             McpCommand::CloseTab { index, response_tx } => {
-                let pane_ids: Vec<Uuid> = app_state.wm.pane_ids().into_iter().collect();
+                let pane_ids: Vec<Uuid> = app_state.core.wm.pane_ids().into_iter().collect();
                 let result = if let Some(&close_id) = pane_ids.get(index) {
-                    let active_before = app_state.wm.active_pane_id();
-                    app_state.wm.set_active_pane(close_id);
-                    if let Err(e) = app_state.wm.close(close_id) {
+                    let active_before = app_state.core.wm.active_pane_id();
+                    app_state.core.wm.set_active_pane(close_id);
+                    if let Err(e) = app_state.core.wm.close(close_id) {
                         warn!(%e, "Failed to close tab via MCP");
                     }
-                    app_state.engines.remove_pane(&close_id);
+                    app_state.core.engines.remove_pane(&close_id);
                     #[cfg(feature = "terminal")]
                     app_state.terminal_pane_ids.remove(&close_id);
                     if active_before == close_id
                         && let Some(&next) = pane_ids.iter().find(|&&id| id != close_id)
                     {
-                        app_state.wm.set_active_pane(next);
+                        app_state.core.wm.set_active_pane(next);
                     }
-                    app_state.session.session_dirty = true;
+                    app_state.core.session.session_dirty = true;
                     format!("Closed tab at index {index}.")
                 } else {
                     format!(
@@ -1778,11 +1832,11 @@ pub fn process_mcp_commands(
 }
 
 pub fn handle_pending_tab_close(app_state: &mut AppState, close_id: Uuid) {
-    app_state.wm.set_active_pane(close_id);
-    if let Err(e) = app_state.wm.close(close_id) {
+    app_state.core.wm.set_active_pane(close_id);
+    if let Err(e) = app_state.core.wm.close(close_id) {
         warn!(%e, "Failed to close pending tab");
     }
-    app_state.engines.remove_pane(&close_id);
+    app_state.core.engines.remove_pane(&close_id);
     #[cfg(feature = "terminal")]
     app_state.terminal_pane_ids.remove(&close_id);
     app_state.update_a11y("Pane closed");
@@ -1790,22 +1844,23 @@ pub fn handle_pending_tab_close(app_state: &mut AppState, close_id: Uuid) {
 
 /// Handle pending bookmark import (Firefox or Chrome).
 pub fn handle_pending_import(app_state: &mut AppState) {
-    let source = match app_state.pending_import.take() {
+    let source = match app_state.headed_mut().pending_import.take() {
         Some(s) => s,
         None => return,
     };
-    if let Some(db) = app_state.db.as_ref() {
+    if let Some(db) = app_state.core.db.as_ref() {
         let msg = match source.as_str() {
             "firefox" => crate::app::cmd::import::import_firefox(db),
             "chrome" => crate::app::cmd::import::import_chrome(db),
             _ => {
-                app_state.ui.status_message = format!("Unknown import source: {source}");
+                app_state.headed_mut().ui.status_message =
+                    format!("Unknown import source: {source}");
                 return;
             }
         };
-        app_state.ui.status_message = msg;
+        app_state.headed_mut().ui.status_message = msg;
     } else {
-        app_state.ui.status_message = "No database available for import.".into();
+        app_state.headed_mut().ui.status_message = "No database available for import.".into();
     }
 }
 

@@ -13,11 +13,14 @@ impl AppState {
     /// Refresh the command palette with latest history items from the DB
     /// and open pane URLs from the engine manager.
     pub fn refresh_palette_items(&mut self) {
-        self.palette.clear_items();
-        if let Some(ref conn) = self.db {
+        self.headed_mut().palette.clear_items();
+        // Collect DB-backed items under the borrow, then add them (the
+        // palette lives behind headed_mut(), which needs exclusive access).
+        let mut items = Vec::new();
+        if let Some(ref conn) = self.core.db {
             if let Ok(entries) = crate::db::history::recent_entries(conn, 50) {
                 for entry in entries {
-                    self.palette.add_item(SearchItem {
+                    items.push(SearchItem {
                         id: format!("history:{}", entry.id),
                         label: entry.title.clone(),
                         description: entry.url.clone(),
@@ -27,7 +30,7 @@ impl AppState {
             }
             if let Ok(bm_list) = bookmarks::all_bookmarks(conn) {
                 for bm in bm_list {
-                    self.palette.add_item(SearchItem {
+                    items.push(SearchItem {
                         id: format!("bookmark:{}", bm.id),
                         label: bm.title.clone(),
                         description: bm.url.clone(),
@@ -37,40 +40,52 @@ impl AppState {
             }
         }
 
-        // Add open pane URLs as switchable tabs
-        let panes = self.wm.panes_ref();
-        for (pane_id, _rect) in panes.iter() {
-            let url_str = self
-                .engines
-                .get(pane_id)
-                .and_then(|e| e.current_url().cloned())
-                .map(|u| u.to_string())
-                .unwrap_or_else(|| "aileron://new".into());
-            let is_active = *pane_id == self.wm.active_pane_id();
-            let label = if is_active {
-                format!("● {url_str}")
-            } else {
-                url_str.clone()
-            };
-            self.palette.add_item(SearchItem {
-                id: format!("tab:{pane_id}"),
-                label,
-                description: url_str,
-                category: SearchCategory::OpenTab,
-            });
-        }
+        // Add open pane URLs as switchable tabs (same borrow discipline)
+        let pane_items: Vec<SearchItem> = {
+            let panes = self.core.wm.panes_ref();
+            panes
+                .iter()
+                .map(|(pane_id, _rect)| {
+                    let url_str = self
+                        .core
+                        .engines
+                        .get(pane_id)
+                        .and_then(|e| e.current_url().cloned())
+                        .map(|u| u.to_string())
+                        .unwrap_or_else(|| "aileron://new".into());
+                    let is_active = *pane_id == self.core.wm.active_pane_id();
+                    let label = if is_active {
+                        format!("● {url_str}")
+                    } else {
+                        url_str.clone()
+                    };
+                    SearchItem {
+                        id: format!("tab:{pane_id}"),
+                        label,
+                        description: url_str,
+                        category: SearchCategory::OpenTab,
+                    }
+                })
+                .collect()
+        };
+        items.extend(pane_items);
 
         // Re-add custom Lua commands
         #[cfg(feature = "lua")]
         if let Some(ref engine) = self.lua_engine {
             for cmd in engine.custom_commands() {
-                self.palette.add_item(SearchItem {
+                items.push(SearchItem {
                     id: format!("custom:{}", cmd.name),
                     label: cmd.name.clone(),
                     description: cmd.description,
                     category: SearchCategory::Custom,
                 });
             }
+        }
+
+        let palette = &mut self.headed_mut().palette;
+        for item in items {
+            palette.add_item(item);
         }
     }
 
@@ -79,10 +94,11 @@ impl AppState {
             SearchCategory::History => {
                 // Navigate to the selected history URL
                 if let Ok(url) = url::Url::parse(&item.description) {
-                    let active_id = self.wm.active_pane_id();
-                    if let Some(engine) = self.engines.get_mut(&active_id) {
+                    let active_id = self.core.wm.active_pane_id();
+                    if let Some(engine) = self.core.engines.get_mut(&active_id) {
                         engine.navigate(&url);
-                        self.ui.status_message = format!("Navigating to {}", item.label);
+                        self.headed_mut().ui.status_message =
+                            format!("Navigating to {}", item.label);
                     }
                 }
             }
@@ -91,10 +107,11 @@ impl AppState {
             }
             SearchCategory::Bookmark => {
                 if let Ok(url) = url::Url::parse(&item.description) {
-                    let active_id = self.wm.active_pane_id();
-                    if let Some(engine) = self.engines.get_mut(&active_id) {
+                    let active_id = self.core.wm.active_pane_id();
+                    if let Some(engine) = self.core.engines.get_mut(&active_id) {
                         engine.navigate(&url);
-                        self.ui.status_message = format!("Opening bookmark: {}", item.label);
+                        self.headed_mut().ui.status_message =
+                            format!("Opening bookmark: {}", item.label);
                     }
                 }
             }
@@ -103,7 +120,7 @@ impl AppState {
                 // Extract item ID from "credential:<id>"
                 if let Some(item_id) = item.id.strip_prefix("credential:") {
                     if !self.bitwarden.is_unlocked() {
-                        self.ui.status_message =
+                        self.headed_mut().ui.status_message =
                             "Vault is locked. Use bw-unlock <password> first.".into();
                         return;
                     }
@@ -111,12 +128,15 @@ impl AppState {
                         Ok(credential) => {
                             let js = self.bitwarden.autofill_js(&credential);
                             info!("Auto-filling credential for: {}", credential.name);
-                            self.pending_wry_actions
+                            self.core
+                                .pending_wry_actions
                                 .push_back(crate::app::WryAction::Autofill { js });
-                            self.ui.status_message = format!("Auto-filled: {}", credential.name);
+                            self.headed_mut().ui.status_message =
+                                format!("Auto-filled: {}", credential.name);
                         }
                         Err(e) => {
-                            self.ui.status_message = format!("Failed to get credential: {e}");
+                            self.headed_mut().ui.status_message =
+                                format!("Failed to get credential: {e}");
                             warn!("Bitwarden get_credential failed: {}", e);
                         }
                     }
@@ -129,10 +149,11 @@ impl AppState {
                     match self.call_lua_command(name) {
                         Ok(result) => {
                             info!("Lua command '{}' executed: {}", name, result);
-                            self.ui.status_message = format!("✓ {name}");
+                            self.headed_mut().ui.status_message = format!("✓ {name}");
                         }
                         Err(e) => {
-                            self.ui.status_message = format!("Command '{name}' failed: {e}");
+                            self.headed_mut().ui.status_message =
+                                format!("Command '{name}' failed: {e}");
                             warn!("Lua command '{}' failed: {}", name, e);
                         }
                     }
@@ -141,14 +162,15 @@ impl AppState {
             SearchCategory::OpenTab => {
                 if let Some(pane_id_str) = item.id.strip_prefix("tab:")
                     && let Ok(pane_id) = uuid::Uuid::parse_str(pane_id_str)
-                    && self.wm.get_rect(pane_id).is_some()
+                    && self.core.wm.get_rect(pane_id).is_some()
                 {
-                    let old_active = self.wm.active_pane_id();
+                    let old_active = self.core.wm.active_pane_id();
                     if old_active != pane_id {
-                        self.tabs.last_active_pane_id = Some(old_active);
+                        self.headed_mut().tabs.last_active_pane_id = Some(old_active);
                     }
-                    self.wm.set_active_pane(pane_id);
+                    self.core.wm.set_active_pane(pane_id);
                     let url = self
+                        .core
                         .engines
                         .get(&pane_id)
                         .and_then(|e| e.current_url().cloned())
@@ -159,11 +181,11 @@ impl AppState {
                     } else {
                         url
                     };
-                    self.ui.status_message = format!("Switched to: {display}");
+                    self.headed_mut().ui.status_message = format!("Switched to: {display}");
                 }
             }
             _ => {
-                self.ui.status_message = format!("Selected: {}", item.label);
+                self.headed_mut().ui.status_message = format!("Selected: {}", item.label);
             }
         }
     }

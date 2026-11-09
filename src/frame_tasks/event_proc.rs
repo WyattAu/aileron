@@ -141,9 +141,9 @@ pub fn process_events<M: EventPaneManager>(
 
         match event {
             WryEvent::LoadComplete { url, .. } => {
-                app_state.session.session_dirty = true;
-                app_state.tabs.tab_display_dirty = true;
-                app_state.cache.pane_count_dirty = true;
+                app_state.core.session.session_dirty = true;
+                app_state.headed_mut().tabs.tab_display_dirty = true;
+                app_state.core.cache.pane_count_dirty = true;
                 if let Ok(parsed) = url::Url::parse(&url) {
                     app_state.record_visit(&parsed, &url);
                 }
@@ -292,7 +292,7 @@ pub fn process_events<M: EventPaneManager>(
                         pane.mark_dirty();
                     }
 
-                    if let Some(ref css) = app_state.config.custom_css
+                    if let Some(ref css) = app_state.core.config.custom_css
                         && !css.trim().is_empty()
                         && let Some(pane) = manager.get_mut(&pane_id)
                     {
@@ -322,7 +322,7 @@ pub fn process_events<M: EventPaneManager>(
                     }
 
                     // Apply per-site zoom if configured
-                    if let Some(ref db) = app_state.db
+                    if let Some(ref db) = app_state.core.db
                         && let Ok(settings) =
                             crate::db::site_settings::get_site_settings_for_url(db, &url)
                         && let Some(zoom) = settings.iter().find_map(|s| s.zoom_level)
@@ -335,11 +335,11 @@ pub fn process_events<M: EventPaneManager>(
                 }
             }
             WryEvent::LoadStarted { url, .. } => {
-                app_state.autofill.available = false;
-                app_state.autofill.username_id.clear();
-                app_state.autofill.password_id.clear();
-                app_state.autofill.js = None;
-                app_state.autofill.status_msg.clear();
+                app_state.headed_mut().autofill.available = false;
+                app_state.headed_mut().autofill.username_id.clear();
+                app_state.headed_mut().autofill.password_id.clear();
+                app_state.headed_mut().autofill.js = None;
+                app_state.headed_mut().autofill.status_msg.clear();
                 app_state.clear_injected_scripts(pane_id);
                 app_state.update_a11y(&format!("Loading: {}...", &url[..url.len().min(40)]));
 
@@ -420,7 +420,7 @@ pub fn process_events<M: EventPaneManager>(
             }
             WryEvent::TitleChanged { title, .. } => {
                 app_state.update_a11y(&title[..title.len().min(60)]);
-                app_state.tabs.tab_display_dirty = true;
+                app_state.headed_mut().tabs.tab_display_dirty = true;
                 // Cache the title on the pane so the LoadComplete sync (which
                 // reads pane.title()) carries the real title instead of "".
                 if let Some(pane) = manager.get_mut(&pane_id) {
@@ -434,14 +434,16 @@ pub fn process_events<M: EventPaneManager>(
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
                 let dl_id = app_state
+                    .core
                     .download_manager
                     .start(url.as_str(), Some(filename.as_str()));
                 let short_url = if url.len() > 40 { &url[..37] } else { &url };
-                app_state.ui.status_message =
+                app_state.headed_mut().ui.status_message =
                     format!("Download #{dl_id}: {filename} ({short_url})");
                 info!("Download #{} started: {} from {}", dl_id, filename, url);
-                if let Some(db) = app_state.db.as_ref() {
+                if let Some(db) = app_state.core.db.as_ref() {
                     let dest = app_state
+                        .core
                         .download_manager
                         .downloads_dir()
                         .join(filename.as_str());
@@ -457,10 +459,10 @@ pub fn process_events<M: EventPaneManager>(
             }
             WryEvent::OpenFile { path } => {
                 let _ = open::that(&path);
-                app_state.ui.status_message = format!("Opened: {path}");
+                app_state.headed_mut().ui.status_message = format!("Opened: {path}");
             }
             WryEvent::HttpsUpgraded { to, .. } => {
-                app_state.ui.status_message = format!("HTTPS upgrade: {to}");
+                app_state.headed_mut().ui.status_message = format!("HTTPS upgrade: {to}");
                 if let Some(pane) = manager.get_mut(&pane_id) {
                     pane.mark_dirty();
                 }

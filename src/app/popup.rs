@@ -9,7 +9,7 @@ impl AileronApp {
         let url = self
             .app_state
             .as_mut()
-            .and_then(|s| s.pending_detach_url.take())
+            .and_then(|s| s.headed_mut().pending_detach_url.take())
             .unwrap_or_else(|| url::Url::parse("aileron://new").unwrap());
         let blocked_domains: Vec<String> = self.adblocker.blocked_domains_iter();
         let https_safe_list = if self.config.https_upgrade_enabled {

@@ -31,7 +31,7 @@ impl AileronApp {
                 Some(s) => s,
                 None => return,
             };
-            let panes = app_state.wm.panes_ref();
+            let panes = app_state.core.wm.panes_ref();
             match panes.iter().find(|(id, _)| *id == pane_id) {
                 Some((_, rect)) => *rect,
                 None => {
@@ -46,13 +46,13 @@ impl AileronApp {
                 Some(s) => s,
                 None => return,
             };
-            let tab_layout = app_state.config.tab_layout.as_str();
+            let tab_layout = app_state.core.config.tab_layout.as_str();
             let sidebar_width = if tab_layout == "sidebar" {
-                app_state.config.tab_sidebar_width as f64
+                app_state.core.config.tab_sidebar_width as f64
             } else {
                 0.0
             };
-            let sidebar_on_right = app_state.config.tab_sidebar_right;
+            let sidebar_on_right = app_state.core.config.tab_sidebar_right;
             bsp_rect_to_wry_rect(
                 &wm_rect,
                 STATUS_BAR_HEIGHT,
@@ -80,7 +80,7 @@ impl AileronApp {
         let interceptor_registry = self
             .app_state
             .as_ref()
-            .map(|s| s.extension_manager.read().interceptor_registry.clone());
+            .map(|s| s.core.extension_manager.read().interceptor_registry.clone());
 
         match self.wry_panes.create_pane(
             &*window,
@@ -124,7 +124,7 @@ impl AileronApp {
             Err(e) => {
                 warn!("Failed to create WryPane: {}", e);
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.ui.status_message = format!("Pane creation failed: {e}");
+                    app_state.headed_mut().ui.status_message = format!("Pane creation failed: {e}");
                 }
             }
         }
@@ -147,15 +147,15 @@ impl AileronApp {
             None => return,
         };
 
-        let tab_layout = app_state.config.tab_layout.as_str();
+        let tab_layout = app_state.core.config.tab_layout.as_str();
         let sidebar_width = if tab_layout == "sidebar" {
-            app_state.config.tab_sidebar_width as f64
+            app_state.core.config.tab_sidebar_width as f64
         } else {
             0.0
         };
-        let sidebar_on_right = app_state.config.tab_sidebar_right;
+        let sidebar_on_right = app_state.core.config.tab_sidebar_right;
 
-        let panes = app_state.wm.panes_ref();
+        let panes = app_state.core.wm.panes_ref();
         for (pane_id, wm_rect) in panes.iter() {
             if let Some(wry_pane) = self.wry_panes.get(pane_id) {
                 let wry_rect = bsp_rect_to_wry_rect(

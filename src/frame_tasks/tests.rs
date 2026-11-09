@@ -54,22 +54,22 @@ fn poll_git_status_with_new_poller_receives_initial_status() {
 #[test]
 fn auto_save_disabled_does_not_save() {
     let mut app_state = test_app_state();
-    app_state.config.auto_save = false;
-    app_state.session.session_dirty = true;
-    app_state.session.last_auto_save = std::time::Instant::now()
-        - std::time::Duration::from_secs(app_state.config.auto_save_interval + 10);
+    app_state.core.config.auto_save = false;
+    app_state.core.session.session_dirty = true;
+    app_state.core.session.last_auto_save = std::time::Instant::now()
+        - std::time::Duration::from_secs(app_state.core.config.auto_save_interval + 10);
     let wry_panes = WryPaneManager::new();
     auto_save_workspace(&mut app_state, &wry_panes);
-    assert!(app_state.session.session_dirty);
+    assert!(app_state.core.session.session_dirty);
 }
 
 #[test]
 fn auto_save_session_not_dirty_does_not_save() {
     let mut app_state = test_app_state();
-    app_state.config.auto_save = true;
-    app_state.session.session_dirty = false;
-    app_state.session.last_auto_save = std::time::Instant::now()
-        - std::time::Duration::from_secs(app_state.config.auto_save_interval + 10);
+    app_state.core.config.auto_save = true;
+    app_state.core.session.session_dirty = false;
+    app_state.core.session.last_auto_save = std::time::Instant::now()
+        - std::time::Duration::from_secs(app_state.core.config.auto_save_interval + 10);
     let wry_panes = WryPaneManager::new();
     auto_save_workspace(&mut app_state, &wry_panes);
 }
@@ -77,9 +77,9 @@ fn auto_save_session_not_dirty_does_not_save() {
 #[test]
 fn auto_save_interval_not_elapsed_does_not_save() {
     let mut app_state = test_app_state();
-    app_state.config.auto_save = true;
-    app_state.session.session_dirty = true;
-    app_state.session.last_auto_save = std::time::Instant::now();
+    app_state.core.config.auto_save = true;
+    app_state.core.session.session_dirty = true;
+    app_state.core.session.last_auto_save = std::time::Instant::now();
     let wry_panes = WryPaneManager::new();
     auto_save_workspace(&mut app_state, &wry_panes);
 }
@@ -130,7 +130,7 @@ fn process_arp_commands_tab_navigate_pushes_action() {
         url: "https://example.com".into(),
     });
     process_arp_commands(&mut app_state);
-    assert!(!app_state.pending_wry_actions.is_empty());
+    assert!(!app_state.core.pending_wry_actions.is_empty());
 }
 
 #[cfg(feature = "arp")]
@@ -143,7 +143,7 @@ fn process_arp_commands_clipboard_set_pushes_action() {
         text: "test clipboard".into(),
     });
     process_arp_commands(&mut app_state);
-    assert!(!app_state.pending_wry_actions.is_empty());
+    assert!(!app_state.core.pending_wry_actions.is_empty());
 }
 
 #[cfg(feature = "arp")]
@@ -156,7 +156,7 @@ fn process_arp_commands_quickmark_open_no_match_does_nothing() {
         key: "nonexistent".into(),
     });
     process_arp_commands(&mut app_state);
-    assert!(app_state.pending_wry_actions.is_empty());
+    assert!(app_state.core.pending_wry_actions.is_empty());
 }
 
 #[cfg(feature = "arp")]
@@ -167,7 +167,7 @@ fn process_arp_commands_quickmark_open_with_default_quickmark_pushes_navigate() 
     app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
     let _ = tx.send(ArpCommand::QuickmarkOpen { key: "gh".into() });
     process_arp_commands(&mut app_state);
-    assert_eq!(app_state.pending_wry_actions.len(), 1);
+    assert_eq!(app_state.core.pending_wry_actions.len(), 1);
 }
 
 #[cfg(feature = "arp")]
@@ -178,7 +178,7 @@ fn process_arp_commands_tab_create_with_no_url() {
     app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
     let _ = tx.send(ArpCommand::TabCreate { url: None });
     process_arp_commands(&mut app_state);
-    assert!(app_state.session.session_dirty);
+    assert!(app_state.core.session.session_dirty);
 }
 
 #[cfg(feature = "arp")]
@@ -195,12 +195,12 @@ fn process_arp_commands_tab_close_with_none_target() {
 #[test]
 fn process_arp_commands_tab_activate() {
     let mut app_state = test_app_state();
-    let active_id = app_state.wm.active_pane_id();
+    let active_id = app_state.core.wm.active_pane_id();
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
     let _ = tx.send(ArpCommand::TabActivate { tab_id: active_id });
     process_arp_commands(&mut app_state);
-    assert_eq!(app_state.wm.active_pane_id(), active_id);
+    assert_eq!(app_state.core.wm.active_pane_id(), active_id);
 }
 
 #[cfg(feature = "arp")]
@@ -211,7 +211,7 @@ fn process_arp_commands_tab_go_back() {
     app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
     let _ = tx.send(ArpCommand::TabGoBack { tab_id: None });
     process_arp_commands(&mut app_state);
-    assert_eq!(app_state.pending_wry_actions.len(), 1);
+    assert_eq!(app_state.core.pending_wry_actions.len(), 1);
 }
 
 #[cfg(feature = "arp")]
@@ -222,7 +222,7 @@ fn process_arp_commands_tab_go_forward() {
     app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
     let _ = tx.send(ArpCommand::TabGoForward { tab_id: None });
     process_arp_commands(&mut app_state);
-    assert_eq!(app_state.pending_wry_actions.len(), 1);
+    assert_eq!(app_state.core.pending_wry_actions.len(), 1);
 }
 
 #[cfg(feature = "arp")]
@@ -233,7 +233,7 @@ fn process_arp_commands_tab_reload() {
     app_state.arp_cmd_receiver = Some(std::sync::Mutex::new(rx));
     let _ = tx.send(ArpCommand::TabReload { tab_id: None });
     process_arp_commands(&mut app_state);
-    assert_eq!(app_state.pending_wry_actions.len(), 1);
+    assert_eq!(app_state.core.pending_wry_actions.len(), 1);
 }
 
 #[cfg(feature = "arp")]
@@ -271,29 +271,30 @@ fn load_default_adblock_rules_adds_blocked_domains() {
 #[test]
 fn handle_pending_import_none_does_nothing() {
     let mut app_state = test_app_state();
-    assert!(app_state.pending_import.is_none());
+    assert!(app_state.headed().pending_import.is_none());
     handle_pending_import(&mut app_state);
-    assert!(app_state.ui.status_message.is_empty());
+    assert!(app_state.headed().ui.status_message.is_empty());
 }
 
 #[test]
 fn handle_pending_import_no_database_sets_message() {
     let mut app_state = test_app_state();
-    app_state.pending_import = Some("firefox".into());
-    app_state.db = None;
+    app_state.headed_mut().pending_import = Some("firefox".into());
+    app_state.core.db = None;
     handle_pending_import(&mut app_state);
-    assert!(app_state.pending_import.is_none());
-    assert!(app_state.ui.status_message.contains("No database"));
+    assert!(app_state.headed().pending_import.is_none());
+    assert!(app_state.headed().ui.status_message.contains("No database"));
 }
 
 #[test]
 fn handle_pending_import_unknown_source_sets_message() {
     let mut app_state = test_app_state();
-    app_state.pending_import = Some("safari".into());
+    app_state.headed_mut().pending_import = Some("safari".into());
     handle_pending_import(&mut app_state);
-    assert!(app_state.pending_import.is_none());
+    assert!(app_state.headed().pending_import.is_none());
     assert!(
         app_state
+            .headed()
             .ui
             .status_message
             .contains("Unknown import source")

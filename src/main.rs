@@ -199,7 +199,7 @@ impl AileronApp {
             Ok(s) => {
                 info!(
                     "Application state initialized with {} panes",
-                    s.wm.leaf_count()
+                    s.core.wm.leaf_count()
                 );
                 s
             }
@@ -210,7 +210,7 @@ impl AileronApp {
         };
 
         let loaded_count = {
-            let mut m = app_state.extension_manager.write();
+            let mut m = app_state.core.extension_manager.write();
             let count = m.load_all().len();
             m.register_builtin_adblock();
             count
@@ -219,7 +219,7 @@ impl AileronApp {
             info!("Loaded {} user extension(s)", loaded_count);
         }
         {
-            let mgr = app_state.extension_manager.read();
+            let mgr = app_state.core.extension_manager.read();
             info!(
                 "Built-in adblock: {}",
                 if mgr.is_builtin_adblock_enabled() {
@@ -232,6 +232,7 @@ impl AileronApp {
 
         self.content_scripts.set_extension_registry(
             app_state
+                .core
                 .extension_manager
                 .read()
                 .content_script_registry()
@@ -389,7 +390,7 @@ impl AileronApp {
                 Some(s) => s,
                 None => return,
             };
-            let panes = app_state.wm.panes_ref();
+            let panes = app_state.core.wm.panes_ref();
             match panes.iter().find(|(id, _)| *id == pane_id) {
                 Some((_, rect)) => *rect,
                 None => {
@@ -404,13 +405,13 @@ impl AileronApp {
                 Some(s) => s,
                 None => return,
             };
-            let tab_layout = app_state.config.tab_layout.as_str();
+            let tab_layout = app_state.core.config.tab_layout.as_str();
             let sidebar_width = if tab_layout == "sidebar" {
-                app_state.config.tab_sidebar_width as f64
+                app_state.core.config.tab_sidebar_width as f64
             } else {
                 0.0
             };
-            let sidebar_on_right = app_state.config.tab_sidebar_right;
+            let sidebar_on_right = app_state.core.config.tab_sidebar_right;
             bsp_rect_to_wry_rect(
                 &wm_rect,
                 STATUS_BAR_HEIGHT,
@@ -434,7 +435,7 @@ impl AileronApp {
         let interceptor_registry = self
             .app_state
             .as_ref()
-            .map(|s| s.extension_manager.read().interceptor_registry.clone());
+            .map(|s| s.core.extension_manager.read().interceptor_registry.clone());
 
         match self.wry_panes.create_pane(
             &*window,
@@ -478,7 +479,7 @@ impl AileronApp {
             Err(e) => {
                 warn!("Failed to create WryPane: {}", e);
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.ui.status_message = format!("Pane creation failed: {e}");
+                    app_state.headed_mut().ui.status_message = format!("Pane creation failed: {e}");
                 }
             }
         }
@@ -502,7 +503,7 @@ impl AileronApp {
                 Some(s) => s,
                 None => return,
             };
-            let panes = app_state.wm.panes_ref();
+            let panes = app_state.core.wm.panes_ref();
             match panes.iter().find(|(id, _)| *id == pane_id) {
                 Some((_, rect)) => *rect,
                 None => {
@@ -517,13 +518,13 @@ impl AileronApp {
                 Some(s) => s,
                 None => return,
             };
-            let tab_layout = app_state.config.tab_layout.as_str();
+            let tab_layout = app_state.core.config.tab_layout.as_str();
             let sidebar_width = if tab_layout == "sidebar" {
-                app_state.config.tab_sidebar_width as f64
+                app_state.core.config.tab_sidebar_width as f64
             } else {
                 0.0
             };
-            let sidebar_on_right = app_state.config.tab_sidebar_right;
+            let sidebar_on_right = app_state.core.config.tab_sidebar_right;
             bsp_rect_to_wry_rect(
                 &wm_rect,
                 STATUS_BAR_HEIGHT,
@@ -552,7 +553,7 @@ impl AileronApp {
         let interceptor_registry = self
             .app_state
             .as_ref()
-            .map(|s| s.extension_manager.read().interceptor_registry.clone());
+            .map(|s| s.core.extension_manager.read().interceptor_registry.clone());
 
         #[cfg(target_os = "linux")]
         match self.offscreen_panes.create_pane_with_privacy(
@@ -592,7 +593,7 @@ impl AileronApp {
             Err(e) => {
                 warn!("Failed to create OffscreenWebView: {}", e);
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.ui.status_message = format!("Pane creation failed: {e}");
+                    app_state.headed_mut().ui.status_message = format!("Pane creation failed: {e}");
                 }
             }
         }
@@ -627,7 +628,7 @@ impl AileronApp {
         let url = self
             .app_state
             .as_mut()
-            .and_then(|s| s.pending_detach_url.take())
+            .and_then(|s| s.headed_mut().pending_detach_url.take())
             .unwrap_or_else(|| url::Url::parse("aileron://new").unwrap());
         let blocked_domains: Vec<String> = self.adblocker.blocked_domains_iter();
         let https_safe_list = if self.config.https_upgrade_enabled {
@@ -701,15 +702,15 @@ impl AileronApp {
             info!("reposition: no window or chrome_webview available");
         }
 
-        let tab_layout = app_state.config.tab_layout.as_str();
+        let tab_layout = app_state.core.config.tab_layout.as_str();
         let sidebar_width = if tab_layout == "sidebar" {
-            app_state.config.tab_sidebar_width as f64
+            app_state.core.config.tab_sidebar_width as f64
         } else {
             0.0
         };
-        let sidebar_on_right = app_state.config.tab_sidebar_right;
+        let sidebar_on_right = app_state.core.config.tab_sidebar_right;
 
-        let panes = app_state.wm.panes_ref();
+        let panes = app_state.core.wm.panes_ref();
         for (pane_id, wm_rect) in panes.iter() {
             if let Some(wry_pane) = self.wry_panes.get(pane_id) {
                 let wry_rect = bsp_rect_to_wry_rect(

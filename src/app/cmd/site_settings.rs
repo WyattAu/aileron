@@ -3,15 +3,16 @@ use super::super::AppState;
 #[must_use = "ignoring this value may lead to unexpected behavior"]
 pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
     if query == "site-settings" {
-        let active_id = state.wm.active_pane_id();
-        if let Some(engine) = state.engines.get(&active_id)
+        let active_id = state.core.wm.active_pane_id();
+        if let Some(engine) = state.core.engines.get(&active_id)
             && let Some(url) = engine.current_url()
         {
-            if let Some(db) = state.db.as_ref() {
+            if let Some(db) = state.core.db.as_ref() {
                 match crate::db::site_settings::get_site_settings_for_url(db, url.as_str()) {
                     Ok(settings) => {
                         if settings.is_empty() {
-                            state.ui.status_message = "No per-site settings for current URL".into();
+                            state.headed_mut().ui.status_message =
+                                "No per-site settings for current URL".into();
                         } else {
                             let items: Vec<String> = settings
                                 .iter()
@@ -45,15 +46,15 @@ pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
                                     parts.join(" ")
                                 })
                                 .collect();
-                            state.ui.status_message =
+                            state.headed_mut().ui.status_message =
                                 format!("Site settings: {}", items.join(" | "));
                         }
                     }
-                    Err(e) => state.ui.status_message = format!("Error: {e}"),
+                    Err(e) => state.headed_mut().ui.status_message = format!("Error: {e}"),
                 }
             }
         } else {
-            state.ui.status_message = "No active URL".into();
+            state.headed_mut().ui.status_message = "No active URL".into();
         }
         return Some(());
     }
@@ -63,8 +64,9 @@ pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
         let mut parts = rest.splitn(2, ' ');
         if let (Some(key), Some(value)) = (parts.next(), parts.next()) {
             let value = value.trim();
-            let active_id = state.wm.active_pane_id();
+            let active_id = state.core.wm.active_pane_id();
             let host = state
+                .core
                 .engines
                 .get(&active_id)
                 .and_then(|e| e.current_url())
@@ -73,16 +75,19 @@ pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
                 .unwrap_or_default();
 
             if host.is_empty() {
-                state.ui.status_message = "No active URL for site settings".into();
-            } else if let Some(db) = state.db.as_ref() {
+                state.headed_mut().ui.status_message = "No active URL for site settings".into();
+            } else if let Some(db) = state.core.db.as_ref() {
                 match crate::db::site_settings::set_site_field(db, &host, "exact", key, Some(value))
                 {
-                    Ok(()) => state.ui.status_message = format!("Set {key}={value} for {host}"),
-                    Err(e) => state.ui.status_message = format!("Failed: {e}"),
+                    Ok(()) => {
+                        state.headed_mut().ui.status_message =
+                            format!("Set {key}={value} for {host}")
+                    }
+                    Err(e) => state.headed_mut().ui.status_message = format!("Failed: {e}"),
                 }
             }
         } else {
-            state.ui.status_message =
+            state.headed_mut().ui.status_message =
                 "Usage: :site-settings set <key> <value> (zoom, adblock, js, cookies, autoplay)"
                     .into();
         }
@@ -90,11 +95,11 @@ pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
     }
 
     if query == "site-settings list" {
-        if let Some(db) = state.db.as_ref() {
+        if let Some(db) = state.core.db.as_ref() {
             match crate::db::site_settings::list_site_settings(db) {
                 Ok(settings) => {
                     if settings.is_empty() {
-                        state.ui.status_message = "No site settings".into();
+                        state.headed_mut().ui.status_message = "No site settings".into();
                     } else {
                         let items: Vec<String> = settings
                             .iter()
@@ -106,10 +111,11 @@ pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
                         } else {
                             String::new()
                         };
-                        state.ui.status_message = format!("{}{}", items.join(" | "), suffix);
+                        state.headed_mut().ui.status_message =
+                            format!("{}{}", items.join(" | "), suffix);
                     }
                 }
-                Err(e) => state.ui.status_message = format!("Error: {e}"),
+                Err(e) => state.headed_mut().ui.status_message = format!("Error: {e}"),
             }
         }
         return Some(());
@@ -118,15 +124,20 @@ pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(id_str) = query.strip_prefix("site-settings delete ") {
         let id_str = id_str.trim();
         if let Ok(id) = id_str.parse::<i64>() {
-            if let Some(db) = state.db.as_ref() {
+            if let Some(db) = state.core.db.as_ref() {
                 match crate::db::site_settings::delete_site_setting(db, id) {
-                    Ok(true) => state.ui.status_message = format!("Deleted site setting {id}"),
-                    Ok(false) => state.ui.status_message = format!("No site setting with id {id}"),
-                    Err(e) => state.ui.status_message = format!("Failed: {e}"),
+                    Ok(true) => {
+                        state.headed_mut().ui.status_message = format!("Deleted site setting {id}")
+                    }
+                    Ok(false) => {
+                        state.headed_mut().ui.status_message =
+                            format!("No site setting with id {id}")
+                    }
+                    Err(e) => state.headed_mut().ui.status_message = format!("Failed: {e}"),
                 }
             }
         } else {
-            state.ui.status_message = "Usage: :site-settings delete <id>".into();
+            state.headed_mut().ui.status_message = "Usage: :site-settings delete <id>".into();
         }
         return Some(());
     }
@@ -134,15 +145,16 @@ pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(domain) = query.strip_prefix("site-settings clear ") {
         let domain = domain.trim();
         if domain.is_empty() {
-            state.ui.status_message = "Usage: :site-settings clear <domain>".into();
+            state.headed_mut().ui.status_message = "Usage: :site-settings clear <domain>".into();
             return Some(());
         }
-        if let Some(db) = state.db.as_ref() {
+        if let Some(db) = state.core.db.as_ref() {
             match crate::db::site_settings::delete_site_settings_for_domain(db, domain) {
                 Ok(count) => {
-                    state.ui.status_message = format!("Cleared {count} setting(s) for {domain}")
+                    state.headed_mut().ui.status_message =
+                        format!("Cleared {count} setting(s) for {domain}")
                 }
-                Err(e) => state.ui.status_message = format!("Failed: {e}"),
+                Err(e) => state.headed_mut().ui.status_message = format!("Failed: {e}"),
             }
         }
         return Some(());
@@ -150,20 +162,21 @@ pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
 
     if query == "cookies" {
         state
+            .core
             .pending_wry_actions
             .push_back(crate::app::WryAction::RunJs(
                 "document.cookie || '(no cookies for this site)'".into(),
             ));
-        state.ui.status_message = "Showing cookies...".into();
+        state.headed_mut().ui.status_message = "Showing cookies...".into();
         return Some(());
     }
     if let Some(domain) = query.strip_prefix("cookies-block ") {
         let domain = domain.trim();
         if domain.is_empty() {
-            state.ui.status_message = "Usage: :cookies-block <domain>".into();
+            state.headed_mut().ui.status_message = "Usage: :cookies-block <domain>".into();
             return Some(());
         }
-        if let Some(db) = state.db.as_ref() {
+        if let Some(db) = state.core.db.as_ref() {
             match crate::db::site_settings::set_site_field(
                 db,
                 domain,
@@ -171,8 +184,10 @@ pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
                 "cookies",
                 Some("off"),
             ) {
-                Ok(()) => state.ui.status_message = format!("Cookies blocked for {domain}"),
-                Err(e) => state.ui.status_message = format!("Failed: {e}"),
+                Ok(()) => {
+                    state.headed_mut().ui.status_message = format!("Cookies blocked for {domain}")
+                }
+                Err(e) => state.headed_mut().ui.status_message = format!("Failed: {e}"),
             }
         }
         return Some(());
@@ -180,10 +195,10 @@ pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(domain) = query.strip_prefix("cookies-allow ") {
         let domain = domain.trim();
         if domain.is_empty() {
-            state.ui.status_message = "Usage: :cookies-allow <domain>".into();
+            state.headed_mut().ui.status_message = "Usage: :cookies-allow <domain>".into();
             return Some(());
         }
-        if let Some(db) = state.db.as_ref() {
+        if let Some(db) = state.core.db.as_ref() {
             match crate::db::site_settings::set_site_field(
                 db,
                 domain,
@@ -191,8 +206,10 @@ pub fn cmd_site_settings(state: &mut AppState, query: &str) -> Option<()> {
                 "cookies",
                 Some("on"),
             ) {
-                Ok(()) => state.ui.status_message = format!("Cookies allowed for {domain}"),
-                Err(e) => state.ui.status_message = format!("Failed: {e}"),
+                Ok(()) => {
+                    state.headed_mut().ui.status_message = format!("Cookies allowed for {domain}")
+                }
+                Err(e) => state.headed_mut().ui.status_message = format!("Failed: {e}"),
             }
         }
         return Some(());

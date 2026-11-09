@@ -187,7 +187,7 @@ fn test_dispatch_scroll_actions_are_wry_effects() {
 fn test_app_state_keybinding_routing_opens_palette() {
     let viewport = test_viewport();
     let mut state = AppState::new(viewport, Config::default()).unwrap();
-    assert!(!state.palette.open);
+    assert!(!state.headed().palette.open);
 
     let event = KeyEvent {
         key: Key::Character('p'),
@@ -197,7 +197,7 @@ fn test_app_state_keybinding_routing_opens_palette() {
     state.process_key_event(event);
 
     assert!(
-        state.palette.open,
+        state.headed().palette.open,
         "Ctrl+P should open the command palette via keybinding routing"
     );
 }
@@ -206,7 +206,7 @@ fn test_app_state_keybinding_routing_opens_palette() {
 fn test_app_state_keybinding_routing_enters_insert_mode() {
     let viewport = test_viewport();
     let mut state = AppState::new(viewport, Config::default()).unwrap();
-    assert_eq!(state.mode, aileron::input::Mode::Normal);
+    assert_eq!(state.headed().mode, aileron::input::Mode::Normal);
 
     let event = KeyEvent {
         key: Key::Character('i'),
@@ -216,7 +216,7 @@ fn test_app_state_keybinding_routing_enters_insert_mode() {
     state.process_key_event(event);
 
     assert_eq!(
-        state.mode,
+        state.headed().mode,
         aileron::input::Mode::Insert,
         "'i' key should enter Insert mode via keybinding"
     );
@@ -227,7 +227,7 @@ fn test_app_state_keybinding_routing_does_not_fire_in_insert_mode() {
     let viewport = test_viewport();
     let mut state = AppState::new(viewport, Config::default()).unwrap();
 
-    state.mode = aileron::input::Mode::Insert;
+    state.headed_mut().mode = aileron::input::Mode::Insert;
     let event = KeyEvent {
         key: Key::Character('j'),
         modifiers: Modifiers::none(),
@@ -236,7 +236,7 @@ fn test_app_state_keybinding_routing_does_not_fire_in_insert_mode() {
     state.process_key_event(event);
 
     assert!(
-        state.pending_wry_actions.is_empty(),
+        state.core.pending_wry_actions.is_empty(),
         "'j' in Insert mode should not trigger ScrollDown (no Wry actions queued)"
     );
 }
@@ -245,7 +245,7 @@ fn test_app_state_keybinding_routing_does_not_fire_in_insert_mode() {
 fn test_app_state_command_palette_quit() {
     let viewport = test_viewport();
     let mut state = AppState::new(viewport, Config::default()).unwrap();
-    assert!(!state.session.should_quit);
+    assert!(!state.core.session.should_quit);
 
     // Open the command palette via Ctrl+P
     state.process_key_event(KeyEvent {
@@ -253,7 +253,7 @@ fn test_app_state_command_palette_quit() {
         modifiers: Modifiers::ctrl(),
         physical_key: None,
     });
-    assert!(state.palette.open);
+    assert!(state.headed().palette.open);
 
     // Type 'q' into the palette
     state.process_key_event(KeyEvent {
@@ -270,7 +270,7 @@ fn test_app_state_command_palette_quit() {
     });
 
     assert!(
-        state.session.should_quit,
+        state.core.session.should_quit,
         "typing ':q' then Enter in the command palette should set should_quit"
     );
 }
@@ -531,7 +531,7 @@ fn test_app_state_uses_config_homepage() {
     };
 
     let state = AppState::new(viewport, config).unwrap();
-    let panes = state.wm.panes();
+    let panes = state.core.wm.panes();
     assert_eq!(panes.len(), 1);
 
     // The pane's URL comes from the config homepage

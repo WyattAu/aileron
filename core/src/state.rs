@@ -238,6 +238,246 @@ impl Default for CacheState {
     }
 }
 
+// ---------------------------------------------------------------------------
+// CoreState — the agent-runtime state (S4 stage 1b)
+// ---------------------------------------------------------------------------
+
+/// The subset of `AppState` the agent (MCP) runtime touches: pane tree,
+/// database, session registry, engine metadata, config, downloads,
+/// extensions, session flags, and the derived-value caches.
+///
+/// Headed-only state (palette, keybindings, UI sub-states, profilers)
+/// lives in `HeadedState` in the `aileron` crate; `AppState` is
+/// `{ core: CoreState, headed: Option<HeadedState> }` with `headed: None`
+/// in agent mode.
+pub struct CoreState {
+    pub wm: crate::wm::BspTree,
+    pub db: Option<rusqlite::Connection>,
+    /// Session capability registry (Era-2, YP-MCP-SESSIONS-002): shared with
+    /// the TCP MCP server thread; the router enforces phi from here.
+    pub session_registry: SessionRegistry,
+    /// Enterprise audit ring (Era-3): every dispatched or denied MCP command
+    /// with provenance (session, tool, class, pane, epoch). Cap 1000, main-
+    /// thread only (the router writes; the audit tool reads via command arm).
+    pub audit_log: std::cell::RefCell<std::collections::VecDeque<String>>,
+    /// Web engine manager — one engine instance per pane.
+    pub engines: PaneStateManager,
+    /// User configuration.
+    pub config: crate::config::Config,
+    /// MCP-requested pane creations: (pane_id, url). Consumed by the
+    /// headed main loop which creates the real offscreen webview.
+    pub pending_mcp_pane_creations: std::collections::VecDeque<(Uuid, Url)>,
+    /// Per-pane navigation epoch (YP-MCP-NAV-EPOCH-001): advanced by every
+    /// MCP navigate; reads can check freshness against the committed value.
+    pub mcp_nav_epoch: HashMap<Uuid, u64>,
+    /// Highest navigation epoch known to have finished loading per pane.
+    /// Reads gate on nav_epoch <= settled_epoch (read-your-writes).
+    pub mcp_settled_epoch: HashMap<Uuid, u64>,
+    /// Workspace name requested for restore. Consumed by the headed loop.
+    pub pending_workspace_restore: Option<String>,
+    /// Name of the currently active workspace. Updated on workspace
+    /// save, load, and restore.
+    pub current_workspace_name: String,
+    /// Extension manager — loads and manages WebExtensions.
+    /// Wrapped in Arc<RwLock<>> so readers don't block each other.
+    pub extension_manager: Arc<parking_lot::RwLock<crate::extensions::ExtensionManager>>,
+    /// Download manager — handles file downloads with progress tracking.
+    pub download_manager: crate::downloads::DownloadManager,
+    /// D1-04: Update checker state.
+    pub update_checker: crate::update_check::UpdateChecker,
+    /// Queue of pending wry actions requested by the user (headed or
+    /// offscreen consumer drains it each frame). Lives on CoreState
+    /// because the MCP command arm queues actions in agent mode too.
+    pub pending_wry_actions: std::collections::VecDeque<WryAction>,
+    /// Pane ID pending close from tab sidebar click. Consumed by the
+    /// headed loop in about_to_wait.
+    pub pending_tab_close: Option<Uuid>,
+    /// Path to save reader mode content to (set by :reader-save command).
+    pub pending_reader_save_path: Option<std::path::PathBuf>,
+    /// Frame pacing (agent offscreen renders also advance these).
+    pub first_frame: bool,
+    pub resize_pending: bool,
+    pub frame_count: u64,
+    /// Session bookkeeping: quickmarks, marks, auto-save dirty bit.
+    pub session: SessionState,
+    /// Derived-value cache (pane count, config JSON, https safe-list).
+    pub cache: CacheState,
+}
+
+fn core_db_path() -> anyhow::Result<std::path::PathBuf> {
+    let dirs = directories::ProjectDirs::from("com", "aileron", "Aileron")
+        .ok_or_else(|| anyhow::anyhow!("Failed to determine project directories"))?;
+    Ok(dirs.data_dir().to_path_buf().join("aileron.db"))
+}
+
+fn core_extensions_dir() -> std::path::PathBuf {
+    directories::ProjectDirs::from("com", "aileron", "Aileron")
+        .map(|dirs| dirs.data_dir().join("extensions"))
+        .unwrap_or_else(|| std::path::PathBuf::from("./extensions"))
+}
+
+impl CoreState {
+    /// Build the agent-runtime state. `viewport` sizes the initial BSP pane.
+    pub fn new(viewport: crate::wm::Rect, config: crate::config::Config) -> anyhow::Result<Self> {
+        // Use homepage from config
+        let initial_url = Url::parse(&config.homepage)
+            .unwrap_or_else(|_| Url::parse("aileron://welcome").unwrap());
+        let wm = crate::wm::BspTree::new(viewport, initial_url.clone());
+
+        let db_path = core_db_path()?;
+        let db = match std::fs::create_dir_all(
+            db_path
+                .parent()
+                .expect("db_path must have a parent directory"),
+        ) {
+            Ok(_) => match crate::db::open_database(&db_path) {
+                Ok(conn) => Some(conn),
+                Err(e) => {
+                    tracing::warn!("Failed to open database: {}", e);
+                    None
+                }
+            },
+            Err(e) => {
+                tracing::warn!("Failed to create database directory: {}", e);
+                None
+            }
+        };
+
+        // Create web engine manager (wry via WebEngine trait; Servo planned per ADR-001)
+        let mut engines = PaneStateManager::new();
+        let root_pane_id = wm.active_pane_id();
+        engines.create_pane(root_pane_id, initial_url, None);
+
+        // Load quickmarks from database; seed defaults if none exist
+        let mut quickmarks = if let Some(ref conn) = db {
+            crate::db::quickmarks::load_quickmarks(conn).unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+        if quickmarks.is_empty() {
+            let defaults: &[(&str, &str)] = &[
+                ("gh", "https://github.com"),
+                ("gl", "https://gitlab.com"),
+                ("rd", "https://reddit.com"),
+            ];
+            if let Some(ref conn) = db {
+                for &(key, url) in defaults {
+                    if let Err(e) = crate::db::quickmarks::set_quickmark(conn, key, url) {
+                        tracing::warn!(%e, "Failed to set default quickmark");
+                    }
+                    quickmarks.insert(key.to_string(), url.to_string());
+                }
+            } else {
+                for &(key, url) in defaults {
+                    quickmarks.insert(key.to_string(), url.to_string());
+                }
+            }
+        }
+
+        let extension_manager = Arc::new(parking_lot::RwLock::new(
+            crate::extensions::ExtensionManager::new(core_extensions_dir()),
+        ));
+
+        Ok(Self {
+            wm,
+            db,
+            session_registry: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
+            audit_log: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            engines,
+            config,
+            pending_mcp_pane_creations: std::collections::VecDeque::new(),
+            mcp_nav_epoch: HashMap::new(),
+            mcp_settled_epoch: HashMap::new(),
+            pending_workspace_restore: None,
+            current_workspace_name: "default".into(),
+            extension_manager,
+            download_manager: crate::downloads::DownloadManager::new(
+                directories::UserDirs::new()
+                    .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
+                    .unwrap_or_else(|| std::path::PathBuf::from("./Downloads")),
+            ),
+            update_checker: crate::update_check::UpdateChecker::new(),
+            pending_wry_actions: std::collections::VecDeque::new(),
+            pending_tab_close: None,
+            pending_reader_save_path: None,
+            first_frame: true,
+            resize_pending: false,
+            frame_count: 0,
+            session: SessionState {
+                quickmarks,
+                ..Default::default()
+            },
+            cache: CacheState::default(),
+        })
+    }
+}
+
+/// Actions to be executed on wry panes by main.rs.
+/// Used as a bridge since AppState doesn't own WryPaneManager.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WryAction {
+    /// Navigate the active pane to a URL.
+    Navigate(url::Url),
+    /// Go back in the active pane's history.
+    Back,
+    /// Go forward in the active pane's history.
+    Forward,
+    /// Reload the current page.
+    Reload,
+    /// Toggle bookmark on the current URL (main.rs will read URL from wry).
+    ToggleBookmark,
+    /// Auto-fill credentials into the active pane via JavaScript.
+    Autofill { js: String },
+    /// Open WebKit devtools for the active pane.
+    ToggleDevTools,
+    /// Scroll the active pane by a pixel offset.
+    ScrollBy { x: f64, y: f64 },
+    /// Smooth scroll the webview (uses CSS smooth behavior).
+    SmoothScroll { x: f64, y: f64 },
+    /// Scroll the active pane to a position (fraction of page height from top).
+    ScrollTo { fraction: f64 },
+    /// Run arbitrary JavaScript in the active pane.
+    RunJs(String),
+    /// Save workspace with live URLs from wry panes.
+    /// main.rs collects URLs from WryPaneManager and sends them back.
+    SaveWorkspace {
+        name: String,
+        /// Maps pane_id -> live URL string, collected from WryPaneManager.
+        pane_urls: std::collections::HashMap<uuid::Uuid, String>,
+    },
+    /// Enter reader mode: strip CSS, extract article content, display clean text.
+    EnterReaderMode,
+    /// Exit reader mode: reload the original URL.
+    ExitReaderMode,
+    /// Enter minimal mode: reload with JS disabled and images blocked.
+    EnterMinimalMode,
+    /// Exit minimal mode: reload with normal settings.
+    ExitMinimalMode,
+    /// Show an error page in the active pane (graceful pane error handling).
+    ShowPaneError { message: String },
+    /// List loaded content scripts (handled by main.rs).
+    ListContentScripts,
+    /// Get network log from active pane.
+    GetNetworkLog,
+    /// Clear network log from active pane.
+    ClearNetworkLog,
+    /// Get JS console log from active pane.
+    GetConsoleLog,
+    /// Clear JS console log from active pane.
+    ClearConsoleLog,
+    /// Save current config to disk.
+    SaveConfig,
+    /// Print the current page.
+    Print,
+    /// Toggle mute on the active pane (pause/mute media elements).
+    ToggleMute,
+    /// Capture the current scroll fraction via JS and send it back via IPC.
+    /// Used by the mark-set feature to record the actual scroll position.
+    CaptureScrollFraction,
+    /// Set the system clipboard contents.
+    SetClipboard(String),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

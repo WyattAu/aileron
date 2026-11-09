@@ -9,6 +9,7 @@ pub mod color;
 pub mod config;
 pub mod db;
 pub mod debug_capturer;
+pub mod downloads;
 pub mod extensions;
 pub mod git;
 pub mod i18n;

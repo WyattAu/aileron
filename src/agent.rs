@@ -56,7 +56,7 @@ pub fn run() -> anyhow::Result<()> {
     let mut app_state = AppState::new(Rect::new(0.0, 0.0, VIEWPORT_W, VIEWPORT_H), config.clone())
         .map_err(|e| anyhow::anyhow!("agent: AppState init failed: {e}"))?;
     {
-        let mut ext = app_state.extension_manager.write();
+        let mut ext = app_state.core.extension_manager.write();
         let loaded = ext.load_all().len();
         ext.register_builtin_adblock();
         if loaded > 0 {
@@ -76,12 +76,12 @@ pub fn run() -> anyhow::Result<()> {
     // in-process stdio transport, identical tools on both.
     frame_tasks::spawn_mcp_server(
         &mcp_bridge,
-        app_state.session_registry.clone(),
+        app_state.core.session_registry.clone(),
         &config.mcp_policy,
     );
 
     // Initial pane: the BSP root AppState::new created from the homepage.
-    let root_pane = app_state.wm.active_pane_id();
+    let root_pane = app_state.core.wm.active_pane_id();
     create_agent_pane(
         &mut app_state,
         &mut offscreen_panes,
@@ -131,6 +131,7 @@ impl AgentTick {
         // title/url sync, downloads, extensions, IPC shims.
         let registry = self
             .app_state
+            .core
             .extension_manager
             .read()
             .interceptor_registry
@@ -146,7 +147,7 @@ impl AgentTick {
 
         // MCP-requested panes: build the offscreen webview with full wiring.
         let mut creations = Vec::new();
-        while let Some(c) = self.app_state.pending_mcp_pane_creations.pop_front() {
+        while let Some(c) = self.app_state.core.pending_mcp_pane_creations.pop_front() {
             creations.push(c);
         }
         for (pane_id, url) in creations {
@@ -161,8 +162,8 @@ impl AgentTick {
         }
 
         // Workspace restore deferral (YP-WORKSPACE-002 parity with headed mode).
-        if self.app_state.pending_workspace_restore.is_none() {
-            let active_id = self.app_state.wm.active_pane_id();
+        if self.app_state.core.pending_workspace_restore.is_none() {
+            let active_id = self.app_state.core.wm.active_pane_id();
             frame_tasks::process_mcp_commands(
                 &self.bridge,
                 &mut self.wry_panes,
@@ -195,6 +196,7 @@ fn create_agent_pane_at(
     target: Option<&url::Url>,
 ) {
     let rect = app_state
+        .core
         .wm
         .panes_ref()
         .iter()
@@ -203,16 +205,17 @@ fn create_agent_pane_at(
         .unwrap_or_else(|| Rect::new(0.0, 0.0, VIEWPORT_W, VIEWPORT_H));
     let (width, height) = (rect.w.round() as i32, rect.h.round() as i32);
     let url = target.cloned().unwrap_or_else(|| {
-        let homepage = app_state.config.homepage.clone();
+        let homepage = app_state.core.config.homepage.clone();
         url::Url::parse(&homepage).unwrap_or_else(|_| url::Url::parse("aileron://welcome").unwrap())
     });
     let blocked_domains: Vec<String> = adblocker.blocked_domains_iter();
-    let https_safe_list = if app_state.config.https_upgrade_enabled {
+    let https_safe_list = if app_state.core.config.https_upgrade_enabled {
         app_state.get_cached_https_safe_list()
     } else {
         std::sync::Arc::new(std::collections::HashSet::new())
     };
     let registry = app_state
+        .core
         .extension_manager
         .read()
         .interceptor_registry
@@ -224,10 +227,10 @@ fn create_agent_pane_at(
         height,
         blocked_domains,
         https_safe_list,
-        app_state.config.https_upgrade_enabled,
-        app_state.config.tracking_protection_enabled,
+        app_state.core.config.https_upgrade_enabled,
+        app_state.core.config.tracking_protection_enabled,
         false, // devtools
-        app_state.config.popup_blocker_enabled,
+        app_state.core.config.popup_blocker_enabled,
         Some(registry),
     ) {
         tracing::error!(
