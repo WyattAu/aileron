@@ -105,6 +105,7 @@ version = "1.0.0"
 dependencies = [
  "age",
  "aho-corasick",
+ "aileron-core",
  "aileron-shared",
  "alacritty_terminal",
  "anyhow",
@@ -169,6 +170,34 @@ dependencies = [
  "serde_json",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "aileron-core"
+version = "1.0.0"
+dependencies = [
+ "aho-corasick",
+ "anyhow",
+ "attohttpc",
+ "chrono",
+ "directories",
+ "open",
+ "parking_lot",
+ "regex",
+ "reqwest",
+ "rquickjs",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "smol_str",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml 0.8.23",
+ "tracing",
+ "url",
+ "urlencoding",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -387,6 +416,8 @@ dependencies = [
  "http",
  "log",
  "native-tls",
+ "serde",
+ "serde_json",
  "url",
 ]
 
