@@ -74,6 +74,37 @@ Corrected split for Phase B:
   sub-states ui/panels/tabs/crash/autofill. All access via
   `headed()` accessor (panic in agent mode = contract, not bug).
 
+## Stage 1b Phase B executed (2026-11-09): the split landed
+
+`AppState` = `{ core: CoreState, headed: Option<HeadedState> }` plus the
+cfg-gated capability fields (lua_engine, terminal_pane_ids, bitwarden,
+pending_terminal_command, sync_watcher, arp_server, arp_cmd_receiver).
+Agent mode constructs `headed: None`; `headed()`/`headed_mut()` panic in
+agent mode by contract.
+
+Late discovery folded into the split: **`pending_wry_actions` is
+agent-written** (the MCP create-tab arm queues `WryAction::Navigate` in
+`process_mcp_commands`, frame_tasks/mod.rs:821) — so `pending_wry_actions`
+and the `WryAction` enum both moved to core. `WryAction` is a plain data
+enum (url/String/HashMap) — clean move; `app::WryAction` re-exports.
+
+Also moved to core this stage: the `downloads` module (with tokio +
+futures-util deps added to aileron-core). `check_offscreen_crashes` has
+no callers — crash state stays headed. `handle_pending_import` is
+headed-only (event_handler/app_handler callers) — import pend stay
+headed.
+
+Call-site migration was compiler-driven (the field tally drove it):
+agent profile 991 E0609 → headed profile 283 → bins (agent.rs,
+main.rs, app_handler.rs) 175 → test targets 278. Guard-lifetime
+restructures: guard temporaries bound in inner scopes
+(extensions_cmd, palette), pane-borrow conflicts resolved by computing
+pane-derived values inside the tree borrow and mutating headed state
+after (events.rs RequestNewTab/Next/Prev, app_handler.rs new-tab).
+
+Gates at `1c69bc0`: both profiles 0 errors 0 warnings, aileron 648 +
+core 551 lib tests, clippy -D warnings, fmt, chrome WASM — all green.
+
 ## Stage 1b — CoreState/HeadedState split: field-by-field boundary
 
 The AppState struct (43 fields, app/mod.rs:283) splits into CoreState
