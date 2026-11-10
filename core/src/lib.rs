@@ -14,6 +14,7 @@ pub mod downloads;
 pub mod extensions;
 pub mod git;
 pub mod i18n;
+pub mod llm;
 pub mod mcp;
 pub mod net;
 pub mod platform;

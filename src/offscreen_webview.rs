@@ -66,10 +66,9 @@ pub struct FrameData {
 /// Traces the navigation-settle path (flush/start/commit decisions) to
 /// stderr; the supported way to watch the read-your-writes gate live
 /// (systemd swallows service stderr - run the browser in the foreground).
-#[must_use]
-pub fn mcp_trace_enabled() -> bool {
-    std::env::var("AILERON_MCP_TRACE").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-}
+/// S4 stage 2c: moved to aileron-core `agent` (used by the MCP dispatch
+/// settle logic, which now lives there).
+pub use aileron_core::agent::mcp_trace_enabled;
 
 /// A single webview pane rendered offscreen.
 ///

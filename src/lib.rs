@@ -19,7 +19,8 @@ pub mod frame_tasks;
 pub mod gfx;
 pub mod input;
 #[cfg(feature = "llm")]
-pub mod llm;
+/// S4 stage 2c: moved to aileron-core (self-contained, serde+tracing only).
+pub use aileron_core::llm;
 #[cfg(feature = "lua")]
 pub mod lua;
 /// S4 stage 2: the MCP stack (bridge, TCP server, tools, transport, ACI)
