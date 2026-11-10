@@ -5,6 +5,7 @@
 //! sites in `aileron` are unchanged — the aileron lib re-exports these
 //! modules one-for-one.
 
+pub mod agent;
 pub mod color;
 pub mod config;
 pub mod db;
