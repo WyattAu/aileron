@@ -58,13 +58,13 @@ fn test_tab_close_cleans_up_terminal_pane_ids() {
         .split(root_id, SplitDirection::Horizontal, 0.5)
         .unwrap();
 
-    state.terminal_pane_ids.insert(term_id);
-    assert!(state.terminal_pane_ids.contains(&term_id));
+    state.core.terminal_pane_ids.insert(term_id);
+    assert!(state.core.terminal_pane_ids.contains(&term_id));
 
     frame_tasks::handle_pending_tab_close(&mut state, term_id);
 
     assert!(
-        !state.terminal_pane_ids.contains(&term_id),
+        !state.core.terminal_pane_ids.contains(&term_id),
         "terminal_pane_ids should be cleaned up after close"
     );
 }
@@ -169,19 +169,19 @@ fn test_tab_close_with_multiple_splits() {
     assert_eq!(state.core.wm.leaf_count(), 4);
 
     // Add some as terminal panes
-    state.terminal_pane_ids.insert(b);
-    state.terminal_pane_ids.insert(c);
+    state.core.terminal_pane_ids.insert(b);
+    state.core.terminal_pane_ids.insert(c);
 
     // Close one terminal pane
     frame_tasks::handle_pending_tab_close(&mut state, b);
     assert_eq!(state.core.wm.leaf_count(), 3);
-    assert!(!state.terminal_pane_ids.contains(&b));
-    assert!(state.terminal_pane_ids.contains(&c));
+    assert!(!state.core.terminal_pane_ids.contains(&b));
+    assert!(state.core.terminal_pane_ids.contains(&c));
 
     // Close another
     frame_tasks::handle_pending_tab_close(&mut state, c);
     assert_eq!(state.core.wm.leaf_count(), 2);
-    assert!(state.terminal_pane_ids.is_empty());
+    assert!(state.core.terminal_pane_ids.is_empty());
 }
 
 // ─── 2. process_pending_wry_actions: drain verification ────────────
