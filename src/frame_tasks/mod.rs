@@ -1237,23 +1237,6 @@ pub fn process_mcp_commands(
                 // pending_mcp_pane_creations drain performs creation.
                 let viewport = Rect::new(0.0, 0.0, 1280.0, 800.0);
                 *offscreen_panes = OffscreenWebViewManager::new();
-                // Agent mode has no terminal manager: a fresh, empty one
-                // satisfies the signature (no terminal panes exist to remove).
-                #[cfg(feature = "terminal")]
-                let outcome = {
-                    let mut restore_terminal_manager =
-                        crate::terminal::NativeTerminalManager::new();
-                    crate::workspace_restore::restore_workspace(
-                        &name,
-                        viewport,
-                        app_state.core.db.as_ref(),
-                        &mut app_state.terminal_pane_ids,
-                        &mut app_state.core.engines,
-                        &mut app_state.core.wm,
-                        &mut restore_terminal_manager,
-                    )
-                };
-                #[cfg(not(feature = "terminal"))]
                 let outcome = crate::workspace_restore::restore_workspace(
                     &name,
                     viewport,
@@ -1263,6 +1246,17 @@ pub fn process_mcp_commands(
                 );
                 let msg = match outcome {
                     crate::workspace_restore::RestoreOutcome::Restored(result) => {
+                        // Terminal mirror is a caller concern since stage 2c.
+                        #[cfg(feature = "terminal")]
+                        for pid in &result.removed_pane_ids {
+                            app_state.terminal_pane_ids.remove(pid);
+                        }
+                        #[cfg(feature = "terminal")]
+                        for (pid, url) in &result.panes_to_create {
+                            if url.as_str() == "aileron://terminal" {
+                                app_state.terminal_pane_ids.insert(*pid);
+                            }
+                        }
                         for (pid, url) in &result.panes_to_create {
                             app_state
                                 .core

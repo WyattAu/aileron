@@ -41,5 +41,6 @@ pub mod terminal;
 #[cfg(feature = "headed")]
 pub mod test_harness;
 pub mod ui;
-pub mod workspace_restore;
+/// S4 stage 2c: moved to aileron-core (terminal hooks inverted to callers).
+pub use aileron_core::workspace_restore;
 pub mod wry_actions;

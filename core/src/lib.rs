@@ -21,3 +21,4 @@ pub mod profiling;
 pub mod state;
 pub mod update_check;
 pub mod wm;
+pub mod workspace_restore;

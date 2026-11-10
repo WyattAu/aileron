@@ -117,6 +117,39 @@ feature keeps its image/base64 deps (consumed by frame_tasks +
 test_harness, the actual users). Gates: core 589 (+38 mcp tests) +
 aileron 610 (−38) — exactly consistent; both profiles 0 err/0 warn.
 
+## Stage 2c design (2026-11-10): PaneOps split — execute mechanically
+
+**Measurement correction (gate table):** agent profile (`--no-default-features
+--features mcp`) has **zero** dep-tree edges for wgpu/leptos/alacritty_terminal/
+portable-pty/winit — the compile-out target holds. **webkit2gtk + wry remain by
+design**: `offscreen_webview.rs` (agent's renderer) imports `wry::` directly,
+so webkit is not gateable behind headed. The physical win is crate separation
+(parallel compilation, one-way deps), not webkit exclusion.
+
+**Key discovery:** `workspace_restore`'s deps are now all core types
+(PaneStateManager, BspTree, db — core since 1b-A) → moves to core cleanly,
+and it is called from a `process_mcp_commands` arm.
+
+**Trait sketch** (`core/src/agent/pane_ops.rs`): derive the exact method set
+by grepping every engine-param call site inside process_mcp_commands first.
+Expected shape: pane_ids, pane_url, pane_title, pane_exists, navigate,
+back/forward, reload, execute_js(oneshot result), click, get_text, screenshot,
+is_busy, reset_all. Engine side implements `CombinedPaneOps<'a>(&mut
+WryPaneManager, &mut OffscreenWebViewManager)` in the main crate.
+
+**Execution order:**
+1. `workspace_restore` → core (verify imports first; servo re-export covers)
+2. Grep the fn's engine call sites → finalize PaneOps method set → trait in core
+3. `process_mcp_commands` signature becomes
+   `(&McpBridge, Uuid, &mut CoreState, &mut dyn PaneOps)` — **&mut AppState
+   drops to &mut CoreState** (body already touches zero headed fields)
+4. Move fn to `core/src/agent::process_mcp_commands`; main keeps a shim
+5. Callers (agent.rs, headed frame loop) build CombinedPaneOps and pass
+   `&mut app_state.core`
+6. Stage 2d (deferred): agent event loop → `core::agent::run()` once the
+   offscreen-event path also crosses (OffscreenWebViewManager is engine —
+   needs its own trait or stays as the engine handle the agent holds)
+
 ## Stage 2b scope (next): agent runtime + event-routing split
 
 Signature audit of frame_tasks (all `pub fn`):

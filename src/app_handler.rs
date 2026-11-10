@@ -1101,20 +1101,32 @@ impl ApplicationHandler for AileronApp {
                 None => return,
             };
 
+            // Clear old terminal panes (core restore only clears engine panes).
+            #[cfg(feature = "terminal")]
+            for tid in self.terminal_manager.pane_ids() {
+                self.terminal_manager.remove(&tid);
+            }
+
             let outcome = aileron::workspace_restore::restore_workspace(
                 &ws_name,
                 viewport,
                 app_state.core.db.as_ref(),
-                #[cfg(feature = "terminal")]
-                &mut app_state.terminal_pane_ids,
                 &mut app_state.core.engines,
                 &mut app_state.core.wm,
-                #[cfg(feature = "terminal")]
-                &mut self.terminal_manager,
             );
 
             match outcome {
                 aileron::workspace_restore::RestoreOutcome::Restored(result) => {
+                    #[cfg(feature = "terminal")]
+                    for pid in &result.removed_pane_ids {
+                        app_state.terminal_pane_ids.remove(pid);
+                    }
+                    #[cfg(feature = "terminal")]
+                    for (pid, url) in &result.panes_to_create {
+                        if url.as_str() == "aileron://terminal" {
+                            app_state.terminal_pane_ids.insert(*pid);
+                        }
+                    }
                     for (pid, url) in result.panes_to_create {
                         self.create_wry_pane_for(pid, &url);
                     }

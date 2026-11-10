@@ -1,21 +1,24 @@
 //! Workspace restore logic — rebuild panes from saved workspace data.
-
-#[cfg(feature = "terminal")]
-use std::collections::HashSet;
+//!
+//! S4 stage 2c: lives in aileron-core; the terminal-feature hooks
+//! (NativeTerminalManager, terminal_pane_ids mirror) are inverted to the
+//! callers via `RestoreResult::removed_pane_ids` and the returned
+//! panes_to_create URLs.
 
 use tracing::{info, warn};
 use url::Url;
 
 use crate::db::workspaces;
-use crate::servo::PaneStateManager;
-#[cfg(feature = "terminal")]
-#[cfg(feature = "terminal")]
-use crate::terminal::NativeTerminalManager;
+use crate::state::PaneStateManager;
 use crate::wm::{BspTree, Rect};
 
 pub struct RestoreResult {
     pub pane_count: usize,
     pub panes_to_create: Vec<(uuid::Uuid, Url)>,
+    /// Pane ids that were cleared from the engine registry before the
+    /// rebuild. Callers mirror this into feature-specific side tables
+    /// (e.g. the headed terminal pane-id set).
+    pub removed_pane_ids: Vec<uuid::Uuid>,
 }
 
 impl RestoreResult {
@@ -23,6 +26,7 @@ impl RestoreResult {
         Self {
             pane_count: 0,
             panes_to_create: Vec::new(),
+            removed_pane_ids: Vec::new(),
         }
     }
 }
@@ -39,11 +43,13 @@ pub fn restore_workspace(
     workspace_name: &str,
     viewport: Rect,
     db: Option<&rusqlite::Connection>,
-    #[cfg(feature = "terminal")] terminal_pane_ids: &mut HashSet<uuid::Uuid>,
     engines: &mut PaneStateManager,
     wm: &mut BspTree,
-    #[cfg(feature = "terminal")] terminal_manager: &mut NativeTerminalManager,
 ) -> RestoreOutcome {
+    let removed_pane_ids = engines.pane_ids();
+    for pid in &removed_pane_ids {
+        engines.remove_pane(pid);
+    }
     let load_result = db.and_then(|conn| workspaces::load_workspace(conn, workspace_name).ok());
 
     let data = match load_result {
@@ -52,15 +58,8 @@ pub fn restore_workspace(
         None => return RestoreOutcome::NoDatabase,
     };
 
-    #[cfg(feature = "terminal")]
-    for tid in terminal_manager.pane_ids() {
-        terminal_manager.remove(&tid);
-    }
-
     for pid in engines.pane_ids() {
         engines.remove_pane(&pid);
-        #[cfg(feature = "terminal")]
-        terminal_pane_ids.remove(&pid);
     }
 
     let new_tree = match BspTree::from_workspace_data(&data, viewport) {
@@ -90,11 +89,6 @@ pub fn restore_workspace(
         });
         engines.create_pane(*pid, url.clone(), None);
 
-        if url_str == "aileron://terminal" {
-            #[cfg(feature = "terminal")]
-            terminal_pane_ids.insert(*pid);
-        }
-
         panes_to_create.push((*pid, url));
     }
 
@@ -103,6 +97,7 @@ pub fn restore_workspace(
     RestoreOutcome::Restored(RestoreResult {
         pane_count: count,
         panes_to_create,
+        removed_pane_ids,
     })
 }
 
@@ -124,6 +119,7 @@ mod tests {
         let result = RestoreResult {
             pane_count: 1,
             panes_to_create: vec![(id, url)],
+            removed_pane_ids: Vec::new(),
         };
         assert_eq!(result.pane_count, 1);
         assert_eq!(result.panes_to_create.len(), 1);
@@ -167,6 +163,7 @@ mod tests {
         let result = RestoreResult {
             pane_count: 2,
             panes_to_create: vec![(id1, url1), (id2, url2)],
+            removed_pane_ids: Vec::new(),
         };
         assert_eq!(result.panes_to_create[0].1.scheme(), "https");
         assert_eq!(result.panes_to_create[1].1.scheme(), "aileron");

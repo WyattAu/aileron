@@ -147,24 +147,13 @@ fn test_git_status_parsing() {
 #[test]
 fn test_workspace_restore_module() {
     use aileron::workspace_restore;
-    use std::collections::HashSet;
-
     let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
-    let mut terminal_pane_ids = HashSet::new();
     let mut pane_mgr = PaneStateManager::new();
     let initial_url = url::Url::parse("https://example.com").unwrap();
     let mut wm = BspTree::new(viewport, initial_url);
-    let mut terminal_mgr = NativeTerminalManager::new();
 
-    let result = workspace_restore::restore_workspace(
-        "nonexistent",
-        viewport,
-        None,
-        &mut terminal_pane_ids,
-        &mut pane_mgr,
-        &mut wm,
-        &mut terminal_mgr,
-    );
+    let result =
+        workspace_restore::restore_workspace("nonexistent", viewport, None, &mut pane_mgr, &mut wm);
     assert!(matches!(
         result,
         workspace_restore::RestoreOutcome::NoDatabase | workspace_restore::RestoreOutcome::NotFound
