@@ -721,12 +721,16 @@ impl ApplicationHandler for AileronApp {
                 .map(|s| s.core.wm.active_pane_id())
                 .unwrap_or_default();
             if let Some(app_state) = self.app_state.as_mut() {
+                let mut fresh_offscreen = crate::offscreen_webview::OffscreenWebViewManager::new();
+                let mut panes = crate::pane_ops::CombinedPaneOps {
+                    wry: &mut self.wry_panes,
+                    off: &mut fresh_offscreen,
+                };
                 frame_tasks::process_mcp_commands(
                     &self.mcp_bridge,
-                    &mut self.wry_panes,
                     active_id,
-                    app_state,
-                    &mut crate::offscreen_webview::OffscreenWebViewManager::new(),
+                    &mut app_state.core,
+                    &mut panes,
                 );
             }
         }

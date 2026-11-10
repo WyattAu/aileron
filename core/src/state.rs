@@ -302,6 +302,10 @@ pub struct CoreState {
     pub session: SessionState,
     /// Derived-value cache (pane count, config JSON, https safe-list).
     pub cache: CacheState,
+    /// Pane ids that should be terminal panes (S4 2c: moved here — the
+    /// MCP dispatch mirrors terminal URLs during workspace restore).
+    #[cfg(feature = "terminal")]
+    pub terminal_pane_ids: std::collections::HashSet<Uuid>,
 }
 
 fn core_db_path() -> anyhow::Result<std::path::PathBuf> {
@@ -408,6 +412,8 @@ impl CoreState {
                 ..Default::default()
             },
             cache: CacheState::default(),
+            #[cfg(feature = "terminal")]
+            terminal_pane_ids: std::collections::HashSet::new(),
         })
     }
 }

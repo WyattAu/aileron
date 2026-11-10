@@ -8,6 +8,56 @@
 use crate::mcp::bridge::McpBridge;
 use tracing::{info, warn};
 
+/// Pane operations the MCP dispatch layer needs, abstracted so
+/// `process_mcp_commands` can live in core while the pane mechanics
+/// (GTK pumping, settle waits, frame capture) stay in the engine side.
+///
+/// Semantics are behavior-locked by the GATE-3 soak — implementations
+/// must preserve the settle budgets (wry URL-property pump 15s,
+/// offscreen is_loading settle 60s) and the two-path screenshot
+/// capture exactly.
+pub trait PaneOps {
+    /// First non-nil content pane id (offscreen iteration order) — the
+    /// fallback when the wm reports the chrome pane as active.
+    fn first_content_pane(&self) -> Option<uuid::Uuid>;
+    /// True when either manager owns a pane with this id.
+    fn pane_exists(&self, id: &uuid::Uuid) -> bool;
+    /// (url, title) for whichever manager owns the pane.
+    fn pane_url_title(&self, id: &uuid::Uuid) -> Option<(String, String)>;
+    /// url for whichever manager owns the pane.
+    fn pane_url(&self, id: &uuid::Uuid) -> Option<String>;
+    /// (id, url, title) for every offscreen pane.
+    fn all_panes(&self) -> Vec<(uuid::Uuid, String, String)>;
+    /// Navigate the pane owned by either manager, with that engine's
+    /// deterministic settle semantics. Returns Some(is_offscreen) when
+    /// handled, None when no manager owns the pane (phantom).
+    fn navigate_settled(&mut self, id: &uuid::Uuid, url: &url::Url) -> Option<bool>;
+    /// Set the user agent (offscreen panes only). Returns handled.
+    fn set_user_agent(&mut self, id: &uuid::Uuid, ua: &str) -> bool;
+    /// Set the viewport size (offscreen panes only). Returns handled.
+    fn set_viewport(&mut self, id: &uuid::Uuid, w: i32, h: i32) -> bool;
+    /// Capture the pane as a PNG data-URI. Offscreen: synchronous frame
+    /// grab + encode. Wry: Canvas capture with the GTK pump, 10s budget.
+    /// Error strings follow the established MCP response phrasing.
+    fn screenshot_data_uri(&mut self, id: &uuid::Uuid) -> String;
+    /// Dispatch JS against the active pane; the callback receives the
+    /// decoded result (wry's JSON-encoded wrapper stripped). Returns
+    /// dispatched (false = no pane owned).
+    fn execute_js(
+        &mut self,
+        id: &uuid::Uuid,
+        js: &str,
+        on_result: Box<dyn Fn(String) + Send>,
+    ) -> bool;
+    /// Reset the offscreen manager (the workspace-restore arm's
+    /// fresh-managers pattern).
+    fn reset_offscreen(&mut self);
+    /// Live WebKitGTK load state for the pane (the settle poll).
+    fn webview_is_loading(&self, id: &uuid::Uuid) -> bool;
+    /// Pump the event loop so pending load/frame events land.
+    fn pump(&mut self);
+}
+
 /// Bootstrap both MCP transports (stdio + TCP). All-core types: the
 /// headed/agent caller provides the shared bridge and session registry.
 pub fn spawn_mcp_server(

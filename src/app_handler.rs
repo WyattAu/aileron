@@ -1164,12 +1164,15 @@ impl ApplicationHandler for AileronApp {
                 .map(|s| s.core.wm.active_pane_id())
                 .unwrap_or_default();
             if let Some(app_state) = self.app_state.as_mut() {
+                let mut panes = aileron::pane_ops::CombinedPaneOps {
+                    wry: &mut self.wry_panes,
+                    off: &mut self.offscreen_panes,
+                };
                 frame_tasks::process_mcp_commands(
                     &self.mcp_bridge,
-                    &mut self.wry_panes,
                     active_id,
-                    app_state,
-                    &mut self.offscreen_panes,
+                    &mut app_state.core,
+                    &mut panes,
                 );
             }
             // MCP-requested panes: create the real offscreen webview with the

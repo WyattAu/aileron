@@ -78,8 +78,6 @@ fn llm_analyze(_text: &str) -> String {
 use uuid::Uuid;
 
 #[cfg(feature = "mcp")]
-use image::ImageEncoder;
-
 use crate::app::{AppState, WryAction};
 #[cfg(feature = "arp")]
 use crate::arp::ArpCommand;
@@ -578,7 +576,7 @@ fn wait_for_js_result(
 /// Before 2026-10-25 the MCP browsing tools only consulted `wry_panes`,
 /// which left every read/interaction tool dead on Wayland ("no active
 /// pane") — the default Linux session type.
-fn dispatch_active_js_with_callback(
+pub(crate) fn dispatch_active_js_with_callback(
     wry_panes: &WryPaneManager,
     offscreen_panes: &mut OffscreenWebViewManager,
     pane_id: &uuid::Uuid,
@@ -630,23 +628,14 @@ fn dispatch_active_js_with_callback(
 }
 
 /// Fire-and-forget variant of [`dispatch_active_js_with_callback`].
-fn dispatch_active_js(
-    wry_panes: &WryPaneManager,
-    offscreen_panes: &mut OffscreenWebViewManager,
-    pane_id: &uuid::Uuid,
-    js: &str,
-) -> bool {
-    dispatch_active_js_with_callback(wry_panes, offscreen_panes, pane_id, js, |_| {})
-}
-
 /// YP-MCP-NAV-EPOCH-001 §5: hold pump-waiting commands until every
 /// navigation issued for the pane has finished loading (read-your-writes).
 /// The settled epoch promotes when the pane stops reporting loading - the
 /// same signal the frame loop uses to clear the loading flag. Bounded wait;
 /// on timeout the command runs anyway (best effort, never a wedge).
 fn wait_mcp_nav_settled(
-    app_state: &mut AppState,
-    offscreen_panes: &mut OffscreenWebViewManager,
+    core: &mut aileron_core::state::CoreState,
+    panes: &mut dyn aileron_core::agent::PaneOps,
     pane: &uuid::Uuid,
     budget: std::time::Duration,
 ) {
@@ -656,18 +645,13 @@ fn wait_mcp_nav_settled(
     if trace {
         eprintln!(
             "[mcp-trace] wait enter nav={} settled={}",
-            app_state.core.mcp_nav_epoch.get(pane).copied().unwrap_or(0),
-            app_state
-                .core
-                .mcp_settled_epoch
-                .get(pane)
-                .copied()
-                .unwrap_or(0)
+            core.mcp_nav_epoch.get(pane).copied().unwrap_or(0),
+            core.mcp_settled_epoch.get(pane).copied().unwrap_or(0)
         );
     }
     loop {
-        let nav = *app_state.core.mcp_nav_epoch.get(pane).unwrap_or(&0);
-        let settled = *app_state.core.mcp_settled_epoch.get(pane).unwrap_or(&0);
+        let nav = *core.mcp_nav_epoch.get(pane).unwrap_or(&0);
+        let settled = *core.mcp_settled_epoch.get(pane).unwrap_or(&0);
         if nav <= settled {
             if trace {
                 eprintln!("[mcp-trace] wait exit: settled (load committed)");
@@ -678,17 +662,14 @@ fn wait_mcp_nav_settled(
         // the `loading` flag which lags until the frame loop drains events.
         #[cfg(target_os = "linux")]
         {
-            let loading = offscreen_panes
-                .get(pane)
-                .map(|p| p.webview_is_loading())
-                .unwrap_or(false);
+            let loading = panes.webview_is_loading(pane);
             if loading {
                 saw_loading = true;
             } else if saw_loading {
                 if trace {
                     eprintln!("[mcp-trace] wait exit: observed commit -> promote");
                 }
-                app_state.core.mcp_settled_epoch.insert(*pane, nav);
+                core.mcp_settled_epoch.insert(*pane, nav);
                 return;
             }
             // !loading && !saw: the navigation has not started yet (or the
@@ -697,17 +678,16 @@ fn wait_mcp_nav_settled(
         }
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = offscreen_panes;
-            let nav = *app_state.mcp_nav_epoch.get(pane).unwrap_or(&0);
-            app_state.mcp_settled_epoch.insert(*pane, nav);
+            let nav = *core.mcp_nav_epoch.get(pane).unwrap_or(&0);
+            core.mcp_settled_epoch.insert(*pane, nav);
             return;
         }
         if std::time::Instant::now() >= deadline {
-            let nav = *app_state.core.mcp_nav_epoch.get(pane).unwrap_or(&0);
-            app_state.core.mcp_settled_epoch.insert(*pane, nav);
+            let nav = *core.mcp_nav_epoch.get(pane).unwrap_or(&0);
+            core.mcp_settled_epoch.insert(*pane, nav);
             return;
         }
-        pump_gtk_loop();
+        panes.pump();
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
 }
@@ -716,18 +696,13 @@ fn wait_mcp_nav_settled(
 /// dispatched or denied command. Cap 1000, oldest dropped.
 #[cfg(feature = "mcp")]
 fn audit_record(
-    app_state: &mut AppState,
+    core: &mut aileron_core::state::CoreState,
     session: Option<Uuid>,
     command: &McpCommand,
     pane: Uuid,
     denied: bool,
 ) {
-    let epoch = app_state
-        .core
-        .mcp_settled_epoch
-        .get(&pane)
-        .copied()
-        .unwrap_or(0);
+    let epoch = core.mcp_settled_epoch.get(&pane).copied().unwrap_or(0);
     let entry = format!(
         "{} session={} tool={} class={} pane={} epoch={} outcome={}",
         chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
@@ -740,7 +715,7 @@ fn audit_record(
         epoch,
         if denied { "DENIED" } else { "ok" }
     );
-    let mut log = app_state.core.audit_log.borrow_mut();
+    let mut log = core.audit_log.borrow_mut();
     if log.len() >= 1000 {
         log.pop_front();
     }
@@ -750,10 +725,9 @@ fn audit_record(
 #[cfg(feature = "mcp")]
 pub fn process_mcp_commands(
     mcp_bridge: &McpBridge,
-    wry_panes: &mut WryPaneManager,
     active_id: Uuid,
-    app_state: &mut AppState,
-    offscreen_panes: &mut OffscreenWebViewManager,
+    core: &mut aileron_core::state::CoreState,
+    panes: &mut dyn aileron_core::agent::PaneOps,
 ) {
     // MCP tools target web content, not the browser chrome overlay. When the
     // wm reports the chrome pane (nil UUID) as active - which happens on
@@ -761,11 +735,7 @@ pub fn process_mcp_commands(
     // otherwise read/click tools silently operate on the chrome UI.
     let original_id = active_id;
     let active_id = if active_id == uuid::Uuid::nil() {
-        offscreen_panes
-            .iter()
-            .map(|(id, _)| *id)
-            .find(|id| *id != uuid::Uuid::nil())
-            .unwrap_or(active_id)
+        panes.first_content_pane().unwrap_or(active_id)
     } else {
         active_id
     };
@@ -776,7 +746,7 @@ pub fn process_mcp_commands(
     // polling: commands stay queued in the bridge channel and process once
     // the restore completes (the flag is consumed within a frame or two,
     // so this deferral is bounded).
-    if app_state.core.pending_workspace_restore.is_some() {
+    if core.pending_workspace_restore.is_some() {
         return;
     }
     let mcp_commands: Vec<(Option<Uuid>, McpCommand)> = mcp_bridge.poll_commands().collect();
@@ -790,8 +760,7 @@ pub fn process_mcp_commands(
         // closed - ExecuteJs gets an explicit FORBIDDEN response, others are
         // dropped with a warn. Unscoped (default) sessions are unrestricted.
         if let Some(sid) = session {
-            let caps = app_state
-                .core
+            let caps = core
                 .session_registry
                 .lock()
                 .ok()
@@ -805,7 +774,7 @@ pub fn process_mcp_commands(
                     &sid.to_string()[..8],
                     &active_id.to_string()[..8]
                 );
-                audit_record(app_state, session, &command, active_id, true);
+                audit_record(core, session, &command, active_id, true);
                 if let McpCommand::ExecuteJs { response_tx, .. } = command {
                     let _ = response_tx.send(format!(
                         "FORBIDDEN: pane {} is outside this session's scope (session_scope to adjust)",
@@ -819,19 +788,14 @@ pub fn process_mcp_commands(
         // the pane's outstanding navigation before executing. Navigations
         // pass through instantly (nav <= settled when nothing is outstanding
         // from before) and advance the epoch themselves.
-        audit_record(app_state, session, &command, active_id, false);
-        wait_mcp_nav_settled(
-            app_state,
-            offscreen_panes,
-            &active_id,
-            std::time::Duration::from_secs(90),
-        );
+        audit_record(core, session, &command, active_id, false);
+        wait_mcp_nav_settled(core, panes, &active_id, std::time::Duration::from_secs(90));
         match command {
             McpCommand::Navigate { url, new_tab } => {
                 if let Ok(parsed) = url::Url::parse(&url) {
                     if new_tab {
-                        let current_active = app_state.core.wm.active_pane_id();
-                        match app_state.core.wm.split(
+                        let current_active = core.wm.active_pane_id();
+                        match core.wm.split(
                             current_active,
                             crate::wm::SplitDirection::Vertical,
                             0.5,
@@ -841,26 +805,20 @@ pub fn process_mcp_commands(
                                 // Queue real webview creation: engines.create_pane
                                 // builds a wry-engine pane which never renders on
                                 // Wayland (phantom pane, all tools dead on it).
-                                app_state
-                                    .core
-                                    .pending_mcp_pane_creations
+                                core.pending_mcp_pane_creations
                                     .push_back((new_id, parsed.clone()));
-                                app_state
-                                    .core
-                                    .pending_wry_actions
+                                core.pending_wry_actions
                                     .push_back(WryAction::Navigate(parsed));
-                                app_state.core.wm.set_active_pane(new_id);
+                                core.wm.set_active_pane(new_id);
                                 // YP-MCP-NAV-EPOCH-001: advance the pane epoch.
-                                *app_state.core.mcp_nav_epoch.entry(new_id).or_insert(0) += 1;
-                                app_state.core.session.session_dirty = true;
+                                *core.mcp_nav_epoch.entry(new_id).or_insert(0) += 1;
+                                core.session.session_dirty = true;
                             }
                             Err(e) => {
                                 warn!("MCP: failed to create new tab: {}", e);
                             }
                         }
-                    } else if wry_panes.get(&active_id).is_none()
-                        && offscreen_panes.get(&active_id).is_none()
-                    {
+                    } else if !panes.pane_exists(&active_id) {
                         // Phantom pane (wm entry without a webview - e.g. an
                         // MCP-created tab from a previous session or a crashed
                         // webview): a navigate cannot reach it. Attach a real
@@ -869,73 +827,33 @@ pub fn process_mcp_commands(
                             "MCP: navigating phantom pane {} - creating webview",
                             &active_id.to_string()[..8]
                         );
-                        app_state
-                            .core
-                            .pending_mcp_pane_creations
+                        core.pending_mcp_pane_creations
                             .push_back((active_id, parsed));
-                        app_state.core.session.session_dirty = true;
-                    } else if let Some(wry_pane) = wry_panes.get_mut(&active_id) {
-                        // X11 / GTK-window-embedded native pane.
-                        info!("MCP: navigating to {}", url);
-                        wry_pane.navigate(&parsed);
-                        // Settle: pump until the webview's URL property
-                        // reflects the target (navigation committed), so
-                        // same-batch reads do not evaluate the outgoing
-                        // document. Bounded at 15s.
-                        let nav_deadline =
-                            std::time::Instant::now() + std::time::Duration::from_secs(15);
-                        while std::time::Instant::now() < nav_deadline {
-                            crate::frame_tasks::pump_gtk_loop();
-                            if wry_pane.url().as_str() == parsed.as_str() {
-                                break;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(2));
-                        }
-                        // YP-MCP-NAV-EPOCH-001: advance the pane epoch.
-                        *app_state.core.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
-                        app_state.core.session.session_dirty = true;
-                    } else if let Some(pane) = offscreen_panes.get_mut(&active_id) {
-                        // Wayland: navigate the offscreen webview directly.
-                        // Queueing a WryAction would execute it AFTER this
-                        // batch, so reads issued in the same batch as the
-                        // navigate raced the navigation and returned the
-                        // outgoing document. Direct navigation + the
-                        // dispatch settle-wait (pane.is_loading()) keeps
-                        // same-batch reads correct.
-                        if crate::offscreen_webview::mcp_trace_enabled() {
-                            eprintln!(
-                                "[mcp-trace] nav arm: offscreen pane {} -> {}",
-                                &active_id.to_string()[..8],
-                                parsed.as_str()
-                            );
-                        }
-                        info!("MCP: navigating offscreen pane to {}", url);
-                        // YP-MCP-NAV-EPOCH-001: navigate + deterministic
-                        // settle (flush stale load events, then wait for
-                        // THIS load's Started->Complete pair while pumping
-                        // GTK). The flush is the same-batch staleness fix:
-                        // a buffered LoadComplete from an earlier load used
-                        // to satisfy the hold instantly, letting reads
-                        // evaluate on the outgoing document. Bounded at 60s;
-                        // slow pages fall through best-effort.
-                        pane.navigate_settled(&parsed, std::time::Duration::from_secs(60));
-                        // YP-MCP-NAV-EPOCH-001: advance the pane epoch and
-                        // promote settled (the load committed or the budget
-                        // expired - reads must never wedge on either path).
-                        *app_state.core.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
-                        let epoch_now = app_state
-                            .core
-                            .mcp_nav_epoch
-                            .get(&active_id)
-                            .copied()
-                            .unwrap_or(0);
-                        app_state
-                            .core
-                            .mcp_settled_epoch
-                            .insert(active_id, epoch_now);
-                        app_state.core.session.session_dirty = true;
+                        core.session.session_dirty = true;
                     } else {
-                        warn!("MCP: navigate target pane vanished");
+                        match panes.navigate_settled(&active_id, &parsed) {
+                            Some(false) => {
+                                // X11 / GTK-window-embedded native pane.
+                                info!("MCP: navigating to {}", url);
+                                // YP-MCP-NAV-EPOCH-001: advance the pane epoch.
+                                *core.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
+                                core.session.session_dirty = true;
+                            }
+                            Some(true) => {
+                                // Wayland: offscreen pane, deterministic settle.
+                                // YP-MCP-NAV-EPOCH-001: advance the epoch and
+                                // promote settled (the load committed or the
+                                // budget expired - reads must never wedge).
+                                *core.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
+                                let epoch_now =
+                                    core.mcp_nav_epoch.get(&active_id).copied().unwrap_or(0);
+                                core.mcp_settled_epoch.insert(active_id, epoch_now);
+                                core.session.session_dirty = true;
+                            }
+                            None => {
+                                warn!("MCP: navigate target pane vanished");
+                            }
+                        }
                     }
                 } else {
                     warn!("MCP: invalid navigate URL: {}", url);
@@ -945,12 +863,10 @@ pub fn process_mcp_commands(
                 info!("MCP: executing JS ({} chars)", code.len());
                 let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(response_tx)));
                 let tx_for_cb = std::sync::Arc::clone(&tx);
-                let dispatched = dispatch_active_js_with_callback(
-                    wry_panes,
-                    offscreen_panes,
+                let dispatched = panes.execute_js(
                     &active_id,
                     &code,
-                    move |result| {
+                    Box::new(move |result| {
                         // wry delivers evaluate_script results JSON-encoded
                         // (js_value().to_json()): a JS string arrives as
                         // "\"...\"". Decode that outer wrapper so consumers
@@ -964,7 +880,7 @@ pub fn process_mcp_commands(
                         {
                             let _ = sender.send(decoded);
                         }
-                    },
+                    }),
                 );
                 if !dispatched
                     && let Ok(mut guard) = tx.lock()
@@ -974,15 +890,7 @@ pub fn process_mcp_commands(
                 }
             }
             McpCommand::GetActivePane { response_tx } => {
-                let from_wry = wry_panes
-                    .get(&active_id)
-                    .map(|p| (p.url().as_str().to_string(), p.title().to_string()));
-                let (url, title) = from_wry.unwrap_or_else(|| {
-                    offscreen_panes
-                        .get(&active_id)
-                        .map(|p| (p.url().as_str().to_string(), p.title().to_string()))
-                        .unwrap_or_default()
-                });
+                let (url, title) = panes.pane_url_title(&active_id).unwrap_or_default();
                 let _ = response_tx.send((url, title));
             }
             McpCommand::SessionScope {
@@ -1001,8 +909,7 @@ pub fn process_mcp_commands(
                         panes: panes.map(|v| v.into_iter().collect()),
                         tool_classes: tool_classes.map(|v| v.into_iter().collect()),
                     };
-                    let result = app_state
-                        .core
+                    let result = core
                         .session_registry
                         .lock()
                         .map(|mut reg| {
@@ -1028,9 +935,7 @@ pub fn process_mcp_commands(
             McpCommand::SessionInfo { response_tx } => {
                 let caps = session
                     .and_then(|sid| {
-                        app_state
-                            .core
-                            .session_registry
+                        core.session_registry
                             .lock()
                             .ok()
                             .and_then(|r| r.get(&sid).cloned())
@@ -1050,21 +955,13 @@ pub fn process_mcp_commands(
                 // Era-2 S41 (AgentRewind environment-memory pattern): save the
                 // live pane tree as a named checkpoint over the existing
                 // workspace persistence.
-                let url_of = |id: Uuid| -> Option<String> {
-                    offscreen_panes
-                        .get(&id)
-                        .map(|p| p.url().to_string())
-                        .or_else(|| wry_panes.get(&id).map(|p| p.url().to_string()))
-                };
-                let result = app_state
-                    .core
+                let url_of = |id: Uuid| -> Option<String> { panes.pane_url(&id) };
+                let result = core
                     .wm
                     .to_workspace_data(url_of)
                     .map_err(|e| e.to_string())
                     .and_then(|data| {
-                        app_state
-                            .core
-                            .db
+                        core.db
                             .as_ref()
                             .ok_or_else(|| "no database".to_string())
                             .and_then(|db| {
@@ -1080,19 +977,14 @@ pub fn process_mcp_commands(
             }
             McpCommand::WorkspaceDiff { name, response_tx } => {
                 // Era-2 S43: saved checkpoint vs live tree, as flat URL sets.
-                let url_of = |id: Uuid| -> Option<String> {
-                    offscreen_panes
-                        .get(&id)
-                        .map(|p| p.url().to_string())
-                        .or_else(|| wry_panes.get(&id).map(|p| p.url().to_string()))
-                };
-                let result = app_state
-                    .core.wm
+                let url_of = |id: Uuid| -> Option<String> { panes.pane_url(&id) };
+                let result = core
+                    .wm
                     .to_workspace_data(url_of)
                     .map_err(|e| e.to_string())
                     .and_then(|live| {
-                        app_state
-                            .core.db
+                        core
+                            .db
                             .as_ref()
                             .ok_or_else(|| "no database".to_string())
                             .and_then(|db| {
@@ -1132,8 +1024,7 @@ pub fn process_mcp_commands(
                 });
             }
             McpCommand::WorkspaceList { response_tx } => {
-                let result = app_state
-                    .core
+                let result = core
                     .db
                     .as_ref()
                     .ok_or_else(|| "no database".to_string())
@@ -1161,30 +1052,25 @@ pub fn process_mcp_commands(
                 // Era-3 mobile lane: write the WebKit settings property, then
                 // re-load the current page through the settle hold so the
                 // epoch/read-your-writes discipline applies to the reload.
-                let reloaded = offscreen_panes
-                    .get_mut(&active_id)
-                    .map(|p| {
-                        let ok = p.set_user_agent(&ua);
-                        if ok {
-                            let current = p.url().clone();
-                            p.navigate_settled(&current, std::time::Duration::from_secs(60));
+                let reloaded = if panes.set_user_agent(&active_id, &ua) {
+                    let current = panes.pane_url(&active_id);
+                    if let Some(current) = current {
+                        if let Ok(current) = url::Url::parse(&current) {
+                            panes.navigate_settled(&active_id, &current).is_some()
+                        } else {
+                            true
                         }
-                        ok
-                    })
-                    .unwrap_or(false);
+                    } else {
+                        true
+                    }
+                } else {
+                    false
+                };
                 if reloaded {
-                    *app_state.core.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
-                    let epoch_now = app_state
-                        .core
-                        .mcp_nav_epoch
-                        .get(&active_id)
-                        .copied()
-                        .unwrap_or(0);
-                    app_state
-                        .core
-                        .mcp_settled_epoch
-                        .insert(active_id, epoch_now);
-                    app_state.core.session.session_dirty = true;
+                    *core.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
+                    let epoch_now = core.mcp_nav_epoch.get(&active_id).copied().unwrap_or(0);
+                    core.mcp_settled_epoch.insert(active_id, epoch_now);
+                    core.session.session_dirty = true;
                 }
                 let _ = response_tx.send(if reloaded {
                     format!("User agent set and page reloaded: {ua}")
@@ -1201,27 +1087,25 @@ pub fn process_mcp_commands(
                 // sites key on (media queries) - a mobile UA alone keeps a
                 // desktop layout. Resize, then re-load under the settle hold.
                 let (w, h) = (width.max(200), height.max(200));
-                let reloaded = offscreen_panes
-                    .get_mut(&active_id)
-                    .map(|p| {
-                        p.set_viewport(w, h);
-                        let current = p.url().clone();
-                        p.navigate_settled(&current, std::time::Duration::from_secs(60));
-                    })
-                    .is_some();
+                let reloaded = if panes.set_viewport(&active_id, w, h) {
+                    let current = panes.pane_url(&active_id);
+                    if let Some(current) = current {
+                        if let Ok(current) = url::Url::parse(&current) {
+                            panes.navigate_settled(&active_id, &current).is_some()
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    }
+                } else {
+                    false
+                };
                 if reloaded {
-                    *app_state.core.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
-                    let epoch_now = app_state
-                        .core
-                        .mcp_nav_epoch
-                        .get(&active_id)
-                        .copied()
-                        .unwrap_or(0);
-                    app_state
-                        .core
-                        .mcp_settled_epoch
-                        .insert(active_id, epoch_now);
-                    app_state.core.session.session_dirty = true;
+                    *core.mcp_nav_epoch.entry(active_id).or_insert(0) += 1;
+                    let epoch_now = core.mcp_nav_epoch.get(&active_id).copied().unwrap_or(0);
+                    core.mcp_settled_epoch.insert(active_id, epoch_now);
+                    core.session.session_dirty = true;
                 }
                 let _ = response_tx.send(if reloaded {
                     format!("Viewport set to {w}x{h} and page reloaded")
@@ -1236,31 +1120,29 @@ pub fn process_mcp_commands(
                 // queue (pid, url) creations; in agent mode the tick's
                 // pending_mcp_pane_creations drain performs creation.
                 let viewport = Rect::new(0.0, 0.0, 1280.0, 800.0);
-                *offscreen_panes = OffscreenWebViewManager::new();
+                panes.reset_offscreen();
                 let outcome = crate::workspace_restore::restore_workspace(
                     &name,
                     viewport,
-                    app_state.core.db.as_ref(),
-                    &mut app_state.core.engines,
-                    &mut app_state.core.wm,
+                    core.db.as_ref(),
+                    &mut core.engines,
+                    &mut core.wm,
                 );
                 let msg = match outcome {
                     crate::workspace_restore::RestoreOutcome::Restored(result) => {
                         // Terminal mirror is a caller concern since stage 2c.
                         #[cfg(feature = "terminal")]
                         for pid in &result.removed_pane_ids {
-                            app_state.terminal_pane_ids.remove(pid);
+                            core.terminal_pane_ids.remove(pid);
                         }
                         #[cfg(feature = "terminal")]
                         for (pid, url) in &result.panes_to_create {
                             if url.as_str() == "aileron://terminal" {
-                                app_state.terminal_pane_ids.insert(*pid);
+                                core.terminal_pane_ids.insert(*pid);
                             }
                         }
                         for (pid, url) in &result.panes_to_create {
-                            app_state
-                                .core
-                                .pending_mcp_pane_creations
+                            core.pending_mcp_pane_creations
                                 .push_back((*pid, url.clone()));
                         }
                         format!("restored '{}' ({} panes queued)", name, result.pane_count)
@@ -1285,9 +1167,7 @@ pub fn process_mcp_commands(
                 // query the live pane set instead of dumping context.
                 let needle = contains.to_lowercase();
                 let mut hits: Vec<String> = Vec::new();
-                for (id, p) in offscreen_panes.iter() {
-                    let url = p.url().to_string();
-                    let title = p.title().to_string();
+                for (id, url, title) in panes.all_panes() {
                     if url.to_lowercase().contains(&needle)
                         || title.to_lowercase().contains(&needle)
                     {
@@ -1304,7 +1184,7 @@ pub fn process_mcp_commands(
                 });
             }
             McpCommand::ReadAudit { limit, response_tx } => {
-                let log = app_state.core.audit_log.borrow();
+                let log = core.audit_log.borrow();
                 let skip = log.len().saturating_sub(limit);
                 let lines: Vec<String> = log.iter().skip(skip).cloned().collect();
                 let _ = response_tx.send(if lines.is_empty() {
@@ -1314,8 +1194,7 @@ pub fn process_mcp_commands(
                 });
             }
             McpCommand::ListDownloads { response_tx } => {
-                let rows: Vec<String> = app_state
-                    .core
+                let rows: Vec<String> = core
                     .download_manager
                     .progress_all()
                     .iter()
@@ -1339,7 +1218,7 @@ pub fn process_mcp_commands(
                 });
             }
             McpCommand::ListBookmarks { response_tx } => {
-                let result = if let Some(db) = app_state.core.db.as_ref() {
+                let result = if let Some(db) = core.db.as_ref() {
                     match crate::db::bookmarks::all_bookmarks(db) {
                         Ok(bms) => {
                             let lines: Vec<String> = bms
@@ -1368,7 +1247,7 @@ pub fn process_mcp_commands(
                 folder,
                 response_tx,
             } => {
-                let result = if let Some(db) = app_state.core.db.as_ref() {
+                let result = if let Some(db) = core.db.as_ref() {
                     match crate::db::bookmarks::add_bookmark_with_folder(db, &url, &title, &folder)
                     {
                         Ok(id) => format!("Bookmarked (id={id}) {url}"),
@@ -1380,7 +1259,7 @@ pub fn process_mcp_commands(
                 let _ = response_tx.send(result);
             }
             McpCommand::RemoveBookmark { url, response_tx } => {
-                let result = if let Some(db) = app_state.core.db.as_ref() {
+                let result = if let Some(db) = core.db.as_ref() {
                     match crate::db::bookmarks::remove_bookmark(db, &url) {
                         Ok(true) => format!("Removed bookmark: {url}"),
                         Ok(false) => format!("Not bookmarked: {url}"),
@@ -1396,7 +1275,7 @@ pub fn process_mcp_commands(
                 limit,
                 response_tx,
             } => {
-                let result = if let Some(db) = app_state.core.db.as_ref() {
+                let result = if let Some(db) = core.db.as_ref() {
                     match crate::db::history::search(db, &query, limit) {
                         Ok(entries) => {
                             let lines: Vec<String> = entries
@@ -1415,14 +1294,8 @@ pub fn process_mcp_commands(
                 let _ = response_tx.send(result);
             }
             McpCommand::ListTabs { response_tx } => {
-                let active = app_state.core.wm.active_pane_id();
-                let pane_ids: Vec<Uuid> = app_state
-                    .core
-                    .wm
-                    .panes_ref()
-                    .iter()
-                    .map(|(id, _)| *id)
-                    .collect();
+                let active = core.wm.active_pane_id();
+                let pane_ids: Vec<Uuid> = core.wm.panes_ref().iter().map(|(id, _)| *id).collect();
                 let lines: Vec<String> = pane_ids
                     .iter()
                     .enumerate()
@@ -1431,14 +1304,8 @@ pub fn process_mcp_commands(
                         // wry pane (X11) first, offscreen pane (Wayland)
                         // fallback — offscreen panes report real state instead
                         // of a permanent "about:blank /(untitled)".
-                        let (url, title) = wry_panes
-                            .get(id)
-                            .map(|p| (p.url().to_string(), p.title().to_string()))
-                            .or_else(|| {
-                                offscreen_panes
-                                    .get(id)
-                                    .map(|p| (p.url().as_str().to_string(), p.title().to_string()))
-                            })
+                        let (url, title) = panes
+                            .pane_url_title(id)
                             .unwrap_or_else(|| ("about:blank".into(), "(untitled)".into()));
                         format!("{}. {} - {}{}", i + 1, title, url, marker)
                     })
@@ -1451,88 +1318,26 @@ pub fn process_mcp_commands(
                 let _ = response_tx.send(result);
             }
             McpCommand::Screenshot { response_tx } => {
-                let result = if let Some(pane) = offscreen_panes.get_mut(&active_id) {
-                    let dims = pane.frame().map(|f| (f.width, f.height));
-                    if pane.capture_frame().is_none() {
-                        warn!("Screenshot frame capture returned no data");
-                    }
-                    let rgba = pane.frame_rgba().map(|r| r.to_vec());
-                    let dims = dims.or_else(|| pane.frame().map(|f| (f.width, f.height)));
-                    match (dims, rgba) {
-                        (Some((w, h)), Some(rgba)) => {
-                            match image::RgbaImage::from_raw(w, h, rgba) {
-                                Some(img) => {
-                                    let mut png_bytes = Vec::new();
-                                    let encoder =
-                                        image::codecs::png::PngEncoder::new(&mut png_bytes);
-                                    if encoder
-                                        .write_image(
-                                            img.as_raw(),
-                                            w,
-                                            h,
-                                            image::ExtendedColorType::Rgba8,
-                                        )
-                                        .is_ok()
-                                    {
-                                        use base64::Engine;
-                                        let b64 = base64::engine::general_purpose::STANDARD
-                                            .encode(&png_bytes);
-                                        format!("data:image/png;base64,{b64}")
-                                    } else {
-                                        "Error: failed to encode PNG".into()
-                                    }
-                                }
-                                None => "Error: invalid frame dimensions".into(),
-                            }
-                        }
-                        _ => "Error: no frame available".into(),
-                    }
-                } else if wry_panes.get(&active_id).is_some() {
-                    // Native wry pane (X11 / non-composited Wayland): Canvas
-                    // API capture. The result arrives via the GTK main loop,
-                    // so wait with the same pump used for JS results.
-                    let buffer = std::sync::Arc::new(std::sync::Mutex::new(None));
-                    if let Some(pane) = wry_panes.get(&active_id) {
-                        pane.start_capture_screenshot(std::sync::Arc::clone(&buffer));
-                    }
-                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-                    let mut out = "Error: screenshot capture timed out".into();
-                    while std::time::Instant::now() < deadline {
-                        if let Some(data) =
-                            crate::servo::wry_engine::WryPane::pending_screenshot_result(&buffer)
-                        {
-                            out = data;
-                            break;
-                        }
-                        pump_gtk_loop();
-                        std::thread::sleep(std::time::Duration::from_millis(2));
-                    }
-                    if out.starts_with("ERROR:") {
-                        warn!("Screenshot canvas capture failed: {out}");
-                    }
-                    out
-                } else {
-                    "Error: no active pane".into()
-                };
+                let result = panes.screenshot_data_uri(&active_id);
                 let _ = response_tx.send(result);
             }
             McpCommand::CloseTab { index, response_tx } => {
-                let pane_ids: Vec<Uuid> = app_state.core.wm.pane_ids().into_iter().collect();
+                let pane_ids: Vec<Uuid> = core.wm.pane_ids().into_iter().collect();
                 let result = if let Some(&close_id) = pane_ids.get(index) {
-                    let active_before = app_state.core.wm.active_pane_id();
-                    app_state.core.wm.set_active_pane(close_id);
-                    if let Err(e) = app_state.core.wm.close(close_id) {
+                    let active_before = core.wm.active_pane_id();
+                    core.wm.set_active_pane(close_id);
+                    if let Err(e) = core.wm.close(close_id) {
                         warn!(%e, "Failed to close tab via MCP");
                     }
-                    app_state.core.engines.remove_pane(&close_id);
+                    core.engines.remove_pane(&close_id);
                     #[cfg(feature = "terminal")]
-                    app_state.terminal_pane_ids.remove(&close_id);
+                    core.terminal_pane_ids.remove(&close_id);
                     if active_before == close_id
                         && let Some(&next) = pane_ids.iter().find(|&&id| id != close_id)
                     {
-                        app_state.core.wm.set_active_pane(next);
+                        core.wm.set_active_pane(next);
                     }
-                    app_state.core.session.session_dirty = true;
+                    core.session.session_dirty = true;
                     format!("Closed tab at index {index}.")
                 } else {
                     format!(
@@ -1552,7 +1357,7 @@ pub fn process_mcp_commands(
                     "window.scrollBy({{top: {}, left: {}, behavior: 'instant'}})",
                     delta_y, delta_x
                 );
-                let result = if dispatch_active_js(wry_panes, offscreen_panes, &active_id, &js) {
+                let result = if panes.execute_js(&active_id, &js, Box::new(|_| {})) {
                     format!("Scrolled by ({delta_x}, {delta_y}) pixels")
                 } else {
                     "Error: no active pane".into()
@@ -1560,29 +1365,21 @@ pub fn process_mcp_commands(
                 let _ = response_tx.send(result);
             }
             McpCommand::NavigateBack { response_tx } => {
-                let result = if dispatch_active_js(
-                    wry_panes,
-                    offscreen_panes,
-                    &active_id,
-                    "window.history.back()",
-                ) {
-                    "Navigated back".into()
-                } else {
-                    "Error: no active pane".into()
-                };
+                let result =
+                    if panes.execute_js(&active_id, "window.history.back()", Box::new(|_| {})) {
+                        "Navigated back".into()
+                    } else {
+                        "Error: no active pane".into()
+                    };
                 let _ = response_tx.send(result);
             }
             McpCommand::NavigateForward { response_tx } => {
-                let result = if dispatch_active_js(
-                    wry_panes,
-                    offscreen_panes,
-                    &active_id,
-                    "window.history.forward()",
-                ) {
-                    "Navigated forward".into()
-                } else {
-                    "Error: no active pane".into()
-                };
+                let result =
+                    if panes.execute_js(&active_id, "window.history.forward()", Box::new(|_| {})) {
+                        "Navigated forward".into()
+                    } else {
+                        "Error: no active pane".into()
+                    };
                 let _ = response_tx.send(result);
             }
             McpCommand::SelectOption {
@@ -1604,18 +1401,16 @@ pub fn process_mcp_commands(
                 );
                 let (response_tx_inner, response_rx) = tokio::sync::oneshot::channel();
                 let tx = std::sync::Mutex::new(Some(response_tx_inner));
-                let dispatched = dispatch_active_js_with_callback(
-                    wry_panes,
-                    offscreen_panes,
+                let dispatched = panes.execute_js(
                     &active_id,
                     &js,
-                    move |result| {
+                    Box::new(move |result| {
                         if let Ok(mut guard) = tx.lock()
                             && let Some(sender) = guard.take()
                         {
                             let _ = sender.send(result);
                         }
-                    },
+                    }),
                 );
                 let result = if dispatched {
                     match wait_for_js_result(response_rx, std::time::Duration::from_secs(10)) {
@@ -1655,18 +1450,16 @@ pub fn process_mcp_commands(
                     })()"#;
                 let (response_tx_inner, response_rx) = tokio::sync::oneshot::channel();
                 let tx = std::sync::Mutex::new(Some(response_tx_inner));
-                let dispatched = dispatch_active_js_with_callback(
-                    wry_panes,
-                    offscreen_panes,
+                let dispatched = panes.execute_js(
                     &active_id,
                     js,
-                    move |result| {
+                    Box::new(move |result| {
                         if let Ok(mut guard) = tx.lock()
                             && let Some(sender) = guard.take()
                         {
                             let _ = sender.send(result);
                         }
-                    },
+                    }),
                 );
                 let result = if dispatched {
                     match wait_for_js_result(response_rx, std::time::Duration::from_secs(10)) {
@@ -1704,18 +1497,16 @@ pub fn process_mcp_commands(
                     })()"#;
                 let (response_tx_inner, response_rx) = tokio::sync::oneshot::channel();
                 let tx = std::sync::Mutex::new(Some(response_tx_inner));
-                let dispatched = dispatch_active_js_with_callback(
-                    wry_panes,
-                    offscreen_panes,
+                let dispatched = panes.execute_js(
                     &active_id,
                     js,
-                    move |result| {
+                    Box::new(move |result| {
                         if let Ok(mut guard) = tx.lock()
                             && let Some(sender) = guard.take()
                         {
                             let _ = sender.send(result);
                         }
-                    },
+                    }),
                 );
                 let result = if dispatched {
                     match wait_for_js_result(response_rx, std::time::Duration::from_secs(10)) {
@@ -1731,18 +1522,16 @@ pub fn process_mcp_commands(
                 let result = {
                     let (text_tx, text_rx) = tokio::sync::oneshot::channel();
                     let text_tx_mutex = std::sync::Mutex::new(Some(text_tx));
-                    let dispatched = dispatch_active_js_with_callback(
-                        wry_panes,
-                        offscreen_panes,
+                    let dispatched = panes.execute_js(
                         &active_id,
                         "document.body.innerText",
-                        move |result| {
+                        Box::new(move |result| {
                             if let Ok(mut guard) = text_tx_mutex.lock()
                                 && let Some(sender) = guard.take()
                             {
                                 let _ = sender.send(result);
                             }
-                        },
+                        }),
                     );
 
                     if dispatched {
@@ -1765,18 +1554,16 @@ pub fn process_mcp_commands(
                 let result = {
                     let (text_tx, text_rx) = tokio::sync::oneshot::channel();
                     let text_tx_mutex = std::sync::Mutex::new(Some(text_tx));
-                    let dispatched = dispatch_active_js_with_callback(
-                        wry_panes,
-                        offscreen_panes,
+                    let dispatched = panes.execute_js(
                         &active_id,
                         "document.body.innerText",
-                        move |result| {
+                        Box::new(move |result| {
                             if let Ok(mut guard) = text_tx_mutex.lock()
                                 && let Some(sender) = guard.take()
                             {
                                 let _ = sender.send(result);
                             }
-                        },
+                        }),
                     );
 
                     if dispatched {
@@ -1796,18 +1583,16 @@ pub fn process_mcp_commands(
                 let result = {
                     let (text_tx, text_rx) = tokio::sync::oneshot::channel();
                     let text_tx_mutex = std::sync::Mutex::new(Some(text_tx));
-                    let dispatched = dispatch_active_js_with_callback(
-                        wry_panes,
-                        offscreen_panes,
+                    let dispatched = panes.execute_js(
                         &active_id,
                         "document.body.innerText",
-                        move |result| {
+                        Box::new(move |result| {
                             if let Ok(mut guard) = text_tx_mutex.lock()
                                 && let Some(sender) = guard.take()
                             {
                                 let _ = sender.send(result);
                             }
-                        },
+                        }),
                     );
 
                     if dispatched {
@@ -1832,7 +1617,7 @@ pub fn handle_pending_tab_close(app_state: &mut AppState, close_id: Uuid) {
     }
     app_state.core.engines.remove_pane(&close_id);
     #[cfg(feature = "terminal")]
-    app_state.terminal_pane_ids.remove(&close_id);
+    app_state.core.terminal_pane_ids.remove(&close_id);
     app_state.update_a11y("Pane closed");
 }
 

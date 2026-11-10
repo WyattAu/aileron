@@ -164,12 +164,15 @@ impl AgentTick {
         // Workspace restore deferral (YP-WORKSPACE-002 parity with headed mode).
         if self.app_state.core.pending_workspace_restore.is_none() {
             let active_id = self.app_state.core.wm.active_pane_id();
+            let mut panes = aileron::pane_ops::CombinedPaneOps {
+                wry: &mut self.wry_panes,
+                off: &mut self.offscreen_panes,
+            };
             frame_tasks::process_mcp_commands(
                 &self.bridge,
-                &mut self.wry_panes,
                 active_id,
-                &mut self.app_state,
-                &mut self.offscreen_panes,
+                &mut self.app_state.core,
+                &mut panes,
             );
         }
     }
