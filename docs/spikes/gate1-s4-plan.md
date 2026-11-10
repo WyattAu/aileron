@@ -105,6 +105,42 @@ after (events.rs RequestNewTab/Next/Prev, app_handler.rs new-tab).
 Gates at `1c69bc0`: both profiles 0 errors 0 warnings, aileron 648 +
 core 551 lib tests, clippy -D warnings, fmt, chrome WASM — all green.
 
+## Stage 2a executed (2026-11-10): MCP stack into aileron-core
+
+`src/mcp` (bridge, tcp_bridge, server, tools, transport, aci) moved to
+`core/src/mcp`. The module was fully self-contained: zero crate::
+references outside the mcp tree, external deps (tracing, tokio,
+attohttpc, urlencoding) already core deps — zero new dependencies.
+bridge.rs re-export switched to `crate::state` (types moved in 1b-A).
+Main crate re-exports `aileron_core::mcp` unconditionally; main's mcp
+feature keeps its image/base64 deps (consumed by frame_tasks +
+test_harness, the actual users). Gates: core 589 (+38 mcp tests) +
+aileron 610 (−38) — exactly consistent; both profiles 0 err/0 warn.
+
+## Stage 2b scope (next): agent runtime + event-routing split
+
+Signature audit of frame_tasks (all `pub fn`):
+
+| fn | params | verdict |
+|---|---|---|
+| `spawn_mcp_server(&McpBridge, SessionRegistry, &str)` | all core | → core, trivial |
+| `poll_git_status(&mut GitStatus, &Option<GitPoller>)` | core git | → core, trivial |
+| `process_mcp_commands(&McpBridge, &mut WryPaneManager, Uuid, &mut AppState, &mut OffscreenWebViewManager, …)` | body is core-clean; signature drags engine types | → core via `PaneOps` callback trait |
+| `process_offscreen_events(AppState, OffscreenWebViewManager, …)` | engine bridge | stays with engine (main crate → aileron-engine later) |
+| `process_pending_wry_actions(Option<&mut AppState>, …)` | headed consumer | stays |
+| `process_arp_commands(&mut AppState)` | cfg arp wrapper fields | stays |
+| `auto_save_workspace` / `push_tabs_to_arp` | `&WryPaneManager` | stays |
+
+Key fact: `process_mcp_commands`' body touches NO headed state anymore
+(stage 1b moved everything it needs into CoreState) — only its
+signature drags engine types. Stage 2b = define `trait PaneOps` in
+core (create/navigate/query offscreen pane), have the headed/engine
+side provide `&mut dyn PaneOps`; then process_mcp_commands +
+spawn_mcp_server + the audit helper move to core, and `agent.rs`
+follows (it holds an engine handle — the target table's "core
+(+engine for webviews)"). Terminal MCP arms: verify their state access
+before the move (terminal_pane_ids is a wrapper-cfg field).
+
 ## Stage 1b — CoreState/HeadedState split: field-by-field boundary
 
 The AppState struct (43 fields, app/mod.rs:283) splits into CoreState
