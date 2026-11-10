@@ -65,7 +65,7 @@ impl CommandTx {
 /// S4 stage 1b: `SessionRegistry` + `SessionCaps` moved to aileron-core
 /// (`core/src/state.rs`) so CoreState can hold the registry; re-exported
 /// here for API compatibility.
-pub use aileron_core::state::{SessionCaps, SessionRegistry};
+pub use crate::state::{SessionCaps, SessionRegistry};
 
 impl McpCommand {
     /// The tool name a command corresponds to (audit trail provenance).

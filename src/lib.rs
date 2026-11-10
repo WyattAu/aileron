@@ -22,8 +22,10 @@ pub mod input;
 pub mod llm;
 #[cfg(feature = "lua")]
 pub mod lua;
-#[cfg(feature = "mcp")]
-pub mod mcp;
+/// S4 stage 2: the MCP stack (bridge, TCP server, tools, transport, ACI)
+/// moved to aileron-core — it is fully self-contained and is the agent
+/// runtime's core dependency. Re-exported for API compatibility.
+pub use aileron_core::mcp;
 pub mod offscreen_webview;
 #[cfg(feature = "passwords")]
 pub mod passwords;
