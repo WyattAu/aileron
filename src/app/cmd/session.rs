@@ -11,7 +11,7 @@ pub fn handle_session_commands(state: &mut AppState, query: &str) -> Option<()> 
     if let Some(name) = query.strip_prefix("session-save ") {
         let name = name.trim();
         if name.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: :session-save <name>".into();
+            state.core.ui.status_message = "Usage: :session-save <name>".into();
             return Some(());
         }
         let session_name = format!("session:{name}");
@@ -22,26 +22,26 @@ pub fn handle_session_commands(state: &mut AppState, query: &str) -> Option<()> 
                 name: session_name,
                 pane_urls: std::collections::HashMap::new(),
             });
-        state.headed_mut().ui.status_message = format!("Saving session: {name}...");
+        state.core.ui.status_message = format!("Saving session: {name}...");
         return Some(());
     }
 
     if let Some(name) = query.strip_prefix("session-load ") {
         let name = name.trim();
         if name.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: :session-load <name>".into();
+            state.core.ui.status_message = "Usage: :session-load <name>".into();
             return Some(());
         }
         let session_name = format!("session:{name}");
         state.core.pending_workspace_restore = Some(session_name);
-        state.headed_mut().ui.status_message = format!("Loading session: {name}...");
+        state.core.ui.status_message = format!("Loading session: {name}...");
         return Some(());
     }
 
     if query == "session-list" {
         let workspaces = list_sessions(state);
         if workspaces.is_empty() {
-            state.headed_mut().ui.status_message = "No saved sessions.".into();
+            state.core.ui.status_message = "No saved sessions.".into();
         } else {
             let names: Vec<String> = workspaces
                 .iter()
@@ -50,7 +50,7 @@ pub fn handle_session_commands(state: &mut AppState, query: &str) -> Option<()> 
                     format!("{display_name} ({})", w.updated_at)
                 })
                 .collect();
-            state.headed_mut().ui.status_message = format!("Sessions: {}", names.join(", "));
+            state.core.ui.status_message = format!("Sessions: {}", names.join(", "));
         }
         return Some(());
     }
@@ -58,24 +58,24 @@ pub fn handle_session_commands(state: &mut AppState, query: &str) -> Option<()> 
     if let Some(name) = query.strip_prefix("session-delete ") {
         let name = name.trim();
         if name.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: :session-delete <name>".into();
+            state.core.ui.status_message = "Usage: :session-delete <name>".into();
             return Some(());
         }
         let session_name = format!("session:{name}");
         if let Some(db) = state.core.db.as_ref() {
             match crate::db::workspaces::delete_workspace(db, &session_name) {
                 Ok(true) => {
-                    state.headed_mut().ui.status_message = format!("Session deleted: {name}");
+                    state.core.ui.status_message = format!("Session deleted: {name}");
                 }
                 Ok(false) => {
-                    state.headed_mut().ui.status_message = format!("Session not found: {name}");
+                    state.core.ui.status_message = format!("Session not found: {name}");
                 }
                 Err(e) => {
-                    state.headed_mut().ui.status_message = format!("Delete failed: {e}");
+                    state.core.ui.status_message = format!("Delete failed: {e}");
                 }
             }
         } else {
-            state.headed_mut().ui.status_message = "No database connection".into();
+            state.core.ui.status_message = "No database connection".into();
         }
         return Some(());
     }
@@ -111,20 +111,14 @@ mod tests {
     fn test_session_save_empty_name() {
         let mut state = make_state();
         handle_session_commands(&mut state, "session-save ");
-        assert_eq!(
-            state.headed().ui.status_message,
-            "Usage: :session-save <name>"
-        );
+        assert_eq!(state.core.ui.status_message, "Usage: :session-save <name>");
     }
 
     #[test]
     fn test_session_load_empty_name() {
         let mut state = make_state();
         handle_session_commands(&mut state, "session-load ");
-        assert_eq!(
-            state.headed().ui.status_message,
-            "Usage: :session-load <name>"
-        );
+        assert_eq!(state.core.ui.status_message, "Usage: :session-load <name>");
     }
 
     #[test]
@@ -132,7 +126,7 @@ mod tests {
         let mut state = make_state();
         handle_session_commands(&mut state, "session-delete ");
         assert_eq!(
-            state.headed().ui.status_message,
+            state.core.ui.status_message,
             "Usage: :session-delete <name>"
         );
     }
@@ -141,7 +135,7 @@ mod tests {
     fn test_session_list_empty() {
         let mut state = make_state();
         handle_session_commands(&mut state, "session-list");
-        assert_eq!(state.headed().ui.status_message, "No saved sessions.");
+        assert_eq!(state.core.ui.status_message, "No saved sessions.");
     }
 
     #[test]
@@ -171,7 +165,7 @@ mod tests {
         let mut state = make_state();
         state.core.db = None;
         handle_session_commands(&mut state, "session-delete my-session");
-        assert_eq!(state.headed().ui.status_message, "No database connection");
+        assert_eq!(state.core.ui.status_message, "No database connection");
     }
 
     #[test]

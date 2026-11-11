@@ -273,7 +273,7 @@ fn handle_pending_import_none_does_nothing() {
     let mut app_state = test_app_state();
     assert!(app_state.headed().pending_import.is_none());
     handle_pending_import(&mut app_state);
-    assert!(app_state.headed().ui.status_message.is_empty());
+    assert!(app_state.core.ui.status_message.is_empty());
 }
 
 #[test]
@@ -283,7 +283,7 @@ fn handle_pending_import_no_database_sets_message() {
     app_state.core.db = None;
     handle_pending_import(&mut app_state);
     assert!(app_state.headed().pending_import.is_none());
-    assert!(app_state.headed().ui.status_message.contains("No database"));
+    assert!(app_state.core.ui.status_message.contains("No database"));
 }
 
 #[test]
@@ -294,7 +294,7 @@ fn handle_pending_import_unknown_source_sets_message() {
     assert!(app_state.headed().pending_import.is_none());
     assert!(
         app_state
-            .headed()
+            .core
             .ui
             .status_message
             .contains("Unknown import source")

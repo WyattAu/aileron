@@ -16,7 +16,7 @@ pub fn cmd_bookmarks(state: &mut AppState, query: &str) -> Option<()> {
                         state.headed_mut().panels.bookmarks_panel_open = true;
                     }
                     Err(e) => {
-                        state.headed_mut().ui.status_message = format!("Bookmarks error: {e}");
+                        state.core.ui.status_message = format!("Bookmarks error: {e}");
                     }
                 }
             }
@@ -26,13 +26,12 @@ pub fn cmd_bookmarks(state: &mut AppState, query: &str) -> Option<()> {
             if let Some(db) = state.core.db.as_ref() {
                 match crate::db::bookmarks::clear_bookmarks(db) {
                     Ok(count) => {
-                        state.headed_mut().ui.status_message = format!("Cleared {count} bookmarks");
+                        state.core.ui.status_message = format!("Cleared {count} bookmarks");
                         state.headed_mut().panels.bookmarks_panel_open = false;
                         state.headed_mut().panels.bookmarks_entries.clear();
                     }
                     Err(e) => {
-                        state.headed_mut().ui.status_message =
-                            format!("Failed to clear bookmarks: {e}");
+                        state.core.ui.status_message = format!("Failed to clear bookmarks: {e}");
                     }
                 }
             }
@@ -42,7 +41,7 @@ pub fn cmd_bookmarks(state: &mut AppState, query: &str) -> Option<()> {
             if let Some(rest) = query.strip_prefix("bookmark ") {
                 let rest = rest.trim();
                 if rest.is_empty() {
-                    state.headed_mut().ui.status_message = "Usage: :bookmark <url> [folder]".into();
+                    state.core.ui.status_message = "Usage: :bookmark <url> [folder]".into();
                     return Some(());
                 }
                 let parts: Vec<&str> = rest.rsplitn(2, ' ').collect();
@@ -60,11 +59,11 @@ pub fn cmd_bookmarks(state: &mut AppState, query: &str) -> Option<()> {
                             } else {
                                 format!(" [{folder}]")
                             };
-                            state.headed_mut().ui.status_message =
+                            state.core.ui.status_message =
                                 format!("Bookmarked: {url}{folder_msg} (id={id})");
                         }
                         Err(e) => {
-                            state.headed_mut().ui.status_message = format!("Bookmark failed: {e}");
+                            state.core.ui.status_message = format!("Bookmark failed: {e}");
                         }
                     }
                 }
@@ -80,7 +79,7 @@ pub fn handle_quickmark_commands(state: &mut AppState, query: &str) -> Option<()
     if let Some(name) = query.strip_prefix("quickmark-add ") {
         let name = name.trim();
         if name.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: :quickmark-add <name>".into();
+            state.core.ui.status_message = "Usage: :quickmark-add <name>".into();
             return Some(());
         }
         let active_id = state.core.wm.active_pane_id();
@@ -91,7 +90,7 @@ pub fn handle_quickmark_commands(state: &mut AppState, query: &str) -> Option<()
             .and_then(|e| e.current_url().map(|u| u.to_string()))
             .unwrap_or_default();
         if url_str.is_empty() || url_str == "aileron://welcome" {
-            state.headed_mut().ui.status_message = "No URL to quickmark".into();
+            state.core.ui.status_message = "No URL to quickmark".into();
             return Some(());
         }
         state
@@ -104,14 +103,14 @@ pub fn handle_quickmark_commands(state: &mut AppState, query: &str) -> Option<()
         {
             tracing::warn!("Failed to persist quickmark {}: {}", name, e);
         }
-        state.headed_mut().ui.status_message = format!("Quickmark '{name}' → {url_str}");
+        state.core.ui.status_message = format!("Quickmark '{name}' → {url_str}");
         return Some(());
     }
 
     if let Some(name) = query.strip_prefix("quickmark-del ") {
         let name = name.trim();
         if name.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: :quickmark-del <name>".into();
+            state.core.ui.status_message = "Usage: :quickmark-del <name>".into();
             return Some(());
         }
         if state.core.session.quickmarks.remove(name).is_some() {
@@ -120,9 +119,9 @@ pub fn handle_quickmark_commands(state: &mut AppState, query: &str) -> Option<()
             {
                 warn!(%e, "Failed to remove quickmark");
             }
-            state.headed_mut().ui.status_message = format!("Quickmark '{name}' deleted");
+            state.core.ui.status_message = format!("Quickmark '{name}' deleted");
         } else {
-            state.headed_mut().ui.status_message = format!("Quickmark '{name}' not found");
+            state.core.ui.status_message = format!("Quickmark '{name}' not found");
         }
         return Some(());
     }
@@ -130,7 +129,7 @@ pub fn handle_quickmark_commands(state: &mut AppState, query: &str) -> Option<()
     if query == "quickmark-list" {
         let list = state.quickmarks_list();
         if list.is_empty() {
-            state.headed_mut().ui.status_message = "No quickmarks".into();
+            state.core.ui.status_message = "No quickmarks".into();
         } else {
             let items: Vec<String> = list.iter().map(|(k, v)| format!("{k}:{v}")).collect();
             let msg = items.join(" | ");
@@ -139,7 +138,7 @@ pub fn handle_quickmark_commands(state: &mut AppState, query: &str) -> Option<()
             } else {
                 msg
             };
-            state.headed_mut().ui.status_message = format!("Quickmarks: {display}");
+            state.core.ui.status_message = format!("Quickmarks: {display}");
         }
         return Some(());
     }

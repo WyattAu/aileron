@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 use uuid::Uuid;
 
-use super::{AutofillState, CrashRecoveryState, PanelState, TabState, UiState};
+use super::{AutofillState, CrashRecoveryState, PanelState, TabState};
 use crate::input::Mode;
 use crate::input::keybindings::KeybindingRegistry;
 use crate::input::macro_recorder::{MacroPlayer, MacroRecorder, RecordedEvent};
@@ -53,7 +53,6 @@ pub struct HeadedState {
     /// Frame timing profiler — collects per-phase duration samples.
     /// Exposed on HeadedState so `:stats` command can read stats.
     pub profiler: Profiler,
-    pub ui: UiState,
     pub panels: PanelState,
     pub tabs: TabState,
     pub crash: CrashRecoveryState,
@@ -132,7 +131,6 @@ impl HeadedState {
                 p.enable();
                 p
             },
-            ui: UiState::default(),
             panels: PanelState::default(),
             tabs: TabState {
                 tab_names,

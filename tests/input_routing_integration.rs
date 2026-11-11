@@ -443,10 +443,7 @@ fn test_router_returns_destination_for_all_mode_key_combinations() {
 fn test_slash_opens_find_bar() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('/'), Modifiers::none()));
-    assert!(
-        state.headed().ui.find_bar_open,
-        "'/' should open the find bar"
-    );
+    assert!(state.core.ui.find_bar_open, "'/' should open the find bar");
 }
 
 #[test]
@@ -454,7 +451,7 @@ fn test_ctrl_f_opens_find_bar() {
     let mut state = make_state();
     state.process_key_event(key_event(Key::Character('f'), Modifiers::ctrl()));
     assert!(
-        state.headed().ui.find_bar_open,
+        state.core.ui.find_bar_open,
         "Ctrl+F should open the find bar"
     );
 }

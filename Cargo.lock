@@ -178,11 +178,14 @@ name = "aileron-core"
 version = "1.0.0"
 dependencies = [
  "aho-corasick",
+ "aileron-shared",
  "anyhow",
  "attohttpc",
  "chrono",
  "directories",
  "futures-util",
+ "mlua",
+ "nucleo",
  "open",
  "parking_lot",
  "regex",

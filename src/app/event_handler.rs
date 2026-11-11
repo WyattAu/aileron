@@ -214,12 +214,12 @@ impl ApplicationHandler for AileronApp {
                 };
 
                 if let Some(app_state) = &mut self.app_state {
-                    if app_state.headed_mut().ui.hint_mode {
+                    if app_state.core.ui.hint_mode {
                         match &key {
                             crate::input::Key::Character(c) if c.is_ascii_lowercase() => {
-                                app_state.headed_mut().ui.hint_buffer.push(*c);
-                                let hint_buf = app_state.headed_mut().ui.hint_buffer.clone();
-                                let new_tab = app_state.headed_mut().ui.hint_new_tab;
+                                app_state.core.ui.hint_buffer.push(*c);
+                                let hint_buf = app_state.core.ui.hint_buffer.clone();
+                                let new_tab = app_state.core.ui.hint_new_tab;
                                 let js = if new_tab {
                                     format!(
                                         "(function() {{ \
@@ -257,10 +257,10 @@ impl ApplicationHandler for AileronApp {
                             }
                             _ => {
                                 let active_id = app_state.core.wm.active_pane_id();
-                                app_state.headed_mut().ui.hint_mode = false;
-                                app_state.headed_mut().ui.hint_new_tab = false;
-                                app_state.headed_mut().ui.hint_buffer.clear();
-                                app_state.headed_mut().ui.status_message.clear();
+                                app_state.core.ui.hint_mode = false;
+                                app_state.core.ui.hint_new_tab = false;
+                                app_state.core.ui.hint_buffer.clear();
+                                app_state.core.ui.status_message.clear();
                                 let clear_js = r#"
                                     (function() {
                                         var style = document.getElementById('__aileron_hints');
@@ -278,19 +278,18 @@ impl ApplicationHandler for AileronApp {
                         }
                     }
 
-                    if app_state.headed_mut().ui.find_bar_open && key == crate::input::Key::Escape {
-                        app_state.headed_mut().ui.find_bar_open = false;
-                        app_state.headed_mut().ui.find_query.clear();
+                    if app_state.core.ui.find_bar_open && key == crate::input::Key::Escape {
+                        app_state.core.ui.find_bar_open = false;
+                        app_state.core.ui.find_query.clear();
                         let active_id = app_state.core.wm.active_pane_id();
                         if let Some(wry_pane) = self.wry_panes.get(&active_id) {
                             wry_pane.execute_js("window.getSelection().removeAllRanges()");
                         }
                         return;
                     }
-                    if app_state.headed_mut().ui.url_bar_focused && key == crate::input::Key::Escape
-                    {
-                        app_state.headed_mut().ui.url_bar_focused = false;
-                        app_state.headed_mut().ui.url_bar_input.clear();
+                    if app_state.core.ui.url_bar_focused && key == crate::input::Key::Escape {
+                        app_state.core.ui.url_bar_focused = false;
+                        app_state.core.ui.url_bar_input.clear();
                         return;
                     }
                     if app_state.headed_mut().panels.history_panel_open
@@ -465,10 +464,10 @@ impl ApplicationHandler for AileronApp {
                                         app_state.headed_mut().palette.query.trim().to_string();
                                     app_state.execute_command_pub(&query);
                                     app_state.headed_mut().palette.close();
-                                    app_state.headed_mut().ui.command_palette_input.clear();
+                                    app_state.core.ui.command_palette_input.clear();
                                 } else if c == '\x1b' {
                                     app_state.headed_mut().palette.close();
-                                    app_state.headed_mut().ui.command_palette_input.clear();
+                                    app_state.core.ui.command_palette_input.clear();
                                 }
                                 self.ime_just_committed = true;
                             } else {
@@ -493,17 +492,11 @@ impl ApplicationHandler for AileronApp {
                         }
                         winit::event::Ime::Preedit(text, _cursor) => {
                             if text.is_empty() {
-                                if app_state
-                                    .headed_mut()
-                                    .ui
-                                    .status_message
-                                    .starts_with("composing: ")
-                                {
-                                    app_state.headed_mut().ui.status_message.clear();
+                                if app_state.core.ui.status_message.starts_with("composing: ") {
+                                    app_state.core.ui.status_message.clear();
                                 }
                             } else {
-                                app_state.headed_mut().ui.status_message =
-                                    format!("composing: {text}");
+                                app_state.core.ui.status_message = format!("composing: {text}");
                             }
                         }
                         _ => {}
@@ -582,7 +575,7 @@ impl ApplicationHandler for AileronApp {
             {
                 frame_tasks::load_default_adblock_rules(&mut self.adblocker);
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.headed_mut().ui.status_message = "Filter lists updated".into();
+                    app_state.core.ui.status_message = "Filter lists updated".into();
                 }
             }
         }
@@ -644,8 +637,7 @@ impl ApplicationHandler for AileronApp {
                 }
                 None => {
                     if let Some(app_state) = &mut self.app_state {
-                        app_state.headed_mut().ui.status_message =
-                            "Restore failed: no window".into();
+                        app_state.core.ui.status_message = "Restore failed: no window".into();
                     }
                     return;
                 }
@@ -688,7 +680,7 @@ impl ApplicationHandler for AileronApp {
                         self.create_wry_pane_for(pid, &url);
                     }
                     if let Some(s) = self.app_state.as_mut() {
-                        s.headed_mut().ui.status_message = format!(
+                        s.core.ui.status_message = format!(
                             "Workspace restored: {} ({} panes)",
                             ws_name, result.pane_count
                         );
@@ -696,18 +688,17 @@ impl ApplicationHandler for AileronApp {
                 }
                 crate::workspace_restore::RestoreOutcome::NotFound => {
                     if let Some(s) = self.app_state.as_mut() {
-                        s.headed_mut().ui.status_message =
-                            format!("Workspace '{ws_name}' not found");
+                        s.core.ui.status_message = format!("Workspace '{ws_name}' not found");
                     }
                 }
                 crate::workspace_restore::RestoreOutcome::NoDatabase => {
                     if let Some(s) = self.app_state.as_mut() {
-                        s.headed_mut().ui.status_message = "Restore failed: no database".into();
+                        s.core.ui.status_message = "Restore failed: no database".into();
                     }
                 }
                 crate::workspace_restore::RestoreOutcome::TreeError(e) => {
                     if let Some(s) = self.app_state.as_mut() {
-                        s.headed_mut().ui.status_message = format!("Restore failed (tree): {e}");
+                        s.core.ui.status_message = format!("Restore failed (tree): {e}");
                     }
                 }
             }
@@ -800,7 +791,7 @@ impl ApplicationHandler for AileronApp {
                                     .unwrap_or_else(|_| url::Url::parse("aileron://new").unwrap()),
                             ),
                         );
-                        app_state.headed_mut().ui.status_message = format!(
+                        app_state.core.ui.status_message = format!(
                             "Memory limit reached — evicted background tab ({})",
                             crate::profiling::memory::format_human_bytes(rss_bytes)
                         );

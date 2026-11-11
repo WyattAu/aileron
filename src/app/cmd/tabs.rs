@@ -7,7 +7,7 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(search_query) = query.strip_prefix("tabs-search ") {
         let search_query = search_query.trim();
         if search_query.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: :tabs-search <query>".into();
+            state.core.ui.status_message = "Usage: :tabs-search <query>".into();
             return Some(());
         }
 
@@ -29,7 +29,7 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
 
         let results = search.search(search_query, 10);
         if results.is_empty() {
-            state.headed_mut().ui.status_message = format!("No tabs matching: {search_query}");
+            state.core.ui.status_message = format!("No tabs matching: {search_query}");
         } else {
             let mut messages: Vec<String> = results
                 .iter()
@@ -39,7 +39,7 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
             if results.len() > 5 {
                 messages.push(format!("+{} more", results.len() - 5));
             }
-            state.headed_mut().ui.status_message = messages.join(" │ ");
+            state.core.ui.status_message = messages.join(" │ ");
         }
         return Some(());
     }
@@ -55,13 +55,13 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
                     .core
                     .pending_wry_actions
                     .push_back(crate::app::WryAction::Navigate(new_url));
-                state.headed_mut().ui.status_message = format!(
+                state.core.ui.status_message = format!(
                     "New tab {} in pane {}",
                     &tab_id.to_string()[..8],
                     &active_id.to_string()[..8]
                 );
             } else {
-                state.headed_mut().ui.status_message = "No active pane".into();
+                state.core.ui.status_message = "No active pane".into();
             }
         }
         return Some(());
@@ -72,7 +72,7 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
         if let Some(root) = state.core.wm.root_mut() {
             if let Some(pane) = crate::wm::BspTree::find_pane_mut(root, active_id) {
                 if pane.tabs.is_single() {
-                    state.headed_mut().ui.status_message =
+                    state.core.ui.status_message =
                         "Cannot close last tab in pane (use :q to close pane)".into();
                 } else {
                     let closed_tab = pane.tabs.close_active();
@@ -83,11 +83,11 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
                             .core
                             .pending_wry_actions
                             .push_back(crate::app::WryAction::Navigate(new_active_url.clone()));
-                        state.headed_mut().ui.status_message = format!("Closed tab: {}", tab.title);
+                        state.core.ui.status_message = format!("Closed tab: {}", tab.title);
                     }
                 }
             } else {
-                state.headed_mut().ui.status_message = "No active pane".into();
+                state.core.ui.status_message = "No active pane".into();
             }
         }
         return Some(());
@@ -100,10 +100,10 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
                     .core
                     .pending_wry_actions
                     .push_back(crate::app::WryAction::Navigate(parsed));
-                state.headed_mut().ui.status_message = format!("Restored: {url}");
+                state.core.ui.status_message = format!("Restored: {url}");
             }
         } else {
-            state.headed_mut().ui.status_message = "No closed tabs to restore".into();
+            state.core.ui.status_message = "No closed tabs to restore".into();
         }
         return Some(());
     }
@@ -118,10 +118,10 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
                         .core
                         .pending_wry_actions
                         .push_back(crate::app::WryAction::Navigate(parsed));
-                    state.headed_mut().ui.status_message = format!("Restored: {url}");
+                    state.core.ui.status_message = format!("Restored: {url}");
                 }
             } else {
-                state.headed_mut().ui.status_message = "No closed tabs to restore".into();
+                state.core.ui.status_message = "No closed tabs to restore".into();
             }
         } else if let Some((url, _title)) = state
             .headed()
@@ -135,10 +135,10 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
                     .core
                     .pending_wry_actions
                     .push_back(crate::app::WryAction::Navigate(parsed));
-                state.headed_mut().ui.status_message = format!("Restored: {url_clone}");
+                state.core.ui.status_message = format!("Restored: {url_clone}");
             }
         } else {
-            state.headed_mut().ui.status_message = format!("No closed tab at index {n}");
+            state.core.ui.status_message = format!("No closed tab at index {n}");
         }
         return Some(());
     }
@@ -148,10 +148,10 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
             let panes = state.core.wm.panes();
             if let Some((_, _)) = panes.iter().find(|(id, _)| *id == lru_id) {
                 state.core.pending_tab_close = Some(lru_id);
-                state.headed_mut().ui.status_message = "Unloading least-recently-used pane".into();
+                state.core.ui.status_message = "Unloading least-recently-used pane".into();
             }
         } else {
-            state.headed_mut().ui.status_message = "Only one pane open, nothing to unload".into();
+            state.core.ui.status_message = "Only one pane open, nothing to unload".into();
         }
         return Some(());
     }
@@ -166,7 +166,7 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
             {
                 tracing::warn!("Failed to remove tab name: {}", e);
             }
-            state.headed_mut().ui.status_message = "Tab name cleared".into();
+            state.core.ui.status_message = "Tab name cleared".into();
         } else {
             state
                 .headed_mut()
@@ -179,7 +179,7 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
             {
                 tracing::warn!("Failed to persist tab name: {}", e);
             }
-            state.headed_mut().ui.status_message = format!("Tab renamed: {name}");
+            state.core.ui.status_message = format!("Tab renamed: {name}");
         }
         return Some(());
     }
@@ -187,7 +187,7 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
     if query == "tab-move-left" {
         let panes = state.core.wm.panes();
         if panes.len() < 2 {
-            state.headed_mut().ui.status_message = "Only one pane, nowhere to move.".into();
+            state.core.ui.status_message = "Only one pane, nowhere to move.".into();
             return Some(());
         }
         let active_id = state.core.wm.active_pane_id();
@@ -197,14 +197,14 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
             .position(|&id| id == active_id)
             .unwrap_or(0);
         if current_idx == 0 {
-            state.headed_mut().ui.status_message = "Already at first position.".into();
+            state.core.ui.status_message = "Already at first position.".into();
         } else {
             let target_id = positions[current_idx - 1];
             if state.core.wm.swap_pane_ids(active_id, target_id) {
-                state.headed_mut().ui.status_message =
+                state.core.ui.status_message =
                     format!("Moved left: {} → {}", current_idx + 1, current_idx);
             } else {
-                state.headed_mut().ui.status_message = "Failed to move pane.".into();
+                state.core.ui.status_message = "Failed to move pane.".into();
             }
         }
         return Some(());
@@ -213,7 +213,7 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
     if query == "tab-move-right" {
         let panes = state.core.wm.panes();
         if panes.len() < 2 {
-            state.headed_mut().ui.status_message = "Only one pane, nowhere to move.".into();
+            state.core.ui.status_message = "Only one pane, nowhere to move.".into();
             return Some(());
         }
         let active_id = state.core.wm.active_pane_id();
@@ -223,14 +223,14 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
             .position(|&id| id == active_id)
             .unwrap_or(0);
         if current_idx >= positions.len() - 1 {
-            state.headed_mut().ui.status_message = "Already at last position.".into();
+            state.core.ui.status_message = "Already at last position.".into();
         } else {
             let target_id = positions[current_idx + 1];
             if state.core.wm.swap_pane_ids(active_id, target_id) {
-                state.headed_mut().ui.status_message =
+                state.core.ui.status_message =
                     format!("Moved right: {} → {}", current_idx + 1, current_idx + 2);
             } else {
-                state.headed_mut().ui.status_message = "Failed to move pane.".into();
+                state.core.ui.status_message = "Failed to move pane.".into();
             }
         }
         return Some(());
@@ -239,7 +239,7 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(dir) = query.strip_prefix("tab-move ") {
         let panes = state.core.wm.panes();
         if panes.len() < 2 {
-            state.headed_mut().ui.status_message = "Only one pane, nowhere to move.".into();
+            state.core.ui.status_message = "Only one pane, nowhere to move.".into();
             return Some(());
         }
         let active_id = state.core.wm.active_pane_id();
@@ -257,7 +257,7 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
                 if let Ok(idx) = n.parse::<usize>() {
                     idx.saturating_sub(1).min(positions.len() - 1)
                 } else {
-                    state.headed_mut().ui.status_message =
+                    state.core.ui.status_message =
                         "Usage: :tab-move <left|right|first|last|N>".into();
                     return Some(());
                 }
@@ -266,16 +266,16 @@ pub fn handle_tab_commands(state: &mut AppState, query: &str) -> Option<()> {
         if new_idx != current_idx {
             let target_id = positions[new_idx];
             if state.core.wm.swap_pane_ids(active_id, target_id) {
-                state.headed_mut().ui.status_message = format!(
+                state.core.ui.status_message = format!(
                     "Swapped pane positions: {} → {}",
                     current_idx + 1,
                     new_idx + 1
                 );
             } else {
-                state.headed_mut().ui.status_message = "Failed to swap panes.".into();
+                state.core.ui.status_message = "Failed to swap panes.".into();
             }
         } else {
-            state.headed_mut().ui.status_message = "Already at target position.".into();
+            state.core.ui.status_message = "Already at target position.".into();
         }
         return Some(());
     }

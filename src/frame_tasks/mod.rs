@@ -418,7 +418,7 @@ pub fn check_offscreen_crashes(
             app_state.headed_mut().crash.webview_crash_detected = true;
             app_state.headed_mut().crash.crashed_pane_url = Some(url);
             app_state.headed_mut().crash.crashed_pane_id = Some(*pane_id);
-            app_state.headed_mut().ui.status_message =
+            app_state.core.ui.status_message =
                 "WebView appears crashed — type :crash-reload to recover".into();
             pane.set_loading(false);
         }
@@ -456,7 +456,7 @@ pub fn process_pending_wry_actions(
         ) {
             warn!("WryAction error: {}", e);
             if let Some(app_state) = app_state {
-                app_state.headed_mut().ui.status_message = format!("Action failed: {e}");
+                app_state.core.ui.status_message = format!("Action failed: {e}");
             }
         }
     }
@@ -496,14 +496,13 @@ pub fn handle_pending_import(app_state: &mut AppState) {
             "firefox" => crate::app::cmd::import::import_firefox(db),
             "chrome" => crate::app::cmd::import::import_chrome(db),
             _ => {
-                app_state.headed_mut().ui.status_message =
-                    format!("Unknown import source: {source}");
+                app_state.core.ui.status_message = format!("Unknown import source: {source}");
                 return;
             }
         };
-        app_state.headed_mut().ui.status_message = msg;
+        app_state.core.ui.status_message = msg;
     } else {
-        app_state.headed_mut().ui.status_message = "No database available for import.".into();
+        app_state.core.ui.status_message = "No database available for import.".into();
     }
 }
 

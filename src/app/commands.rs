@@ -136,12 +136,12 @@ impl AppState {
             } else if let Ok(u) = url::Url::parse(&format!("https://{query}")) {
                 u
             } else {
-                self.headed_mut().ui.status_message = format!("Invalid URL: {query}");
+                self.core.ui.status_message = format!("Invalid URL: {query}");
                 return;
             };
 
             self.navigate_with_redirects(url);
-            self.headed_mut().ui.status_message = format!("Navigating to {query}");
+            self.core.ui.status_message = format!("Navigating to {query}");
         } else {
             let known_commands = [
                 "q",
@@ -286,13 +286,13 @@ impl AppState {
                 .filter(|c| c.contains(cmd) || cmd.contains(*c))
                 .min_by_key(|c| super::cmd::util::levenshtein_distance(cmd, c));
             if let Some(sug) = suggestion {
-                self.headed_mut().ui.status_message =
+                self.core.ui.status_message =
                     format!("Unknown command: {cmd} (did you mean :{sug}?)");
             } else if let Some(url) = self.core.config.search_url(query) {
                 self.navigate_with_redirects(url);
-                self.headed_mut().ui.status_message = format!("Searching: {query}");
+                self.core.ui.status_message = format!("Searching: {query}");
             } else {
-                self.headed_mut().ui.status_message = format!("Search failed for: {query}");
+                self.core.ui.status_message = format!("Search failed for: {query}");
             }
         }
     }
@@ -301,7 +301,7 @@ impl AppState {
         if let Some(url_str) = query.strip_prefix("open ") {
             let url_str = url_str.trim();
             if url_str.is_empty() {
-                self.headed_mut().ui.status_message = "Usage: open <url>".into();
+                self.core.ui.status_message = "Usage: open <url>".into();
                 return true;
             }
             let url = if url_str.contains("://") {
@@ -312,10 +312,10 @@ impl AppState {
             match url {
                 Ok(u) => {
                     self.navigate_with_redirects(u);
-                    self.headed_mut().ui.status_message = format!("Opening: {url_str}");
+                    self.core.ui.status_message = format!("Opening: {url_str}");
                 }
                 Err(e) => {
-                    self.headed_mut().ui.status_message = format!("Invalid URL: {e}");
+                    self.core.ui.status_message = format!("Invalid URL: {e}");
                 }
             }
             return true;
@@ -337,7 +337,7 @@ impl AppState {
         if let Some(path) = query.strip_prefix("pdf ") {
             let path = path.trim();
             if path.is_empty() {
-                self.headed_mut().ui.status_message = "Usage: :pdf <path-or-url>".into();
+                self.core.ui.status_message = "Usage: :pdf <path-or-url>".into();
                 return true;
             }
             let url = if path.starts_with("http://") || path.starts_with("https://") {
@@ -354,10 +354,10 @@ impl AppState {
             match url {
                 Some(u) => {
                     self.navigate_with_redirects(u);
-                    self.headed_mut().ui.status_message = format!("Loading PDF: {path}");
+                    self.core.ui.status_message = format!("Loading PDF: {path}");
                 }
                 None => {
-                    self.headed_mut().ui.status_message = format!("!Invalid path or URL: {path}");
+                    self.core.ui.status_message = format!("!Invalid path or URL: {path}");
                 }
             }
             return true;
@@ -368,7 +368,7 @@ impl AppState {
             {
                 let host = _host.trim();
                 if host.is_empty() {
-                    self.headed_mut().ui.status_message = "Usage: ssh <host>".into();
+                    self.core.ui.status_message = "Usage: ssh <host>".into();
                     return true;
                 }
                 self.pending_terminal_command = Some(format!("ssh {host}\n"));
@@ -376,7 +376,7 @@ impl AppState {
             }
             #[cfg(not(feature = "terminal"))]
             {
-                self.headed_mut().ui.status_message = "Terminal feature not enabled".into();
+                self.core.ui.status_message = "Terminal feature not enabled".into();
             }
             return true;
         }
@@ -393,12 +393,12 @@ impl AppState {
                 };
                 if let Ok(url) = url::Url::parse(&url_str) {
                     self.navigate_with_redirects(url);
-                    self.headed_mut().ui.status_message = format!("Private: {target}");
+                    self.core.ui.status_message = format!("Private: {target}");
                 } else {
-                    self.headed_mut().ui.status_message = "Invalid URL".into();
+                    self.core.ui.status_message = "Invalid URL".into();
                 }
             } else {
-                self.headed_mut().ui.status_message = "Private mode on (no history saved)".into();
+                self.core.ui.status_message = "Private mode on (no history saved)".into();
             }
             return true;
         }
@@ -409,7 +409,7 @@ impl AppState {
             let encoded = crate::servo::wry_pages::percent_encode_path(&path.to_string_lossy());
             if let Ok(url) = url::Url::parse(&format!("aileron://files?path={encoded}")) {
                 self.navigate_with_redirects(url);
-                self.headed_mut().ui.status_message = format!("File browser: {}", path.display());
+                self.core.ui.status_message = format!("File browser: {}", path.display());
             }
             return true;
         }
@@ -446,12 +446,12 @@ impl AppState {
                 let events = self.headed_mut().macro_recorder.stop_recording();
                 let count = events.len();
                 self.headed_mut().last_macro_events = Some(events);
-                self.headed_mut().ui.status_message = format!(
+                self.core.ui.status_message = format!(
                     "Macro recording stopped ({count} events). Use :macro-save <name> to save."
                 );
             } else {
                 self.headed_mut().macro_recorder.start_recording();
-                self.headed_mut().ui.status_message = "Macro recording started".into();
+                self.core.ui.status_message = "Macro recording started".into();
             }
             return true;
         }
@@ -459,7 +459,7 @@ impl AppState {
         if let Some(name) = query.strip_prefix("macro-save ") {
             let name = name.trim();
             if name.is_empty() {
-                self.headed_mut().ui.status_message = "Usage: :macro-save <name>".into();
+                self.core.ui.status_message = "Usage: :macro-save <name>".into();
                 return true;
             }
             if let Some(events) = self.headed_mut().last_macro_events.take() {
@@ -468,10 +468,9 @@ impl AppState {
                 if let Err(e) = self.save_macros_to_disk() {
                     tracing::warn!("Failed to save macros to disk: {}", e);
                 }
-                self.headed_mut().ui.status_message =
-                    format!("Macro saved: {name} ({count} events)");
+                self.core.ui.status_message = format!("Macro saved: {name} ({count} events)");
             } else {
-                self.headed_mut().ui.status_message =
+                self.core.ui.status_message =
                     "No recorded macro to save. Use :macro-record first.".into();
             }
             return true;
@@ -480,16 +479,15 @@ impl AppState {
         if let Some(name) = query.strip_prefix("macro-play ") {
             let name = name.trim();
             if name.is_empty() {
-                self.headed_mut().ui.status_message = "Usage: :macro-play <name>".into();
+                self.core.ui.status_message = "Usage: :macro-play <name>".into();
                 return true;
             }
             if let Some(saved) = self.headed().macro_recorder.get_macro(name).cloned() {
                 let count = saved.events.len();
                 self.headed_mut().macro_player.start_playback(saved.events);
-                self.headed_mut().ui.status_message =
-                    format!("Playing macro: {name} ({count} events)");
+                self.core.ui.status_message = format!("Playing macro: {name} ({count} events)");
             } else {
-                self.headed_mut().ui.status_message = format!("Macro not found: {name}");
+                self.core.ui.status_message = format!("Macro not found: {name}");
             }
             return true;
         }
@@ -497,9 +495,9 @@ impl AppState {
         if query == "macro-list" {
             let macros = self.headed().macro_recorder.list_macros();
             if macros.is_empty() {
-                self.headed_mut().ui.status_message = "No saved macros.".into();
+                self.core.ui.status_message = "No saved macros.".into();
             } else {
-                self.headed_mut().ui.status_message = format!("Macros: {}", macros.join(", "));
+                self.core.ui.status_message = format!("Macros: {}", macros.join(", "));
             }
             return true;
         }
@@ -507,16 +505,16 @@ impl AppState {
         if let Some(name) = query.strip_prefix("macro-delete ") {
             let name = name.trim();
             if name.is_empty() {
-                self.headed_mut().ui.status_message = "Usage: :macro-delete <name>".into();
+                self.core.ui.status_message = "Usage: :macro-delete <name>".into();
                 return true;
             }
             if self.headed_mut().macro_recorder.delete_macro(name) {
                 if let Err(e) = self.save_macros_to_disk() {
                     tracing::warn!("Failed to save macros to disk: {}", e);
                 }
-                self.headed_mut().ui.status_message = format!("Macro deleted: {name}");
+                self.core.ui.status_message = format!("Macro deleted: {name}");
             } else {
-                self.headed_mut().ui.status_message = format!("Macro not found: {name}");
+                self.core.ui.status_message = format!("Macro not found: {name}");
             }
             return true;
         }
@@ -527,21 +525,21 @@ impl AppState {
     #[cfg(feature = "sync")]
     fn handle_sync_command(&mut self, query: &str) -> bool {
         if query == "sync" {
-            self.headed_mut().ui.status_message = super::cmd::sync::execute_sync_push(
+            self.core.ui.status_message = super::cmd::sync::execute_sync_push(
                 &self.core.config.sync_target,
                 self.core.config.sync_encrypted,
             );
             return true;
         }
         if query == "sync --pull" {
-            self.headed_mut().ui.status_message = super::cmd::sync::execute_sync_pull(
+            self.core.ui.status_message = super::cmd::sync::execute_sync_pull(
                 &self.core.config.sync_target,
                 self.core.config.sync_encrypted,
             );
             return true;
         }
         if query == "sync --both" {
-            self.headed_mut().ui.status_message = super::cmd::sync::execute_sync_push(
+            self.core.ui.status_message = super::cmd::sync::execute_sync_push(
                 &self.core.config.sync_target,
                 self.core.config.sync_encrypted,
             );
@@ -549,12 +547,11 @@ impl AppState {
                 &self.core.config.sync_target,
                 self.core.config.sync_encrypted,
             );
-            self.headed_mut().ui.status_message =
-                format!("{} | {}", self.headed_mut().ui.status_message, pull_msg);
+            self.core.ui.status_message = format!("{} | {}", self.core.ui.status_message, pull_msg);
             return true;
         }
         if query == "sync --status" {
-            self.headed_mut().ui.status_message = super::cmd::sync::execute_sync_status(
+            self.core.ui.status_message = super::cmd::sync::execute_sync_status(
                 &self.core.config.sync_target,
                 self.core.config.sync_encrypted,
                 self.sync_watcher.is_running(),
@@ -583,60 +580,57 @@ impl AppState {
         }
         if query == "sync-watch" {
             if let Err(e) = super::cmd::sync::execute_sync_watch(&self.core.config.sync_target) {
-                self.headed_mut().ui.status_message = e;
+                self.core.ui.status_message = e;
             } else {
                 let config_dir = crate::config::Config::config_dir();
                 match self.sync_watcher.start(&config_dir) {
-                    Ok(()) => self.headed_mut().ui.status_message = "Sync watcher started".into(),
-                    Err(e) => {
-                        self.headed_mut().ui.status_message =
-                            format!("Failed to start watcher: {e}")
-                    }
+                    Ok(()) => self.core.ui.status_message = "Sync watcher started".into(),
+                    Err(e) => self.core.ui.status_message = format!("Failed to start watcher: {e}"),
                 }
             }
             return true;
         }
         if query == "sync-stop" {
             self.sync_watcher.stop();
-            self.headed_mut().ui.status_message = "Sync watcher stopped".into();
+            self.core.ui.status_message = "Sync watcher stopped".into();
             return true;
         }
         if let Some(path) = query.strip_prefix("sync-resolve-local ") {
             let path = path.trim();
             if path.is_empty() {
-                self.headed_mut().ui.status_message = "Usage: :sync-resolve-local <path>".into();
+                self.core.ui.status_message = "Usage: :sync-resolve-local <path>".into();
                 return true;
             }
             match super::cmd::sync::resolve_conflict_keep_local(&self.core.config.sync_target, path)
             {
-                Ok(msg) => self.headed_mut().ui.status_message = msg,
-                Err(e) => self.headed_mut().ui.status_message = e,
+                Ok(msg) => self.core.ui.status_message = msg,
+                Err(e) => self.core.ui.status_message = e,
             }
             return true;
         }
         if let Some(path) = query.strip_prefix("sync-resolve-remote ") {
             let path = path.trim();
             if path.is_empty() {
-                self.headed_mut().ui.status_message = "Usage: :sync-resolve-remote <path>".into();
+                self.core.ui.status_message = "Usage: :sync-resolve-remote <path>".into();
                 return true;
             }
             match super::cmd::sync::resolve_conflict_keep_remote(
                 &self.core.config.sync_target,
                 path,
             ) {
-                Ok(msg) => self.headed_mut().ui.status_message = msg,
-                Err(e) => self.headed_mut().ui.status_message = e,
+                Ok(msg) => self.core.ui.status_message = msg,
+                Err(e) => self.core.ui.status_message = e,
             }
             return true;
         }
         if let Some(target) = query.strip_prefix("sync-target ") {
             let target = target.trim();
             if target.is_empty() {
-                self.headed_mut().ui.status_message = "Usage: :sync-target <target>".into();
+                self.core.ui.status_message = "Usage: :sync-target <target>".into();
                 return true;
             }
             self.core.config.sync_target = target.to_string();
-            self.headed_mut().ui.status_message = format!("Sync target: {target}");
+            self.core.ui.status_message = format!("Sync target: {target}");
             return true;
         }
         false
@@ -653,7 +647,7 @@ impl AppState {
             let mut parts = rest.splitn(2, ' ');
             if let Some(key) = parts.next() {
                 let value = parts.next().unwrap_or("");
-                self.headed_mut().ui.status_message =
+                self.core.ui.status_message =
                     super::cmd::settings::apply_set_setting(&mut self.core.config, key, value);
                 self.core.cache.config_json_dirty = true;
             }
@@ -676,14 +670,14 @@ impl AppState {
                 self.headed_mut().panels.site_settings_cookies = None;
                 self.headed_mut().panels.site_settings_adblock = None;
                 self.headed_mut().panels.site_settings_url_pattern = String::new();
-                self.headed_mut().ui.status_message = "Site settings panel opened".into();
+                self.core.ui.status_message = "Site settings panel opened".into();
             }
             return true;
         }
 
         if query == "popups" {
             self.core.config.popup_blocker_enabled = !self.core.config.popup_blocker_enabled;
-            self.headed_mut().ui.status_message = format!(
+            self.core.ui.status_message = format!(
                 "Popup blocker: {}",
                 if self.core.config.popup_blocker_enabled {
                     "on"
@@ -697,7 +691,7 @@ impl AppState {
             let val = val.trim();
             self.core.config.popup_blocker_enabled =
                 !val.contains("off") && !val.contains("false") && !val.contains("0");
-            self.headed_mut().ui.status_message = format!(
+            self.core.ui.status_message = format!(
                 "Popup blocker: {}",
                 if self.core.config.popup_blocker_enabled {
                     "on"
@@ -709,8 +703,7 @@ impl AppState {
         }
 
         if query == "engine" {
-            self.headed_mut().ui.status_message =
-                format!("Engine: {}", self.core.config.engine_selection);
+            self.core.ui.status_message = format!("Engine: {}", self.core.config.engine_selection);
             return true;
         }
         if query == "engine auto" || query == "engine servo" || query == "engine webkit" {
@@ -720,10 +713,10 @@ impl AppState {
             match val.parse::<crate::servo::EngineSelection>() {
                 Ok(selection) => {
                     self.core.config.engine_selection = selection.to_string();
-                    self.headed_mut().ui.status_message = format!("Engine: {selection}");
+                    self.core.ui.status_message = format!("Engine: {selection}");
                 }
                 Err(e) => {
-                    self.headed_mut().ui.status_message = e;
+                    self.core.ui.status_message = e;
                 }
             }
             return true;
@@ -743,7 +736,7 @@ impl AppState {
                             .map(|(k, v)| format!("{k}={v}"))
                             .collect();
                         if all.is_empty() {
-                            self.headed_mut().ui.status_message = "No compat overrides".into();
+                            self.core.ui.status_message = "No compat overrides".into();
                         } else {
                             let display = all.join(", ");
                             let msg = if display.len() > 80 {
@@ -751,45 +744,43 @@ impl AppState {
                             } else {
                                 display
                             };
-                            self.headed_mut().ui.status_message =
-                                format!("Compat overrides: {msg}");
+                            self.core.ui.status_message = format!("Compat overrides: {msg}");
                         }
                     }
                     "add" => {
                         if let (Some(domain), Some(engine)) = (parts.next(), parts.next()) {
                             let engine = engine.trim();
                             if engine != "webkit" && engine != "servo" {
-                                self.headed_mut().ui.status_message =
+                                self.core.ui.status_message =
                                     "Usage: compat-override add <domain> webkit|servo".into();
                             } else {
                                 self.core
                                     .config
                                     .compat_overrides
                                     .insert(domain.to_string(), engine.to_string());
-                                self.headed_mut().ui.status_message =
+                                self.core.ui.status_message =
                                     format!("Compat override: {domain} -> {engine}");
                             }
                         } else {
-                            self.headed_mut().ui.status_message =
+                            self.core.ui.status_message =
                                 "Usage: compat-override add <domain> webkit|servo".into();
                         }
                     }
                     "remove" => {
                         if let Some(domain) = parts.next() {
                             if self.core.config.compat_overrides.remove(domain).is_some() {
-                                self.headed_mut().ui.status_message =
+                                self.core.ui.status_message =
                                     format!("Removed override for {domain}");
                             } else {
-                                self.headed_mut().ui.status_message =
-                                    format!("No override for {domain}");
+                                self.core.ui.status_message = format!("No override for {domain}");
                             }
                         } else {
-                            self.headed_mut().ui.status_message =
+                            self.core.ui.status_message =
                                 "Usage: compat-override remove <domain>".into();
                         }
                     }
                     _ => {
-                        self.headed_mut().ui.status_message =
+                        self.core.ui.status_message =
                             "Usage: compat-override list|add|remove".into();
                     }
                 }
@@ -809,19 +800,18 @@ impl AppState {
                     .find(|(_, url)| *url == current)
                     .map(|(name, _)| name.as_str())
                     .unwrap_or("default");
-                self.headed_mut().ui.status_message = format!("Search engine: {name} ({current})");
+                self.core.ui.status_message = format!("Search engine: {name} ({current})");
             } else if engine_name == "default" {
                 self.core.config.search_engine = "https://duckduckgo.com/?q={query}".into();
-                self.headed_mut().ui.status_message = "Search engine: default (DuckDuckGo)".into();
+                self.core.ui.status_message = "Search engine: default (DuckDuckGo)".into();
             } else if let Some(url) = self.core.config.search_engines.get(engine_name) {
                 self.core.config.search_engine = url.clone();
-                self.headed_mut().ui.status_message =
-                    format!("Search engine: {engine_name} ({url})");
+                self.core.ui.status_message = format!("Search engine: {engine_name} ({url})");
             } else {
                 let available: Vec<&str> = std::iter::once("default")
                     .chain(self.core.config.search_engines.keys().map(|s| s.as_str()))
                     .collect();
-                self.headed_mut().ui.status_message = format!(
+                self.core.ui.status_message = format!(
                     "Unknown engine: {}. Available: {}",
                     engine_name,
                     available.join(", ")
@@ -832,7 +822,7 @@ impl AppState {
 
         if query == "adaptive-quality" || query == "adaptive_quality" {
             self.core.config.adaptive_quality = !self.core.config.adaptive_quality;
-            self.headed_mut().ui.status_message = format!(
+            self.core.ui.status_message = format!(
                 "Adaptive quality: {}",
                 if self.core.config.adaptive_quality {
                     "on"
@@ -847,11 +837,10 @@ impl AppState {
             let proxy_url = proxy_url.trim();
             if proxy_url.is_empty() || proxy_url == "none" {
                 self.core.config.proxy = None;
-                self.headed_mut().ui.status_message = "Proxy disabled (restart required)".into();
+                self.core.ui.status_message = "Proxy disabled (restart required)".into();
             } else {
                 self.core.config.proxy = Some(proxy_url.to_string());
-                self.headed_mut().ui.status_message =
-                    format!("Proxy: {proxy_url} (restart required)");
+                self.core.ui.status_message = format!("Proxy: {proxy_url} (restart required)");
             }
             return true;
         }
@@ -861,26 +850,26 @@ impl AppState {
 
     fn handle_theme_command(&mut self, query: &str) -> bool {
         if query == "theme" {
-            self.headed_mut().ui.status_message = format!("Theme: {}", self.core.config.theme);
+            self.core.ui.status_message = format!("Theme: {}", self.core.config.theme);
             return true;
         }
         if query == "theme list" {
             let themes = self.core.config.available_themes();
-            self.headed_mut().ui.status_message = format!("Themes: {}", themes.join(", "));
+            self.core.ui.status_message = format!("Themes: {}", themes.join(", "));
             return true;
         }
         if let Some(name) = query.strip_prefix("theme ") {
             let name = name.trim();
             if name.is_empty() {
-                self.headed_mut().ui.status_message = format!("Theme: {}", self.core.config.theme);
+                self.core.ui.status_message = format!("Theme: {}", self.core.config.theme);
                 return true;
             }
             if self.core.config.themes.contains_key(name) {
                 self.core.config.theme = name.to_string();
-                self.headed_mut().ui.status_message = format!("Theme: {name}");
+                self.core.ui.status_message = format!("Theme: {name}");
             } else {
                 let available = self.core.config.available_themes();
-                self.headed_mut().ui.status_message = format!(
+                self.core.ui.status_message = format!(
                     "Unknown theme '{}'. Available: {}",
                     name,
                     available.join(", ")
@@ -937,7 +926,7 @@ impl AppState {
             let total_panes = self.core.wm.panes_ref().len();
             let web_count = total_panes - term_count;
             let estimated = crate::profiling::memory::estimate_pane_memory(web_count, term_count);
-            self.headed_mut().ui.status_message = format!(
+            self.core.ui.status_message = format!(
                 "RSS: {} | WebViews: {}x~50MB | Terminals: {}x~3MB | Est pane: {}",
                 rss,
                 web_count,
@@ -951,7 +940,7 @@ impl AppState {
             let lat = &self.headed().input_latency;
             let ps = &self.headed().profiler.stats();
             if lat.sample_count() == 0 && ps.count == 0 {
-                self.headed_mut().ui.status_message = "No samples yet. Press some keys.".into();
+                self.core.ui.status_message = "No samples yet. Press some keys.".into();
             } else {
                 let mut parts = Vec::new();
                 if lat.sample_count() > 0 {
@@ -969,7 +958,7 @@ impl AppState {
                         ps.avg_ms, ps.p50_ms, ps.p95_ms, ps.p99_ms, ps.max_ms, ps.dropped_frames, ps.count,
                     ));
                 }
-                self.headed_mut().ui.status_message = parts.join(" | ");
+                self.core.ui.status_message = parts.join(" | ");
             }
             return true;
         }
@@ -980,18 +969,18 @@ impl AppState {
     fn handle_profile_command(&mut self, query: &str) -> bool {
         if query == "import-firefox" {
             if let Some(db) = self.core.db.as_ref() {
-                self.headed_mut().ui.status_message = super::cmd::import::import_firefox(db);
+                self.core.ui.status_message = super::cmd::import::import_firefox(db);
             } else {
-                self.headed_mut().ui.status_message = "No database connection".into();
+                self.core.ui.status_message = "No database connection".into();
             }
             return true;
         }
 
         if query == "import-chrome" {
             if let Some(db) = self.core.db.as_ref() {
-                self.headed_mut().ui.status_message = super::cmd::import::import_chrome(db);
+                self.core.ui.status_message = super::cmd::import::import_chrome(db);
             } else {
-                self.headed_mut().ui.status_message = "No database connection".into();
+                self.core.ui.status_message = "No database connection".into();
             }
             return true;
         }
@@ -1004,7 +993,7 @@ impl AppState {
             let letter = query.as_bytes()[1] as char;
             let rest = query[2..].trim();
             if rest.is_empty() {
-                self.headed_mut().ui.status_message = format!(
+                self.core.ui.status_message = format!(
                     "Quickmark {}: {}",
                     letter,
                     self.core
@@ -1026,7 +1015,7 @@ impl AppState {
             {
                 tracing::warn!("Failed to persist quickmark {}: {}", key, e);
             }
-            self.headed_mut().ui.status_message = format!("Quickmark {letter} set");
+            self.core.ui.status_message = format!("Quickmark {letter} set");
             return true;
         }
 
@@ -1037,11 +1026,11 @@ impl AppState {
                 Some(url_str) => {
                     if let Ok(url) = url::Url::parse(url_str) {
                         self.navigate_with_redirects(url);
-                        self.headed_mut().ui.status_message = format!("Quickmark {letter}");
+                        self.core.ui.status_message = format!("Quickmark {letter}");
                     }
                 }
                 None => {
-                    self.headed_mut().ui.status_message = format!("Quickmark {letter} not set");
+                    self.core.ui.status_message = format!("Quickmark {letter} not set");
                 }
             }
             return true;
@@ -1060,7 +1049,7 @@ impl AppState {
                     self.execute_action(&crate::input::Action::SplitHorizontal);
                     return true;
                 } else {
-                    self.headed_mut().ui.status_message = "Invalid URL".into();
+                    self.core.ui.status_message = "Invalid URL".into();
                 }
             }
             return true;
@@ -1082,10 +1071,10 @@ impl AppState {
                     self.core
                         .pending_wry_actions
                         .push_back(WryAction::Navigate(parsed));
-                    self.headed_mut().ui.status_message = format!("Reloaded crashed pane: {url}");
+                    self.core.ui.status_message = format!("Reloaded crashed pane: {url}");
                 }
             } else {
-                self.headed_mut().ui.status_message = "No crash to recover from".into();
+                self.core.ui.status_message = "No crash to recover from".into();
             }
             return true;
         }
@@ -1134,10 +1123,10 @@ impl AppState {
                 } else {
                     "case-insensitive"
                 };
-                self.headed_mut().ui.status_message =
+                self.core.ui.status_message =
                     format!("Replacing '{old_text}' with '{new_text}' ({mode_str})");
             } else {
-                self.headed_mut().ui.status_message = "Usage: :replace <old> <new> [case]".into();
+                self.core.ui.status_message = "Usage: :replace <old> <new> [case]".into();
             }
             return true;
         }
@@ -1150,7 +1139,7 @@ impl AppState {
         if let Some(path) = query.strip_prefix("reader-save ") {
             let path = path.trim();
             if path.is_empty() {
-                self.headed_mut().ui.status_message = "Usage: :reader-save <path>".into();
+                self.core.ui.status_message = "Usage: :reader-save <path>".into();
                 return true;
             }
             let js = r#"(function() {
@@ -1175,7 +1164,7 @@ impl AppState {
                 .pending_wry_actions
                 .push_back(WryAction::RunJs(js.to_string()));
             self.core.pending_reader_save_path = Some(std::path::PathBuf::from(path));
-            self.headed_mut().ui.status_message = format!("Saving to: {path}");
+            self.core.ui.status_message = format!("Saving to: {path}");
             return true;
         }
 
@@ -1187,7 +1176,7 @@ impl AppState {
         if query == "settings" {
             if let Ok(url) = url::Url::parse("aileron://settings") {
                 self.navigate_with_redirects(url);
-                self.headed_mut().ui.status_message = "Settings".into();
+                self.core.ui.status_message = "Settings".into();
             }
             return true;
         }
@@ -1200,21 +1189,20 @@ impl AppState {
                 let title = url.host_str().unwrap_or("untitled").to_string();
                 let copied = crate::platform::platform().clipboard_copy(&title);
                 if copied {
-                    self.headed_mut().ui.status_message = format!("Copied title: {title}");
+                    self.core.ui.status_message = format!("Copied title: {title}");
                 } else {
-                    self.headed_mut().ui.status_message =
-                        "Clipboard: no clipboard tool available".into();
+                    self.core.ui.status_message = "Clipboard: no clipboard tool available".into();
                 }
                 return true;
             }
-            self.headed_mut().ui.status_message = "No page to yank title from".into();
+            self.core.ui.status_message = "No page to yank title from".into();
             return true;
         }
 
         if let Some(cmd) = query.strip_prefix("!") {
             let cmd = cmd.trim();
             if cmd.is_empty() {
-                self.headed_mut().ui.status_message = "Usage: !<command>".into();
+                self.core.ui.status_message = "Usage: !<command>".into();
                 return true;
             }
             let shell_cmd = crate::platform::platform().shell_command(cmd);
@@ -1225,15 +1213,15 @@ impl AppState {
                     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     let line = stdout.lines().next().unwrap_or("");
                     if line.len() > 80 {
-                        self.headed_mut().ui.status_message = format!("{}...", &line[..77]);
+                        self.core.ui.status_message = format!("{}...", &line[..77]);
                     } else if line.is_empty() {
-                        self.headed_mut().ui.status_message = format!("(exit {})", output.status);
+                        self.core.ui.status_message = format!("(exit {})", output.status);
                     } else {
-                        self.headed_mut().ui.status_message = line.to_string();
+                        self.core.ui.status_message = line.to_string();
                     }
                 }
                 Err(e) => {
-                    self.headed_mut().ui.status_message = format!("!{cmd}: {e}");
+                    self.core.ui.status_message = format!("!{cmd}: {e}");
                 }
             }
             return true;
@@ -1241,12 +1229,12 @@ impl AppState {
 
         if query == "update-check" {
             self.core.update_checker.check_for_updates();
-            self.headed_mut().ui.status_message = "Checking for updates...".into();
+            self.core.ui.status_message = "Checking for updates...".into();
             return true;
         }
 
         if query == "update-show" {
-            self.headed_mut().ui.status_message = self.core.update_checker.status_message();
+            self.core.ui.status_message = self.core.update_checker.status_message();
             return true;
         }
 
@@ -1257,7 +1245,7 @@ impl AppState {
                 "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = true; el.pause(); });"
                     .into(),
             ));
-            self.headed_mut().ui.status_message = "Muted".into();
+            self.core.ui.status_message = "Muted".into();
             return true;
         }
         if query == "unmute" {
@@ -1267,7 +1255,7 @@ impl AppState {
                 "document.querySelectorAll('video, audio').forEach(function(el) { el.muted = false; });"
                     .into(),
             ));
-            self.headed_mut().ui.status_message = "Unmuted".into();
+            self.core.ui.status_message = "Unmuted".into();
             return true;
         }
 
@@ -1280,7 +1268,7 @@ impl AppState {
                 let url_str = url.to_string();
                 let domain = url.domain().unwrap_or("unknown");
                 if !self.bitwarden.is_unlocked() {
-                    self.headed_mut().ui.status_message =
+                    self.core.ui.status_message =
                         format!("No credentials found for {domain} (vault locked)");
                 } else {
                     match self.bitwarden.search_for_url(&url_str) {
@@ -1299,28 +1287,25 @@ impl AppState {
                                     self.core
                                         .pending_wry_actions
                                         .push_back(WryAction::RunJs(js));
-                                    self.headed_mut().ui.status_message =
+                                    self.core.ui.status_message =
                                         format!("Auto-filled credentials for {domain}");
                                     self.headed_mut().autofill.available = false;
                                     self.headed_mut().autofill.js = None;
                                 }
                                 Err(e) => {
-                                    self.headed_mut().ui.status_message =
-                                        format!("Auto-fill failed: {e}")
+                                    self.core.ui.status_message = format!("Auto-fill failed: {e}")
                                 }
                             }
                         }
                         Ok(_) => {
-                            self.headed_mut().ui.status_message =
+                            self.core.ui.status_message =
                                 format!("No credentials found for {domain}")
                         }
-                        Err(e) => {
-                            self.headed_mut().ui.status_message = format!("Auto-fill failed: {e}")
-                        }
+                        Err(e) => self.core.ui.status_message = format!("Auto-fill failed: {e}"),
                     }
                 }
             } else {
-                self.headed_mut().ui.status_message = "No login form detected".into();
+                self.core.ui.status_message = "No login form detected".into();
             }
             return true;
         }
@@ -1335,7 +1320,7 @@ impl AppState {
         if let Some(name) = query.strip_prefix("layout-save ") {
             let name = name.trim();
             if name.is_empty() {
-                self.headed_mut().ui.status_message = "Usage: :layout-save <name>".into();
+                self.core.ui.status_message = "Usage: :layout-save <name>".into();
                 return true;
             }
             self.core
@@ -1344,18 +1329,18 @@ impl AppState {
                     name: name.to_string(),
                     pane_urls: std::collections::HashMap::new(),
                 });
-            self.headed_mut().ui.status_message = format!("Saving layout: {name}...");
+            self.core.ui.status_message = format!("Saving layout: {name}...");
             return true;
         }
 
         if let Some(name) = query.strip_prefix("layout-load ") {
             let name = name.trim();
             if name.is_empty() {
-                self.headed_mut().ui.status_message = "Usage: :layout-load <name>".into();
+                self.core.ui.status_message = "Usage: :layout-load <name>".into();
                 return true;
             }
             self.core.pending_workspace_restore = Some(name.to_string());
-            self.headed_mut().ui.status_message = format!("Loading layout: {name}...");
+            self.core.ui.status_message = format!("Loading layout: {name}...");
             return true;
         }
 
@@ -1417,7 +1402,7 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("set adblock off");
         assert!(!state.core.config.adblock_enabled);
-        assert!(state.headed().ui.status_message.contains("adblock"));
+        assert!(state.core.ui.status_message.contains("adblock"));
     }
 
     #[test]
@@ -1479,7 +1464,7 @@ mod tests {
     fn test_unknown_command_suggests() {
         let mut state = make_state();
         state.handle_raw_command("quitt");
-        assert!(state.headed().ui.status_message.contains("did you mean"));
+        assert!(state.core.ui.status_message.contains("did you mean"));
     }
 
     #[test]
@@ -1493,7 +1478,7 @@ mod tests {
                 .iter()
                 .any(|a| matches!(a, WryAction::Navigate(_)))
         );
-        assert!(state.headed().ui.status_message.contains("Navigating"));
+        assert!(state.core.ui.status_message.contains("Navigating"));
     }
 
     #[test]
@@ -1526,7 +1511,7 @@ mod tests {
     fn test_open_command_invalid() {
         let mut state = make_state();
         state.handle_raw_command("open :::invalid");
-        assert!(state.headed().ui.status_message.contains("Invalid URL"));
+        assert!(state.core.ui.status_message.contains("Invalid URL"));
     }
 
     #[test]
@@ -1534,8 +1519,8 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("!echo hello");
         assert!(
-            state.headed().ui.status_message.contains("hello")
-                || state.headed().ui.status_message.contains("echo")
+            state.core.ui.status_message.contains("hello")
+                || state.core.ui.status_message.contains("echo")
         );
     }
 
@@ -1550,14 +1535,14 @@ mod tests {
                 .iter()
                 .any(|a| matches!(a, WryAction::Print))
         );
-        assert!(state.headed().ui.status_message.contains("Printing"));
+        assert!(state.core.ui.status_message.contains("Printing"));
     }
 
     #[test]
     fn test_theme_command() {
         let mut state = make_state();
         state.handle_raw_command("theme");
-        assert!(state.headed().ui.status_message.contains("Theme:"));
+        assert!(state.core.ui.status_message.contains("Theme:"));
     }
 
     #[test]
@@ -1586,15 +1571,9 @@ mod tests {
     fn test_privacy_command() {
         let mut state = make_state();
         state.handle_raw_command("privacy");
-        assert!(state.headed().ui.status_message.contains("HTTPS upgrade"));
-        assert!(
-            state
-                .headed()
-                .ui
-                .status_message
-                .contains("Tracking protection")
-        );
-        assert!(state.headed().ui.status_message.contains("Adblock"));
+        assert!(state.core.ui.status_message.contains("HTTPS upgrade"));
+        assert!(state.core.ui.status_message.contains("Tracking protection"));
+        assert!(state.core.ui.status_message.contains("Adblock"));
     }
 
     #[test]
@@ -1610,7 +1589,7 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("proxy none");
         assert!(state.core.config.proxy.is_none());
-        assert!(state.headed().ui.status_message.contains("disabled"));
+        assert!(state.core.ui.status_message.contains("disabled"));
     }
 
     #[test]
@@ -1618,8 +1597,8 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("extensions");
         assert!(
-            state.headed().ui.status_message.contains("No extensions")
-                || state.headed().ui.status_message.contains("Extensions:")
+            state.core.ui.status_message.contains("No extensions")
+                || state.core.ui.status_message.contains("Extensions:")
         );
     }
 
@@ -1627,21 +1606,21 @@ mod tests {
     fn test_cookies_clear() {
         let mut state = make_state();
         state.handle_raw_command("cookies-clear");
-        assert!(state.headed().ui.status_message.contains("Cookies cleared"));
+        assert!(state.core.ui.status_message.contains("Cookies cleared"));
     }
 
     #[test]
     fn test_keyring_test() {
         let mut state = make_state();
         state.handle_raw_command("keyring-test");
-        assert!(state.headed().ui.status_message.contains("keyring"));
+        assert!(state.core.ui.status_message.contains("keyring"));
     }
 
     #[test]
     fn test_memory_command() {
         let mut state = make_state();
         state.handle_raw_command("memory");
-        assert!(state.headed().ui.status_message.contains("RSS"));
+        assert!(state.core.ui.status_message.contains("RSS"));
     }
 
     #[test]
@@ -1657,7 +1636,7 @@ mod tests {
     fn test_history_clear() {
         let mut state = make_state();
         state.handle_raw_command("history-clear");
-        assert!(!state.headed().ui.status_message.is_empty());
+        assert!(!state.core.ui.status_message.is_empty());
     }
 
     #[test]
@@ -1674,9 +1653,9 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("autofill");
         assert!(
-            state.headed().ui.status_message.contains("vault locked")
-                || state.headed().ui.status_message.contains("credentials")
-                || state.headed().ui.status_message.contains("login form")
+            state.core.ui.status_message.contains("vault locked")
+                || state.core.ui.status_message.contains("credentials")
+                || state.core.ui.status_message.contains("login form")
         );
     }
 
@@ -1692,21 +1671,21 @@ mod tests {
                 .any(|a| matches!(a, WryAction::Navigate(_))),
             "pdf command should queue a Navigate action"
         );
-        assert!(state.headed().ui.status_message.contains("Loading PDF"));
+        assert!(state.core.ui.status_message.contains("Loading PDF"));
     }
 
     #[test]
     fn test_pdf_command_empty_path() {
         let mut state = make_state();
         state.handle_raw_command("pdf ");
-        assert!(state.headed().ui.status_message.contains("Usage"));
+        assert!(state.core.ui.status_message.contains("Usage"));
     }
 
     #[test]
     fn test_pdf_command_usage() {
         let mut state = make_state();
         state.handle_raw_command("pdf  ");
-        assert!(state.headed().ui.status_message.contains("Usage"));
+        assert!(state.core.ui.status_message.contains("Usage"));
     }
 
     #[test]
@@ -1728,8 +1707,8 @@ mod tests {
         let mut state = make_state();
         state.handle_raw_command("extension-list");
         assert!(
-            state.headed().ui.status_message.contains("No extensions")
-                || state.headed().ui.status_message.contains("Extensions (")
+            state.core.ui.status_message.contains("No extensions")
+                || state.core.ui.status_message.contains("Extensions (")
         );
     }
 
@@ -1742,26 +1721,20 @@ mod tests {
             .write()
             .register_builtin_adblock();
         state.handle_raw_command("extension-enable aileron-adblock@builtin");
-        assert!(state.headed().ui.status_message.contains("already enabled"));
+        assert!(state.core.ui.status_message.contains("already enabled"));
     }
 
     #[test]
     fn test_extension_enable_not_found() {
         let mut state = make_state();
         state.handle_raw_command("extension-enable nonexistent@example.com");
-        assert!(
-            state
-                .headed()
-                .ui
-                .status_message
-                .contains("Failed to enable")
-        );
+        assert!(state.core.ui.status_message.contains("Failed to enable"));
     }
 
     #[test]
     fn test_extension_enable_usage() {
         let mut state = make_state();
         state.handle_raw_command("extension-enable ");
-        assert!(state.headed().ui.status_message.contains("Usage"));
+        assert!(state.core.ui.status_message.contains("Usage"));
     }
 }

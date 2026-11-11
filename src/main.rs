@@ -479,7 +479,7 @@ impl AileronApp {
             Err(e) => {
                 warn!("Failed to create WryPane: {}", e);
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.headed_mut().ui.status_message = format!("Pane creation failed: {e}");
+                    app_state.core.ui.status_message = format!("Pane creation failed: {e}");
                 }
             }
         }
@@ -593,7 +593,7 @@ impl AileronApp {
             Err(e) => {
                 warn!("Failed to create OffscreenWebView: {}", e);
                 if let Some(app_state) = &mut self.app_state {
-                    app_state.headed_mut().ui.status_message = format!("Pane creation failed: {e}");
+                    app_state.core.ui.status_message = format!("Pane creation failed: {e}");
                 }
             }
         }

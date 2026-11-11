@@ -5,7 +5,7 @@ pub fn handle_layout_template_commands(state: &mut AppState, query: &str) -> Opt
     if let Some(name) = query.strip_prefix("layout-template-save ") {
         let name = name.trim();
         if name.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: :layout-template-save <name>".into();
+            state.core.ui.status_message = "Usage: :layout-template-save <name>".into();
             return Some(());
         }
         // Templates are stored in the same workspace table with a "template:" prefix
@@ -17,19 +17,19 @@ pub fn handle_layout_template_commands(state: &mut AppState, query: &str) -> Opt
                 name: template_name,
                 pane_urls: std::collections::HashMap::new(),
             });
-        state.headed_mut().ui.status_message = format!("Saving layout template: {name}...");
+        state.core.ui.status_message = format!("Saving layout template: {name}...");
         return Some(());
     }
 
     if let Some(name) = query.strip_prefix("layout-template-load ") {
         let name = name.trim();
         if name.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: :layout-template-load <name>".into();
+            state.core.ui.status_message = "Usage: :layout-template-load <name>".into();
             return Some(());
         }
         let template_name = format!("template:{name}");
         state.core.pending_workspace_restore = Some(template_name);
-        state.headed_mut().ui.status_message = format!("Loading layout template: {name}...");
+        state.core.ui.status_message = format!("Loading layout template: {name}...");
         return Some(());
     }
 
@@ -41,9 +41,9 @@ pub fn handle_layout_template_commands(state: &mut AppState, query: &str) -> Opt
             .map(|w| w.name.strip_prefix("template:").unwrap_or(&w.name))
             .collect();
         if templates.is_empty() {
-            state.headed_mut().ui.status_message = "No saved layout templates.".into();
+            state.core.ui.status_message = "No saved layout templates.".into();
         } else {
-            state.headed_mut().ui.status_message = format!("Templates: {}", templates.join(", "));
+            state.core.ui.status_message = format!("Templates: {}", templates.join(", "));
         }
         return Some(());
     }
@@ -51,24 +51,24 @@ pub fn handle_layout_template_commands(state: &mut AppState, query: &str) -> Opt
     if let Some(name) = query.strip_prefix("layout-template-delete ") {
         let name = name.trim();
         if name.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: :layout-template-delete <name>".into();
+            state.core.ui.status_message = "Usage: :layout-template-delete <name>".into();
             return Some(());
         }
         let template_name = format!("template:{name}");
         if let Some(db) = state.core.db.as_ref() {
             match crate::db::workspaces::delete_workspace(db, &template_name) {
                 Ok(true) => {
-                    state.headed_mut().ui.status_message = format!("Template deleted: {name}");
+                    state.core.ui.status_message = format!("Template deleted: {name}");
                 }
                 Ok(false) => {
-                    state.headed_mut().ui.status_message = format!("Template not found: {name}");
+                    state.core.ui.status_message = format!("Template not found: {name}");
                 }
                 Err(e) => {
-                    state.headed_mut().ui.status_message = format!("Delete failed: {e}");
+                    state.core.ui.status_message = format!("Delete failed: {e}");
                 }
             }
         } else {
-            state.headed_mut().ui.status_message = "No database connection".into();
+            state.core.ui.status_message = "No database connection".into();
         }
         return Some(());
     }
@@ -131,13 +131,13 @@ pub fn swap_panes(state: &mut AppState) {
                 if let Some(engine) = state.core.engines.get_mut(&last_id) {
                     engine.navigate(&a_url);
                 }
-                state.headed_mut().ui.status_message = "Panes swapped".into();
+                state.core.ui.status_message = "Panes swapped".into();
             }
         } else {
-            state.headed_mut().ui.status_message = "No previous pane to swap with".into();
+            state.core.ui.status_message = "No previous pane to swap with".into();
         }
     } else {
-        state.headed_mut().ui.status_message = "No previous pane".into();
+        state.core.ui.status_message = "No previous pane".into();
     }
 }
 
@@ -151,7 +151,7 @@ pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()
     if let Some(name) = query.strip_prefix("ws-save ") {
         let name = name.trim();
         if name.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: ws-save <name>".into();
+            state.core.ui.status_message = "Usage: ws-save <name>".into();
             return Some(());
         }
         state
@@ -161,7 +161,7 @@ pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()
                 name: name.to_string(),
                 pane_urls: std::collections::HashMap::new(),
             });
-        state.headed_mut().ui.status_message = format!("Saving workspace: {name}...");
+        state.core.ui.status_message = format!("Saving workspace: {name}...");
         state.core.current_workspace_name = name.to_string();
         return Some(());
     }
@@ -169,14 +169,14 @@ pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()
     if query == "ws-list" {
         let workspaces = list_workspaces(state);
         if workspaces.is_empty() {
-            state.headed_mut().ui.status_message = "No saved workspaces.".into();
+            state.core.ui.status_message = "No saved workspaces.".into();
         } else {
             let names: Vec<&str> = workspaces
                 .iter()
                 .filter(|w| w.name != "_autosave")
                 .map(|w| w.name.as_str())
                 .collect();
-            state.headed_mut().ui.status_message = format!("Workspaces: {}", names.join(", "));
+            state.core.ui.status_message = format!("Workspaces: {}", names.join(", "));
         }
         return Some(());
     }
@@ -184,38 +184,38 @@ pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()
     if let Some(name) = query.strip_prefix("ws-load ") {
         let name = name.trim();
         if name.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: ws-load <name>".into();
+            state.core.ui.status_message = "Usage: ws-load <name>".into();
             return Some(());
         }
         state.core.pending_workspace_restore = Some(name.to_string());
         state.core.current_workspace_name = name.to_string();
-        state.headed_mut().ui.status_message = format!("Restoring workspace: {name}...");
+        state.core.ui.status_message = format!("Restoring workspace: {name}...");
         return Some(());
     }
 
     if let Some(name) = query.strip_prefix("ws-delete ") {
         let name = name.trim();
         if name.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: ws-delete <name>".into();
+            state.core.ui.status_message = "Usage: ws-delete <name>".into();
             return Some(());
         }
         if let Some(db) = state.core.db.as_ref() {
             match crate::db::workspaces::delete_workspace(db, name) {
                 Ok(true) => {
-                    state.headed_mut().ui.status_message = format!("Workspace deleted: {name}");
+                    state.core.ui.status_message = format!("Workspace deleted: {name}");
                     if name == state.core.current_workspace_name {
                         state.core.current_workspace_name = "default".into();
                     }
                 }
                 Ok(false) => {
-                    state.headed_mut().ui.status_message = format!("Workspace not found: {name}");
+                    state.core.ui.status_message = format!("Workspace not found: {name}");
                 }
                 Err(e) => {
-                    state.headed_mut().ui.status_message = format!("Delete failed: {e}");
+                    state.core.ui.status_message = format!("Delete failed: {e}");
                 }
             }
         } else {
-            state.headed_mut().ui.status_message = "No database connection".into();
+            state.core.ui.status_message = "No database connection".into();
         }
         return Some(());
     }
@@ -240,7 +240,7 @@ pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()
             .map(|w| w.name)
             .collect();
         if workspaces.is_empty() {
-            state.headed_mut().ui.status_message = "No saved workspaces.".into();
+            state.core.ui.status_message = "No saved workspaces.".into();
             return Some(());
         }
         let current_idx = workspaces
@@ -261,7 +261,7 @@ pub fn handle_workspace_commands(state: &mut AppState, query: &str) -> Option<()
             }
             _ => workspaces.first().cloned().unwrap_or_default(),
         };
-        state.headed_mut().ui.status_message = format!("Switching to workspace: {target}...");
+        state.core.ui.status_message = format!("Switching to workspace: {target}...");
         state.core.current_workspace_name = target.clone();
         state.core.pending_workspace_restore = Some(target);
         return Some(());

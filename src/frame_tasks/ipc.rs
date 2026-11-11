@@ -203,7 +203,7 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
                         }
                         Err(e) => {
                             warn!("Failed to store sync passphrase in keyring: {}", e);
-                            app_state.headed_mut().ui.status_message =
+                            app_state.core.ui.status_message =
                                 format!("Failed to store passphrase: {e}");
                         }
                     }
@@ -224,7 +224,7 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
                     pane.execute_js_code("window._onConfigSaved && window._onConfigSaved();");
                     pane.mark_dirty();
                 }
-                app_state.headed_mut().ui.status_message = "Settings saved".into();
+                app_state.core.ui.status_message = "Settings saved".into();
                 app_state.core.cache.config_json_dirty = true;
             }
         }
@@ -239,17 +239,16 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
                 match crate::passwords::keyring::store_credential(&key, password) {
                     Ok(()) => {
                         info!("Saved credential for {}", username);
-                        app_state.headed_mut().ui.status_message =
+                        app_state.core.ui.status_message =
                             format!("Credential saved for {username}");
                     }
                     Err(e) => {
                         warn!("Failed to store credential: {}", e);
-                        app_state.headed_mut().ui.status_message =
-                            format!("Credential save failed: {e}");
+                        app_state.core.ui.status_message = format!("Credential save failed: {e}");
                     }
                 }
             } else {
-                app_state.headed_mut().ui.status_message = "No pending credentials to save".into();
+                app_state.core.ui.status_message = "No pending credentials to save".into();
             }
         }
         Some("scroll-fraction") => {
@@ -272,9 +271,9 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
             }
         }
         Some("hint-clicked") => {
-            app_state.headed_mut().ui.hint_mode = false;
-            app_state.headed_mut().ui.hint_buffer.clear();
-            app_state.headed_mut().ui.status_message.clear();
+            app_state.core.ui.hint_mode = false;
+            app_state.core.ui.hint_buffer.clear();
+            app_state.core.ui.status_message.clear();
         }
         #[cfg(feature = "passwords")]
         Some("login-form-detected") => {
@@ -412,16 +411,15 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
                 );
                 match std::fs::write(path, &markdown) {
                     Ok(()) => {
-                        app_state.headed_mut().ui.status_message =
-                            format!("Saved to: {}", path.display());
+                        app_state.core.ui.status_message = format!("Saved to: {}", path.display());
                     }
                     Err(e) => {
-                        app_state.headed_mut().ui.status_message = format!("Failed to save: {}", e);
+                        app_state.core.ui.status_message = format!("Failed to save: {}", e);
                     }
                 }
                 app_state.core.pending_reader_save_path = None;
             } else {
-                app_state.headed_mut().ui.status_message = format!(
+                app_state.core.ui.status_message = format!(
                     "Content extracted ({} words, ~{} min read)",
                     word_count, read_time
                 );

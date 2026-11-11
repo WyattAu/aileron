@@ -5,7 +5,7 @@ pub fn cmd_tools(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(pattern) = query.strip_prefix("grep ") {
         let pattern = pattern.trim();
         if pattern.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: :grep <pattern> [path]".into();
+            state.core.ui.status_message = "Usage: :grep <pattern> [path]".into();
             return Some(());
         }
         let (pattern, search_path) = if pattern.contains(' ') {
@@ -33,7 +33,7 @@ pub fn cmd_tools(state: &mut AppState, query: &str) -> Option<()> {
                 let lines: Vec<&str> = stdout.lines().take(15).collect();
                 let total = stdout.lines().count();
                 if lines.is_empty() {
-                    state.headed_mut().ui.status_message = "No matches found".into();
+                    state.core.ui.status_message = "No matches found".into();
                 } else {
                     let results: Vec<String> = lines
                         .iter()
@@ -50,16 +50,15 @@ pub fn cmd_tools(state: &mut AppState, query: &str) -> Option<()> {
                     } else {
                         String::new()
                     };
-                    state.headed_mut().ui.status_message =
-                        format!("{}{}", results.join(" │ "), suffix);
+                    state.core.ui.status_message = format!("{}{}", results.join(" │ "), suffix);
                 }
             }
             Ok(output) => {
-                state.headed_mut().ui.status_message =
+                state.core.ui.status_message =
                     format!("grep: {}", String::from_utf8_lossy(&output.stderr));
             }
             Err(e) => {
-                state.headed_mut().ui.status_message = format!("grep failed: {e}");
+                state.core.ui.status_message = format!("grep failed: {e}");
             }
         }
         return Some(());
@@ -77,7 +76,7 @@ pub fn cmd_tools(state: &mut AppState, query: &str) -> Option<()> {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     let lines: Vec<&str> = stdout.lines().take(10).collect();
                     if lines.is_empty() {
-                        state.headed_mut().ui.status_message = "Working tree clean".into();
+                        state.core.ui.status_message = "Working tree clean".into();
                     } else {
                         let total = stdout.lines().count();
                         let suffix = if total > 10 {
@@ -85,18 +84,17 @@ pub fn cmd_tools(state: &mut AppState, query: &str) -> Option<()> {
                         } else {
                             String::new()
                         };
-                        state.headed_mut().ui.status_message =
-                            format!("{}{}", lines.join(" │ "), suffix);
+                        state.core.ui.status_message = format!("{}{}", lines.join(" │ "), suffix);
                     }
                 }
                 Ok(output) => {
-                    state.headed_mut().ui.status_message =
+                    state.core.ui.status_message =
                         format!("git: {}", String::from_utf8_lossy(&output.stderr).trim());
                 }
-                Err(e) => state.headed_mut().ui.status_message = format!("git failed: {e}"),
+                Err(e) => state.core.ui.status_message = format!("git failed: {e}"),
             }
         } else {
-            state.headed_mut().ui.status_message = "Not in a git repository".into();
+            state.core.ui.status_message = "Not in a git repository".into();
         }
         return Some(());
     }
@@ -111,20 +109,20 @@ pub fn cmd_tools(state: &mut AppState, query: &str) -> Option<()> {
             {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    state.headed_mut().ui.status_message = if stdout.is_empty() {
+                    state.core.ui.status_message = if stdout.is_empty() {
                         "No commits".into()
                     } else {
                         format!("Log: {}", stdout.replace('\n', " │ "))
                     };
                 }
                 Ok(output) => {
-                    state.headed_mut().ui.status_message =
+                    state.core.ui.status_message =
                         format!("git: {}", String::from_utf8_lossy(&output.stderr).trim());
                 }
-                Err(e) => state.headed_mut().ui.status_message = format!("git failed: {e}"),
+                Err(e) => state.core.ui.status_message = format!("git failed: {e}"),
             }
         } else {
-            state.headed_mut().ui.status_message = "Not in a git repository".into();
+            state.core.ui.status_message = "Not in a git repository".into();
         }
         return Some(());
     }
@@ -139,20 +137,20 @@ pub fn cmd_tools(state: &mut AppState, query: &str) -> Option<()> {
             {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    state.headed_mut().ui.status_message = if stdout.is_empty() {
+                    state.core.ui.status_message = if stdout.is_empty() {
                         "No changes".into()
                     } else {
                         format!("Diff: {}", stdout.replace('\n', " │ "))
                     };
                 }
                 Ok(output) => {
-                    state.headed_mut().ui.status_message =
+                    state.core.ui.status_message =
                         format!("git: {}", String::from_utf8_lossy(&output.stderr).trim());
                 }
-                Err(e) => state.headed_mut().ui.status_message = format!("git failed: {e}"),
+                Err(e) => state.core.ui.status_message = format!("git failed: {e}"),
             }
         } else {
-            state.headed_mut().ui.status_message = "Not in a git repository".into();
+            state.core.ui.status_message = "Not in a git repository".into();
         }
         return Some(());
     }
@@ -167,9 +165,9 @@ pub fn cmd_tools(state: &mut AppState, query: &str) -> Option<()> {
                 r#"if (window._terminal && window._terminal.clear) { window._terminal.clear(); }"#
                     .into(),
             ));
-            state.headed_mut().ui.status_message = "Terminal cleared".into();
+            state.core.ui.status_message = "Terminal cleared".into();
         } else {
-            state.headed_mut().ui.status_message = "Not a terminal pane".into();
+            state.core.ui.status_message = "Not a terminal pane".into();
         }
         return Some(());
     }
@@ -177,7 +175,7 @@ pub fn cmd_tools(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(pattern) = query.strip_prefix("terminal-search ") {
         let pattern = pattern.trim();
         if pattern.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: :terminal-search <pattern>".into();
+            state.core.ui.status_message = "Usage: :terminal-search <pattern>".into();
             return Some(());
         }
         let active_id = state.core.wm.active_pane_id();
@@ -206,7 +204,7 @@ if (window._terminal && window._terminal.buffer) {{
 "#
                 )));
         } else {
-            state.headed_mut().ui.status_message = "Not a terminal pane".into();
+            state.core.ui.status_message = "Not a terminal pane".into();
         }
         return Some(());
     }
@@ -216,7 +214,7 @@ if (window._terminal && window._terminal.buffer) {{
             .core
             .pending_wry_actions
             .push_back(crate::app::WryAction::Print);
-        state.headed_mut().ui.status_message = "Printing...".into();
+        state.core.ui.status_message = "Printing...".into();
         return Some(());
     }
 

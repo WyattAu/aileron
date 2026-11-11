@@ -34,7 +34,7 @@ pub mod passwords;
 pub mod platform;
 #[cfg(feature = "headed")]
 pub mod popup;
-pub mod scripts;
+pub use aileron_core::scripts;
 pub use aileron_engine::servo;
 #[cfg(feature = "sync")]
 pub mod sync;

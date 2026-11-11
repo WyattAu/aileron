@@ -331,9 +331,9 @@ impl TestHarness {
             active_pane_id: active_id,
             pane_count: panes_ref.len(),
             panes,
-            status_message: &app_state.headed().ui.status_message,
-            find_bar_open: app_state.headed().ui.find_bar_open,
-            find_query: &app_state.headed().ui.find_query,
+            status_message: &app_state.core.ui.status_message,
+            find_bar_open: app_state.core.ui.find_bar_open,
+            find_query: &app_state.core.ui.find_query,
             command_palette_open: app_state.headed().palette.open,
             palette_results: app_state
                 .headed()
@@ -356,7 +356,7 @@ impl TestHarness {
                     .position(|r| r.id == s.id)
                     .unwrap_or(0)
             }),
-            url_bar_focused: app_state.headed().ui.url_bar_focused,
+            url_bar_focused: app_state.core.ui.url_bar_focused,
             tab_layout: &app_state.core.config.tab_layout,
             tab_sidebar_width: app_state.core.config.tab_sidebar_width as f64,
             tab_sidebar_right: app_state.core.config.tab_sidebar_right,

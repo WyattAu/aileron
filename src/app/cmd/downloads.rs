@@ -13,17 +13,17 @@ pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
                 match crate::db::downloads::recent_downloads(db, 10) {
                     Ok(entries) => {
                         if entries.is_empty() {
-                            state.headed_mut().ui.status_message = "No downloads".into();
+                            state.core.ui.status_message = "No downloads".into();
                         } else {
                             let items: Vec<String> = entries
                                 .iter()
                                 .map(|e| format!("{} [{}]", e.filename, e.status))
                                 .collect();
-                            state.headed_mut().ui.status_message =
+                            state.core.ui.status_message =
                                 format!("Downloads: {}", items.join(", "));
                         }
                     }
-                    Err(e) => state.headed_mut().ui.status_message = format!("Error: {e}"),
+                    Err(e) => state.core.ui.status_message = format!("Error: {e}"),
                 }
             }
         } else {
@@ -43,7 +43,7 @@ pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
                 })
                 .collect();
             let active = state.core.download_manager.active_count();
-            state.headed_mut().ui.status_message =
+            state.core.ui.status_message =
                 format!("Downloads ({} active): {}", active, items.join(" | "));
         }
         return Some(());
@@ -51,10 +51,8 @@ pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
     if query == "downloads-clear" {
         if let Some(db) = state.core.db.as_ref() {
             match crate::db::downloads::clear_downloads(db) {
-                Ok(count) => {
-                    state.headed_mut().ui.status_message = format!("Cleared {count} downloads")
-                }
-                Err(e) => state.headed_mut().ui.status_message = format!("Error: {e}"),
+                Ok(count) => state.core.ui.status_message = format!("Cleared {count} downloads"),
+                Err(e) => state.core.ui.status_message = format!("Error: {e}"),
             }
         }
         return Some(());
@@ -67,11 +65,11 @@ pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
                     Ok(id) => match crate::db::downloads::get_download_dest_path(db, id) {
                         Ok(dest) => {
                             let _ = open_that(&dest);
-                            state.headed_mut().ui.status_message = format!("Opened: {dest}");
+                            state.core.ui.status_message = format!("Opened: {dest}");
                         }
-                        Err(e) => state.headed_mut().ui.status_message = format!("Error: {e}"),
+                        Err(e) => state.core.ui.status_message = format!("Error: {e}"),
                     },
-                    Err(e) => state.headed_mut().ui.status_message = format!("No downloads: {e}"),
+                    Err(e) => state.core.ui.status_message = format!("No downloads: {e}"),
                 }
             }
         } else if let Ok(id) = id_str.parse::<i64>() {
@@ -79,15 +77,15 @@ pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
                 match crate::db::downloads::get_download_dest_path(db, id) {
                     Ok(dest) => {
                         let _ = open_that(&dest);
-                        state.headed_mut().ui.status_message = format!("Opened: {dest}");
+                        state.core.ui.status_message = format!("Opened: {dest}");
                     }
-                    Err(e) => state.headed_mut().ui.status_message = format!("Error: {e}"),
+                    Err(e) => state.core.ui.status_message = format!("Error: {e}"),
                 }
             } else {
-                state.headed_mut().ui.status_message = "No database".into();
+                state.core.ui.status_message = "No database".into();
             }
         } else {
-            state.headed_mut().ui.status_message = "Usage: downloads-open [id]".into();
+            state.core.ui.status_message = "Usage: downloads-open [id]".into();
         }
         return Some(());
     }
@@ -96,9 +94,9 @@ pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
             directories::UserDirs::new().and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
         {
             let _ = open_that(&downloads_dir);
-            state.headed_mut().ui.status_message = format!("Opened: {}", downloads_dir.display());
+            state.core.ui.status_message = format!("Opened: {}", downloads_dir.display());
         } else {
-            state.headed_mut().ui.status_message = "Could not determine downloads directory".into();
+            state.core.ui.status_message = "Could not determine downloads directory".into();
         }
         return Some(());
     }
@@ -107,25 +105,24 @@ pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
         let args = args.trim();
         if args.is_empty() {
             if state.core.config.keybindings.is_empty() {
-                state.headed_mut().ui.status_message =
+                state.core.ui.status_message =
                     "No custom keybindings. Usage: :bind normal j ScrollDown".into();
             } else {
                 let mut lines: Vec<String> = Vec::new();
                 for (key, action) in &state.core.config.keybindings {
                     lines.push(format!("  {key} → {action}"));
                 }
-                state.headed_mut().ui.status_message =
-                    format!("Custom bindings:\n{}", lines.join("\n"));
+                state.core.ui.status_message = format!("Custom bindings:\n{}", lines.join("\n"));
             }
         } else {
             let parts: Vec<&str> = args.splitn(3, ' ').collect();
             if parts.len() < 2 {
-                state.headed_mut().ui.status_message = "Usage: :bind <mode> <key> [action]".into();
+                state.core.ui.status_message = "Usage: :bind <mode> <key> [action]".into();
             } else {
                 let mode_str = parts[0];
                 let key_str = parts[1];
                 if crate::input::keybindings::KeybindingRegistry::parse_mode(mode_str).is_none() {
-                    state.headed_mut().ui.status_message =
+                    state.core.ui.status_message =
                         format!("Unknown mode: {mode_str}. Use: normal, insert, command");
                 } else {
                     let binding_key = format!("{mode_str} {key_str}");
@@ -136,7 +133,7 @@ pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
                             .config
                             .keybindings
                             .insert(binding_key.clone(), action_str.to_string());
-                        state.headed_mut().ui.status_message =
+                        state.core.ui.status_message =
                             format!("Bound: {binding_key} → {action_str}");
                     } else {
                         let current = state
@@ -146,7 +143,7 @@ pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
                             .get(&binding_key)
                             .map(|s| s.as_str())
                             .unwrap_or("(default)");
-                        state.headed_mut().ui.status_message = format!("{binding_key} → {current}");
+                        state.core.ui.status_message = format!("{binding_key} → {current}");
                     }
                     if let Err(e) = Config::save(&state.core.config) {
                         tracing::warn!("Failed to save config: {}", e);
@@ -160,13 +157,13 @@ pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
     if let Some(args) = query.strip_prefix("unbind ") {
         let parts: Vec<&str> = args.trim().splitn(2, ' ').collect();
         if parts.len() < 2 {
-            state.headed_mut().ui.status_message = "Usage: :unbind <mode> <key>".into();
+            state.core.ui.status_message = "Usage: :unbind <mode> <key>".into();
         } else {
             let binding_key = format!("{} {}", parts[0], parts[1]);
             if state.core.config.keybindings.remove(&binding_key).is_some() {
-                state.headed_mut().ui.status_message = format!("Unbound: {binding_key}");
+                state.core.ui.status_message = format!("Unbound: {binding_key}");
             } else {
-                state.headed_mut().ui.status_message = format!("No custom binding: {binding_key}");
+                state.core.ui.status_message = format!("No custom binding: {binding_key}");
             }
             if let Err(e) = Config::save(&state.core.config) {
                 tracing::warn!("Failed to save config: {}", e);
@@ -212,7 +209,7 @@ pub fn cmd_downloads(state: &mut AppState, query: &str) -> Option<()> {
             .unwrap_or_default();
         stats.push_str(&db_info);
 
-        state.headed_mut().ui.status_message = stats;
+        state.core.ui.status_message = stats;
         return Some(());
     }
 

@@ -383,15 +383,14 @@ fn test_default_adblock_rules_with_https_safe_list() {
 #[test]
 fn test_handle_pending_import_none_does_nothing() {
     let mut state = make_state();
-    let original_message = state.headed().ui.status_message.clone();
+    let original_message = state.core.ui.status_message.clone();
     assert!(state.headed().pending_import.is_none());
 
     frame_tasks::handle_pending_import(&mut state);
 
     // Should not change status message when no import is pending
     assert_eq!(
-        state.headed().ui.status_message,
-        original_message,
+        state.core.ui.status_message, original_message,
         "no import pending should not change status message"
     );
 }
@@ -405,7 +404,7 @@ fn test_handle_pending_import_unknown_source() {
 
     assert!(
         state
-            .headed()
+            .core
             .ui
             .status_message
             .contains("Unknown import source"),
@@ -426,7 +425,7 @@ fn test_handle_pending_import_no_database() {
     frame_tasks::handle_pending_import(&mut state);
 
     assert!(
-        state.headed().ui.status_message.contains("No database"),
+        state.core.ui.status_message.contains("No database"),
         "import without database should set error status"
     );
     assert!(

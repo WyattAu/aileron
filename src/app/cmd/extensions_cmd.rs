@@ -30,7 +30,7 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
                 Some((ids.len(), lines))
             }
         }; // read guard dropped here
-        state.headed_mut().ui.status_message = match listing {
+        state.core.ui.status_message = match listing {
             None => "No extensions loaded. Use :extension-load to scan, or :extension-install <path> to install.".into(),
             Some((n, lines)) => format!("Extensions ({}): {}", n, lines.join(" | ")),
         };
@@ -62,7 +62,7 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
                 Some((ids.len(), lines))
             }
         }; // read guard dropped here
-        state.headed_mut().ui.status_message = match listing {
+        state.core.ui.status_message = match listing {
             None => "No extensions loaded.".into(),
             Some((n, lines)) => format!("Extensions ({}): {}", n, lines.join(" | ")),
         };
@@ -71,7 +71,7 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
 
     if query == "extension-load" {
         let loaded = state.core.extension_manager.write().load_all();
-        state.headed_mut().ui.status_message = format!("Loaded {} extension(s)", loaded.len());
+        state.core.ui.status_message = format!("Loaded {} extension(s)", loaded.len());
         return Some(());
     }
 
@@ -87,9 +87,9 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
             let _ = crate::platform::platform().shell_command(&format!(
                 "xdg-open \"{dir_str}\" 2>/dev/null || open \"{dir_str}\" 2>/dev/null || explorer.exe \"{dir_str}\"",
             ));
-            state.headed_mut().ui.status_message = format!("Opened {}", dir.display());
+            state.core.ui.status_message = format!("Opened {}", dir.display());
         } else {
-            state.headed_mut().ui.status_message = "Extensions directory does not exist yet".into();
+            state.core.ui.status_message = "Extensions directory does not exist yet".into();
         }
         return Some(());
     }
@@ -97,18 +97,17 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
     if let Some(id_str) = query.strip_prefix("extension-disable ") {
         let id_str = id_str.trim();
         if id_str.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: extension-disable <id>".into();
+            state.core.ui.status_message = "Usage: extension-disable <id>".into();
             return Some(());
         }
         let ext_id = ExtensionId(id_str.to_string());
         let outcome = state.core.extension_manager.write().unload(&ext_id);
         match outcome {
             Some(name) => {
-                state.headed_mut().ui.status_message =
-                    format!("Disabled extension '{name}' ({id_str})");
+                state.core.ui.status_message = format!("Disabled extension '{name}' ({id_str})");
             }
             None => {
-                state.headed_mut().ui.status_message = format!("Extension '{id_str}' not found");
+                state.core.ui.status_message = format!("Extension '{id_str}' not found");
             }
         }
         return Some(());
@@ -117,13 +116,12 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
     if let Some(id_str) = query.strip_prefix("extension-enable ") {
         let id_str = id_str.trim();
         if id_str.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: extension-enable <id>".into();
+            state.core.ui.status_message = "Usage: extension-enable <id>".into();
             return Some(());
         }
         let ext_id = ExtensionId(id_str.to_string());
         if state.core.extension_manager.read().get(&ext_id).is_some() {
-            state.headed_mut().ui.status_message =
-                format!("Extension '{id_str}' is already enabled");
+            state.core.ui.status_message = format!("Extension '{id_str}' is already enabled");
             return Some(());
         }
         let enabled = {
@@ -136,9 +134,9 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
             mgr.get(&ext_id).is_some()
         };
         if enabled {
-            state.headed_mut().ui.status_message = format!("Enabled extension '{id_str}'");
+            state.core.ui.status_message = format!("Enabled extension '{id_str}'");
         } else {
-            state.headed_mut().ui.status_message = format!("Failed to enable extension '{id_str}'");
+            state.core.ui.status_message = format!("Failed to enable extension '{id_str}'");
         }
         return Some(());
     }
@@ -146,7 +144,7 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
     if let Some(path_str) = query.strip_prefix("extension-install ") {
         let path_str = path_str.trim();
         if path_str.is_empty() {
-            state.headed_mut().ui.status_message =
+            state.core.ui.status_message =
                 "Usage: extension-install <path-to-extension-dir>".into();
             return Some(());
         }
@@ -156,13 +154,13 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
         } else if path.ends_with("manifest.json") {
             path
         } else {
-            state.headed_mut().ui.status_message =
+            state.core.ui.status_message =
                 "Path must be a directory containing manifest.json".into();
             return Some(());
         };
 
         if !manifest_path.exists() {
-            state.headed_mut().ui.status_message =
+            state.core.ui.status_message =
                 format!("No manifest.json found at {}", manifest_path.display());
             return Some(());
         }
@@ -175,12 +173,11 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
             .ok();
         match outcome {
             Some(id) => {
-                state.headed_mut().ui.status_message =
+                state.core.ui.status_message =
                     format!("Installed extension '{}' from {}", id.0, path_str);
             }
             None => {
-                state.headed_mut().ui.status_message =
-                    format!("Failed to load extension from {path_str}");
+                state.core.ui.status_message = format!("Failed to load extension from {path_str}");
             }
         }
         return Some(());
@@ -189,7 +186,7 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
     if let Some(id_str) = query.strip_prefix("extension-info ") {
         let id_str = id_str.trim();
         if id_str.is_empty() {
-            state.headed_mut().ui.status_message = "Usage: extension-info <id>".into();
+            state.core.ui.status_message = "Usage: extension-info <id>".into();
             return Some(());
         }
         let ext_id = ExtensionId(id_str.to_string());
@@ -208,10 +205,10 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
                 } else {
                     format!(" | perms: {}", permissions.join(", "))
                 };
-                state.headed_mut().ui.status_message = format!("{name} v{version} ({id}){perms}",);
+                state.core.ui.status_message = format!("{name} v{version} ({id}){perms}",);
             }
             None => {
-                state.headed_mut().ui.status_message = format!("Extension '{id_str}' not found");
+                state.core.ui.status_message = format!("Extension '{id_str}' not found");
             }
         }
         return Some(());
@@ -230,7 +227,7 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
                 }
             })
             .collect();
-        state.headed_mut().ui.status_message = format!("Languages: {}", items.join(", "));
+        state.core.ui.status_message = format!("Languages: {}", items.join(", "));
         return Some(());
     }
 
@@ -244,8 +241,7 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
                 .find(|(l, _)| *l == current)
                 .map(|(_, n)| *n)
                 .unwrap_or("?");
-            state.headed_mut().ui.status_message =
-                format!("Language: {} ({})", name, current.code());
+            state.core.ui.status_message = format!("Language: {} ({})", name, current.code());
         } else if let Some(locale) = crate::i18n::Locale::from_code(code) {
             crate::i18n::set_locale(locale);
             state.core.config.language = Some(code.to_string());
@@ -255,13 +251,13 @@ pub fn cmd_extensions_language(state: &mut AppState, query: &str) -> Option<()> 
                 .find(|(l, _)| *l == locale)
                 .map(|(_, n)| *n)
                 .unwrap_or("?");
-            state.headed_mut().ui.status_message = format!("Language: {name}");
+            state.core.ui.status_message = format!("Language: {name}");
         } else {
             let available: Vec<&str> = crate::i18n::available_locales()
                 .iter()
                 .map(|(l, _)| l.code())
                 .collect();
-            state.headed_mut().ui.status_message = format!(
+            state.core.ui.status_message = format!(
                 "Unknown language: {}. Available: {}",
                 code,
                 available.join(", ")

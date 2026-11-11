@@ -134,22 +134,9 @@ pub struct TabState {
     pub tab_display_dirty: bool,
 }
 
-#[derive(Default)]
-pub struct UiState {
-    pub url_bar_focused: bool,
-    pub url_bar_input: String,
-    pub command_palette_input: String,
-    pub find_bar_open: bool,
-    pub find_query: String,
-    pub hint_mode: bool,
-    pub hint_new_tab: bool,
-    pub hint_buffer: String,
-    pub omnibox_results: Vec<SearchItem>,
-    pub omnibox_selected: usize,
-    pub last_omnibox_query: String,
-    pub status_message: String,
-    pub accessibility_text: String,
-}
+/// S4 stage 2d: UiState moved to aileron-core `state` — the offscreen
+/// IPC + crash paths write it from agent-reachable code.
+pub use aileron_core::state::UiState;
 
 impl Default for TabState {
     fn default() -> Self {
@@ -705,7 +692,7 @@ mod tests {
         let mut state = AppState::new(viewport, Config::default()).unwrap();
         state.handle_raw_command("vs && sp && swap");
         // vs and sp should have created splits; swap should show "No previous pane"
-        assert_eq!(state.headed().ui.status_message, "No previous pane");
+        assert_eq!(state.core.ui.status_message, "No previous pane");
     }
 
     #[test]
@@ -730,7 +717,7 @@ mod tests {
             physical_key: None,
         });
         assert!(state.core.session.pending_mark_action.is_none());
-        assert_eq!(state.headed().ui.status_message, "Mark a set");
+        assert_eq!(state.core.ui.status_message, "Mark a set");
 
         // The mark is stored asynchronously via IPC. Verify the pending state
         // and that a CaptureScrollFraction action was queued.
@@ -765,7 +752,7 @@ mod tests {
             modifiers: Modifiers::none(),
             physical_key: None,
         });
-        assert_eq!(state.headed().ui.status_message, "Mark z not set");
+        assert_eq!(state.core.ui.status_message, "Mark z not set");
     }
 
     #[test]
@@ -797,6 +784,6 @@ mod tests {
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
         let mut state = AppState::new(viewport, Config::default()).unwrap();
         state.execute_command("swap");
-        assert_eq!(state.headed().ui.status_message, "No previous pane");
+        assert_eq!(state.core.ui.status_message, "No previous pane");
     }
 }

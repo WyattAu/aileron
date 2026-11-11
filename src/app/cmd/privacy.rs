@@ -9,10 +9,10 @@ pub fn cmd_clear_privacy(state: &mut AppState, query: &str) -> Option<()> {
                 if let Some(db) = state.core.db.as_ref() {
                     match crate::db::history::clear_history(db) {
                         Ok(count) => {
-                            state.headed_mut().ui.status_message =
+                            state.core.ui.status_message =
                                 format!("Cleared {count} history entries")
                         }
-                        Err(e) => state.headed_mut().ui.status_message = format!("Failed: {e}"),
+                        Err(e) => state.core.ui.status_message = format!("Failed: {e}"),
                     }
                 }
             }
@@ -20,10 +20,9 @@ pub fn cmd_clear_privacy(state: &mut AppState, query: &str) -> Option<()> {
                 if let Some(db) = state.core.db.as_ref() {
                     match crate::db::bookmarks::clear_bookmarks(db) {
                         Ok(count) => {
-                            state.headed_mut().ui.status_message =
-                                format!("Cleared {count} bookmarks")
+                            state.core.ui.status_message = format!("Cleared {count} bookmarks")
                         }
-                        Err(e) => state.headed_mut().ui.status_message = format!("Failed: {e}"),
+                        Err(e) => state.core.ui.status_message = format!("Failed: {e}"),
                     }
                 }
             }
@@ -36,14 +35,13 @@ pub fn cmd_clear_privacy(state: &mut AppState, query: &str) -> Option<()> {
                         }
                     }
                 }
-                state.headed_mut().ui.status_message =
-                    format!("Cleared {} workspaces", workspaces.len());
+                state.core.ui.status_message = format!("Cleared {} workspaces", workspaces.len());
             }
             "cookies" => {
                 state.core.pending_wry_actions.push_back(crate::app::WryAction::RunJs(
                     "document.cookie.split(';').forEach(function(c) { document.cookie = c.trim().split('=')[0] + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/'; }); 'Cookies cleared'".into(),
                 ));
-                state.headed_mut().ui.status_message = "Cookies cleared for current pane".into();
+                state.core.ui.status_message = "Cookies cleared for current pane".into();
             }
             "all" => {
                 let mut parts = Vec::new();
@@ -62,10 +60,10 @@ pub fn cmd_clear_privacy(state: &mut AppState, query: &str) -> Option<()> {
                     }
                     parts.push(format!("{} workspaces", ws.len()));
                 }
-                state.headed_mut().ui.status_message = format!("Cleared: {}", parts.join(", "));
+                state.core.ui.status_message = format!("Cleared: {}", parts.join(", "));
             }
             _ => {
-                state.headed_mut().ui.status_message =
+                state.core.ui.status_message =
                     "Usage: :clear history|bookmarks|workspaces|cookies|all".into();
             }
         }
@@ -76,7 +74,7 @@ pub fn cmd_clear_privacy(state: &mut AppState, query: &str) -> Option<()> {
         let https = state.core.config.https_upgrade_enabled;
         let tracking = state.core.config.tracking_protection_enabled;
         let adblock = state.core.config.adblock_enabled;
-        state.headed_mut().ui.status_message = format!(
+        state.core.ui.status_message = format!(
             "HTTPS upgrade: {} | Tracking protection: {} | Adblock: {}",
             if https { "ON" } else { "OFF" },
             if tracking { "ON" } else { "OFF" },
@@ -94,17 +92,17 @@ pub fn cmd_clear_privacy(state: &mut AppState, query: &str) -> Option<()> {
             let host_lower = host.to_lowercase();
             let safe_list = state.get_cached_https_safe_list();
             if crate::net::privacy::is_https_safe(&host_lower, &safe_list) {
-                state.headed_mut().ui.status_message =
+                state.core.ui.status_message =
                     format!("HTTPS upgrade: {host_lower} is already in the safe list");
             } else {
-                state.headed_mut().ui.status_message = format!(
+                state.core.ui.status_message = format!(
                     "HTTPS upgrade: {} is not in the safe list ({} domains loaded)",
                     host_lower,
                     safe_list.len()
                 );
             }
         } else {
-            state.headed_mut().ui.status_message = "No active page URL".into();
+            state.core.ui.status_message = "No active page URL".into();
         }
         return Some(());
     }
@@ -113,7 +111,7 @@ pub fn cmd_clear_privacy(state: &mut AppState, query: &str) -> Option<()> {
         state.core.pending_wry_actions.push_back(crate::app::WryAction::RunJs(
             "document.cookie.split(';').forEach(function(c) { document.cookie = c.trim().split('=')[0] + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/'; }); 'Cookies cleared'".into(),
         ));
-        state.headed_mut().ui.status_message = "Cookies cleared for current pane".into();
+        state.core.ui.status_message = "Cookies cleared for current pane".into();
         return Some(());
     }
 

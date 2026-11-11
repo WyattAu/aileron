@@ -438,7 +438,7 @@ pub fn process_events<M: EventPaneManager>(
                     .download_manager
                     .start(url.as_str(), Some(filename.as_str()));
                 let short_url = if url.len() > 40 { &url[..37] } else { &url };
-                app_state.headed_mut().ui.status_message =
+                app_state.core.ui.status_message =
                     format!("Download #{dl_id}: {filename} ({short_url})");
                 info!("Download #{} started: {} from {}", dl_id, filename, url);
                 if let Some(db) = app_state.core.db.as_ref() {
@@ -459,10 +459,10 @@ pub fn process_events<M: EventPaneManager>(
             }
             WryEvent::OpenFile { path } => {
                 let _ = open::that(&path);
-                app_state.headed_mut().ui.status_message = format!("Opened: {path}");
+                app_state.core.ui.status_message = format!("Opened: {path}");
             }
             WryEvent::HttpsUpgraded { to, .. } => {
-                app_state.headed_mut().ui.status_message = format!("HTTPS upgrade: {to}");
+                app_state.core.ui.status_message = format!("HTTPS upgrade: {to}");
                 if let Some(pane) = manager.get_mut(&pane_id) {
                     pane.mark_dirty();
                 }

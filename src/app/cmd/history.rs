@@ -17,7 +17,7 @@ pub fn cmd_history(state: &mut AppState, query: &str) -> Option<()> {
                         state.headed_mut().panels.history_panel_open = true;
                     }
                     Err(e) => {
-                        state.headed_mut().ui.status_message = format!("History error: {e}");
+                        state.core.ui.status_message = format!("History error: {e}");
                     }
                 }
             }
@@ -27,14 +27,12 @@ pub fn cmd_history(state: &mut AppState, query: &str) -> Option<()> {
             if let Some(db) = state.core.db.as_ref() {
                 match crate::db::history::clear_history(db) {
                     Ok(count) => {
-                        state.headed_mut().ui.status_message =
-                            format!("Cleared {count} history entries");
+                        state.core.ui.status_message = format!("Cleared {count} history entries");
                         state.headed_mut().panels.history_panel_open = false;
                         state.headed_mut().panels.history_entries.clear();
                     }
                     Err(e) => {
-                        state.headed_mut().ui.status_message =
-                            format!("Failed to clear history: {e}");
+                        state.core.ui.status_message = format!("Failed to clear history: {e}");
                     }
                 }
             }

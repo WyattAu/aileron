@@ -10,9 +10,9 @@ use super::dispatch::ActionEffect;
 impl AppState {
     pub fn process_key_event(&mut self, event: KeyEvent) {
         // Escape closes find bar first (highest priority)
-        if self.headed().ui.find_bar_open && event.key == Key::Escape {
-            self.headed_mut().ui.find_bar_open = false;
-            self.headed_mut().ui.find_query.clear();
+        if self.core.ui.find_bar_open && event.key == Key::Escape {
+            self.core.ui.find_bar_open = false;
+            self.core.ui.find_query.clear();
             self.core.pending_wry_actions.push_back(WryAction::RunJs(
                 "window.getSelection().removeAllRanges()".into(),
             ));
@@ -174,7 +174,7 @@ impl AppState {
                     if !self.headed_mut().panels.sync_conflict_entries.is_empty() {
                         let idx = self.headed_mut().panels.sync_conflict_selected;
                         self.headed_mut().panels.sync_conflict_entries.remove(idx);
-                        self.headed_mut().ui.status_message = "Kept local version".into();
+                        self.core.ui.status_message = "Kept local version".into();
                         if self.headed_mut().panels.sync_conflict_selected
                             >= self.headed_mut().panels.sync_conflict_entries.len()
                         {
@@ -195,7 +195,7 @@ impl AppState {
                         if let Some(conflict) =
                             self.headed_mut().panels.sync_conflict_entries.get(idx)
                         {
-                            self.headed_mut().ui.status_message =
+                            self.core.ui.status_message =
                                 format!("Keep remote: {} (run :sync --pull)", conflict.path);
                         }
                         self.headed_mut().panels.sync_conflict_entries.remove(idx);
@@ -233,20 +233,20 @@ impl AppState {
                 match action {
                     PaletteAction::ItemSelected(item) => {
                         self.headed_mut().palette.close();
-                        self.headed_mut().ui.command_palette_input.clear();
+                        self.core.ui.command_palette_input.clear();
                         self.execute_palette_selection(&item);
                     }
                     PaletteAction::Closed => {
                         self.headed_mut().palette.close();
-                        self.headed_mut().ui.command_palette_input.clear();
+                        self.core.ui.command_palette_input.clear();
                     }
                     PaletteAction::QuerySubmit(query) => {
                         self.headed_mut().palette.close();
-                        self.headed_mut().ui.command_palette_input.clear();
+                        self.core.ui.command_palette_input.clear();
                         self.handle_raw_command(&query);
                     }
                     PaletteAction::Consumed => {
-                        self.headed_mut().ui.command_palette_input =
+                        self.core.ui.command_palette_input =
                             self.headed_mut().palette.query.clone();
                     }
                 }
@@ -268,7 +268,7 @@ impl AppState {
                     self.core
                         .pending_wry_actions
                         .push_back(WryAction::CaptureScrollFraction);
-                    self.headed_mut().ui.status_message = format!("Mark {c} set");
+                    self.core.ui.status_message = format!("Mark {c} set");
                 }
                 'g' => {
                     if let Some(frac) = self
@@ -281,9 +281,9 @@ impl AppState {
                     {
                         // Set a pending scroll target; the main loop will apply it.
                         self.core.session.pending_mark_jump = Some(frac);
-                        self.headed_mut().ui.status_message = format!("Mark {c} jumped");
+                        self.core.ui.status_message = format!("Mark {c} jumped");
                     } else {
-                        self.headed_mut().ui.status_message = format!("Mark {c} not set");
+                        self.core.ui.status_message = format!("Mark {c} not set");
                     }
                 }
                 _ => {}
@@ -306,11 +306,11 @@ impl AppState {
         if self.headed().mode == Mode::Normal {
             if let Key::Character('m') = &event.key {
                 self.core.session.pending_mark_action = Some('s');
-                self.headed_mut().ui.status_message = "Set mark (press a-z)".into();
+                self.core.ui.status_message = "Set mark (press a-z)".into();
                 return;
             } else if let Key::Character('\'') = &event.key {
                 self.core.session.pending_mark_action = Some('g');
-                self.headed_mut().ui.status_message = "Go to mark (press a-z)".into();
+                self.core.ui.status_message = "Go to mark (press a-z)".into();
                 return;
             }
         }
@@ -337,14 +337,14 @@ impl AppState {
             }
             EventDestination::CommandPalette => {
                 if let Key::Character(c) = &event.key {
-                    self.headed_mut().ui.command_palette_input.push(*c);
+                    self.core.ui.command_palette_input.push(*c);
                 } else if event.key == Key::Backspace {
-                    self.headed_mut().ui.command_palette_input.pop();
+                    self.core.ui.command_palette_input.pop();
                 } else if event.key == Key::Enter {
-                    let input = self.headed().ui.command_palette_input.clone();
+                    let input = self.core.ui.command_palette_input.clone();
                     self.execute_command(&input);
                     self.headed_mut().palette.close();
-                    self.headed_mut().ui.command_palette_input.clear();
+                    self.core.ui.command_palette_input.clear();
                 }
             }
             EventDestination::Egui => {}
@@ -364,7 +364,7 @@ impl AppState {
                     self.core.pending_wry_actions.push_back(wry_action.clone());
                 }
                 ActionEffect::Status(msg) => {
-                    self.headed_mut().ui.status_message = msg.clone();
+                    self.core.ui.status_message = msg.clone();
                 }
                 ActionEffect::SetMode(mode) => {
                     self.headed_mut().mode = *mode;
@@ -382,8 +382,8 @@ impl AppState {
                     // Refresh items before opening so recent history/bookmarks are current
                     self.refresh_palette_items();
                     self.headed_mut().palette.open();
-                    self.headed_mut().ui.command_palette_input.clear();
-                    self.headed_mut().ui.status_message = "Command palette".into();
+                    self.core.ui.command_palette_input.clear();
+                    self.core.ui.status_message = "Command palette".into();
                 }
                 ActionEffect::RequestSplit(direction) => {
                     let active = self.core.wm.active_pane_id();
@@ -400,11 +400,9 @@ impl AppState {
                             if is_private {
                                 self.headed_mut().tabs.private_pane_ids.insert(new_id);
                             }
-                            self.headed_mut().ui.status_message = "Split vertical".into();
+                            self.core.ui.status_message = "Split vertical".into();
                         }
-                        Err(e) => {
-                            self.headed_mut().ui.status_message = format!("Split failed: {e}")
-                        }
+                        Err(e) => self.core.ui.status_message = format!("Split failed: {e}"),
                     }
                 }
                 ActionEffect::OpenTerminal => {
@@ -423,29 +421,26 @@ impl AppState {
                                     .engines
                                     .create_pane(new_id, term_url.clone(), None);
                                 self.terminal_pane_ids.insert(new_id);
-                                self.headed_mut().ui.status_message = "Terminal opened".into();
+                                self.core.ui.status_message = "Terminal opened".into();
                             }
-                            Err(e) => {
-                                self.headed_mut().ui.status_message =
-                                    format!("Terminal failed: {e}")
-                            }
+                            Err(e) => self.core.ui.status_message = format!("Terminal failed: {e}"),
                         }
                     }
                     #[cfg(not(feature = "terminal"))]
                     {
-                        self.headed_mut().ui.status_message = "Terminal feature not enabled".into();
+                        self.core.ui.status_message = "Terminal feature not enabled".into();
                     }
                 }
                 ActionEffect::RequestClosePane => {
                     let active = self.core.wm.active_pane_id();
                     if self.headed().tabs.pinned_pane_ids.contains(&active) {
-                        self.headed_mut().ui.status_message =
+                        self.core.ui.status_message =
                             "Cannot close pinned pane (use :pin to unpin)".into();
                         return;
                     }
                     if let Ok(()) = self.core.wm.close(active) {
                         self.core.engines.remove_pane(&active);
-                        self.headed_mut().ui.status_message = "Pane closed".into();
+                        self.core.ui.status_message = "Pane closed".into();
                     }
                 }
                 ActionEffect::RequestNavigatePane(direction) => {
@@ -468,23 +463,22 @@ impl AppState {
                     {
                         match crate::servo::open_in_system_browser(url) {
                             Ok(()) => {
-                                self.headed_mut().ui.status_message =
-                                    "Opened in system browser".into();
+                                self.core.ui.status_message = "Opened in system browser".into();
                             }
                             Err(e) => {
-                                self.headed_mut().ui.status_message = format!("Failed: {e}");
+                                self.core.ui.status_message = format!("Failed: {e}");
                             }
                         }
                     }
                 }
                 ActionEffect::OpenFindBar => {
-                    self.headed_mut().ui.find_bar_open = true;
-                    self.headed_mut().ui.find_query.clear();
-                    self.headed_mut().ui.status_message = "Find: ".into();
+                    self.core.ui.find_bar_open = true;
+                    self.core.ui.find_query.clear();
+                    self.core.ui.status_message = "Find: ".into();
                 }
                 ActionEffect::CloseFindBar => {
-                    self.headed_mut().ui.find_bar_open = false;
-                    self.headed_mut().ui.find_query.clear();
+                    self.core.ui.find_bar_open = false;
+                    self.core.ui.find_query.clear();
                     // Clear highlights in the page
                     self.core.pending_wry_actions.push_back(WryAction::RunJs(
                         "window.getSelection().removeAllRanges()".into(),
@@ -500,24 +494,24 @@ impl AppState {
                     }
                 }
                 ActionEffect::ToggleLinkHints => {
-                    self.headed_mut().ui.hint_mode = !self.headed_mut().ui.hint_mode;
-                    self.headed_mut().ui.hint_new_tab = false;
-                    if self.headed().ui.hint_mode {
-                        self.headed_mut().ui.status_message =
+                    self.core.ui.hint_mode = !self.core.ui.hint_mode;
+                    self.core.ui.hint_new_tab = false;
+                    if self.core.ui.hint_mode {
+                        self.core.ui.status_message =
                             "Link hints: type letters, Escape to cancel".into();
                     } else {
-                        self.headed_mut().ui.status_message.clear();
+                        self.core.ui.status_message.clear();
                     }
                     // Wry(RunJs) effect is also dispatched to inject/remove the CSS
                 }
                 ActionEffect::FollowLinkNewTab => {
-                    self.headed_mut().ui.hint_mode = !self.headed_mut().ui.hint_mode;
-                    self.headed_mut().ui.hint_new_tab = self.headed_mut().ui.hint_mode;
-                    if self.headed().ui.hint_mode {
-                        self.headed_mut().ui.status_message =
+                    self.core.ui.hint_mode = !self.core.ui.hint_mode;
+                    self.core.ui.hint_new_tab = self.core.ui.hint_mode;
+                    if self.core.ui.hint_mode {
+                        self.core.ui.status_message =
                             "Link hints (new tab): type letters, Escape to cancel".into();
                     } else {
-                        self.headed_mut().ui.status_message.clear();
+                        self.core.ui.status_message.clear();
                     }
                 }
                 ActionEffect::SaveWorkspace => {
@@ -531,7 +525,7 @@ impl AppState {
                             name: name.clone(),
                             pane_urls: std::collections::HashMap::new(),
                         });
-                    self.headed_mut().ui.status_message = format!("Saving workspace: {name}...");
+                    self.core.ui.status_message = format!("Saving workspace: {name}...");
                 }
                 ActionEffect::CopyUrl => {
                     let active_id = self.core.wm.active_pane_id();
@@ -546,9 +540,9 @@ impl AppState {
                             } else {
                                 url_str
                             };
-                            self.headed_mut().ui.status_message = format!("Copied: {display}");
+                            self.core.ui.status_message = format!("Copied: {display}");
                         } else {
-                            self.headed_mut().ui.status_message =
+                            self.core.ui.status_message =
                                 "Clipboard: no clipboard tool available".into();
                         }
                     }
@@ -560,15 +554,13 @@ impl AppState {
                         crate::wm::Direction::Right | crate::wm::Direction::Down => 0.05,
                     };
                     match self.core.wm.resize_pane(active, amount) {
-                        Ok(()) => self.headed_mut().ui.status_message = "Pane resized".into(),
-                        Err(e) => {
-                            self.headed_mut().ui.status_message = format!("Resize failed: {e}")
-                        }
+                        Ok(()) => self.core.ui.status_message = "Pane resized".into(),
+                        Err(e) => self.core.ui.status_message = format!("Resize failed: {e}"),
                     }
                 }
                 ActionEffect::NewWindow => {
                     self.headed_mut().pending_new_window = true;
-                    self.headed_mut().ui.status_message = "Opening new window...".into();
+                    self.core.ui.status_message = "Opening new window...".into();
                 }
                 ActionEffect::EnterReaderMode => {
                     let active_id = self.core.wm.active_pane_id();
@@ -577,13 +569,13 @@ impl AppState {
                         self.core
                             .pending_wry_actions
                             .push_back(WryAction::ExitReaderMode);
-                        self.headed_mut().ui.status_message = "Reader mode off".into();
+                        self.core.ui.status_message = "Reader mode off".into();
                     } else {
                         self.headed_mut().tabs.reader_mode_panes.insert(active_id);
                         self.core
                             .pending_wry_actions
                             .push_back(WryAction::EnterReaderMode);
-                        self.headed_mut().ui.status_message = "Reader mode on".into();
+                        self.core.ui.status_message = "Reader mode on".into();
                     }
                 }
                 ActionEffect::ExitReaderMode => {}
@@ -594,13 +586,13 @@ impl AppState {
                         self.core
                             .pending_wry_actions
                             .push_back(WryAction::ExitMinimalMode);
-                        self.headed_mut().ui.status_message = "Minimal mode off".into();
+                        self.core.ui.status_message = "Minimal mode off".into();
                     } else {
                         self.headed_mut().tabs.minimal_mode_panes.insert(active_id);
                         self.core
                             .pending_wry_actions
                             .push_back(WryAction::EnterMinimalMode);
-                        self.headed_mut().ui.status_message = "Minimal mode on".into();
+                        self.core.ui.status_message = "Minimal mode on".into();
                     }
                 }
                 ActionEffect::ExitMinimalMode => {}
@@ -631,16 +623,14 @@ impl AppState {
                                 self.terminal_pane_ids.remove(&active_id);
                                 self.headed_mut().pending_new_window = true;
                                 self.headed_mut().pending_detach_url = Some(url);
-                                self.headed_mut().ui.status_message =
-                                    "Detaching pane to popup...".into();
+                                self.core.ui.status_message = "Detaching pane to popup...".into();
                             }
                             Err(_) => {
-                                self.headed_mut().ui.status_message =
-                                    "Cannot detach the only pane".into();
+                                self.core.ui.status_message = "Cannot detach the only pane".into();
                             }
                         }
                     } else {
-                        self.headed_mut().ui.status_message = "No URL to detach".into();
+                        self.core.ui.status_message = "No URL to detach".into();
                     }
                 }
                 ActionEffect::CloseOtherPanes => {
@@ -658,15 +648,15 @@ impl AppState {
                         self.terminal_pane_ids.remove(id);
                     }
                     if let Err(e) = self.core.wm.retain_only(active_id) {
-                        self.headed_mut().ui.status_message = format!("Failed: {e}");
+                        self.core.ui.status_message = format!("Failed: {e}");
                     } else {
-                        self.headed_mut().ui.status_message =
+                        self.core.ui.status_message =
                             format!("Closed {} other pane(s)", other_ids.len());
                     }
                 }
                 ActionEffect::Print => {
                     self.core.pending_wry_actions.push_back(WryAction::Print);
-                    self.headed_mut().ui.status_message = "Printing...".into();
+                    self.core.ui.status_message = "Printing...".into();
                 }
                 ActionEffect::RequestNewTab => {
                     let active_id = self.core.wm.active_pane_id();
@@ -699,7 +689,7 @@ impl AppState {
                             .pending_wry_actions
                             .push_back(WryAction::Navigate(new_url));
                         self.headed_mut().tabs.tab_display_dirty = true;
-                        self.headed_mut().ui.status_message = format!("Tab {}/{}", idx, total);
+                        self.core.ui.status_message = format!("Tab {}/{}", idx, total);
                     }
                 }
                 ActionEffect::RequestCloseTab => {
@@ -716,7 +706,7 @@ impl AppState {
                                 self.core.engines.remove_pane(&active_id);
                                 #[cfg(feature = "terminal")]
                                 self.terminal_pane_ids.remove(&active_id);
-                                self.headed_mut().ui.status_message = "Pane closed".into();
+                                self.core.ui.status_message = "Pane closed".into();
                             }
                         } else {
                             let closed = pane.tabs.close_active();
@@ -727,7 +717,7 @@ impl AppState {
                                     pane.tabs.len()
                                 );
                                 self.core.engines.remove_pane(&closed_tab.id);
-                                self.headed_mut().ui.status_message = tab_status;
+                                self.core.ui.status_message = tab_status;
                             }
                         }
                     }
@@ -751,7 +741,7 @@ impl AppState {
                         self.core
                             .pending_wry_actions
                             .push_back(WryAction::Navigate(url));
-                        self.headed_mut().ui.status_message = format!("Tab {}/{}", idx, total);
+                        self.core.ui.status_message = format!("Tab {}/{}", idx, total);
                     }
                 }
                 ActionEffect::RequestPrevTab => {
@@ -773,18 +763,18 @@ impl AppState {
                         self.core
                             .pending_wry_actions
                             .push_back(WryAction::Navigate(url));
-                        self.headed_mut().ui.status_message = format!("Tab {}/{}", idx, total);
+                        self.core.ui.status_message = format!("Tab {}/{}", idx, total);
                     }
                 }
                 ActionEffect::PinPane => {
                     let active_id = self.core.wm.active_pane_id();
                     if self.headed().tabs.pinned_pane_ids.contains(&active_id) {
                         self.headed_mut().tabs.pinned_pane_ids.remove(&active_id);
-                        self.headed_mut().ui.status_message =
+                        self.core.ui.status_message =
                             crate::i18n::tr(crate::i18n::TrKey("status_unpinned")).into();
                     } else {
                         self.headed_mut().tabs.pinned_pane_ids.insert(active_id);
-                        self.headed_mut().ui.status_message =
+                        self.core.ui.status_message =
                             crate::i18n::tr(crate::i18n::TrKey("status_pinned")).into();
                     }
                 }
@@ -794,15 +784,15 @@ impl AppState {
 
     pub fn update_status(&mut self) {
         let mode_str = self.headed().mode.as_str().to_string();
-        self.headed_mut().ui.status_message = format!("-- {mode_str} --");
-        self.headed_mut().ui.accessibility_text = format!("Mode: {mode_str}");
+        self.core.ui.status_message = format!("-- {mode_str} --");
+        self.core.ui.accessibility_text = format!("Mode: {mode_str}");
     }
 
     /// Update the accessibility live-region text with a status summary.
     /// Call this when important state changes occur (navigation, error, etc.).
     pub fn update_a11y(&mut self, msg: &str) {
-        self.headed_mut().ui.status_message = msg.to_string();
-        self.headed_mut().ui.accessibility_text = msg.to_string();
+        self.core.ui.status_message = msg.to_string();
+        self.core.ui.accessibility_text = msg.to_string();
     }
 }
 
@@ -823,8 +813,8 @@ mod tests {
         let mut state = make_state();
         state.headed_mut().mode = Mode::Normal;
         state.update_status();
-        assert_eq!(state.headed().ui.status_message, "-- NORMAL --");
-        assert_eq!(state.headed().ui.accessibility_text, "Mode: NORMAL");
+        assert_eq!(state.core.ui.status_message, "-- NORMAL --");
+        assert_eq!(state.core.ui.accessibility_text, "Mode: NORMAL");
     }
 
     #[test]
@@ -832,8 +822,8 @@ mod tests {
         let mut state = make_state();
         state.headed_mut().mode = Mode::Insert;
         state.update_status();
-        assert_eq!(state.headed().ui.status_message, "-- INSERT --");
-        assert_eq!(state.headed().ui.accessibility_text, "Mode: INSERT");
+        assert_eq!(state.core.ui.status_message, "-- INSERT --");
+        assert_eq!(state.core.ui.accessibility_text, "Mode: INSERT");
     }
 
     #[test]
@@ -841,16 +831,16 @@ mod tests {
         let mut state = make_state();
         state.headed_mut().mode = Mode::Command;
         state.update_status();
-        assert_eq!(state.headed().ui.status_message, "-- COMMAND --");
-        assert_eq!(state.headed().ui.accessibility_text, "Mode: COMMAND");
+        assert_eq!(state.core.ui.status_message, "-- COMMAND --");
+        assert_eq!(state.core.ui.accessibility_text, "Mode: COMMAND");
     }
 
     #[test]
     fn test_update_a11y() {
         let mut state = make_state();
         state.update_a11y("Navigation complete");
-        assert_eq!(state.headed().ui.status_message, "Navigation complete");
-        assert_eq!(state.headed().ui.accessibility_text, "Navigation complete");
+        assert_eq!(state.core.ui.status_message, "Navigation complete");
+        assert_eq!(state.core.ui.accessibility_text, "Navigation complete");
     }
 
     #[test]
@@ -858,10 +848,10 @@ mod tests {
         let mut state = make_state();
         state.headed_mut().mode = Mode::Normal;
         state.update_status();
-        assert_eq!(state.headed().ui.status_message, "-- NORMAL --");
+        assert_eq!(state.core.ui.status_message, "-- NORMAL --");
         state.update_a11y("Error: page crashed");
-        assert_eq!(state.headed().ui.status_message, "Error: page crashed");
-        assert_eq!(state.headed().ui.accessibility_text, "Error: page crashed");
+        assert_eq!(state.core.ui.status_message, "Error: page crashed");
+        assert_eq!(state.core.ui.accessibility_text, "Error: page crashed");
     }
 
     #[test]
@@ -870,7 +860,7 @@ mod tests {
         state.update_a11y("some message");
         state.headed_mut().mode = Mode::Insert;
         state.update_status();
-        assert_eq!(state.headed().ui.status_message, "-- INSERT --");
-        assert_eq!(state.headed().ui.accessibility_text, "Mode: INSERT");
+        assert_eq!(state.core.ui.status_message, "-- INSERT --");
+        assert_eq!(state.core.ui.accessibility_text, "Mode: INSERT");
     }
 }

@@ -302,6 +302,10 @@ pub struct CoreState {
     pub session: SessionState,
     /// Derived-value cache (pane count, config JSON, https safe-list).
     pub cache: CacheState,
+    /// UI feedback state: status message, url-bar text, omnibox results,
+    /// find-bar state. Written from agent-reachable paths (offscreen IPC,
+    /// MCP command arms) — moved to core in stage 2d.
+    pub ui: UiState,
     /// Pane ids that should be terminal panes (S4 2c: moved here — the
     /// MCP dispatch mirrors terminal URLs during workspace restore).
     #[cfg(feature = "terminal")]
@@ -412,6 +416,7 @@ impl CoreState {
                 ..Default::default()
             },
             cache: CacheState::default(),
+            ui: UiState::default(),
             #[cfg(feature = "terminal")]
             terminal_pane_ids: std::collections::HashSet::new(),
         })
@@ -482,6 +487,23 @@ pub enum WryAction {
     CaptureScrollFraction,
     /// Set the system clipboard contents.
     SetClipboard(String),
+}
+
+#[derive(Default)]
+pub struct UiState {
+    pub url_bar_focused: bool,
+    pub url_bar_input: String,
+    pub command_palette_input: String,
+    pub find_bar_open: bool,
+    pub find_query: String,
+    pub hint_mode: bool,
+    pub hint_new_tab: bool,
+    pub hint_buffer: String,
+    pub omnibox_results: Vec<crate::ui::search::SearchItem>,
+    pub omnibox_selected: usize,
+    pub last_omnibox_query: String,
+    pub status_message: String,
+    pub accessibility_text: String,
 }
 
 #[cfg(test)]
