@@ -197,7 +197,7 @@ impl OffscreenWebView {
         devtools: bool,
         popup_blocker: bool,
         interceptor_registry: Option<
-            Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+            Arc<aileron_core::extensions::web_request::WebRequestInterceptorRegistry>,
         >,
     ) -> Result<Self, wry::Error> {
         let offscreen = gtk::OffscreenWindow::new();
@@ -222,7 +222,7 @@ impl OffscreenWebView {
         let upgrade_tx = event_tx.clone();
 
         let privacy_script =
-            crate::net::privacy::privacy_initialization_script(tracking_protection_enabled);
+            aileron_core::net::privacy::privacy_initialization_script(tracking_protection_enabled);
 
         let version = env!("CARGO_PKG_VERSION");
         let user_agent = format!(
@@ -307,16 +307,16 @@ a {{ color: #4db4ff; }}
                 if let Some(ref registry) = interceptor_registry
                     && registry.has_interceptors()
                 {
-                    let details = crate::extensions::web_request::RequestDetails {
-                        request_id: crate::extensions::types::RequestId(0),
+                    let details = aileron_core::extensions::web_request::RequestDetails {
+                        request_id: aileron_core::extensions::types::RequestId(0),
                         url: url::Url::parse(&url).unwrap_or_else(|_| {
                             url::Url::parse("about:blank").expect("'about:blank' is a valid URL")
                         }),
                         method: "GET".into(),
-                        frame_id: crate::extensions::types::FrameId(0),
-                        parent_frame_id: crate::extensions::types::FrameId(u32::MAX),
+                        frame_id: aileron_core::extensions::types::FrameId(0),
+                        parent_frame_id: aileron_core::extensions::types::FrameId(u32::MAX),
                         tab_id: None,
-                        type_: crate::extensions::web_request::ResourceType::MainFrame,
+                        type_: aileron_core::extensions::web_request::ResourceType::MainFrame,
                         origin_url: None,
                         timestamp: std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
@@ -351,10 +351,10 @@ a {{ color: #4db4ff; }}
 
                         if https_upgrade
                             && parsed.scheme() == "http"
-                            && crate::net::privacy::is_https_safe(host, &https_safe_list)
+                            && aileron_core::net::privacy::is_https_safe(host, &https_safe_list)
                         {
                             if let Some(https_url) =
-                                crate::net::privacy::should_upgrade_to_https(
+                                aileron_core::net::privacy::should_upgrade_to_https(
                                     &url, &https_safe_list,
                                 )
                             {
@@ -437,7 +437,7 @@ a {{ color: #4db4ff; }}
         offscreen.queue_resize();
 
         #[cfg(target_os = "linux")]
-        crate::platform::spellcheck::configure_webkit_spellcheck();
+        crate::spellcheck::configure_webkit_spellcheck();
 
         offscreen.show_all();
 
@@ -529,7 +529,10 @@ a {{ color: #4db4ff; }}
     pub fn execute_js(&self, js: &str) {
         if let Err(e) = self.webview.evaluate_script(js) {
             warn!("JS evaluation error: {}", e);
-            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{e}"));
+            aileron_core::debug_capturer::capture_js_error(
+                &self.pane_id.to_string(),
+                &format!("{e}"),
+            );
         }
     }
 
@@ -537,7 +540,10 @@ a {{ color: #4db4ff; }}
     pub fn execute_js_with_callback(&self, js: &str, callback: impl Fn(String) + Send + 'static) {
         if let Err(e) = self.webview.evaluate_script_with_callback(js, callback) {
             warn!("JS evaluation error: {}", e);
-            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{e}"));
+            aileron_core::debug_capturer::capture_js_error(
+                &self.pane_id.to_string(),
+                &format!("{e}"),
+            );
         }
     }
 
@@ -609,7 +615,7 @@ a {{ color: #4db4ff; }}
             if committed {
                 break;
             }
-            crate::frame_tasks::pump_gtk_loop();
+            crate::pump::pump_gtk_loop();
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
         if mcp_trace_enabled() {
@@ -1459,7 +1465,7 @@ impl OffscreenWebViewManager {
         devtools: bool,
         popup_blocker: bool,
         interceptor_registry: Option<
-            Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+            Arc<aileron_core::extensions::web_request::WebRequestInterceptorRegistry>,
         >,
     ) -> Result<(), wry::Error> {
         let pane = OffscreenWebView::new_with_privacy(
@@ -1719,9 +1725,9 @@ mod tests {
     /// Exercises split, close, navigate, and swap operations.
     #[test]
     fn test_bsp_lifecycle() {
-        use crate::wm::rect::Direction;
-        use crate::wm::rect::{Rect, SplitDirection};
-        use crate::wm::tree::BspTree;
+        use aileron_core::wm::rect::Direction;
+        use aileron_core::wm::rect::{Rect, SplitDirection};
+        use aileron_core::wm::tree::BspTree;
 
         let initial_url = url::Url::parse("aileron://new").unwrap();
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
@@ -1759,17 +1765,17 @@ mod tests {
     /// Integration test: Bookmark + history DB lifecycle.
     #[test]
     fn test_bookmark_history_lifecycle() {
-        use crate::db::open_database;
+        use aileron_core::db::open_database;
 
         let file = tempfile::NamedTempFile::new().expect("temp file");
         let conn = open_database(file.path()).expect("open db");
 
         // Add bookmarks
-        let id1 = crate::db::bookmarks::add_bookmark(&conn, "https://github.com", "GitHub")
+        let id1 = aileron_core::db::bookmarks::add_bookmark(&conn, "https://github.com", "GitHub")
             .expect("add bookmark");
         assert!(id1 > 0);
 
-        let id2 = crate::db::bookmarks::add_bookmark_with_folder(
+        let id2 = aileron_core::db::bookmarks::add_bookmark_with_folder(
             &conn,
             "https://docs.rs",
             "Docs.rs",
@@ -1779,37 +1785,39 @@ mod tests {
         assert!(id2 > 0);
 
         // List all
-        let all = crate::db::bookmarks::all_bookmarks(&conn).expect("list bookmarks");
+        let all = aileron_core::db::bookmarks::all_bookmarks(&conn).expect("list bookmarks");
         assert_eq!(all.len(), 2);
         assert_eq!(all[0].url, "https://github.com");
         assert_eq!(all[1].folder, "rust");
 
         // Search
-        let results =
-            crate::db::bookmarks::search_bookmarks(&conn, "github", 10).expect("search bookmarks");
+        let results = aileron_core::db::bookmarks::search_bookmarks(&conn, "github", 10)
+            .expect("search bookmarks");
         assert_eq!(results.len(), 1);
 
         // Add history
         let url1 = url::Url::parse("https://example.com").unwrap();
         let url2 = url::Url::parse("https://example.com/page").unwrap();
         let url3 = url::Url::parse("https://rust-lang.org").unwrap();
-        crate::db::history::record_visit(&conn, &url1, "Example").expect("record visit");
-        crate::db::history::record_visit(&conn, &url2, "Example Page").expect("record visit 2");
-        crate::db::history::record_visit(&conn, &url3, "Rust").expect("record visit 3");
+        aileron_core::db::history::record_visit(&conn, &url1, "Example").expect("record visit");
+        aileron_core::db::history::record_visit(&conn, &url2, "Example Page")
+            .expect("record visit 2");
+        aileron_core::db::history::record_visit(&conn, &url3, "Rust").expect("record visit 3");
 
-        let recent = crate::db::history::recent_entries(&conn, 10).expect("recent history");
+        let recent = aileron_core::db::history::recent_entries(&conn, 10).expect("recent history");
         assert_eq!(recent.len(), 3);
         // Most recent first
         assert_eq!(recent[0].url, url3.as_str());
 
         // Search history
-        let found = crate::db::history::search(&conn, "example", 10).expect("search history");
+        let found =
+            aileron_core::db::history::search(&conn, "example", 10).expect("search history");
         assert_eq!(found.len(), 2);
 
         // Clear
-        crate::db::history::clear_history(&conn).expect("clear history");
+        aileron_core::db::history::clear_history(&conn).expect("clear history");
         assert!(
-            crate::db::history::recent_entries(&conn, 10)
+            aileron_core::db::history::recent_entries(&conn, 10)
                 .unwrap()
                 .is_empty()
         );
@@ -1818,13 +1826,13 @@ mod tests {
     /// Integration test: Site settings per-domain lifecycle.
     #[test]
     fn test_site_settings_lifecycle() {
-        use crate::db::open_database;
+        use aileron_core::db::open_database;
 
         let file = tempfile::NamedTempFile::new().expect("temp file");
         let conn = open_database(file.path()).expect("open db");
 
         // Set zoom for a domain
-        crate::db::site_settings::set_site_field(
+        aileron_core::db::site_settings::set_site_field(
             &conn,
             "example.com",
             "exact",
@@ -1834,7 +1842,7 @@ mod tests {
         .expect("set zoom");
 
         // Set adblock for another domain
-        crate::db::site_settings::set_site_field(
+        aileron_core::db::site_settings::set_site_field(
             &conn,
             "ads.example.com",
             "exact",
@@ -1844,14 +1852,16 @@ mod tests {
         .expect("set adblock");
 
         // Retrieve
-        let settings =
-            crate::db::site_settings::get_site_settings_for_url(&conn, "https://example.com/page")
-                .expect("get settings");
+        let settings = aileron_core::db::site_settings::get_site_settings_for_url(
+            &conn,
+            "https://example.com/page",
+        )
+        .expect("get settings");
         assert!(!settings.is_empty());
         assert_eq!(settings[0].zoom_level, Some(1.5));
 
         // Clear zoom by deleting
-        crate::db::site_settings::delete_site_settings_for_domain(&conn, "example.com")
+        aileron_core::db::site_settings::delete_site_settings_for_domain(&conn, "example.com")
             .expect("clear zoom");
     }
 

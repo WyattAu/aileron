@@ -23,6 +23,7 @@ categories = ["development-tools", "web-programming"]
 
 [dependencies]
 aileron-core = { path = "../core" }
+aileron-engine = { path = "../engine" }
 aileron-shared = { path = "../shared" }
 
 # Error handling

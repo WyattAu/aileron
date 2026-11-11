@@ -106,6 +106,7 @@ dependencies = [
  "age",
  "aho-corasick",
  "aileron-core",
+ "aileron-engine",
  "aileron-shared",
  "alacritty_terminal",
  "anyhow",
@@ -200,6 +201,31 @@ dependencies = [
  "urlencoding",
  "uuid",
  "zeroize",
+]
+
+[[package]]
+name = "aileron-engine"
+version = "1.0.0"
+dependencies = [
+ "aileron-core",
+ "anyhow",
+ "cairo-rs",
+ "chrono",
+ "directories",
+ "gdkx11",
+ "glib-sys 0.20.10",
+ "gtk",
+ "open",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+ "url",
+ "urlencoding",
+ "uuid",
+ "webkit2gtk",
+ "wry",
+ "x11-dl",
 ]
 
 [[package]]

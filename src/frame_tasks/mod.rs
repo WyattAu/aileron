@@ -14,10 +14,10 @@ use crate::git::GitStatus;
 use crate::mcp::McpBridge;
 use crate::offscreen_webview::OffscreenWebViewManager;
 use crate::scripts::ContentScriptManager;
-use crate::servo::{WryPaneManager, pump_gtk};
 #[cfg(feature = "terminal")]
 #[cfg(feature = "terminal")]
 use crate::terminal::NativeTerminalManager;
+use aileron_engine::servo::WryPaneManager;
 
 mod event_proc;
 mod ipc;
@@ -564,10 +564,6 @@ pub fn poll_terminal_output(terminal_manager: &mut NativeTerminalManager) {
     terminal_manager.tick_all();
 }
 
-pub fn pump_gtk_loop() {
-    pump_gtk();
-}
-
 pub fn load_default_adblock_rules(adblocker: &mut crate::net::adblock::AdBlocker) {
     let default_filters = [
         "||doubleclick.net^",
@@ -595,3 +591,6 @@ pub use aileron_core::agent::spawn_mcp_server;
 /// S4 stage 2c step 3: the MCP dispatch moved to aileron-core `agent`
 /// (PaneOps seam). Re-exported for call-site compatibility.
 pub use aileron_core::agent::{audit_record, process_mcp_commands, wait_mcp_nav_settled};
+
+/// S4 stage 3: the GTK pump moved to aileron-engine `pump`.
+pub use aileron_engine::pump::pump_gtk_loop;

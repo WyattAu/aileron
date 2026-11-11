@@ -133,7 +133,7 @@ impl WryPane {
         devtools: bool,
         popup_blocker: bool,
         interceptor_registry: Option<
-            Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+            Arc<aileron_core::extensions::web_request::WebRequestInterceptorRegistry>,
         >,
     ) -> Result<Self, wry::Error>
     where
@@ -254,7 +254,7 @@ impl WryPane {
         devtools: bool,
         popup_blocker: bool,
         interceptor_registry: Option<
-            Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+            Arc<aileron_core::extensions::web_request::WebRequestInterceptorRegistry>,
         >,
     ) -> Result<Self, wry::Error> {
         let url_str = initial_url.as_str().to_string();
@@ -296,7 +296,7 @@ impl WryPane {
         let webview = builder.build_gtk(&fixed)?;
 
         #[cfg(target_os = "linux")]
-        crate::platform::spellcheck::configure_webkit_spellcheck();
+        crate::spellcheck::configure_webkit_spellcheck();
 
         gtk_window.show();
 
@@ -332,7 +332,7 @@ impl WryPane {
         devtools: bool,
         popup_blocker: bool,
         interceptor_registry: Option<
-            Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+            Arc<aileron_core::extensions::web_request::WebRequestInterceptorRegistry>,
         >,
     ) -> WebViewBuilder<'static> {
         let https_upgrade = https_upgrade_enabled;
@@ -340,7 +340,7 @@ impl WryPane {
         let upgrade_tx = event_tx.clone();
 
         let privacy_script =
-            crate::net::privacy::privacy_initialization_script(tracking_protection_enabled);
+            aileron_core::net::privacy::privacy_initialization_script(tracking_protection_enabled);
 
         let devtools = cfg!(debug_assertions) || devtools;
 
@@ -414,16 +414,16 @@ a {{ color: #4db4ff; }}
                 if let Some(ref registry) = interceptor_registry
                     && registry.has_interceptors()
                 {
-                    let details = crate::extensions::web_request::RequestDetails {
-                        request_id: crate::extensions::types::RequestId(0),
+                    let details = aileron_core::extensions::web_request::RequestDetails {
+                        request_id: aileron_core::extensions::types::RequestId(0),
                         url: url::Url::parse(&url).unwrap_or_else(|_| {
                             url::Url::parse("about:blank").expect("'about:blank' is a valid URL")
                         }),
                         method: "GET".into(),
-                        frame_id: crate::extensions::types::FrameId(0),
-                        parent_frame_id: crate::extensions::types::FrameId(u32::MAX),
+                        frame_id: aileron_core::extensions::types::FrameId(0),
+                        parent_frame_id: aileron_core::extensions::types::FrameId(u32::MAX),
                         tab_id: None,
-                        type_: crate::extensions::web_request::ResourceType::MainFrame,
+                        type_: aileron_core::extensions::web_request::ResourceType::MainFrame,
                         origin_url: None,
                         timestamp: std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
@@ -457,10 +457,10 @@ a {{ color: #4db4ff; }}
 
                         if https_upgrade
                             && parsed.scheme() == "http"
-                            && crate::net::privacy::is_https_safe(host, &https_safe_list)
+                            && aileron_core::net::privacy::is_https_safe(host, &https_safe_list)
                         {
                             if let Some(https_url) =
-                                crate::net::privacy::should_upgrade_to_https(
+                                aileron_core::net::privacy::should_upgrade_to_https(
                                     &url, &https_safe_list,
                                 )
                             {
@@ -577,7 +577,10 @@ a {{ color: #4db4ff; }}
     pub fn execute_js(&self, js: &str) {
         if let Err(e) = self.webview.evaluate_script(js) {
             warn!("JS evaluation error: {}", e);
-            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{e}"));
+            aileron_core::debug_capturer::capture_js_error(
+                &self.pane_id.to_string(),
+                &format!("{e}"),
+            );
         }
     }
 
@@ -591,7 +594,10 @@ a {{ color: #4db4ff; }}
     pub fn execute_js_with_callback(&self, js: &str, callback: impl Fn(String) + Send + 'static) {
         if let Err(e) = self.webview.evaluate_script_with_callback(js, callback) {
             warn!("JS evaluation error: {}", e);
-            crate::debug_capturer::capture_js_error(&self.pane_id.to_string(), &format!("{e}"));
+            aileron_core::debug_capturer::capture_js_error(
+                &self.pane_id.to_string(),
+                &format!("{e}"),
+            );
         }
     }
 
@@ -924,7 +930,7 @@ impl WryPaneManager {
         devtools: bool,
         popup_blocker: bool,
         interceptor_registry: Option<
-            Arc<crate::extensions::web_request::WebRequestInterceptorRegistry>,
+            Arc<aileron_core::extensions::web_request::WebRequestInterceptorRegistry>,
         >,
     ) -> Result<(), wry::Error>
     where
@@ -1052,7 +1058,7 @@ impl Default for WryPaneManager {
 /// y position. Both `status_bar_height` and `url_bar_height` happen to be 32.0
 /// in the current UI, but they represent distinct UI elements.
 pub fn bsp_rect_to_wry_rect(
-    rect: &crate::wm::Rect,
+    rect: &aileron_core::wm::Rect,
     status_bar_height: f64,
     url_bar_height: f64,
     sidebar_width: f64,
@@ -1184,11 +1190,11 @@ unsafe extern "C" fn glib_log_handler(
     match level {
         "ERROR" | "CRITICAL" => {
             error!("[GLib {}::{}] {}", domain, level, msg);
-            crate::debug_capturer::capture_glib(level, &domain, &msg);
+            aileron_core::debug_capturer::capture_glib(level, &domain, &msg);
         }
         "WARNING" if domain.contains("WebKit") || domain.contains("Gtk") => {
             warn!("[GLib {}::{}] {}", domain, level, msg);
-            crate::debug_capturer::capture_glib(level, &domain, &msg);
+            aileron_core::debug_capturer::capture_glib(level, &domain, &msg);
         }
         _ => {}
     }
@@ -1204,7 +1210,7 @@ mod tests {
 
     #[test]
     fn test_basic_transform() {
-        let rect = crate::wm::Rect::new(0.0, 0.0, 800.0, 600.0);
+        let rect = aileron_core::wm::Rect::new(0.0, 0.0, 800.0, 600.0);
         let status_h = 32.0;
         let url_h = 32.0;
         let result = bsp_rect_to_wry_rect(&rect, status_h, url_h, 0.0, false);
@@ -1226,7 +1232,7 @@ mod tests {
 
     #[test]
     fn test_nonzero_origin() {
-        let rect = crate::wm::Rect::new(100.0, 50.0, 400.0, 300.0);
+        let rect = aileron_core::wm::Rect::new(100.0, 50.0, 400.0, 300.0);
         let result = bsp_rect_to_wry_rect(&rect, 32.0, 32.0, 0.0, false);
 
         let pos = match result.position {
@@ -1246,7 +1252,7 @@ mod tests {
 
     #[test]
     fn test_height_clamped_to_minimum() {
-        let rect = crate::wm::Rect::new(0.0, 0.0, 800.0, 50.0);
+        let rect = aileron_core::wm::Rect::new(0.0, 0.0, 800.0, 50.0);
         let result = bsp_rect_to_wry_rect(&rect, 32.0, 32.0, 0.0, false);
 
         let size = match result.size {
@@ -1261,7 +1267,7 @@ mod tests {
 
     #[test]
     fn test_zero_bar_heights() {
-        let rect = crate::wm::Rect::new(10.0, 20.0, 500.0, 400.0);
+        let rect = aileron_core::wm::Rect::new(10.0, 20.0, 500.0, 400.0);
         let result = bsp_rect_to_wry_rect(&rect, 0.0, 0.0, 0.0, false);
 
         let pos = match result.position {
@@ -1281,7 +1287,7 @@ mod tests {
 
     #[test]
     fn test_large_bar_heights() {
-        let rect = crate::wm::Rect::new(0.0, 0.0, 800.0, 100.0);
+        let rect = aileron_core::wm::Rect::new(0.0, 0.0, 800.0, 100.0);
         let result = bsp_rect_to_wry_rect(&rect, 60.0, 60.0, 0.0, false);
 
         let size = match result.size {
@@ -1293,7 +1299,7 @@ mod tests {
 
     #[test]
     fn test_sidebar_left_offset() {
-        let rect = crate::wm::Rect::new(0.0, 0.0, 800.0, 600.0);
+        let rect = aileron_core::wm::Rect::new(0.0, 0.0, 800.0, 600.0);
         let result = bsp_rect_to_wry_rect(&rect, 32.0, 32.0, 180.0, false);
 
         let pos = match result.position {
@@ -1313,7 +1319,7 @@ mod tests {
 
     #[test]
     fn test_sidebar_right_offset() {
-        let rect = crate::wm::Rect::new(0.0, 0.0, 800.0, 600.0);
+        let rect = aileron_core::wm::Rect::new(0.0, 0.0, 800.0, 600.0);
         let result = bsp_rect_to_wry_rect(&rect, 32.0, 32.0, 180.0, true);
 
         let pos = match result.position {
