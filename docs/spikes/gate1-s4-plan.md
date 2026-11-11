@@ -150,6 +150,39 @@ WryPaneManager, &mut OffscreenWebViewManager)` in the main crate.
    offscreen-event path also crosses (OffscreenWebViewManager is engine —
    needs its own trait or stays as the engine handle the agent holds)
 
+## Stage 2c executed (2026-11-10): dispatch + llm moved to core
+
+Step 1: workspace_restore → core (terminal hooks inverted to callers via
+RestoreResult::removed_pane_ids). Step 2: **PaneOps trait** (core) +
+CombinedPaneOps (src/pane_ops.rs) — process_mcp_commands takes
+(&McpBridge, Uuid, &mut CoreState, &mut dyn PaneOps); the Screenshot
+arm collapsed 63 → 1 call. Step 3: process_mcp_commands,
+wait_mcp_nav_settled, audit_record, wait_for_js_result, the llm_* helpers,
+and src/llm (OllamaClient) moved into core/src/agent.rs — every crate::
+path resolved identically inside core (db, wm, mcp, downloads,
+workspace_restore). Core gains `terminal` + `llm` features, forwarded
+from the main crate's. Gates at each step: 578-582 core + 610-621
+aileron lib tests, clippy -D warnings, integration green on push
+(one integration test needed the core.terminal_pane_ids path).
+
+## Stage 2c measurement + stage 3 refinement (2026-11-10)
+
+Gate table: agent profile dep tree has **0** edges for
+wgpu/leptos/alacritty_terminal/portable-pty/winit; webkit2gtk+wry edges
+present **by design** (the agent renders offscreen through wry; core
+now carries 31 dep lines including tokio/futures-util for downloads).
+
+**Stage 3 (engine crate) cut refinement — critical:** servo/ mixes
+wgpu files (texture_share, servo_engine — Architecture D future path)
+with webkit files (wry_engine, wry_pages, fallback, engine_selection).
+Moving ALL of servo into aileron-engine would drag wgpu into the agent
+dep graph and regress the S2 compile-out gate. The engine cut must be
+**wry-only**: wry_engine, wry_pages, fallback, engine_selection,
+protocol, PaneRenderer + offscreen_webview. The wgpu pair
+(servo_engine, texture_share) stays in the headed crate until
+Architecture D actually lands. pump_gtk_loop moves to engine (GTK
+mechanics; frame_tasks + pane_ops re-export via the shim pattern).
+
 ## Stage 2b scope (next): agent runtime + event-routing split
 
 Signature audit of frame_tasks (all `pub fn`):
