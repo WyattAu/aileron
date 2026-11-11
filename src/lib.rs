@@ -28,7 +28,7 @@ pub mod lua;
 /// runtime's core dependency. Re-exported for API compatibility.
 pub use aileron_core::mcp;
 pub use aileron_engine::offscreen_webview;
-pub mod pane_ops;
+pub use aileron_engine::pane_ops;
 #[cfg(feature = "passwords")]
 pub mod passwords;
 pub mod platform;

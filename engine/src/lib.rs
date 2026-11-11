@@ -6,6 +6,7 @@
 //! crate.
 
 pub mod offscreen_webview;
+pub mod pane_ops;
 pub mod pump;
 pub mod servo;
 pub mod spellcheck;

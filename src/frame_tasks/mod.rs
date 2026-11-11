@@ -474,57 +474,6 @@ pub fn process_pending_wry_actions(
 /// Before 2026-10-25 the MCP browsing tools only consulted `wry_panes`,
 /// which left every read/interaction tool dead on Wayland ("no active
 /// pane") — the default Linux session type.
-pub(crate) fn dispatch_active_js_with_callback(
-    wry_panes: &WryPaneManager,
-    offscreen_panes: &mut OffscreenWebViewManager,
-    pane_id: &uuid::Uuid,
-    js: &str,
-    callback: impl Fn(String) + Send + 'static,
-) -> bool {
-    // Offscreen (Wayland) reads must not race a pending navigation: JS fired
-    // mid-load evaluates on the outgoing document and returns stale/empty
-    // content. Wait (while pumping) until the pane stops loading, plus a
-    // short settle so the new document's initial layout runs.
-    if wry_panes.get(pane_id).is_none() {
-        // 60s: heavy pages (en.wikipedia et al) under machine load have taken
-        // longer than 15s to commit; a too-short window made same-batch reads
-        // return the outgoing document.
-        let settle_deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-        loop {
-            let loading = offscreen_panes
-                .get(pane_id)
-                .map(|p| p.is_loading())
-                .unwrap_or(false);
-            if !loading || std::time::Instant::now() >= settle_deadline {
-                break;
-            }
-            pump_gtk_loop();
-            std::thread::sleep(std::time::Duration::from_millis(2));
-        }
-        let settle_end = std::time::Instant::now() + std::time::Duration::from_millis(250);
-        while std::time::Instant::now() < settle_end {
-            pump_gtk_loop();
-            std::thread::sleep(std::time::Duration::from_millis(2));
-        }
-    }
-    if crate::offscreen_webview::mcp_trace_enabled() {
-        eprintln!(
-            "[mcp-trace] dispatch pane {} wry={} offscreen=yes",
-            &pane_id.to_string()[..8],
-            wry_panes.get(pane_id).is_some()
-        );
-    }
-    if let Some(pane) = wry_panes.get(pane_id) {
-        pane.execute_js_with_callback(js, callback);
-        true
-    } else if let Some(pane) = offscreen_panes.get_mut(pane_id) {
-        pane.execute_js_with_callback(js, callback);
-        true
-    } else {
-        false
-    }
-}
-
 pub fn handle_pending_tab_close(app_state: &mut AppState, close_id: Uuid) {
     app_state.core.wm.set_active_pane(close_id);
     if let Err(e) = app_state.core.wm.close(close_id) {
