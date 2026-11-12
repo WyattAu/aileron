@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use tracing::{info, warn};
 
-use crate::app::AppState;
 use crate::extensions::web_request::WebRequestInterceptorRegistry;
 use crate::scripts::{ContentScriptManager, RunAt};
 use crate::servo::{WryEvent, wry_engine::WryPane};
@@ -128,7 +127,7 @@ fn pane_id_from_event(event: &WryEvent) -> Uuid {
 ///
 /// Returns a list of IPC messages that need type-specific handling by the caller.
 pub fn process_events<M: EventPaneManager>(
-    app_state: &mut AppState,
+    core: &mut aileron_core::state::CoreState,
     manager: &mut M,
     content_scripts: &ContentScriptManager,
     adblocker: &crate::net::adblock::AdBlocker,
@@ -141,11 +140,16 @@ pub fn process_events<M: EventPaneManager>(
 
         match event {
             WryEvent::LoadComplete { url, .. } => {
-                app_state.core.session.session_dirty = true;
-                app_state.headed_mut().tabs.tab_display_dirty = true;
-                app_state.core.cache.pane_count_dirty = true;
+                core.session.session_dirty = true;
+                core.cache.pane_count_dirty = true;
                 if let Ok(parsed) = url::Url::parse(&url) {
-                    app_state.record_visit(&parsed, &url);
+                    // Visit recording (private panes excluded — core.private_pane_ids)
+                    if let Some(ref conn) = core.db
+                        && !core.private_pane_ids.contains(&core.wm.active_pane_id())
+                        && let Err(e) = crate::db::history::record_visit(conn, &parsed, &url)
+                    {
+                        tracing::warn!("Failed to record visit: {}", e);
+                    }
                 }
 
                 // Sync tab URL/title
@@ -153,9 +157,11 @@ pub fn process_events<M: EventPaneManager>(
                     .get(&pane_id)
                     .map(|p| p.title().to_string())
                     .unwrap_or_default();
-                super::sync_tab_url_title(app_state, pane_id, &url, &title);
+                super::sync_tab_url_title(core, pane_id, &url, &title);
 
-                app_state.update_a11y(&format!("Loaded: {}", &url[..url.len().min(60)]));
+                let a11y = format!("Loaded: {}", &url[..url.len().min(60)]);
+                core.ui.status_message = a11y.clone();
+                core.ui.accessibility_text = a11y;
 
                 // Fire extension onCompleted lifecycle event
                 if interceptor_registry.has_interceptors()
@@ -183,13 +189,23 @@ pub fn process_events<M: EventPaneManager>(
                 }
 
                 if !url.starts_with("aileron://") {
-                    app_state.load_scroll_marks_for_pane(pane_id, &url);
+                    if let Some(ref conn) = core.db
+                        && let Ok(db_marks) =
+                            crate::db::scroll_marks::load_scroll_marks_for_url(conn, &url)
+                        && !db_marks.is_empty()
+                    {
+                        core.session
+                            .marks
+                            .entry(pane_id)
+                            .or_default()
+                            .extend(db_marks);
+                    }
 
                     // Inject DocumentEnd scripts
                     let end_matching = content_scripts.scripts_for_url(&url, RunAt::DocumentEnd);
                     for script in end_matching {
                         let key = format!("userscript:{}", script.name);
-                        if app_state.is_script_injected(pane_id, &key) {
+                        if core.is_script_injected(pane_id, &key) {
                             continue;
                         }
                         if let Some(pane) = manager.get_mut(&pane_id) {
@@ -200,14 +216,14 @@ pub fn process_events<M: EventPaneManager>(
                             );
                             pane.execute_js_code(&script.js_code);
                             pane.mark_dirty();
-                            app_state.mark_script_injected(pane_id, &key);
+                            core.mark_script_injected(pane_id, &key);
                         }
                     }
                     let ext_end_scripts =
                         content_scripts.extension_scripts_for_url(&url, RunAt::DocumentEnd);
                     for ext_script in ext_end_scripts {
                         let key = format!("{}:{}", ext_script.extension_id, ext_script.script_id);
-                        if app_state.is_script_injected(pane_id, &key) {
+                        if core.is_script_injected(pane_id, &key) {
                             continue;
                         }
                         if let Some(pane) = manager.get_mut(&pane_id) {
@@ -215,11 +231,11 @@ pub fn process_events<M: EventPaneManager>(
                                 &ext_script,
                                 pane,
                                 pane_id,
-                                app_state,
+                                core,
                                 false,
                             );
                             pane.mark_dirty();
-                            app_state.mark_script_injected(pane_id, &key);
+                            core.mark_script_injected(pane_id, &key);
                         }
                     }
 
@@ -227,7 +243,7 @@ pub fn process_events<M: EventPaneManager>(
                     let matching = content_scripts.scripts_for_url(&url, RunAt::DocumentIdle);
                     for script in matching {
                         let key = format!("userscript:{}", script.name);
-                        if app_state.is_script_injected(pane_id, &key) {
+                        if core.is_script_injected(pane_id, &key) {
                             continue;
                         }
                         if let Some(pane) = manager.get_mut(&pane_id) {
@@ -238,14 +254,14 @@ pub fn process_events<M: EventPaneManager>(
                             );
                             pane.execute_js_code(&script.js_code);
                             pane.mark_dirty();
-                            app_state.mark_script_injected(pane_id, &key);
+                            core.mark_script_injected(pane_id, &key);
                         }
                     }
                     let ext_scripts =
                         content_scripts.extension_scripts_for_url(&url, RunAt::DocumentIdle);
                     for ext_script in ext_scripts {
                         let key = format!("{}:{}", ext_script.extension_id, ext_script.script_id);
-                        if app_state.is_script_injected(pane_id, &key) {
+                        if core.is_script_injected(pane_id, &key) {
                             continue;
                         }
                         if let Some(pane) = manager.get_mut(&pane_id) {
@@ -253,11 +269,11 @@ pub fn process_events<M: EventPaneManager>(
                                 &ext_script,
                                 pane,
                                 pane_id,
-                                app_state,
+                                core,
                                 true,
                             );
                             pane.mark_dirty();
-                            app_state.mark_script_injected(pane_id, &key);
+                            core.mark_script_injected(pane_id, &key);
                         }
                     }
                     if let Some(pane) = manager.get_mut(&pane_id) {
@@ -292,7 +308,7 @@ pub fn process_events<M: EventPaneManager>(
                         pane.mark_dirty();
                     }
 
-                    if let Some(ref css) = app_state.core.config.custom_css
+                    if let Some(ref css) = core.config.custom_css
                         && !css.trim().is_empty()
                         && let Some(pane) = manager.get_mut(&pane_id)
                     {
@@ -322,7 +338,7 @@ pub fn process_events<M: EventPaneManager>(
                     }
 
                     // Apply per-site zoom if configured
-                    if let Some(ref db) = app_state.core.db
+                    if let Some(ref db) = core.db
                         && let Ok(settings) =
                             crate::db::site_settings::get_site_settings_for_url(db, &url)
                         && let Some(zoom) = settings.iter().find_map(|s| s.zoom_level)
@@ -335,13 +351,17 @@ pub fn process_events<M: EventPaneManager>(
                 }
             }
             WryEvent::LoadStarted { url, .. } => {
-                app_state.core.autofill.available = false;
-                app_state.core.autofill.username_id.clear();
-                app_state.core.autofill.password_id.clear();
-                app_state.core.autofill.js = None;
-                app_state.core.autofill.status_msg.clear();
-                app_state.clear_injected_scripts(pane_id);
-                app_state.update_a11y(&format!("Loading: {}...", &url[..url.len().min(40)]));
+                core.autofill.available = false;
+                core.autofill.username_id.clear();
+                core.autofill.password_id.clear();
+                core.autofill.js = None;
+                core.autofill.status_msg.clear();
+                core.clear_injected_scripts(pane_id);
+                {
+                    let __m = &format!("Loading: {}...", &url[..url.len().min(40)]);
+                    core.ui.status_message = __m.to_string();
+                    core.ui.accessibility_text = __m.to_string();
+                }
 
                 // Fire extension onBeforeRequest lifecycle event
                 if interceptor_registry.has_interceptors()
@@ -383,7 +403,7 @@ pub fn process_events<M: EventPaneManager>(
                     let start_scripts = content_scripts.scripts_for_url(&url, RunAt::DocumentStart);
                     for script in start_scripts {
                         let key = format!("userscript:{}", script.name);
-                        if app_state.is_script_injected(pane_id, &key) {
+                        if core.is_script_injected(pane_id, &key) {
                             continue;
                         }
                         if let Some(pane) = manager.get_mut(&pane_id) {
@@ -394,14 +414,14 @@ pub fn process_events<M: EventPaneManager>(
                             );
                             pane.execute_js_code(&script.js_code);
                             pane.mark_dirty();
-                            app_state.mark_script_injected(pane_id, &key);
+                            core.mark_script_injected(pane_id, &key);
                         }
                     }
                     let ext_scripts =
                         content_scripts.extension_scripts_for_url(&url, RunAt::DocumentStart);
                     for ext_script in ext_scripts {
                         let key = format!("{}:{}", ext_script.extension_id, ext_script.script_id);
-                        if app_state.is_script_injected(pane_id, &key) {
+                        if core.is_script_injected(pane_id, &key) {
                             continue;
                         }
                         if let Some(pane) = manager.get_mut(&pane_id) {
@@ -409,18 +429,21 @@ pub fn process_events<M: EventPaneManager>(
                                 &ext_script,
                                 pane,
                                 pane_id,
-                                app_state,
+                                core,
                                 false,
                             );
                             pane.mark_dirty();
-                            app_state.mark_script_injected(pane_id, &key);
+                            core.mark_script_injected(pane_id, &key);
                         }
                     }
                 }
             }
             WryEvent::TitleChanged { title, .. } => {
-                app_state.update_a11y(&title[..title.len().min(60)]);
-                app_state.headed_mut().tabs.tab_display_dirty = true;
+                {
+                    let __m = &title[..title.len().min(60)];
+                    core.ui.status_message = __m.to_string();
+                    core.ui.accessibility_text = __m.to_string();
+                }
                 // Cache the title on the pane so the LoadComplete sync (which
                 // reads pane.title()) carries the real title instead of "".
                 if let Some(pane) = manager.get_mut(&pane_id) {
@@ -430,20 +453,17 @@ pub fn process_events<M: EventPaneManager>(
                     .get(&pane_id)
                     .map(|p| p.url().to_string())
                     .unwrap_or_default();
-                super::sync_tab_url_title(app_state, pane_id, &url, &title);
+                super::sync_tab_url_title(core, pane_id, &url, &title);
             }
             WryEvent::DownloadStarted { url, filename, .. } => {
-                let dl_id = app_state
-                    .core
+                let dl_id = core
                     .download_manager
                     .start(url.as_str(), Some(filename.as_str()));
                 let short_url = if url.len() > 40 { &url[..37] } else { &url };
-                app_state.core.ui.status_message =
-                    format!("Download #{dl_id}: {filename} ({short_url})");
+                core.ui.status_message = format!("Download #{dl_id}: {filename} ({short_url})");
                 info!("Download #{} started: {} from {}", dl_id, filename, url);
-                if let Some(db) = app_state.core.db.as_ref() {
-                    let dest = app_state
-                        .core
+                if let Some(db) = core.db.as_ref() {
+                    let dest = core
                         .download_manager
                         .downloads_dir()
                         .join(filename.as_str());
@@ -459,10 +479,10 @@ pub fn process_events<M: EventPaneManager>(
             }
             WryEvent::OpenFile { path } => {
                 let _ = open::that(&path);
-                app_state.core.ui.status_message = format!("Opened: {path}");
+                core.ui.status_message = format!("Opened: {path}");
             }
             WryEvent::HttpsUpgraded { to, .. } => {
-                app_state.core.ui.status_message = format!("HTTPS upgrade: {to}");
+                core.ui.status_message = format!("HTTPS upgrade: {to}");
                 if let Some(pane) = manager.get_mut(&pane_id) {
                     pane.mark_dirty();
                 }

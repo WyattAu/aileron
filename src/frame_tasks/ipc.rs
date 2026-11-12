@@ -46,7 +46,7 @@ pub(crate) const EXTENSION_RUNTIME_SHIM_JS: &str = r#"
 "#;
 
 pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
-    app_state: &mut AppState,
+    core: &mut aileron_core::state::CoreState,
     panes: &mut M,
     pane_id: Uuid,
     message: &str,
@@ -62,10 +62,12 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
             failed_url,
             error_detail
         );
-        app_state.update_a11y(&format!(
+        let a11y_msg = format!(
             "Load failed: {}",
             &error_detail[..error_detail.len().min(60)]
-        ));
+        );
+        core.ui.status_message = a11y_msg.clone();
+        core.ui.accessibility_text = a11y_msg;
         // Navigate to our error page
         if let Some(pane) = panes.get_mut(&pane_id) {
             let display_msg = format!("Failed to load: {failed_url}\n\n{error_detail}");
@@ -84,13 +86,13 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
     };
     match msg.get("t").and_then(|v| v.as_str()) {
         Some("get-config") => {
-            let config_json = if app_state.core.cache.config_json_dirty {
-                app_state.core.cache.config_json_cache =
-                    serde_json::to_string(&app_state.core.config).unwrap_or_default();
-                app_state.core.cache.config_json_dirty = false;
-                app_state.core.cache.config_json_cache.clone()
+            let config_json = if core.cache.config_json_dirty {
+                core.cache.config_json_cache =
+                    serde_json::to_string(&core.config).unwrap_or_default();
+                core.cache.config_json_dirty = false;
+                core.cache.config_json_cache.clone()
             } else {
-                app_state.core.cache.config_json_cache.clone()
+                core.cache.config_json_cache.clone()
             };
             let js = format!(
                 "window._aileron_config = {config_json}; window._onConfigLoaded && window._onConfigLoaded(window._aileron_config);"
@@ -103,91 +105,90 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
         Some("set-config") => {
             if let Some(config_obj) = msg.get("config") {
                 if let Some(v) = config_obj.get("homepage").and_then(|v| v.as_str()) {
-                    app_state.core.config.homepage = v.to_string();
+                    core.config.homepage = v.to_string();
                 }
                 if let Some(v) = config_obj.get("search_engine").and_then(|v| v.as_str()) {
-                    app_state.core.config.search_engine = v.to_string();
+                    core.config.search_engine = v.to_string();
                 }
                 if let Some(v) = config_obj.get("restore_session").and_then(|v| v.as_bool()) {
-                    app_state.core.config.restore_session = v;
+                    core.config.restore_session = v;
                 }
                 if let Some(v) = config_obj.get("tab_layout").and_then(|v| v.as_str()) {
-                    app_state.core.config.tab_layout = v.to_string();
+                    core.config.tab_layout = v.to_string();
                 }
                 if let Some(v) = config_obj.get("tab_sidebar_width").and_then(|v| v.as_f64()) {
-                    app_state.core.config.tab_sidebar_width = v as f32;
+                    core.config.tab_sidebar_width = v as f32;
                 }
                 if let Some(v) = config_obj
                     .get("tab_sidebar_right")
                     .and_then(|v| v.as_bool())
                 {
-                    app_state.core.config.tab_sidebar_right = v;
+                    core.config.tab_sidebar_right = v;
                 }
                 if let Some(v) = config_obj.get("adblock_enabled").and_then(|v| v.as_bool()) {
-                    app_state.core.config.adblock_enabled = v;
+                    core.config.adblock_enabled = v;
                 }
                 if let Some(v) = config_obj
                     .get("https_upgrade_enabled")
                     .and_then(|v| v.as_bool())
                 {
-                    app_state.core.config.https_upgrade_enabled = v;
+                    core.config.https_upgrade_enabled = v;
                 }
                 if let Some(v) = config_obj
                     .get("tracking_protection_enabled")
                     .and_then(|v| v.as_bool())
                 {
-                    app_state.core.config.tracking_protection_enabled = v;
+                    core.config.tracking_protection_enabled = v;
                 }
                 if let Some(v) = config_obj.get("devtools").and_then(|v| v.as_bool()) {
-                    app_state.core.config.devtools = v;
+                    core.config.devtools = v;
                 }
                 if let Some(v) = config_obj.get("proxy") {
-                    app_state.core.config.proxy =
-                        v.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
+                    core.config.proxy = v.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
                 }
                 if let Some(v) = config_obj.get("custom_css") {
-                    app_state.core.config.custom_css =
+                    core.config.custom_css =
                         v.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
                 }
                 if let Some(v) = config_obj.get("engine_selection").and_then(|v| v.as_str()) {
-                    app_state.core.config.engine_selection = v.to_string();
+                    core.config.engine_selection = v.to_string();
                 }
                 if let Some(v) = config_obj.get("language") {
-                    app_state.core.config.language =
+                    core.config.language =
                         v.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
                 }
                 if let Some(v) = config_obj.get("adaptive_quality").and_then(|v| v.as_bool()) {
-                    app_state.core.config.adaptive_quality = v;
+                    core.config.adaptive_quality = v;
                 }
                 if let Some(v) = config_obj
                     .get("popup_blocker_enabled")
                     .and_then(|v| v.as_bool())
                 {
-                    app_state.core.config.popup_blocker_enabled = v;
+                    core.config.popup_blocker_enabled = v;
                 }
                 if let Some(v) = config_obj
                     .get("adblock_update_interval_hours")
                     .and_then(|v| v.as_u64())
                 {
-                    app_state.core.config.adblock_update_interval_hours = v;
+                    core.config.adblock_update_interval_hours = v;
                 }
                 if let Some(v) = config_obj.get("theme").and_then(|v| v.as_str()) {
-                    app_state.core.config.theme = v.to_string();
+                    core.config.theme = v.to_string();
                 }
                 if let Some(v) = config_obj
                     .get("adblock_cosmetic_filtering")
                     .and_then(|v| v.as_bool())
                 {
-                    app_state.core.config.adblock_cosmetic_filtering = v;
+                    core.config.adblock_cosmetic_filtering = v;
                 }
                 if let Some(v) = config_obj.get("auto_save").and_then(|v| v.as_bool()) {
-                    app_state.core.config.auto_save = v;
+                    core.config.auto_save = v;
                 }
                 if let Some(v) = config_obj.get("sync_target").and_then(|v| v.as_str()) {
-                    app_state.core.config.sync_target = v.to_string();
+                    core.config.sync_target = v.to_string();
                 }
                 if let Some(v) = config_obj.get("sync_encrypted").and_then(|v| v.as_bool()) {
-                    app_state.core.config.sync_encrypted = v;
+                    core.config.sync_encrypted = v;
                 }
                 // sync_passphrase is stored in keyring, not config — handled below
                 #[cfg(feature = "passwords")]
@@ -198,34 +199,33 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
                 {
                     match crate::passwords::keyring::store_credential("aileron-sync", v) {
                         Ok(()) => {
-                            app_state.core.config.sync_passphrase = v.to_string();
+                            core.config.sync_passphrase = v.to_string();
                             info!("Sync passphrase stored in system keyring");
                         }
                         Err(e) => {
                             warn!("Failed to store sync passphrase in keyring: {}", e);
-                            app_state.core.ui.status_message =
-                                format!("Failed to store passphrase: {e}");
+                            core.ui.status_message = format!("Failed to store passphrase: {e}");
                         }
                     }
                 }
                 if let Some(v) = config_obj.get("sync_auto").and_then(|v| v.as_bool()) {
-                    app_state.core.config.sync_auto = v;
+                    core.config.sync_auto = v;
                 }
                 if let Some(v) = config_obj
                     .get("sync_auto_interval_sec")
                     .and_then(|v| v.as_u64())
                 {
-                    app_state.core.config.sync_auto_interval_sec = v;
+                    core.config.sync_auto_interval_sec = v;
                 }
-                if let Err(e) = crate::config::Config::save(&app_state.core.config) {
+                if let Err(e) = crate::config::Config::save(&core.config) {
                     warn!("Failed to save config: {}", e);
                 }
                 if let Some(pane) = panes.get_mut(&pane_id) {
                     pane.execute_js_code("window._onConfigSaved && window._onConfigSaved();");
                     pane.mark_dirty();
                 }
-                app_state.core.ui.status_message = "Settings saved".into();
-                app_state.core.cache.config_json_dirty = true;
+                core.ui.status_message = "Settings saved".into();
+                core.cache.config_json_dirty = true;
             }
         }
         #[cfg(feature = "passwords")]
@@ -239,29 +239,32 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
                 match crate::passwords::keyring::store_credential(&key, password) {
                     Ok(()) => {
                         info!("Saved credential for {}", username);
-                        app_state.core.ui.status_message =
-                            format!("Credential saved for {username}");
+                        core.ui.status_message = format!("Credential saved for {username}");
                     }
                     Err(e) => {
                         warn!("Failed to store credential: {}", e);
-                        app_state.core.ui.status_message = format!("Credential save failed: {e}");
+                        core.ui.status_message = format!("Credential save failed: {e}");
                     }
                 }
             } else {
-                app_state.core.ui.status_message = "No pending credentials to save".into();
+                core.ui.status_message = "No pending credentials to save".into();
             }
         }
         Some("scroll-fraction") => {
             if let Some(frac) = msg.get("frac").and_then(|v| v.as_f64())
-                && let Some(mark_char) = app_state.core.session.pending_mark_set.take()
+                && let Some(mark_char) = core.session.pending_mark_set.take()
             {
                 let frac = frac.clamp(0.0, 1.0);
-                app_state.store_mark_fraction(pane_id, mark_char, frac);
+                core.session
+                    .marks
+                    .entry(pane_id)
+                    .or_default()
+                    .insert(mark_char, frac);
                 tracing::debug!("Mark '{}' set at fraction {}", mark_char, frac);
                 // Persist to database keyed by URL
                 if let Some(pane) = panes.get(&pane_id) {
                     let url = pane.url().to_string();
-                    if let Some(ref conn) = app_state.core.db
+                    if let Some(ref conn) = core.db
                         && let Err(e) =
                             crate::db::scroll_marks::set_scroll_mark(conn, &url, mark_char, frac)
                     {
@@ -271,9 +274,9 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
             }
         }
         Some("hint-clicked") => {
-            app_state.core.ui.hint_mode = false;
-            app_state.core.ui.hint_buffer.clear();
-            app_state.core.ui.status_message.clear();
+            core.ui.hint_mode = false;
+            core.ui.hint_buffer.clear();
+            core.ui.status_message.clear();
         }
         #[cfg(feature = "passwords")]
         Some("login-form-detected") => {
@@ -281,47 +284,44 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
                 .get("has_login")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
-                && pane_id == app_state.core.wm.active_pane_id()
-                && app_state.bitwarden.is_unlocked()
+                && pane_id == core.wm.active_pane_id()
+                && core.bitwarden.is_unlocked()
                 && let Some(pane) = panes.get_mut(&pane_id)
             {
                 let url = pane.url().to_string();
-                if let Ok(items) = app_state.bitwarden.search_for_url(&url)
+                if let Ok(items) = core.bitwarden.search_for_url(&url)
                     && !items.is_empty()
                 {
-                    app_state.core.autofill.available = true;
+                    core.autofill.available = true;
                     if let Some(uid) = msg.get("username_id").and_then(|v| v.as_str()) {
-                        app_state.core.autofill.username_id = uid.to_string();
+                        core.autofill.username_id = uid.to_string();
                     }
                     if let Some(pid) = msg.get("password_id").and_then(|v| v.as_str()) {
-                        app_state.core.autofill.password_id = pid.to_string();
+                        core.autofill.password_id = pid.to_string();
                     }
-                    if let Ok(cred) = app_state.bitwarden.get_credential(&items[0].id) {
+                    if let Ok(cred) = core.bitwarden.get_credential(&items[0].id) {
                         let domain = url::Url::parse(&url)
                             .ok()
                             .and_then(|u| u.domain().map(String::from))
                             .unwrap_or_else(|| "unknown".into());
                         let (username_id, password_id) = {
-                            let autofill = &app_state.core.autofill;
+                            let autofill = &core.autofill;
                             (autofill.username_id.clone(), autofill.password_id.clone())
                         };
-                        let js = app_state.bitwarden.autofill_by_id_js(
-                            &username_id,
-                            &password_id,
-                            &cred,
-                        );
-                        app_state.core.autofill.js = Some(js);
-                        app_state.core.autofill.status_msg =
-                            format!("Auto-filled credentials for {domain}");
+                        let js =
+                            core.bitwarden
+                                .autofill_by_id_js(&username_id, &password_id, &cred);
+                        core.autofill.js = Some(js);
+                        core.autofill.status_msg = format!("Auto-filled credentials for {domain}");
                     }
                 }
             } else {
-                app_state.core.autofill.available = false;
-                app_state.core.autofill.js = None;
+                core.autofill.available = false;
+                core.autofill.js = None;
             }
         }
         Some("get-newtab-data") => {
-            let bookmarks: Vec<serde_json::Value> = if let Some(db) = app_state.core.db.as_ref() {
+            let bookmarks: Vec<serde_json::Value> = if let Some(db) = core.db.as_ref() {
                 crate::db::bookmarks::all_bookmarks(db)
                     .unwrap_or_default()
                     .into_iter()
@@ -337,7 +337,7 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
             } else {
                 Vec::new()
             };
-            let history: Vec<serde_json::Value> = if let Some(db) = app_state.core.db.as_ref() {
+            let history: Vec<serde_json::Value> = if let Some(db) = core.db.as_ref() {
                 crate::db::history::recent_entries(db, 8)
                     .unwrap_or_default()
                     .into_iter()
@@ -379,7 +379,7 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
                 .unwrap_or("")
                 .to_string();
 
-            let mgr = app_state.core.extension_manager.read();
+            let mgr = core.extension_manager.read();
             let bus: &Arc<MessageBus> = mgr.message_bus();
             let response = bus.send_message(source_id.as_ref(), target_id.as_ref(), message);
             let response_json = serde_json::to_string(&response).unwrap_or_else(|_| "null".into());
@@ -404,22 +404,22 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
             let read_time = msg.get("read_time").and_then(|v| v.as_u64()).unwrap_or(0);
 
             // Save to file if a path was provided via the pending reader-save command
-            if let Some(ref path) = app_state.core.pending_reader_save_path {
+            if let Some(ref path) = core.pending_reader_save_path {
                 let markdown = format!(
                     "# {}\n\n{}\n\n---\n*{} words, ~{} min read*\n",
                     title, content, word_count, read_time
                 );
                 match std::fs::write(path, &markdown) {
                     Ok(()) => {
-                        app_state.core.ui.status_message = format!("Saved to: {}", path.display());
+                        core.ui.status_message = format!("Saved to: {}", path.display());
                     }
                     Err(e) => {
-                        app_state.core.ui.status_message = format!("Failed to save: {}", e);
+                        core.ui.status_message = format!("Failed to save: {}", e);
                     }
                 }
-                app_state.core.pending_reader_save_path = None;
+                core.pending_reader_save_path = None;
             } else {
-                app_state.core.ui.status_message = format!(
+                core.ui.status_message = format!(
                     "Content extracted ({} words, ~{} min read)",
                     word_count, read_time
                 );
@@ -435,16 +435,16 @@ pub(crate) fn handle_ipc_message(
     pane_id: Uuid,
     message: &str,
 ) {
-    handle_ipc_message_generic(app_state, wry_panes, pane_id, message);
+    handle_ipc_message_generic(&mut app_state.core, wry_panes, pane_id, message);
 }
 
 pub(crate) fn handle_ipc_message_offscreen(
-    app_state: &mut AppState,
+    core: &mut aileron_core::state::CoreState,
     offscreen_panes: &mut OffscreenWebViewManager,
     pane_id: Uuid,
     message: &str,
 ) {
-    handle_ipc_message_generic(app_state, offscreen_panes, pane_id, message);
+    handle_ipc_message_generic(core, offscreen_panes, pane_id, message);
 }
 
 pub(crate) trait ExecuteJs {
@@ -467,18 +467,13 @@ pub(crate) fn inject_extension_shim_and_script<T>(
     ext_script: &crate::extensions::scripting::ExtensionContentScriptEntry,
     pane: &T,
     pane_id: Uuid,
-    app_state: &mut AppState,
+    core: &mut aileron_core::state::CoreState,
     use_idle_delay: bool,
 ) where
     T: ExecuteJs,
 {
     let ext_id = ExtensionId(ext_script.extension_id.clone());
-    let is_loaded = app_state
-        .core
-        .extension_manager
-        .read()
-        .get(&ext_id)
-        .is_some();
+    let is_loaded = core.extension_manager.read().get(&ext_id).is_some();
     if !is_loaded {
         warn!(
             "Extension '{}' is not loaded, skipping content script '{}'",
@@ -487,13 +482,13 @@ pub(crate) fn inject_extension_shim_and_script<T>(
         return;
     }
 
-    if !app_state.is_script_injected(pane_id, &format!("shim:{}", ext_script.extension_id)) {
+    if !core.is_script_injected(pane_id, &format!("shim:{}", ext_script.extension_id)) {
         pane.execute_js_code(EXTENSION_RUNTIME_SHIM_JS);
         pane.execute_js_code(&format!(
             "window.__aileron_extension_id = {};",
             serde_json::to_string(&ext_script.extension_id).unwrap_or_default()
         ));
-        app_state.mark_script_injected(pane_id, &format!("shim:{}", ext_script.extension_id));
+        core.mark_script_injected(pane_id, &format!("shim:{}", ext_script.extension_id));
     }
 
     if !ext_script.css_code.is_empty() {

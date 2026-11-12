@@ -120,7 +120,6 @@ pub struct TabState {
     pub tab_names: HashMap<Uuid, String>,
     pub muted_pane_ids: HashSet<Uuid>,
     pub pinned_pane_ids: HashSet<Uuid>,
-    pub private_pane_ids: HashSet<Uuid>,
     pub reader_mode_panes: HashSet<Uuid>,
     pub minimal_mode_panes: HashSet<Uuid>,
     pub last_active_pane_id: Option<Uuid>,
@@ -139,7 +138,6 @@ impl Default for TabState {
             tab_names: HashMap::new(),
             muted_pane_ids: HashSet::new(),
             pinned_pane_ids: HashSet::new(),
-            private_pane_ids: HashSet::new(),
             reader_mode_panes: HashSet::new(),
             minimal_mode_panes: HashSet::new(),
             last_active_pane_id: None,
@@ -469,7 +467,7 @@ impl AppState {
         self.headed_mut().pane_last_focus.remove(pane_id);
         self.core.session.marks.remove(pane_id);
         self.headed_mut().tabs.tab_names.remove(pane_id);
-        self.headed_mut().tabs.private_pane_ids.remove(pane_id);
+        self.core.private_pane_ids.remove(pane_id);
     }
 
     /// Execute a command string (URL, keybind, etc.) from the command palette.

@@ -45,8 +45,7 @@ pub fn cmd_history(state: &mut AppState, query: &str) -> Option<()> {
 pub fn record_visit(state: &AppState, url: &url::Url, title: &str) {
     if let Some(ref conn) = state.core.db
         && !state
-            .headed()
-            .tabs
+            .core
             .private_pane_ids
             .contains(&state.core.wm.active_pane_id())
         && let Err(e) = crate::db::history::record_visit(conn, url, title)

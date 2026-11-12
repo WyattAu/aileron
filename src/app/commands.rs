@@ -383,7 +383,7 @@ impl AppState {
 
         if query == "private" || query.starts_with("private ") {
             let active_id = self.core.wm.active_pane_id();
-            self.headed_mut().tabs.private_pane_ids.insert(active_id);
+            self.core.private_pane_ids.insert(active_id);
             let target = query.strip_prefix("private ").unwrap_or("").trim();
             if !target.is_empty() {
                 let url_str = if target.contains("://") {

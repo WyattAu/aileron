@@ -137,7 +137,7 @@ impl AgentTick {
             .interceptor_registry
             .clone();
         frame_tasks::process_offscreen_events(
-            &mut self.app_state,
+            &mut self.app_state.core,
             &mut self.offscreen_panes,
             &self.content_scripts,
             &self.bridge,

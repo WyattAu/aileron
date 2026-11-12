@@ -392,13 +392,13 @@ impl AppState {
                         .pending_new_tab_url
                         .take()
                         .unwrap_or_else(|| url::Url::parse("aileron://new").unwrap());
-                    let is_private = self.headed().tabs.private_pane_ids.contains(&active);
+                    let is_private = self.core.private_pane_ids.contains(&active);
                     match self.core.wm.split(active, *direction, 0.5) {
                         Ok(new_id) => {
                             self.core.engines.create_pane(new_id, new_url, None);
                             // Propagate private mode to new pane
                             if is_private {
-                                self.headed_mut().tabs.private_pane_ids.insert(new_id);
+                                self.core.private_pane_ids.insert(new_id);
                             }
                             self.core.ui.status_message = "Split vertical".into();
                         }

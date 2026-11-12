@@ -305,6 +305,16 @@ pub struct CoreState {
     /// Autofill credentials state (offscreen IPC writes it from the
     /// bitwarden mobile lane — agent-reachable).
     pub autofill: AutofillState,
+    /// Per-pane tracking of already-injected content script IDs (the
+    /// offscreen event path injects in agent mode).
+    pub injected_content_script_ids: HashMap<Uuid, std::collections::HashSet<String>>,
+    /// Panes in private mode (no history/visit recording). Pane privacy
+    /// metadata — read by the visit recorder and the MCP pane tools.
+    pub private_pane_ids: std::collections::HashSet<Uuid>,
+    /// Bitwarden password manager client (S4 2d: the offscreen IPC
+    /// autofill arm reads it).
+    #[cfg(feature = "passwords")]
+    pub bitwarden: crate::passwords::BitwardenClient,
     /// UI feedback state: status message, url-bar text, omnibox results,
     /// find-bar state. Written from agent-reachable paths (offscreen IPC,
     /// MCP command arms) — moved to core in stage 2d.
@@ -419,6 +429,10 @@ impl CoreState {
                 ..Default::default()
             },
             cache: CacheState::default(),
+            injected_content_script_ids: HashMap::new(),
+            private_pane_ids: std::collections::HashSet::new(),
+            #[cfg(feature = "passwords")]
+            bitwarden: crate::passwords::BitwardenClient::new(),
             autofill: AutofillState::default(),
             ui: UiState::default(),
             #[cfg(feature = "terminal")]
@@ -519,6 +533,29 @@ pub struct AutofillState {
     pub password_id: String,
     pub js: Option<String>,
     pub status_msg: String,
+}
+
+impl CoreState {
+    /// Clear injected-script tracking for a closed pane.
+    pub fn clear_injected_scripts(&mut self, pane_id: uuid::Uuid) {
+        self.injected_content_script_ids.remove(&pane_id);
+    }
+
+    /// Check if a content script has already been injected for a pane.
+    #[must_use]
+    pub fn is_script_injected(&self, pane_id: uuid::Uuid, script_key: &str) -> bool {
+        self.injected_content_script_ids
+            .get(&pane_id)
+            .is_some_and(|s| s.contains(script_key))
+    }
+
+    /// Record that a content script was injected for a pane.
+    pub fn mark_script_injected(&mut self, pane_id: uuid::Uuid, script_key: &str) {
+        self.injected_content_script_ids
+            .entry(pane_id)
+            .or_default()
+            .insert(script_key.to_string());
+    }
 }
 
 #[cfg(test)]
