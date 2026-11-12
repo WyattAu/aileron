@@ -244,6 +244,44 @@ Everything the agent calls now takes CoreState except two moves:
 3. Gate-table closure: binary size + idle RSS for aileron-agent vs the
    headed aileron.
 
+## Stage 2d-3 refinement (2026-11-12, from a first extraction attempt)
+
+The offscreen-chain pull is a **single atomic unit of ~700 lines across
+3 files** — do it in ONE scripted pass from git HEAD, not incrementally
+(incremental attempts tangle trait/impl nesting and drop helper fns):
+
+Cut from `src/frame_tasks/mod.rs`: sync_tab_url_title,
+process_offscreen_events_inner, both cfg variants of
+process_offscreen_events (drop the `AppState` cfg(not(mcp)) variant —
+the agent build always has mcp; McpBridge is unconditional in core).
+Cut from `src/frame_tasks/ipc.rs`: ExecuteJs trait,
+handle_ipc_message_generic (lines 48-431), handle_ipc_message_offscreen,
+inject_extension_shim_and_script, EXTENSION_RUNTIME_SHIM_JS const.
+Cut from `src/frame_tasks/event_proc.rs`: EventPane trait,
+EventPaneManager trait, all three impls (WryPane, OffscreenWebView,
+WryPaneManager, OffscreenWebViewManager), process_events, and
+pane_id_from_event (helper).
+
+Missing pieces discovered mid-attempt (add to engine in the same pass):
+serde_json + urlencoding deps; MessageBus + ExtensionId + RunAt +
+WryEvent imports; sync_tab_url_title goes pub in offscreen_events.rs
+and is referenced as `super::offscreen_events::sync_tab_url_title`;
+`pane_id_from_event` moves with process_events. Core-module paths
+(`crate::db|extensions|net|platform|debug_capturer|scripts|passwords`
+...) rewrite to `aileron_core::`; `crate::servo`/`crate::offscreen_
+webview`/`crate::pump` stay engine-internal. Main keeps shims:
+`pub use aileron_engine::{ipc::*, offscreen_events::process_offscreen_
+events};` in frame_tasks. The headed wrapper `handle_ipc_message`
+(takes AppState) STAYS in main, calling
+`handle_ipc_message_generic(&mut app_state.core, ...)`.
+
+Then 2d-3 step 2: `agent/` bin crate (core+engine deps), agent.rs moved
+with import remap (AppState→CoreState::new, frame_tasks shims→direct
+aileron_core/aileron_engine paths, event_handlers::is_nvidia_gpu→engine,
+servo::init_gtk→aileron_engine::servo::init_gtk, gtk dep for the glib
+loop). Workspace members += "agent"; src/Cargo.toml drops the
+aileron-mcp bin.
+
 ## Stage 2b scope (next): agent runtime + event-routing split
 
 Signature audit of frame_tasks (all `pub fn`):
