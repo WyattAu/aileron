@@ -183,6 +183,67 @@ protocol, PaneRenderer + offscreen_webview. The wgpu pair
 Architecture D actually lands. pump_gtk_loop moves to engine (GTK
 mechanics; frame_tasks + pane_ops re-export via the shim pattern).
 
+## Stage 2d executed (2026-11-10/11): PaneOps impl + offscreen chain → CoreState
+
+- **2d-1** `daeddad`: CombinedPaneOps + dispatch_active_js_with_callback
+  moved to aileron-engine (image/base64 deps followed). Main re-exports
+  `aileron_engine::pane_ops`.
+- **2d-2a** `cc58017`: scripts.rs (ContentScriptManager), ui/search.rs,
+  UiState → core. UiState is the shared feedback store — the offscreen
+  IPC chain writes ui.status_message from agent-reachable arms (600+
+  call sites swept to core.ui). Core gains nucleo, aileron-shared, an
+  optional mlua under its `lua` feature (scripts registers Lua palette
+  commands); main keeps its own mlua for src/lua.
+- **2d-2b** `a2de49e`: AutofillState → CoreState.autofill; passwords/
+  (bitwarden+keyring, self-contained) → core behind a `passwords`
+  feature (optional keyring+age, forwarded from main).
+- **2d-2c** `351afb7`: process_offscreen_events(+inner),
+  handle_ipc_message_offscreen/generic, process_events,
+  inject_extension_shim_and_script, sync_tab_url_title all take
+  &mut CoreState. CoreState gains injected_content_script_ids,
+  private_pane_ids, bitwarden. AppState methods inlined at call sites
+  (all trivial core writers).
+
+**Latent panic found + fixed in 2c**: the LoadComplete arm wrote
+headed_mut().tabs.tab_display_dirty — agent-reachable with headed:
+None (the GATE-3 soak validated the OLD binary, pre-1b, so never hit
+this path). The headed wry caller now computes had_load_complete
+before process_events and sets the flag after; the agent path never
+touches headed state.
+
+**Stage 3 step 1** `c2d6387`: aileron-engine crate created (servo/ +
+offscreen_webview + GTK pump + spellcheck). The servo tree is
+wgpu-FREE in code (all wgpu mentions are Architecture D comments;
+servo_engine is a stub on wry types) — full move, zero wgpu leakage.
+Agent profile re-measured: 0 wgpu/leptos/alacritty/winit/portable-pty
+edges post-move. platform::spellcheck (webkit-touching) → engine; core
+stays GUI-free.
+
+## Stage 2d-3 scope (next session): thin aileron-agent bin
+
+Everything the agent calls now takes CoreState except two moves:
+
+1. **Offscreen chain → engine**: process_offscreen_events(+inner)
+   (frame_tasks/mod.rs:326-397), handle_ipc_message_offscreen +
+   handle_ipc_message_generic + inject_extension_shim_and_script
+   (frame_tasks/ipc.rs — generic is lines 48-431), EventPane +
+   EventPaneManager traits + their two impls (event_proc.rs:75-108 —
+   WryPaneManager + OffscreenWebViewManager impls, both engine types).
+   Generic body crate refs: config/db/passwords only (all core ✓).
+   handle_ipc_message (headed wry wrapper, takes AppState) STAYS in
+   main and calls aileron_engine::ipc::handle_ipc_message_generic
+   (already passes &mut app_state.core). Shims for process_offscreen_
+   events keep agent.rs/app_handler call sites unchanged.
+2. **Bin crate** `agent/`: Cargo.toml (aileron-core, aileron-engine,
+   gtk for the glib loop), src/main.rs = src/agent.rs moved. Fix
+   imports to aileron_core/aileron_engine (AppState → CoreState::new,
+   frame_tasks shims → direct paths, event_handlers::is_nvidia_gpu →
+   move to engine, servo::init_gtk → aileron_engine::servo::init_gtk,
+   WryPaneManager → aileron_engine::servo). src/Cargo.toml drops the
+   aileron-mcp bin. Workspace members += "agent".
+3. Gate-table closure: binary size + idle RSS for aileron-agent vs the
+   headed aileron.
+
 ## Stage 2b scope (next): agent runtime + event-routing split
 
 Signature audit of frame_tasks (all `pub fn`):
