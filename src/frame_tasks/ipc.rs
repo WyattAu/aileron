@@ -289,12 +289,12 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
                 if let Ok(items) = app_state.bitwarden.search_for_url(&url)
                     && !items.is_empty()
                 {
-                    app_state.headed_mut().autofill.available = true;
+                    app_state.core.autofill.available = true;
                     if let Some(uid) = msg.get("username_id").and_then(|v| v.as_str()) {
-                        app_state.headed_mut().autofill.username_id = uid.to_string();
+                        app_state.core.autofill.username_id = uid.to_string();
                     }
                     if let Some(pid) = msg.get("password_id").and_then(|v| v.as_str()) {
-                        app_state.headed_mut().autofill.password_id = pid.to_string();
+                        app_state.core.autofill.password_id = pid.to_string();
                     }
                     if let Ok(cred) = app_state.bitwarden.get_credential(&items[0].id) {
                         let domain = url::Url::parse(&url)
@@ -302,7 +302,7 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
                             .and_then(|u| u.domain().map(String::from))
                             .unwrap_or_else(|| "unknown".into());
                         let (username_id, password_id) = {
-                            let autofill = &app_state.headed().autofill;
+                            let autofill = &app_state.core.autofill;
                             (autofill.username_id.clone(), autofill.password_id.clone())
                         };
                         let js = app_state.bitwarden.autofill_by_id_js(
@@ -310,14 +310,14 @@ pub(crate) fn handle_ipc_message_generic<M: EventPaneManager>(
                             &password_id,
                             &cred,
                         );
-                        app_state.headed_mut().autofill.js = Some(js);
-                        app_state.headed_mut().autofill.status_msg =
+                        app_state.core.autofill.js = Some(js);
+                        app_state.core.autofill.status_msg =
                             format!("Auto-filled credentials for {domain}");
                     }
                 }
             } else {
-                app_state.headed_mut().autofill.available = false;
-                app_state.headed_mut().autofill.js = None;
+                app_state.core.autofill.available = false;
+                app_state.core.autofill.js = None;
             }
         }
         Some("get-newtab-data") => {

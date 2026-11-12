@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 use uuid::Uuid;
 
-use super::{AutofillState, CrashRecoveryState, PanelState, TabState};
+use super::{CrashRecoveryState, PanelState, TabState};
 use crate::input::Mode;
 use crate::input::keybindings::KeybindingRegistry;
 use crate::input::macro_recorder::{MacroPlayer, MacroRecorder, RecordedEvent};
@@ -56,7 +56,6 @@ pub struct HeadedState {
     pub panels: PanelState,
     pub tabs: TabState,
     pub crash: CrashRecoveryState,
-    pub autofill: AutofillState,
 }
 
 impl HeadedState {
@@ -137,7 +136,6 @@ impl HeadedState {
                 ..Default::default()
             },
             crash: CrashRecoveryState::default(),
-            autofill: AutofillState::default(),
         })
     }
 }

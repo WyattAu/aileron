@@ -27,10 +27,10 @@ pub mod lua;
 /// moved to aileron-core — it is fully self-contained and is the agent
 /// runtime's core dependency. Re-exported for API compatibility.
 pub use aileron_core::mcp;
+#[cfg(feature = "passwords")]
+pub use aileron_core::passwords;
 pub use aileron_engine::offscreen_webview;
 pub use aileron_engine::pane_ops;
-#[cfg(feature = "passwords")]
-pub mod passwords;
 pub mod platform;
 #[cfg(feature = "headed")]
 pub mod popup;

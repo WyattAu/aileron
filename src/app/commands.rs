@@ -1276,7 +1276,7 @@ impl AppState {
                             match self.bitwarden.get_credential(&items[0].id) {
                                 Ok(cred) => {
                                     let (username_id, password_id) = {
-                                        let autofill = &self.headed().autofill;
+                                        let autofill = &self.core.autofill;
                                         (autofill.username_id.clone(), autofill.password_id.clone())
                                     };
                                     let js = self.bitwarden.autofill_by_id_js(
@@ -1289,8 +1289,8 @@ impl AppState {
                                         .push_back(WryAction::RunJs(js));
                                     self.core.ui.status_message =
                                         format!("Auto-filled credentials for {domain}");
-                                    self.headed_mut().autofill.available = false;
-                                    self.headed_mut().autofill.js = None;
+                                    self.core.autofill.available = false;
+                                    self.core.autofill.js = None;
                                 }
                                 Err(e) => {
                                     self.core.ui.status_message = format!("Auto-fill failed: {e}")

@@ -177,6 +177,7 @@ dependencies = [
 name = "aileron-core"
 version = "1.0.0"
 dependencies = [
+ "age",
  "aho-corasick",
  "aileron-shared",
  "anyhow",
@@ -184,6 +185,7 @@ dependencies = [
  "chrono",
  "directories",
  "futures-util",
+ "keyring",
  "mlua",
  "nucleo",
  "open",

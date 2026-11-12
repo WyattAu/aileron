@@ -449,11 +449,11 @@ impl AppState {
                         self.headed_mut().tabs.last_active_pane_id = Some(current);
                         self.core.wm.set_active_pane(id);
                         self.update_status();
-                        self.headed_mut().autofill.available = false;
-                        self.headed_mut().autofill.js = None;
-                        self.headed_mut().autofill.username_id.clear();
-                        self.headed_mut().autofill.password_id.clear();
-                        self.headed_mut().autofill.status_msg.clear();
+                        self.core.autofill.available = false;
+                        self.core.autofill.js = None;
+                        self.core.autofill.username_id.clear();
+                        self.core.autofill.password_id.clear();
+                        self.core.autofill.status_msg.clear();
                     }
                 }
                 ActionEffect::RequestExternalBrowser => {

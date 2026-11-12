@@ -302,6 +302,9 @@ pub struct CoreState {
     pub session: SessionState,
     /// Derived-value cache (pane count, config JSON, https safe-list).
     pub cache: CacheState,
+    /// Autofill credentials state (offscreen IPC writes it from the
+    /// bitwarden mobile lane — agent-reachable).
+    pub autofill: AutofillState,
     /// UI feedback state: status message, url-bar text, omnibox results,
     /// find-bar state. Written from agent-reachable paths (offscreen IPC,
     /// MCP command arms) — moved to core in stage 2d.
@@ -416,6 +419,7 @@ impl CoreState {
                 ..Default::default()
             },
             cache: CacheState::default(),
+            autofill: AutofillState::default(),
             ui: UiState::default(),
             #[cfg(feature = "terminal")]
             terminal_pane_ids: std::collections::HashSet::new(),
@@ -504,6 +508,17 @@ pub struct UiState {
     pub last_omnibox_query: String,
     pub status_message: String,
     pub accessibility_text: String,
+}
+
+/// Autofill credentials state (offscreen IPC writes it from the
+/// bitwarden mobile lane — agent-reachable).
+#[derive(Default)]
+pub struct AutofillState {
+    pub available: bool,
+    pub username_id: String,
+    pub password_id: String,
+    pub js: Option<String>,
+    pub status_msg: String,
 }
 
 #[cfg(test)]

@@ -17,6 +17,8 @@ pub mod i18n;
 pub mod llm;
 pub mod mcp;
 pub mod net;
+#[cfg(feature = "passwords")]
+pub mod passwords;
 pub mod platform;
 pub mod profiling;
 pub mod scripts;

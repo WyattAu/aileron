@@ -50,14 +50,8 @@ pub struct CrashRecoveryState {
     pub crashed_pane_id: Option<Uuid>,
 }
 
-#[derive(Default)]
-pub struct AutofillState {
-    pub available: bool,
-    pub username_id: String,
-    pub password_id: String,
-    pub js: Option<String>,
-    pub status_msg: String,
-}
+/// S4 stage 2d: moved to aileron-core `state` (offscreen IPC writes it).
+pub use aileron_core::state::AutofillState;
 
 /// Pending permission request from an extension.
 /// Set when an extension calls `permissions.request()`, consumed when

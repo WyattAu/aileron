@@ -335,11 +335,11 @@ pub fn process_events<M: EventPaneManager>(
                 }
             }
             WryEvent::LoadStarted { url, .. } => {
-                app_state.headed_mut().autofill.available = false;
-                app_state.headed_mut().autofill.username_id.clear();
-                app_state.headed_mut().autofill.password_id.clear();
-                app_state.headed_mut().autofill.js = None;
-                app_state.headed_mut().autofill.status_msg.clear();
+                app_state.core.autofill.available = false;
+                app_state.core.autofill.username_id.clear();
+                app_state.core.autofill.password_id.clear();
+                app_state.core.autofill.js = None;
+                app_state.core.autofill.status_msg.clear();
                 app_state.clear_injected_scripts(pane_id);
                 app_state.update_a11y(&format!("Loading: {}...", &url[..url.len().min(40)]));
 
