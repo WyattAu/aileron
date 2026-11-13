@@ -370,3 +370,31 @@ to aileron-headed). AppState becomes `CoreState + Option<HeadedState>`
    hold both and delegate
 
 This is the multi-session deep refactor — each step compiles green.
+
+## Stage 2d-3 COMPLETE + validation (2026-11-13)
+
+2d-3a landed (`2e799b3`): offscreen chain in engine/src/{ipc,
+offscreen_events}.rs. 2d-3b landed (`85eee29`): agent/ crate — thin
+`aileron-agent` binary over core+engine+gtk, holding CoreState directly.
+2d-3b prep (`704a159`): get_cached_https_safe_list → CoreState method.
+
+**LIVE VALIDATION PASS (2026-11-12, real display, NVIDIA DMA-BUF
+workaround active):** initialize (49 tools) → navigate example.com
+0.04s → browser_get_text full text incl. Arabic i18n → navigate
+rust-lang.org → browser_get_text nav content → browser_snapshot 32 a11y
+nodes, epoch advancing → execute_js innerText round-trip → wait_for →
+list_tabs/read_active_pane. The decomposed stack works end to end.
+
+**SOAK3 RUNNING** against the decomposed binary (log:
+/tmp/opencode/soak-decomposed.log, script /tmp/opencode/soak-
+decomposed.py): 2h, navigate+3s settle+browser_get_text+browser_
+snapshot cycles with content/role assertions. Cycle 50: 5.59s, 0
+errors, 2015-char text extracted. Next session: read the COMPLETE
+summary line and record in ERA2. Note: test harnesses must use
+id-matched JSON-RPC reads (notifications arrive interleaved) and the
+tool name is browser_get_text (not get_text).
+
+The daemon currently serving 9543 IS the decomposed binary (xvfb
+display 93). Fleet service cutover (ExecStart → aileron-agent binary
+path) is a chezmoi-side change deferred until SOAK3 passes. The old
+`aileron --agent` dispatch in bootstrap.rs remains working via shims.
