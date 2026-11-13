@@ -1,0 +1,18 @@
+[package]
+name = "aileron-agent"
+version = "1.0.0"
+edition = "2024"
+description = "aileron agent: headless MCP daemon over aileron-core + aileron-engine"
+
+[dependencies]
+aileron-core = { path = "../core" }
+aileron-engine = { path = "../engine" }
+gtk = "0.18"
+anyhow = "1.0.102"
+tracing = "0.1.44"
+url = "2.5.4"
+uuid = { version = "1.16.0", features = ["v4"] }
+
+[[bin]]
+name = "aileron-agent"
+path = "src/main.rs"

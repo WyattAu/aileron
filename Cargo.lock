@@ -161,6 +161,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "aileron-agent"
+version = "1.0.0"
+dependencies = [
+ "aileron-core",
+ "aileron-engine",
+ "anyhow",
+ "gtk",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "aileron-chrome"
 version = "1.0.0"
 dependencies = [
