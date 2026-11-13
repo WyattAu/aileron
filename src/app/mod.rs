@@ -311,28 +311,6 @@ impl AppState {
         }
     }
 
-    pub fn get_cached_https_safe_list(&mut self) -> std::sync::Arc<HashSet<String>> {
-        let current_debug = std::env::var("AILERON_DEBUG").is_ok();
-        if self.core.cache.https_safe_list_cache.is_some()
-            && self.core.cache.https_safe_list_debug_flag == current_debug
-        {
-            return self
-                .core
-                .cache
-                .https_safe_list_cache
-                .clone()
-                .expect("https safe list cache populated above");
-        }
-        let list = crate::net::privacy::load_https_safe_list();
-        self.core.cache.https_safe_list_debug_flag = current_debug;
-        self.core.cache.https_safe_list_cache = Some(std::sync::Arc::new(list));
-        self.core
-            .cache
-            .https_safe_list_cache
-            .clone()
-            .expect("https_safe_list_cache must be populated after set above")
-    }
-
     /// Store a scroll mark fraction for a pane. Called from the IPC handler
     /// when the webview reports its scroll position back to Rust.
     pub fn store_mark_fraction(&mut self, pane_id: uuid::Uuid, mark: char, fraction: f64) {

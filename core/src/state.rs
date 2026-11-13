@@ -338,6 +338,29 @@ fn core_extensions_dir() -> std::path::PathBuf {
 }
 
 impl CoreState {
+    /// Cached HTTPS-upgrade safe list with debug-flag invalidation.
+    pub fn get_cached_https_safe_list(
+        &mut self,
+    ) -> std::sync::Arc<std::collections::HashSet<String>> {
+        let current_debug = std::env::var("AILERON_DEBUG").is_ok();
+        if self.cache.https_safe_list_cache.is_some()
+            && self.cache.https_safe_list_debug_flag == current_debug
+        {
+            return self
+                .cache
+                .https_safe_list_cache
+                .clone()
+                .expect("https safe list cache populated above");
+        }
+        let list = crate::net::privacy::load_https_safe_list();
+        self.cache.https_safe_list_debug_flag = current_debug;
+        self.cache.https_safe_list_cache = Some(std::sync::Arc::new(list));
+        self.cache
+            .https_safe_list_cache
+            .clone()
+            .expect("https safe list cache populated above")
+    }
+
     /// Build the agent-runtime state. `viewport` sizes the initial BSP pane.
     pub fn new(viewport: crate::wm::Rect, config: crate::config::Config) -> anyhow::Result<Self> {
         // Use homepage from config

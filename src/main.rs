@@ -426,7 +426,7 @@ impl AileronApp {
         let https_safe_list = if self.config.https_upgrade_enabled {
             self.app_state
                 .as_mut()
-                .map(|s| s.get_cached_https_safe_list())
+                .map(|s| s.core.get_cached_https_safe_list())
                 .unwrap_or_default()
         } else {
             std::sync::Arc::new(std::collections::HashSet::new())
@@ -544,7 +544,7 @@ impl AileronApp {
         let https_safe_list = if self.config.https_upgrade_enabled {
             self.app_state
                 .as_mut()
-                .map(|s| s.get_cached_https_safe_list())
+                .map(|s| s.core.get_cached_https_safe_list())
                 .unwrap_or_default()
         } else {
             std::sync::Arc::new(std::collections::HashSet::new())
@@ -634,7 +634,7 @@ impl AileronApp {
         let https_safe_list = if self.config.https_upgrade_enabled {
             self.app_state
                 .as_mut()
-                .map(|s| s.get_cached_https_safe_list())
+                .map(|s| s.core.get_cached_https_safe_list())
                 .unwrap_or_default()
         } else {
             std::sync::Arc::new(std::collections::HashSet::new())

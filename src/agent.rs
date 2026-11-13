@@ -213,7 +213,7 @@ fn create_agent_pane_at(
     });
     let blocked_domains: Vec<String> = adblocker.blocked_domains_iter();
     let https_safe_list = if app_state.core.config.https_upgrade_enabled {
-        app_state.get_cached_https_safe_list()
+        app_state.core.get_cached_https_safe_list()
     } else {
         std::sync::Arc::new(std::collections::HashSet::new())
     };

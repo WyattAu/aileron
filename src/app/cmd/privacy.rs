@@ -90,7 +90,7 @@ pub fn cmd_clear_privacy(state: &mut AppState, query: &str) -> Option<()> {
             && let Some(host) = url.host_str()
         {
             let host_lower = host.to_lowercase();
-            let safe_list = state.get_cached_https_safe_list();
+            let safe_list = state.core.get_cached_https_safe_list();
             if crate::net::privacy::is_https_safe(&host_lower, &safe_list) {
                 state.core.ui.status_message =
                     format!("HTTPS upgrade: {host_lower} is already in the safe list");
