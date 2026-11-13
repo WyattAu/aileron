@@ -247,7 +247,7 @@ fn process_wry_events_inner(
     let had_load_complete = wry_events
         .iter()
         .any(|e| matches!(e, crate::servo::wry_engine::WryEvent::LoadComplete { .. }));
-    let ipc_messages = event_proc::process_events(
+    let ipc_messages = aileron_engine::ipc::process_events(
         &mut app_state.core,
         wry_panes,
         content_scripts,
@@ -305,96 +305,6 @@ pub fn process_wry_events(
     process_wry_events_inner(
         app_state,
         wry_panes,
-        content_scripts,
-        adblocker,
-        interceptor_registry,
-    );
-}
-
-/// Update the active tab's URL/title in the BSP tree pane's TabList
-/// to match the webview's current state. This keeps tab data in sync
-/// so that tab switching navigates to the correct URL.
-fn sync_tab_url_title(
-    core: &mut aileron_core::state::CoreState,
-    pane_id: uuid::Uuid,
-    url: &str,
-    title: &str,
-) {
-    if let Some(pane) = core
-        .wm
-        .root_mut()
-        .and_then(|root| crate::wm::BspTree::find_pane_mut(root, pane_id))
-    {
-        let active_tab = pane.tabs.active_mut();
-        if let Ok(parsed) = url::Url::parse(url) {
-            active_tab.url = parsed;
-        }
-        active_tab.title = title.to_string();
-    }
-}
-
-fn process_offscreen_events_inner(
-    core: &mut aileron_core::state::CoreState,
-    offscreen_panes: &mut OffscreenWebViewManager,
-    content_scripts: &ContentScriptManager,
-    adblocker: &crate::net::adblock::AdBlocker,
-    interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
-) {
-    let events = offscreen_panes.drain_all_events_flat();
-    let ipc_messages = event_proc::process_events(
-        core,
-        offscreen_panes,
-        content_scripts,
-        adblocker,
-        interceptor_registry,
-        events,
-    );
-    for (pane_id, message) in ipc_messages {
-        ipc::handle_ipc_message_offscreen(core, offscreen_panes, pane_id, &message);
-    }
-}
-
-#[cfg(feature = "mcp")]
-pub fn process_offscreen_events(
-    core: &mut aileron_core::state::CoreState,
-    offscreen_panes: &mut OffscreenWebViewManager,
-    content_scripts: &ContentScriptManager,
-    mcp_bridge: &McpBridge,
-    adblocker: &crate::net::adblock::AdBlocker,
-    interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
-) {
-    process_offscreen_events_inner(
-        core,
-        offscreen_panes,
-        content_scripts,
-        adblocker,
-        interceptor_registry,
-    );
-    // Mirror the wry-pane path (process_wry_events): push the active pane's
-    // url/title into the shared MCP state so read_active_pane and friends see
-    // offscreen panes. The headed runtime masked this via its wry panes; the
-    // agent runtime (offscreen-only) has no wry panes to mask it.
-    let active_id = core.wm.active_pane_id();
-    if let Some(pane) = offscreen_panes.get(&active_id) {
-        mcp_bridge.update_state(pane.url().as_str(), pane.title());
-        mcp_bridge.update_active_meta(
-            core.mcp_settled_epoch.get(&active_id).copied().unwrap_or(0),
-            pane.is_loading(),
-        );
-    }
-}
-
-#[cfg(not(feature = "mcp"))]
-pub fn process_offscreen_events(
-    app_state: &mut AppState,
-    offscreen_panes: &mut OffscreenWebViewManager,
-    content_scripts: &ContentScriptManager,
-    adblocker: &crate::net::adblock::AdBlocker,
-    interceptor_registry: &Arc<WebRequestInterceptorRegistry>,
-) {
-    process_offscreen_events_inner(
-        app_state,
-        offscreen_panes,
         content_scripts,
         adblocker,
         interceptor_registry,
@@ -547,3 +457,12 @@ pub use aileron_core::agent::{audit_record, process_mcp_commands, wait_mcp_nav_s
 
 /// S4 stage 3: the GTK pump moved to aileron-engine `pump`.
 pub use aileron_engine::pump::pump_gtk_loop;
+
+pub use aileron_engine::ipc::process_events;
+/// S4 stage 2d-3: the offscreen event chain moved to aileron-engine
+/// (takes &mut CoreState + engine managers). Re-exported for call sites.
+pub use aileron_engine::ipc::{
+    EventPane, EventPaneManager, ExecuteJs, handle_ipc_message_offscreen,
+    inject_extension_shim_and_script,
+};
+pub use aileron_engine::offscreen_events::process_offscreen_events;
