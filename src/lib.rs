@@ -42,7 +42,7 @@ pub mod sync;
 pub use aileron_headed::terminal;
 #[cfg(feature = "headed")]
 pub mod test_harness;
-pub mod ui;
 /// S4 stage 2c: moved to aileron-core (terminal hooks inverted to callers).
 pub use aileron_core::workspace_restore;
+pub use aileron_headed::ui;
 pub mod wry_actions;
