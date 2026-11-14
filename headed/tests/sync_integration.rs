@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use aileron::sync::core::{ChunkHash, DeltaAction, FileManifest, SyncManager, SyncManifest};
-use aileron::sync::crypto::{decrypt_data, decrypt_file, encrypt_data, encrypt_file};
-use aileron::sync::transport::SyncTarget;
+use aileron_headed::sync::core::{ChunkHash, DeltaAction, FileManifest, SyncManager, SyncManifest};
+use aileron_headed::sync::crypto::{decrypt_data, decrypt_file, encrypt_data, encrypt_file};
+use aileron_headed::sync::transport::SyncTarget;
 
 fn make_file(dir: &Path, name: &str, content: &[u8]) -> std::path::PathBuf {
     let path = dir.join(name);

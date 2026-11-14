@@ -37,7 +37,7 @@ pub mod popup;
 pub use aileron_core::scripts;
 pub use aileron_engine::servo;
 #[cfg(feature = "sync")]
-pub mod sync;
+pub use aileron_headed::sync;
 #[cfg(feature = "terminal")]
 pub use aileron_headed::terminal;
 #[cfg(feature = "headed")]

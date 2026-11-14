@@ -13,3 +13,6 @@ pub mod terminal;
 pub mod ui;
 
 pub mod input;
+
+#[cfg(feature = "sync")]
+pub mod sync;

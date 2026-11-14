@@ -11,19 +11,36 @@ wgpu = "24"
 pollster = "0.4"
 winit = "0.30"
 tracing = "0.1.44"
-uuid = { version = "1.16.0", features = ["v4"], optional = true }
-alacritty_terminal = { version = "0.26", optional = true }
-portable-pty = { version = "0.8", optional = true }
 anyhow = "1.0.102"
 serde = { version = "1", features = ["derive"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+# terminal module
+uuid = { version = "1.16.0", features = ["v4"], optional = true }
+alacritty_terminal = { version = "0.26", optional = true }
+portable-pty = { version = "0.8", optional = true }
+# sync module
+fastcdc = { version = "4.0", optional = true }
+blake3 = { version = "1.8", optional = true }
+age = { version = "0.11", features = ["armor"], optional = true }
+notify = { version = "8.2", features = ["crossbeam-channel"], optional = true }
+notify-debouncer-mini = { version = "0.7", features = ["crossbeam-channel"], optional = true }
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+# sync module transitive needs (used via full paths, not use statements)
+serde_json = "1.0.140"
+rusqlite = { version = "0.40.1", features = ["bundled", "backup"] }
+url = "2.5"
+reqwest = { version = "0.13", default-features = false, features = ["stream", "rustls", "blocking"] }
+loop-retry = "0.1"
 
 [features]
-default = ["terminal"]
+default = ["terminal", "sync"]
 terminal = ["dep:uuid", "dep:alacritty_terminal", "dep:portable-pty"]
+sync = ["dep:fastcdc", "dep:blake3", "dep:age", "dep:notify", "dep:notify-debouncer-mini"]
 
 [dev-dependencies]
 smol_str = "0.2"
+tempfile = "3.19"
 
 [lints.rust]
 unsafe_code = "deny"
