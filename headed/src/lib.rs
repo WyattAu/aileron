@@ -11,3 +11,5 @@ pub mod gfx;
 pub mod terminal;
 
 pub mod ui;
+
+pub mod input;

@@ -1,14 +1,11 @@
-#[cfg(feature = "headed")]
 pub mod key_conversion;
 pub mod keybindings;
-#[cfg(feature = "headed")]
 pub mod keymap;
 pub mod macro_recorder;
 pub mod mode;
 pub mod router;
 
 pub use keybindings::{Action, KeybindingRegistry};
-#[cfg(feature = "headed")]
 pub use keymap::map_key;
 pub use mode::{Key, KeyCombo, KeyEvent, Mode, Modifiers};
 pub use router::{EventDestination, route_event};

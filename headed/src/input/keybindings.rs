@@ -60,7 +60,7 @@ pub enum Action {
     /// Reset zoom to 100%.
     ZoomReset,
     /// Resize pane: grow/shrink in a direction.
-    ResizePane(crate::wm::Direction),
+    ResizePane(aileron_core::wm::Direction),
     /// Set a scroll mark (followed by a letter key).
     SetMark(char),
     /// Jump to a scroll mark (followed by a letter key).
@@ -326,19 +326,19 @@ impl KeybindingRegistry {
         };
         self.register(
             KeyCombo::new(Mode::Normal, ctrl_alt, Key::Character('h')),
-            Action::ResizePane(crate::wm::Direction::Left),
+            Action::ResizePane(aileron_core::wm::Direction::Left),
         );
         self.register(
             KeyCombo::new(Mode::Normal, ctrl_alt, Key::Character('l')),
-            Action::ResizePane(crate::wm::Direction::Right),
+            Action::ResizePane(aileron_core::wm::Direction::Right),
         );
         self.register(
             KeyCombo::new(Mode::Normal, ctrl_alt, Key::Character('j')),
-            Action::ResizePane(crate::wm::Direction::Down),
+            Action::ResizePane(aileron_core::wm::Direction::Down),
         );
         self.register(
             KeyCombo::new(Mode::Normal, ctrl_alt, Key::Character('k')),
-            Action::ResizePane(crate::wm::Direction::Up),
+            Action::ResizePane(aileron_core::wm::Direction::Up),
         );
 
         // ─── macOS Cmd-based shortcuts ───────────────────────────────
