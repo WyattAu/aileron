@@ -436,3 +436,13 @@ Alternatively DEFER entirely: the functional compile-out is done
 (agent = core+engine+agent crates; binary 10.8 MB measured). The
 headed split is workspace symmetry + parallel compilation, not
 capability. Do it when the compilation-time pain is measured.
+
+## Walker validation on decomposed runtime (2026-11-14, phone AX)
+
+GATE-4 methodology re-run against the NEW aileron-agent binary:
+phone real-Chrome AX (CDP getFullAXTree, R5CT50JA09T) vs
+browser_snapshot on the decomposed runtime, same page (example.com).
+Phone: 9 named nodes (1 link + 8 StaticText i18n). Walker: 1 node
+(link "Learn more") — exact match on the interactive element;
+StaticText filtered by walker design. **Walker survived the
+decomposition intact.** Confirmed with real device ground truth.
