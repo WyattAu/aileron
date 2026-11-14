@@ -11,7 +11,14 @@ wgpu = "24"
 pollster = "0.4"
 winit = "0.30"
 tracing = "0.1.44"
+uuid = { version = "1.16.0", features = ["v4"], optional = true }
+alacritty_terminal = { version = "0.26", optional = true }
+portable-pty = { version = "0.8", optional = true }
 anyhow = "1.0.102"
+
+[features]
+default = ["terminal"]
+terminal = ["dep:uuid", "dep:alacritty_terminal", "dep:portable-pty"]
 
 [lints.rust]
 unsafe_code = "deny"

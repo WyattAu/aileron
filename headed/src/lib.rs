@@ -6,3 +6,6 @@
 //! this crate.
 
 pub mod gfx;
+
+#[cfg(feature = "terminal")]
+pub mod terminal;

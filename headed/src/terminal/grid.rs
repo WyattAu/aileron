@@ -3,7 +3,7 @@
 //! Reads the alacritty_terminal grid state and maps ANSI colors.
 //! Rendering is handled by the webview terminal integration, not by egui.
 
-pub use crate::color::Color;
+pub use aileron_core::color::Color;
 
 /// ANSI color palette for terminal rendering.
 #[derive(Clone)]

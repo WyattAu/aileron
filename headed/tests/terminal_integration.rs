@@ -4,9 +4,9 @@
 //! Selection operations, NativeTerminalPane management, and
 //! terminal color/rendering structures.
 
-use aileron::terminal::grid::TerminalColors;
-use aileron::terminal::pty::PtyHandle;
-use aileron::terminal::{NativeTerminalPane, Selection};
+use aileron_headed::terminal::grid::TerminalColors;
+use aileron_headed::terminal::pty::PtyHandle;
+use aileron_headed::terminal::{NativeTerminalPane, Selection};
 
 /// Verify that a PTY can be created and cleaned up without panic.
 #[test]
@@ -332,7 +332,7 @@ fn test_cell_metrics_positive_dimensions() {
     // CellMetrics requires an egui::Context which needs a display.
     // Test skipped in headless CI — the struct's fields are public.
     // Verify the struct can be constructed via its fields.
-    let _metrics = aileron::terminal::grid::CellMetrics {
+    let _metrics = aileron_headed::terminal::grid::CellMetrics {
         cell_width: 8.0,
         cell_height: 16.0,
         font_size: 12.0,

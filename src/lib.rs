@@ -39,7 +39,7 @@ pub use aileron_engine::servo;
 #[cfg(feature = "sync")]
 pub mod sync;
 #[cfg(feature = "terminal")]
-pub mod terminal;
+pub use aileron_headed::terminal;
 #[cfg(feature = "headed")]
 pub mod test_harness;
 pub mod ui;

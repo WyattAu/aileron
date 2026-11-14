@@ -109,7 +109,6 @@ dependencies = [
  "aileron-engine",
  "aileron-headed",
  "aileron-shared",
- "alacritty_terminal",
  "anyhow",
  "attohttpc",
  "base64 0.22.1",
@@ -135,7 +134,6 @@ dependencies = [
  "parking_lot",
  "png",
  "pollster",
- "portable-pty",
  "regex",
  "reqwest",
  "rquickjs",
@@ -256,9 +254,12 @@ version = "1.0.0"
 dependencies = [
  "aileron-core",
  "aileron-engine",
+ "alacritty_terminal",
  "anyhow",
  "pollster",
+ "portable-pty",
  "tracing",
+ "uuid",
  "wgpu",
  "winit",
 ]

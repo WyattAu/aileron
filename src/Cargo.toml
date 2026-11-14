@@ -99,10 +99,8 @@ pollster = { version = "0.4.0", optional = true }
 wgpu = { version = "24", optional = true }
 
 # PTY management for embedded terminal panes
-portable-pty = { version = "0.8", optional = true }
 
 # Terminal emulation (VT parser + grid state)
-alacritty_terminal = { version = "0.26", optional = true }
 
 # WebView engine (wry = Tauri's system WebView wrapper)
 wry = { version = "0.55.0", default-features = false, features = [
@@ -220,10 +218,6 @@ name = "sync_retry_seam"
 path = "../tests/sync_retry_seam.rs"
 required-features = ["sync"]
 
-[[test]]
-name = "terminal_integration"
-path = "../tests/terminal_integration.rs"
-
 [features]
 default = ["headed", "mcp", "arp", "sync", "passwords", "lua", "terminal", "llm"]
 headed = ["dep:wgpu", "dep:pollster", "dep:winit"]
@@ -232,6 +226,6 @@ arp = ["dep:tokio-tungstenite"]
 sync = ["dep:fastcdc", "dep:blake3", "dep:age", "dep:notify", "dep:notify-debouncer-mini"]
 passwords = ["aileron-core/passwords", "dep:keyring", "dep:age"]
 lua = ["aileron-core/lua", "dep:mlua"]
-terminal = ["aileron-core/terminal", "dep:portable-pty", "dep:alacritty_terminal"]
+terminal = ["aileron-core/terminal", "aileron-headed/terminal"]
 native-chrome = []
 llm = ["aileron-core/llm"]
