@@ -10,7 +10,7 @@ use winit::window::{Window, WindowId};
 
 /// A standalone popup browser window — just a wry webview, no egui overlay.
 pub struct PopupWindow {
-    pub wry_pane: Option<crate::servo::WryPane>,
+    pub wry_pane: Option<aileron_engine::servo::WryPane>,
 }
 
 /// Manages standalone popup windows.
@@ -48,7 +48,7 @@ impl PopupManager {
             )),
         };
 
-        match crate::servo::WryPane::new(
+        match aileron_engine::servo::WryPane::new(
             &*window,
             uuid::Uuid::new_v4(),
             url,

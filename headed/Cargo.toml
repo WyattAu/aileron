@@ -7,6 +7,8 @@ description = "aileron headed: compositor, GPU renderer, terminal, input — the
 [dependencies]
 aileron-core = { path = "../core" }
 aileron-engine = { path = "../engine" }
+aileron-shared = { path = "../shared" }
+wry = { version = "0.55", default-features = false, features = ["os-webview", "protocol", "devtools", "x11"] }
 wgpu = "24"
 pollster = "0.4"
 winit = "0.30"

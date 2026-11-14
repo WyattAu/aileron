@@ -12,6 +12,9 @@ pub mod terminal;
 
 pub mod ui;
 
+pub mod chrome_bridge;
+pub mod popup;
+
 pub mod input;
 
 #[cfg(feature = "sync")]

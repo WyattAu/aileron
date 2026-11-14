@@ -10,7 +10,7 @@ pub mod app;
 #[cfg(feature = "arp")]
 pub use aileron_headed::arp;
 #[cfg(feature = "headed")]
-pub mod chrome_bridge;
+pub use aileron_headed::chrome_bridge;
 #[cfg(feature = "native-chrome")]
 pub mod chrome_native;
 pub use aileron_core::downloads;
@@ -32,10 +32,10 @@ pub use aileron_core::passwords;
 pub use aileron_engine::offscreen_webview;
 pub use aileron_engine::pane_ops;
 pub mod platform;
-#[cfg(feature = "headed")]
-pub mod popup;
 pub use aileron_core::scripts;
 pub use aileron_engine::servo;
+#[cfg(feature = "headed")]
+pub use aileron_headed::popup;
 #[cfg(feature = "sync")]
 pub use aileron_headed::sync;
 #[cfg(feature = "terminal")]
