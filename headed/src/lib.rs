@@ -22,3 +22,6 @@ pub mod sync;
 
 #[cfg(feature = "arp")]
 pub mod arp;
+
+#[cfg(feature = "lua")]
+pub mod lua;

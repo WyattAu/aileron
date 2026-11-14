@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use tracing::{info, warn};
 
-use crate::extensions::ExtensionManager;
+use aileron_core::extensions::ExtensionManager;
 
 use crate::input::keybindings::Action;
 use crate::input::mode::{Key, KeyCombo, Mode, Modifiers};
@@ -357,7 +357,7 @@ impl LuaEngine {
                     }
                 };
                 let guard = mgr.read();
-                let ext_id = crate::extensions::ExtensionId(id);
+                let ext_id = aileron_core::extensions::ExtensionId(id);
                 match guard.get(&ext_id) {
                     Some(api) => {
                         let ext_info = lua.create_table()?;

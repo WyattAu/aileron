@@ -52,7 +52,6 @@ rusqlite = { version = "0.40.1", features = ["bundled", "backup"] }
 
 
 # Lua scripting
-mlua = { version = "0.10.3", features = ["lua54", "vendored"], optional = true }
 
 # Logging
 tracing = "0.1.44"
@@ -216,7 +215,7 @@ mcp = ["dep:image", "dep:base64"]
 arp = ["aileron-headed/arp"]
 sync = ["aileron-headed/sync"]
 passwords = ["aileron-core/passwords", "dep:keyring"]
-lua = ["aileron-core/lua", "dep:mlua"]
+lua = ["aileron-core/lua", "aileron-headed/lua"]
 terminal = ["aileron-core/terminal", "aileron-headed/terminal"]
 native-chrome = []
 llm = ["aileron-core/llm"]

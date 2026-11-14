@@ -18,11 +18,6 @@ pub mod frame_tasks;
 #[cfg(feature = "llm")]
 /// S4 stage 2c: moved to aileron-core (self-contained, serde+tracing only).
 pub use aileron_core::llm;
-#[cfg(feature = "headed")]
-pub use aileron_headed::gfx;
-pub use aileron_headed::input;
-#[cfg(feature = "lua")]
-pub mod lua;
 /// S4 stage 2: the MCP stack (bridge, TCP server, tools, transport, ACI)
 /// moved to aileron-core — it is fully self-contained and is the agent
 /// runtime's core dependency. Re-exported for API compatibility.
@@ -31,6 +26,11 @@ pub use aileron_core::mcp;
 pub use aileron_core::passwords;
 pub use aileron_engine::offscreen_webview;
 pub use aileron_engine::pane_ops;
+#[cfg(feature = "headed")]
+pub use aileron_headed::gfx;
+pub use aileron_headed::input;
+#[cfg(feature = "lua")]
+pub use aileron_headed::lua;
 pub mod platform;
 pub use aileron_core::scripts;
 pub use aileron_engine::servo;
