@@ -278,6 +278,7 @@ dependencies = [
  "wgpu",
  "winit",
  "wry",
+ "x11-dl",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 //! Platform-specific configuration defaults.
 
-use crate::config::Config;
+use aileron_core::config::Config;
 
 /// Get platform-specific default config values.
 pub fn platform_defaults() -> Config {

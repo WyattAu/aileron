@@ -25,3 +25,7 @@ pub mod arp;
 
 #[cfg(feature = "lua")]
 pub mod lua;
+
+#[cfg(feature = "platform")]
+#[allow(unsafe_code)] // x11_dl FFI bindings require unsafe; module-scoped override
+pub mod platform;

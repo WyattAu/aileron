@@ -28,6 +28,8 @@ notify = { version = "8.2", features = ["crossbeam-channel"], optional = true }
 notify-debouncer-mini = { version = "0.7", features = ["crossbeam-channel"], optional = true }
 crossbeam-channel = "0.5"
 parking_lot = "0.12"
+# platform module (x11 detection)
+x11-dl = { version = "2", optional = true }
 # lua module
 mlua = { version = "0.10.3", features = ["lua54", "vendored"], optional = true }
 # arp module
@@ -42,11 +44,12 @@ reqwest = { version = "0.13", default-features = false, features = ["stream", "r
 loop-retry = "0.1"
 
 [features]
-default = ["terminal", "sync", "arp", "lua"]
+default = ["terminal", "sync", "arp", "lua", "platform"]
 terminal = ["dep:uuid", "dep:alacritty_terminal", "dep:portable-pty"]
 sync = ["dep:fastcdc", "dep:blake3", "dep:age", "dep:notify", "dep:notify-debouncer-mini"]
 arp = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:uuid"]
 lua = ["dep:mlua"]
+platform = ["dep:x11-dl"]
 
 [dev-dependencies]
 smol_str = "0.2"
