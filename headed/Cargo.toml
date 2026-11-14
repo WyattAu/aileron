@@ -1,0 +1,17 @@
+[package]
+name = "aileron-headed"
+version = "1.0.0"
+edition = "2024"
+description = "aileron headed: compositor, GPU renderer, terminal, input — the headed shell layer"
+
+[dependencies]
+aileron-core = { path = "../core" }
+aileron-engine = { path = "../engine" }
+wgpu = "24"
+pollster = "0.4"
+winit = "0.30"
+tracing = "0.1.44"
+anyhow = "1.0.102"
+
+[lints.rust]
+unsafe_code = "deny"

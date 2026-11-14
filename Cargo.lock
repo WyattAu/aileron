@@ -107,6 +107,7 @@ dependencies = [
  "aho-corasick",
  "aileron-core",
  "aileron-engine",
+ "aileron-headed",
  "aileron-shared",
  "alacritty_terminal",
  "anyhow",
@@ -247,6 +248,19 @@ dependencies = [
  "webkit2gtk",
  "wry",
  "x11-dl",
+]
+
+[[package]]
+name = "aileron-headed"
+version = "1.0.0"
+dependencies = [
+ "aileron-core",
+ "aileron-engine",
+ "anyhow",
+ "pollster",
+ "tracing",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]

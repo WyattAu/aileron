@@ -16,7 +16,7 @@ pub mod chrome_native;
 pub use aileron_core::downloads;
 pub mod frame_tasks;
 #[cfg(feature = "headed")]
-pub mod gfx;
+pub use aileron_headed::gfx;
 pub mod input;
 #[cfg(feature = "llm")]
 /// S4 stage 2c: moved to aileron-core (self-contained, serde+tracing only).
