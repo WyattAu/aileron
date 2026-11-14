@@ -8,7 +8,7 @@ pub use aileron_core::{
 
 pub mod app;
 #[cfg(feature = "arp")]
-pub mod arp;
+pub use aileron_headed::arp;
 #[cfg(feature = "headed")]
 pub mod chrome_bridge;
 #[cfg(feature = "native-chrome")]

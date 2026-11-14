@@ -16,3 +16,6 @@ pub mod input;
 
 #[cfg(feature = "sync")]
 pub mod sync;
+
+#[cfg(feature = "arp")]
+pub mod arp;
