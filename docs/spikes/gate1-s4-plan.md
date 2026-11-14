@@ -398,3 +398,41 @@ The daemon currently serving 9543 IS the decomposed binary (xvfb
 display 93). Fleet service cutover (ExecStart → aileron-agent binary
 path) is a chezmoi-side change deferred until SOAK3 passes. The old
 `aileron --agent` dispatch in bootstrap.rs remains working via shims.
+
+## Stage 3 step 2 scope (headed crate) — for a fresh session
+
+Inventory (2026-11-14): app/ 9,577 + frame_tasks 818 + input 2,399 +
+terminal 1,002 + ui 343 + gfx 273 + lua 1,376 + sync 2,758 + arp 890 +
+single files 5,333 (chrome_bridge, app_handler, event_handlers,
+bootstrap, main, wry_actions, test_harness, chrome_native) ≈ 23,770
+lines headed-side. Core-side already extracted (state, mcp, agent,
+scripts, search, passwords, downloads, llm, workspace_restore).
+
+This is the atomic-unit class: ONE scripted pass from git HEAD, never
+incremental. The app/ split is the hard part — app/mod.rs holds the
+AppState wrapper (CoreState + Option<HeadedState>); the wrapper should
+move to aileron-headed with HeadedState, while core keeps CoreState.
+Call sites in frame_tasks/event_proc take &mut CoreState ✓ (2d-2c) —
+the headed halves of frame_tasks (process_wry_events,
+process_pending_wry_actions, push_tabs_to_arp, auto_save_workspace,
+handle_ipc_message wrapper) move with the headed crate.
+
+Move order:
+1. aileron-headed crate skeleton (deps: core, engine, aileron-shared,
+   gtk stack, wgpu, egui, mlua, leptos/chrome deps stay on aileron)
+2. Atomic move: gfx, terminal, input, ui/palette+popup, chrome_bridge,
+   chrome_native, app_handler, event_handlers, bootstrap, main(bin),
+   wry_actions, test_harness, lua, sync, arp, app/ headed halves
+   (HeadedState, dispatch, commands, cmd/, events, event_handler,
+   instance, omnibox, palette, panes, popup), frame_tasks headed fns
+3. app/mod.rs retains: AppState wrapper → moves to headed too; core
+   call sites already take CoreState ✓
+4. aileron (src/) keeps: lib.rs shims for bin compat (main.rs moves),
+   bin/ relay, frame_tasks headed fns OR shims
+5. Bin cutover: aileron bin → aileron-headed crate; fleet unit for
+   ailon.service updated in same pass
+
+Alternatively DEFER entirely: the functional compile-out is done
+(agent = core+engine+agent crates; binary 10.8 MB measured). The
+headed split is workspace symmetry + parallel compilation, not
+capability. Do it when the compilation-time pain is measured.
