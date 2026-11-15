@@ -1,3 +1,7 @@
+// The headed GUI binary touches env vars pre-thread and X11 FFI error
+// handlers; SAFETY comments in situ at each site (same posture as the
+// pre-split main crate, which did not deny unsafe).
+#![allow(unsafe_code)]
 use std::sync::Arc;
 use tracing::{info, warn};
 use winit::application::ApplicationHandler;
@@ -5,20 +9,20 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
 
-use aileron::app::AppState;
-use aileron::config::Config;
-use aileron::frame_tasks;
-use aileron::input::{KeyEvent as AileronKeyEvent, Modifiers};
+use aileron_headed::app::AppState;
+use aileron_headed::config::Config;
+use aileron_headed::frame_tasks;
+use aileron_headed::input::{KeyEvent as AileronKeyEvent, Modifiers};
 #[cfg(feature = "mcp")]
-use aileron::mcp::McpBridge;
-use aileron::net::adblock::AdBlocker;
-use aileron::offscreen_webview::OffscreenWebViewManager;
-use aileron::popup::PopupManager;
-use aileron::servo::{WryPaneManager, bsp_rect_to_wry_rect};
+use aileron_headed::mcp::McpBridge;
+use aileron_headed::net::adblock::AdBlocker;
+use aileron_headed::offscreen_webview::OffscreenWebViewManager;
+use aileron_headed::popup::PopupManager;
+use aileron_headed::servo::{WryPaneManager, bsp_rect_to_wry_rect};
 #[cfg(feature = "terminal")]
-use aileron::terminal::NativeTerminalManager;
-use aileron::test_harness::TestHarness;
-use aileron::wm::Rect;
+use aileron_headed::terminal::NativeTerminalManager;
+use aileron_headed::test_harness::TestHarness;
+use aileron_headed::wm::Rect;
 
 mod agent;
 mod app_handler;
@@ -41,7 +45,7 @@ struct AileronApp {
     config: Config,
 
     /// GPU renderer for displaying offscreen webview frames.
-    gfx: Option<aileron::gfx::GfxState>,
+    gfx: Option<aileron_headed::gfx::GfxState>,
 
     /// Wry webview panes — one per BSP leaf.
     /// Must live here because wry::WebView is !Send + !Sync.
@@ -58,13 +62,13 @@ struct AileronApp {
     #[cfg(feature = "terminal")]
     terminal_manager: NativeTerminalManager,
 
-    content_scripts: aileron::scripts::ContentScriptManager,
+    content_scripts: aileron_headed::scripts::ContentScriptManager,
 
     /// Current git status for the working directory.
-    git_status: aileron::git::GitStatus,
+    git_status: aileron_headed::git::GitStatus,
 
     /// Background thread for polling git status (avoids blocking main thread).
-    git_poller: Option<aileron::git::GitPoller>,
+    git_poller: Option<aileron_headed::git::GitPoller>,
 
     /// Standalone popup browser windows.
     popup: PopupManager,
@@ -143,9 +147,9 @@ impl AileronApp {
             mcp_bridge,
             #[cfg(feature = "terminal")]
             terminal_manager: NativeTerminalManager::new(),
-            content_scripts: aileron::scripts::ContentScriptManager::new(),
-            git_status: aileron::git::GitStatus::default(),
-            git_poller: Some(aileron::git::GitPoller::new(
+            content_scripts: aileron_headed::scripts::ContentScriptManager::new(),
+            git_status: aileron_headed::git::GitStatus::default(),
+            git_poller: Some(aileron_headed::git::GitPoller::new(
                 std::path::PathBuf::from("."),
                 std::time::Duration::from_secs(1),
             )),
@@ -259,7 +263,7 @@ impl AileronApp {
             None => return,
         };
 
-        let dist_dir = aileron::chrome_bridge::find_chrome_dist_dir();
+        let dist_dir = aileron_headed::chrome_bridge::find_chrome_dist_dir();
 
         if !dist_dir.join("index.html").exists() {
             tracing::error!(
@@ -278,7 +282,7 @@ impl AileronApp {
             .with_url("aileron-chrome://chrome/index.html")
             .with_custom_protocol(
                 "aileron-chrome".into(),
-                aileron::chrome_bridge::chrome_asset_handler(dist_dir.clone()),
+                aileron_headed::chrome_bridge::chrome_asset_handler(dist_dir.clone()),
             )
             .with_ipc_handler(move |req: wry::http::Request<String>| {
                 let body = req.into_body();
@@ -465,8 +469,8 @@ impl AileronApp {
 
                 let mode = self.wry_panes.get(&pane_id).map(|p| p.embed_mode());
                 let mode_str = match mode {
-                    Some(aileron::servo::EmbedMode::ChildWindow) => "X11 child",
-                    Some(aileron::servo::EmbedMode::GtkWindow) => "GTK window (Wayland)",
+                    Some(aileron_headed::servo::EmbedMode::ChildWindow) => "X11 child",
+                    Some(aileron_headed::servo::EmbedMode::GtkWindow) => "GTK window (Wayland)",
                     None => "unknown",
                 };
                 info!(
@@ -663,14 +667,14 @@ impl AileronApp {
     ) {
         let mut harness = TestHarness::new(output_dir, dump_dom);
         if comprehensive {
-            use aileron::test_harness::comprehensive_route;
+            use aileron_headed::test_harness::comprehensive_route;
             harness.define_route(comprehensive_route());
             tracing::info!(
                 "Test harness activated (comprehensive): {}",
                 output_dir.display()
             );
         } else {
-            use aileron::test_harness::default_route;
+            use aileron_headed::test_harness::default_route;
             harness.define_route(default_route());
             tracing::info!("Test harness activated: {}", output_dir.display());
         }

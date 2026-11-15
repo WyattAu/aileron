@@ -254,10 +254,10 @@ pub fn run() -> anyhow::Result<()> {
     use tracing::info;
     use winit::event_loop::EventLoop;
 
-    use aileron::config::Config;
+    use aileron_headed::config::Config;
     #[cfg(target_os = "linux")]
-    use aileron::platform::x11::x11_error_handler;
-    use aileron::servo::init_gtk;
+    use aileron_headed::platform::x11::x11_error_handler;
+    use aileron_headed::servo::init_gtk;
 
     // `is_nvidia_gpu` is only invoked inside the `#[cfg(target_os = "linux")]`
     // WebKit DMA-BUF block below; gate the import to match so it is not flagged
@@ -272,7 +272,7 @@ pub fn run() -> anyhow::Result<()> {
     install_panic_hook();
 
     // Initialize debug capturer (no-op unless AILERON_DEBUG=1)
-    aileron::debug_capturer::init();
+    aileron_headed::debug_capturer::init();
 
     // D1-05: If --dump-config, print config and exit
     if cli_args.dump_config {
@@ -479,10 +479,12 @@ pub fn run() -> anyhow::Result<()> {
                 "unknown panic".to_string()
             };
             tracing::error!("Event loop panicked: {}", msg);
-            aileron::debug_capturer::capture_info(&format!("Event loop panic caught: {msg}"));
+            aileron_headed::debug_capturer::capture_info(&format!(
+                "Event loop panic caught: {msg}"
+            ));
         }
     }
 
-    aileron::debug_capturer::shutdown();
+    aileron_headed::debug_capturer::shutdown();
     Ok(())
 }

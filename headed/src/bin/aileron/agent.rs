@@ -9,15 +9,15 @@
 //! Launch: `aileron --agent` (designed for Xvfb / a headless display; the
 //! `aileron-agent.service` unit runs it under Xvfb).
 
-use aileron::app::AppState;
-use aileron::config::Config;
-use aileron::frame_tasks;
-use aileron::mcp::McpBridge;
-use aileron::net::adblock::AdBlocker;
-use aileron::offscreen_webview::OffscreenWebViewManager;
-use aileron::scripts::ContentScriptManager;
-use aileron::servo::WryPaneManager;
-use aileron::wm::Rect;
+use aileron_headed::app::AppState;
+use aileron_headed::config::Config;
+use aileron_headed::frame_tasks;
+use aileron_headed::mcp::McpBridge;
+use aileron_headed::net::adblock::AdBlocker;
+use aileron_headed::offscreen_webview::OffscreenWebViewManager;
+use aileron_headed::scripts::ContentScriptManager;
+use aileron_headed::servo::WryPaneManager;
+use aileron_headed::wm::Rect;
 
 /// Ticks per second for the agent main loop (MCP command pump + event drain).
 /// 125 Hz mirrors the frame loop's command latency without any compositing.
@@ -44,7 +44,7 @@ pub fn run() -> anyhow::Result<()> {
         }
     }
 
-    aileron::servo::init_gtk();
+    aileron_headed::servo::init_gtk();
 
     let config = Config::load();
     tracing::info!(
@@ -110,7 +110,7 @@ pub fn run() -> anyhow::Result<()> {
 
     tracing::info!(
         "agent: entering GTK main loop (MCP on 127.0.0.1:{} )",
-        aileron::mcp::MCP_TCP_PORT
+        aileron_headed::mcp::MCP_TCP_PORT
     );
     gtk::main();
     Ok(())
@@ -164,7 +164,7 @@ impl AgentTick {
         // Workspace restore deferral (YP-WORKSPACE-002 parity with headed mode).
         if self.app_state.core.pending_workspace_restore.is_none() {
             let active_id = self.app_state.core.wm.active_pane_id();
-            let mut panes = aileron::pane_ops::CombinedPaneOps {
+            let mut panes = aileron_headed::pane_ops::CombinedPaneOps {
                 wry: &mut self.wry_panes,
                 off: &mut self.offscreen_panes,
             };

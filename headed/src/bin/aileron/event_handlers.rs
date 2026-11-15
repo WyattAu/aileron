@@ -1,12 +1,12 @@
 #[cfg(feature = "terminal")]
-use aileron::input::Modifiers;
+use aileron_headed::input::Modifiers;
 
 /// Convert an aileron Key + modifiers to a terminal escape sequence.
 /// This is the native terminal equivalent of key_to_js — it sends
 /// the appropriate VT100/xterm escape sequence to the PTY.
 #[cfg(feature = "terminal")]
-pub(crate) fn key_to_escape_sequence(key: &aileron::input::Key, mods: Modifiers) -> String {
-    use aileron::input::Key;
+pub(crate) fn key_to_escape_sequence(key: &aileron_headed::input::Key, mods: Modifiers) -> String {
+    use aileron_headed::input::Key;
 
     let ctrl = mods.ctrl;
     let shift = mods.shift;
@@ -101,7 +101,7 @@ pub(crate) fn is_nvidia_gpu() -> bool {
 #[allow(dead_code)]
 pub(crate) fn screen_to_pane_local(
     pos: (f32, f32),
-    rect: &aileron::wm::Rect,
+    rect: &aileron_headed::wm::Rect,
     tab_sidebar_right: bool,
     tab_layout_is_sidebar: bool,
     tab_sidebar_width: f64,
