@@ -174,3 +174,34 @@ For Architecture D: if upstream Servo stalls on the Android/texture
 path, fork Servo into the estate (the estate already pins
 webkit2gtk =2.0.2 — fork-and-pin is established posture). Recorded
 as the risk mitigation for Architecture D; revisit when D starts.
+
+## Palette port EXECUTED (2026-11-15): renderer wedge live
+
+`chrome::PaletteOverlay`: query TextField + results Select(open),
+painted from `CommandPalette` state and composited over the webview
+frame when `headed().palette.open`. Wired into the present path in
+app_handler. Logic stays in the tested CommandPalette (fresco is the
+renderer; input unification waits on IME).
+
+### Pacing finding (fresco#8): Select open-render is the hot path
+
+| Surface | Release paint | Budget verdict |
+|---|---|---|
+| status bar (2 Labels, 1280×28) | 918 µs | PASS (5% budget) |
+| palette (TextField + Select 10 open rows, 1280×268) | **~61 ms** | **FAIL (4× over)** |
+
+Per-row cost ~6 ms — the Select open-render path re-rasterizes rows
+without reuse. Composite stays trivial (61 µs). Until fresco
+optimizes, the palette ships at damage-rate acceptable (61 ms on
+open/keystroke, not per frame) but is not 60 Hz-animation ready.
+Regression guard in the test suite: <100 ms release; tighten to
+<16.6 ms when fresco lands the fix.
+
+### Implementation notes
+
+- TextField construction needs `ui-text-edit` crate
+  (`TextEditField::new(StringBuffer::new())`) — not re-exported from
+  widget-kit; consumers add it as a dep.
+- Query text set via `tree.key_char` per char after `set_focus`
+  (no `set_field_text` yet — a fresco-side convenience worth adding).
+- Surface recreated on height change (row count); fine at damage rate.

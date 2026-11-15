@@ -33,6 +33,7 @@ x11-dl = { version = "2", optional = true }
 # fresco chrome spike (S4 step 2, feature fresco-chrome, non-default)
 paint-kit = { path = "../../fresco/crates/paint-kit", optional = true }
 widget-kit = { path = "../../fresco/crates/widget-kit", optional = true }
+ui-text-edit = { version = "0.1", optional = true }
 # aileron bin (headed GUI)
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # app block needs
@@ -78,7 +79,7 @@ llm = ["aileron-core/llm"]
 native-chrome = []
 mcp = ["dep:image", "dep:base64"]
 headed = []
-fresco-chrome = ["dep:paint-kit", "dep:widget-kit"]
+fresco-chrome = ["dep:paint-kit", "dep:widget-kit", "dep:ui-text-edit"]
 
 [dev-dependencies]
 smol_str = "0.2"

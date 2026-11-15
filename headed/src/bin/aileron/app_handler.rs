@@ -1404,25 +1404,61 @@ impl ApplicationHandler for AileronApp {
                 }
                 // has_chrome block closed above.
 
-                // Fresco chrome bar spike: fresco-painted status bar over the
-                // webview frame (fresco-chrome feature, non-default). Damage
-                // region = top 28 rows; see docs/spikes/fresco-chrome.md.
+                // Fresco chrome spike: palette overlay when open, else the
+                // status bar (fresco-chrome feature, non-default). Damage
+                // region = top rows; see docs/spikes/fresco-chrome.md.
                 #[cfg(feature = "fresco-chrome")]
                 if let Some(rgba) = composited.as_mut() {
-                    let status = self
+                    let palette_open = self
                         .app_state
                         .as_ref()
-                        .map(|st| st.core.ui.status_message.clone())
-                        .unwrap_or_default();
+                        .map(|st| st.headed().palette.open)
+                        .unwrap_or(false);
                     let width = comp_w as usize;
-                    if self.fresco_bar.as_ref().map(|b| b.width) != Some(width) {
-                        self.fresco_bar = aileron_headed::chrome::ChromeBar::new(width).ok();
-                    }
-                    if let Some(bar) = &mut self.fresco_bar {
-                        bar.set_status(status);
-                        bar.set_right(format!("{comp_w}x{comp_h} | fresco spike"));
-                        let _ = bar.paint_if_dirty();
-                        bar.composite_over(rgba, comp_w as usize, comp_h as usize);
+                    if palette_open {
+                        // Clone the small palette state first (damage-rate only),
+                        // then mutate the bar without overlapping borrows.
+                        let (query, labels, selected) = self
+                            .app_state
+                            .as_ref()
+                            .map(|st| {
+                                let pal = &st.headed().palette;
+                                let labels: Vec<String> =
+                                    pal.results().iter().map(|r| r.label.clone()).collect();
+                                let selected = pal
+                                    .selected_item()
+                                    .and_then(|sel| {
+                                        pal.results().iter().position(|r| r.id == sel.id)
+                                    })
+                                    .unwrap_or(0);
+                                (pal.query.clone(), labels, selected)
+                            })
+                            .unwrap_or_default();
+                        if self.fresco_palette.as_ref().map(|p| p.width) != Some(width) {
+                            self.fresco_palette =
+                                aileron_headed::chrome::PaletteOverlay::new(width).ok();
+                        }
+                        if let Some(pal) = &mut self.fresco_palette
+                            && pal.set_state(&query, labels, selected)
+                        {
+                            let _ = pal.paint();
+                            pal.composite_over(rgba, comp_w as usize, comp_h as usize);
+                        }
+                    } else {
+                        let status = self
+                            .app_state
+                            .as_ref()
+                            .map(|st| st.core.ui.status_message.clone())
+                            .unwrap_or_default();
+                        if self.fresco_bar.as_ref().map(|b| b.width) != Some(width) {
+                            self.fresco_bar = aileron_headed::chrome::ChromeBar::new(width).ok();
+                        }
+                        if let Some(bar) = &mut self.fresco_bar {
+                            bar.set_status(status);
+                            bar.set_right(format!("{comp_w}x{comp_h} | fresco"));
+                            let _ = bar.paint_if_dirty();
+                            bar.composite_over(rgba, comp_w as usize, comp_h as usize);
+                        }
                     }
                 }
 

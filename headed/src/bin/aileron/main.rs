@@ -58,6 +58,10 @@ struct AileronApp {
     #[cfg(feature = "fresco-chrome")]
     fresco_bar: Option<aileron_headed::chrome::ChromeBar>,
 
+    /// Fresco command-palette overlay (fresco-chrome feature).
+    #[cfg(feature = "fresco-chrome")]
+    fresco_palette: Option<aileron_headed::chrome::PaletteOverlay>,
+
     /// Bridge between MCP background thread and main thread.
     #[cfg(feature = "mcp")]
     mcp_bridge: McpBridge,
@@ -181,6 +185,8 @@ impl AileronApp {
             gfx: None,
             #[cfg(feature = "fresco-chrome")]
             fresco_bar: None,
+            #[cfg(feature = "fresco-chrome")]
+            fresco_palette: None,
         }
     }
 

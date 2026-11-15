@@ -292,6 +292,7 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
+ "ui-text-edit",
  "url",
  "urlencoding",
  "uuid",
