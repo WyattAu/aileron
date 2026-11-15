@@ -582,3 +582,29 @@ key_conversion}`, `platform/` (winit/x11 parts), `terminal/pty.rs`,
   integration)
 - live: agent daemon serves 49 tools; headed service starts with the
   real UI (manual, Conflicts= respected)
+
+# GATE-1 CLOSED (2026-11-15, merged to main 8a19542)
+
+The crate split is complete and merged. Final architecture:
+
+| Crate | Owns | Lib tests |
+|---|---|---|
+| aileron-core | state, MCP stack, agent runtime, scripts, search, passwords, downloads, llm, workspace_restore, color/config/db/git/i18n/net/wm/extensions | 664 |
+| aileron-engine | wry/offscreen panes, PaneOps, IPC, pump, servo/ | 65 |
+| aileron-headed | gfx compositor, terminal, input, ui, sync, arp, lua, platform, chrome_bridge, popup, app/, the GUI bin | 470 |
+| aileron (src) | pure shims + aileron-mcp relay bin | 0 |
+| aileron-agent | thin headless daemon (core+engine) | — |
+
+Gate-table headline: agent 10.3 MB / 13 direct deps vs headed
+18.0 MB release / ~40 deps. Daemon: live fleet service, boot-enabled,
+9543, SOAK3-validated (1942 cycles / 0 errors). Walker validated
+against phone real-Chrome AX on the decomposed runtime.
+
+Fresco sequencing: step 2 (status bar + find bar) and step 3
+(palette renderer) EXECUTED in-tree behind `fresco-chrome` (pinned
+to fresco rev fc9e4eb); pacing evidence + Select-perf finding +
+IME gap filed on fresco#8. Omnibox + input unification gated on
+fresco IME; Architecture D carries the fork-Servo risk mitigation.
+
+Post-merge state: workspace lib tests 1199/0, integration suite
+green on push. Local main ref = 8a19542.
