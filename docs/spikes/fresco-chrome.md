@@ -129,3 +129,48 @@ is unaffected. An Android aileron is "Architecture D on Android":
 Servo content + fresco chrome, both Android-native. iOS additionally
 needs a content engine (WKWebView via ObjC or Servo-on-iOS, both
 unsolved in-estate) - not a 2027 item.
+
+## Spike EXECUTED (2026-11-15): status bar + find bar equivalent
+
+Status: PROPOSED -> IN-PROGRESS (first wedge live in aileron-headed).
+
+`headed/src/chrome/mod.rs` (feature `fresco-chrome`, non-default):
+fresco widget-kit tree -> paint-kit CPU strip -> RGBA Surface,
+alpha-composited over the webview frame's top 28 rows before
+gfx presents (CPU blend, no GPU pipeline change). Wired into the
+live present path in app_handler (status from core.ui.status_message).
+
+### Frame-pacing evidence (fresco#8 consumer datum, RELEASE builds)
+
+| Phase | Release | Debug (confound — do not ship numbers from debug) |
+|---|---|---|
+| font/atlas warm-up (one-time) | 1.6 ms | 22–88 ms |
+| tree layout (2 labels) | 3 µs | 22 µs |
+| surface fill 1280×28 | 7 µs | 12 ms |
+| paint_tree | **918 µs** | 37 ms |
+| alpha composite over frame | **61 µs** | 1.4–2.6 ms |
+| **total damage cost** | **~1 ms** (5% of 16.6 ms budget) | ~50 ms |
+
+Verdict: damage-region present model is a PASS for chrome bars.
+paint_tree at ~1 ms for a 1280×28 strip is the fresco-side
+optimization surface (dirty-rect label raster), but already fits the
+budget with 15x headroom at damage rates. CAUTION for future
+consumer evidence: cargo test defaults to debug — always measure in
+--release.
+
+### Kill-switch correction (2026-11-15, supersedes earlier note)
+
+widget-kit DOES have a TextField widget (caret, key_nav:
+Backspace/Delete/Home/End, field_text/field_caret) — my earlier
+"no TextField" claim was wrong (grep missed the WidgetKind::TextField
+variant + field_* methods). **Palette is portable NOW.** What is
+still absent: IME/preedit composition (grep: no ime/composition/
+preedit in widget-kit or text-kit). Kill-switch therefore narrows to
+the omnibox only, gated on fresco IME landing.
+
+### Servo fork option (user decision 2026-11-15)
+
+For Architecture D: if upstream Servo stalls on the Android/texture
+path, fork Servo into the estate (the estate already pins
+webkit2gtk =2.0.2 — fork-and-pin is established posture). Recorded
+as the risk mitigation for Architecture D; revisit when D starts.

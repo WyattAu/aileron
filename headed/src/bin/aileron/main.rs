@@ -54,6 +54,10 @@ struct AileronApp {
     /// Ad-blocker instance shared across all wry navigation handlers.
     adblocker: AdBlocker,
 
+    /// Fresco chrome bar spike (fresco-chrome feature, non-default).
+    #[cfg(feature = "fresco-chrome")]
+    fresco_bar: Option<aileron_headed::chrome::ChromeBar>,
+
     /// Bridge between MCP background thread and main thread.
     #[cfg(feature = "mcp")]
     mcp_bridge: McpBridge,
@@ -175,6 +179,8 @@ impl AileronApp {
             pending_pane_creates: std::collections::VecDeque::new(),
             test_harness: None,
             gfx: None,
+            #[cfg(feature = "fresco-chrome")]
+            fresco_bar: None,
         }
     }
 

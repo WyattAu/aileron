@@ -48,6 +48,12 @@ pub use aileron_engine::{offscreen_webview, pane_ops, servo};
 pub mod app;
 #[cfg(feature = "native-chrome")]
 pub mod chrome_native;
+
+/// Fresco chrome bar spike: status bar painted by fresco, composited
+/// CPU-side over the live webview frame before gfx presents. See
+/// docs/spikes/fresco-chrome.md (step 2 of the sequencing).
+#[cfg(feature = "fresco-chrome")]
+pub mod chrome;
 pub mod frame_tasks;
 #[cfg(feature = "headed")]
 pub mod test_harness;

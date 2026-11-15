@@ -1404,6 +1404,28 @@ impl ApplicationHandler for AileronApp {
                 }
                 // has_chrome block closed above.
 
+                // Fresco chrome bar spike: fresco-painted status bar over the
+                // webview frame (fresco-chrome feature, non-default). Damage
+                // region = top 28 rows; see docs/spikes/fresco-chrome.md.
+                #[cfg(feature = "fresco-chrome")]
+                if let Some(rgba) = composited.as_mut() {
+                    let status = self
+                        .app_state
+                        .as_ref()
+                        .map(|st| st.core.ui.status_message.clone())
+                        .unwrap_or_default();
+                    let width = comp_w as usize;
+                    if self.fresco_bar.as_ref().map(|b| b.width) != Some(width) {
+                        self.fresco_bar = aileron_headed::chrome::ChromeBar::new(width).ok();
+                    }
+                    if let Some(bar) = &mut self.fresco_bar {
+                        bar.set_status(status);
+                        bar.set_right(format!("{comp_w}x{comp_h} | fresco spike"));
+                        let _ = bar.paint_if_dirty();
+                        bar.composite_over(rgba, comp_w as usize, comp_h as usize);
+                    }
+                }
+
                 // Step 3: Single render_frame call with composited buffer.
                 if let Some(rgba) = composited.take() {
                     gfx.render_frame(&rgba, comp_w, comp_h);
