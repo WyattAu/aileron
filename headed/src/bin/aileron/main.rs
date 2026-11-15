@@ -62,6 +62,10 @@ struct AileronApp {
     #[cfg(feature = "fresco-chrome")]
     fresco_palette: Option<aileron_headed::chrome::PaletteOverlay>,
 
+    /// Fresco find-in-page bar (fresco-chrome feature).
+    #[cfg(feature = "fresco-chrome")]
+    fresco_find_bar: Option<aileron_headed::chrome::FindBarOverlay>,
+
     /// Bridge between MCP background thread and main thread.
     #[cfg(feature = "mcp")]
     mcp_bridge: McpBridge,
@@ -187,6 +191,8 @@ impl AileronApp {
             fresco_bar: None,
             #[cfg(feature = "fresco-chrome")]
             fresco_palette: None,
+            #[cfg(feature = "fresco-chrome")]
+            fresco_find_bar: None,
         }
     }
 

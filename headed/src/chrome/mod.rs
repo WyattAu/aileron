@@ -304,6 +304,105 @@ impl ChromeBar {
     }
 }
 
+/// Fresco find-in-page bar: query TextField + hint/count label +
+/// close button. State mirror of `core.ui.find_bar_open/find_query`;
+/// match counts arrive via `core.ui.status_message`.
+pub struct FindBarOverlay {
+    tree: WidgetTree,
+    surface: Surface,
+    painter: Painter,
+    colors: WidgetColors,
+    pub width: usize,
+    pub height: usize,
+    query: String,
+    info: String,
+    dirty: bool,
+}
+
+impl FindBarOverlay {
+    pub fn new(width: usize) -> anyhow::Result<Self> {
+        Ok(Self {
+            tree: WidgetTree::new(),
+            surface: Surface::new(width, BAR_HEIGHT).ok_or_else(|| {
+                anyhow::anyhow!("fresco Surface::new rejected {width}x{BAR_HEIGHT}")
+            })?,
+            painter: Painter::default(),
+            colors: WidgetColors::default(),
+            width,
+            height: BAR_HEIGHT,
+            query: String::new(),
+            info: String::new(),
+            dirty: true,
+        })
+    }
+
+    /// Mirror find-bar state; returns true when a repaint is needed.
+    pub fn set_state(&mut self, query: &str, info: &str) -> bool {
+        if query != self.query || info != self.info {
+            self.query = query.to_string();
+            self.info = info.to_string();
+            self.dirty = true;
+        }
+        self.dirty
+    }
+
+    /// Rebuild the fresco tree and paint. Returns paint duration.
+    pub fn paint(&mut self) -> anyhow::Result<Duration> {
+        if !self.dirty {
+            return Ok(Duration::ZERO);
+        }
+        let start = Instant::now();
+        self.tree = WidgetTree::new();
+        let root = self.tree.push(WidgetKind::Row { gap: 10.0 });
+        let field = self.tree.push(WidgetKind::TextField {
+            placeholder: "Find in page…".to_string(),
+            field: ui_text_edit::TextField::new(ui_text_edit::StringBuffer::new()),
+        });
+        self.tree.add_child(root, field);
+        if let Some(w) = self.tree.widget_mut(field) {
+            w.fixed_width = Some(220.0);
+        }
+        self.tree.set_focus(Some(field));
+        for c in self.query.chars() {
+            self.tree.key_char(c);
+        }
+        let hint = self.tree.push(WidgetKind::Label {
+            text: if self.info.is_empty() {
+                "⏎ next  ⇧⏎ prev".to_string()
+            } else {
+                self.info.clone()
+            },
+            px_size: 12.0,
+        });
+        self.tree.add_child(root, hint);
+        self.tree.compute(widget_kit::Size2D {
+            width: self.width as f64,
+            height: self.height as f64,
+        });
+        self.surface.fill_solid(self.colors.surface);
+        paint_tree(
+            &self.tree,
+            &mut self.surface,
+            &mut self.painter,
+            &self.colors,
+        );
+        self.dirty = false;
+        Ok(start.elapsed())
+    }
+
+    /// Alpha-composite the find bar over the webview frame's top rows.
+    pub fn composite_over(&self, frame: &mut [u8], frame_w: usize, frame_h: usize) {
+        composite_rgba(
+            &self.surface,
+            self.width,
+            self.height,
+            frame,
+            frame_w,
+            frame_h,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,6 +502,50 @@ mod tests {
         // to fresco#8). Tighten to <16_667 once fresco optimizes Select.
         #[cfg(not(debug_assertions))]
         assert!(t < 100_000, "palette paint regression guard (was {t}µs)");
+    }
+
+    #[test]
+    fn find_bar_paints_query_and_updates() {
+        let mut fb = FindBarOverlay::new(640).expect("find bar");
+        assert!(fb.set_state("pattern", ""), "first state dirty");
+        fb.paint().expect("paint");
+        let data = fb.surface.data();
+        let bg = [data[0], data[1], data[2]];
+        assert!(
+            data.as_chunks::<4>()
+                .0
+                .iter()
+                .any(|px| px[0] != bg[0] || px[1] != bg[1] || px[2] != bg[2]),
+            "query text should rasterize"
+        );
+        let before = data.to_vec();
+        assert!(fb.set_state("pattern", "3/17 matches"));
+        fb.paint().expect("paint");
+        assert_ne!(before, fb.surface.data(), "match info change must repaint");
+        assert!(!fb.set_state("pattern", "3/17 matches"));
+        let dur = fb.paint().expect("paint");
+        assert_eq!(dur, Duration::ZERO);
+    }
+
+    #[test]
+    fn find_bar_pacing_fits_frame_budget() {
+        let mut fb = FindBarOverlay::new(1280).expect("find bar");
+        fb.set_state("pattern", "");
+        let _warm = fb.paint().expect("warm");
+        fb.set_state("pattern", "12/48 matches");
+        let t = fb.paint().expect("paint").as_micros();
+        println!(
+            "fresco#8 find-bar pacing: paint={}µs (1280x{}) — {}",
+            t,
+            BAR_HEIGHT,
+            if cfg!(debug_assertions) {
+                "DEBUG (not comparable)"
+            } else {
+                "RELEASE"
+            }
+        );
+        #[cfg(not(debug_assertions))]
+        assert!(t < 16_667, "find-bar damage must fit one frame (was {t}µs)");
     }
 
     #[test]

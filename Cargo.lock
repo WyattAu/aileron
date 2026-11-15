@@ -3090,6 +3090,7 @@ dependencies = [
 [[package]]
 name = "layout-kit"
 version = "0.8.6"
+source = "git+https://github.com/WyattAu/fresco?rev=fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb#fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb"
 
 [[package]]
 name = "lazy_static"
@@ -4176,6 +4177,7 @@ dependencies = [
 [[package]]
 name = "paint-kit"
 version = "0.8.6"
+source = "git+https://github.com/WyattAu/fresco?rev=fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb#fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb"
 dependencies = [
  "path-kit",
 ]
@@ -4243,6 +4245,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 [[package]]
 name = "path-kit"
 version = "0.8.6"
+source = "git+https://github.com/WyattAu/fresco?rev=fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb#fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb"
 
 [[package]]
 name = "pathdiff"
@@ -5290,6 +5293,7 @@ dependencies = [
 [[package]]
 name = "scene-kit"
 version = "0.8.6"
+source = "git+https://github.com/WyattAu/fresco?rev=fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb#fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb"
 dependencies = [
  "path-kit",
 ]
@@ -6070,6 +6074,7 @@ dependencies = [
 [[package]]
 name = "text-kit"
 version = "0.8.6"
+source = "git+https://github.com/WyattAu/fresco?rev=fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb#fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb"
 
 [[package]]
 name = "theme-kit"
@@ -7267,6 +7272,7 @@ dependencies = [
 [[package]]
 name = "widget-kit"
 version = "0.8.6"
+source = "git+https://github.com/WyattAu/fresco?rev=fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb#fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb"
 dependencies = [
  "a11y-kit",
  "color-kit",
@@ -7313,6 +7319,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "window-kit"
 version = "0.8.6"
+source = "git+https://github.com/WyattAu/fresco?rev=fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb#fc9e4eb73d8ca7c9cdb65e70c3b4488e5c8339bb"
 dependencies = [
  "path-kit",
  "scene-kit",

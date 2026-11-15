@@ -205,3 +205,37 @@ Regression guard in the test suite: <100 ms release; tighten to
 - Query text set via `tree.key_char` per char after `set_focus`
   (no `set_field_text` yet — a fresco-side convenience worth adding).
 - Surface recreated on height change (row count); fine at damage rate.
+
+## Find bar EXECUTED (2026-11-15): sequencing step 2 fully complete
+
+`chrome::FindBarOverlay`: TextField (query, mirrored from
+`core.ui.find_query`) + hint/match-count label (from
+`core.ui.status_message`), composited over the frame while
+`find_bar_open`. Present-path priority: palette > find bar > status
+bar.
+
+Pacing (RELEASE): **5.3 ms** — passes the frame budget (32%), but
+~6x the label-only status bar: TextField rasterization is the cost
+center (~4-5 ms for one field). Same family as the Select finding —
+fresco's text/widget raster path has per-paint cost that will need
+dirty-rect/caching work before per-keystroke reflows (omnibox) are
+60 Hz.
+
+Sequencing step 2 is now fully complete: status bar, find bar,
+palette — all three painted by fresco over live webview frames, all
+feature-gated behind `fresco-chrome`, zero default-build impact.
+
+## Dependency policy (2026-11-15): fresco pinned by git rev
+
+The path dep bit us within hours: fresco HEAD moved to 0.8.7
+(fresco-android M5) bumping text-kit to ab_glyph_rasterizer ^0.2,
+which is not on crates.io — the doc-test gate broke while another
+agent's commit landed mid-push. Fixed by pinning paint-kit +
+widget-kit to the validated rev `fc9e4eb` (0.8.6 — the exact state
+every pacing number above was measured against).
+
+Policy going forward: aileron consumes fresco at git rev pins,
+re-validated (pacing tests + pixel tests) before each deliberate
+bump. This also makes CI work without a sibling fresco checkout.
+Bump checklist: update rev -> run chrome:: tests in release -> record
+numbers in this doc -> commit both repos' references in one arc.

@@ -1414,6 +1414,17 @@ impl ApplicationHandler for AileronApp {
                         .as_ref()
                         .map(|st| st.headed().palette.open)
                         .unwrap_or(false);
+                    let (find_open, find_query, find_status) = self
+                        .app_state
+                        .as_ref()
+                        .map(|st| {
+                            (
+                                st.core.ui.find_bar_open,
+                                st.core.ui.find_query.clone(),
+                                st.core.ui.status_message.clone(),
+                            )
+                        })
+                        .unwrap_or((false, String::new(), String::new()));
                     let width = comp_w as usize;
                     if palette_open {
                         // Clone the small palette state first (damage-rate only),
@@ -1444,17 +1455,23 @@ impl ApplicationHandler for AileronApp {
                             let _ = pal.paint();
                             pal.composite_over(rgba, comp_w as usize, comp_h as usize);
                         }
+                    } else if find_open {
+                        if self.fresco_find_bar.as_ref().map(|f| f.width) != Some(width) {
+                            self.fresco_find_bar =
+                                aileron_headed::chrome::FindBarOverlay::new(width).ok();
+                        }
+                        if let Some(fb) = &mut self.fresco_find_bar
+                            && fb.set_state(&find_query, &find_status)
+                        {
+                            let _ = fb.paint();
+                            fb.composite_over(rgba, comp_w as usize, comp_h as usize);
+                        }
                     } else {
-                        let status = self
-                            .app_state
-                            .as_ref()
-                            .map(|st| st.core.ui.status_message.clone())
-                            .unwrap_or_default();
                         if self.fresco_bar.as_ref().map(|b| b.width) != Some(width) {
                             self.fresco_bar = aileron_headed::chrome::ChromeBar::new(width).ok();
                         }
                         if let Some(bar) = &mut self.fresco_bar {
-                            bar.set_status(status);
+                            bar.set_status(find_status);
                             bar.set_right(format!("{comp_w}x{comp_h} | fresco"));
                             let _ = bar.paint_if_dirty();
                             bar.composite_over(rgba, comp_w as usize, comp_h as usize);
