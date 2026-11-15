@@ -6,15 +6,7 @@ pub use aileron_core::{
     wm,
 };
 
-pub mod app;
-#[cfg(feature = "arp")]
-pub use aileron_headed::arp;
-#[cfg(feature = "headed")]
-pub use aileron_headed::chrome_bridge;
-#[cfg(feature = "native-chrome")]
-pub mod chrome_native;
 pub use aileron_core::downloads;
-pub mod frame_tasks;
 #[cfg(feature = "llm")]
 /// S4 stage 2c: moved to aileron-core (self-contained, serde+tracing only).
 pub use aileron_core::llm;
@@ -25,9 +17,19 @@ pub use aileron_core::mcp;
 #[cfg(feature = "passwords")]
 pub use aileron_core::passwords;
 pub use aileron_core::scripts;
+/// S4 stage 2c: moved to aileron-core (terminal hooks inverted to callers).
+pub use aileron_core::workspace_restore;
 pub use aileron_engine::offscreen_webview;
 pub use aileron_engine::pane_ops;
 pub use aileron_engine::servo;
+pub use aileron_headed::app;
+#[cfg(feature = "arp")]
+pub use aileron_headed::arp;
+#[cfg(feature = "headed")]
+pub use aileron_headed::chrome_bridge;
+#[cfg(feature = "native-chrome")]
+pub use aileron_headed::chrome_native;
+pub use aileron_headed::frame_tasks;
 #[cfg(feature = "headed")]
 pub use aileron_headed::gfx;
 pub use aileron_headed::input;
@@ -41,8 +43,6 @@ pub use aileron_headed::sync;
 #[cfg(feature = "terminal")]
 pub use aileron_headed::terminal;
 #[cfg(feature = "headed")]
-pub mod test_harness;
-/// S4 stage 2c: moved to aileron-core (terminal hooks inverted to callers).
-pub use aileron_core::workspace_restore;
+pub use aileron_headed::test_harness;
 pub use aileron_headed::ui;
-pub mod wry_actions;
+pub use aileron_headed::wry_actions;

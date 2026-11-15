@@ -29,3 +29,26 @@ pub mod lua;
 #[cfg(feature = "platform")]
 #[allow(unsafe_code)] // x11_dl FFI bindings require unsafe; module-scoped override
 pub mod platform;
+
+// ---- Root surface: mirrors the main crate's lib.rs so modules moved
+// from the main crate keep resolving `crate::x::` paths unchanged.
+pub use aileron_core::downloads;
+#[cfg(feature = "llm")]
+pub use aileron_core::llm;
+#[cfg(feature = "passwords")]
+pub use aileron_core::passwords;
+pub use aileron_core::{
+    color, config, db, debug_capturer, extensions, git, i18n, mcp, net, profiling, scripts, state,
+    update_check, wm, workspace_restore,
+};
+pub use aileron_engine::{offscreen_webview, pane_ops, servo};
+
+// app::instance touches env vars pre-thread-spawn (documented SAFETY there)
+#[allow(unsafe_code)]
+pub mod app;
+#[cfg(feature = "native-chrome")]
+pub mod chrome_native;
+pub mod frame_tasks;
+#[cfg(feature = "headed")]
+pub mod test_harness;
+pub mod wry_actions;

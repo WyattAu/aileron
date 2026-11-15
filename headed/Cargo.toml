@@ -30,6 +30,13 @@ crossbeam-channel = "0.5"
 parking_lot = "0.12"
 # platform module (x11 detection)
 x11-dl = { version = "2", optional = true }
+# app block needs
+open = "5.3"
+directories = "6.0"
+base64 = { version = "0.22", optional = true }
+image = { version = "0.25", default-features = false, features = ["png"], optional = true }
+png = "0.18"
+urlencoding = "2"
 # lua module
 mlua = { version = "0.10.3", features = ["lua54", "vendored"], optional = true }
 # arp module
@@ -43,13 +50,25 @@ url = "2.5"
 reqwest = { version = "0.13", default-features = false, features = ["stream", "rustls", "blocking"] }
 loop-retry = "0.1"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+gdkx11 = "0.18"
+glib-sys = "0.20"
+webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
+cairo-rs = "0.18"
+
 [features]
-default = ["terminal", "sync", "arp", "lua", "platform"]
-terminal = ["dep:uuid", "dep:alacritty_terminal", "dep:portable-pty"]
+default = ["terminal", "sync", "arp", "lua", "platform", "passwords", "llm", "headed", "mcp"]
+terminal = ["dep:uuid", "dep:alacritty_terminal", "dep:portable-pty", "aileron-core/terminal"]
 sync = ["dep:fastcdc", "dep:blake3", "dep:age", "dep:notify", "dep:notify-debouncer-mini"]
 arp = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:uuid"]
 lua = ["dep:mlua"]
 platform = ["dep:x11-dl"]
+passwords = ["aileron-core/passwords"]
+llm = ["aileron-core/llm"]
+native-chrome = []
+mcp = ["dep:image", "dep:base64"]
+headed = []
 
 [dev-dependencies]
 smol_str = "0.2"
