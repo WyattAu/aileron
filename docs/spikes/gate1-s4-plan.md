@@ -446,3 +446,58 @@ Phone: 9 named nodes (1 link + 8 StaticText i18n). Walker: 1 node
 (link "Learn more") — exact match on the interactive element;
 StaticText filtered by walker design. **Walker survived the
 decomposition intact.** Confirmed with real device ground truth.
+
+## Stage 3 step 2 COMPLETE (2026-11-15): headed crate extraction executed
+
+The defer-vs-do analysis resolved to DO — executed as 10 sequential
+atomic wedges + bin cutover, each: git mv + shim + compile green +
+full gates + commit:
+
+| Wedge | Module | Lines | Lib tests moved | Commit |
+|---|---|---|---|---|
+| 1 (prior) | gfx | 273 | 3 | 78be84b |
+| 2 | terminal | 1,002 | 14 | 6f5cb66 |
+| 3 | ui | 330 | 9 | cbdf81c |
+| 4 | input | 2,399 | 65 | 2bee303 |
+| 5 | sync | 2,758 | 63 | 2e13f2f |
+| 6 | arp | 890 | 15 | e5bab57 |
+| 7 | popup + chrome_bridge | 649 | 20 | 7d66d75 |
+| 8 | lua | 1,376 | 50 | 71c6ed1 |
+| 9 | platform | ~1,200 | 30 | f524af6 |
+| 10 FINAL | app/ + frame_tasks + wry_actions + test_harness + chrome_native | ~12,000 | 200 | 80b3c5c |
+| bin | main.rs + agent/app_handler/bootstrap/event_handlers | 2,952 | — | 215e166 |
+
+Key mechanics discovered:
+- headed lib.rs carries a root re-export surface mirroring the old
+  main lib.rs (aileron_core::* + aileron_engine::*) — the ~400
+  crate:: refs in the final block resolved with ZERO in-file
+  retargets. The surface-first move is the pattern for closed
+  components.
+- Stale `#[cfg(feature = "headed")]` gates inside moved modules are
+  false inside headed (feature not defined there) — input would have
+  silently compile-out keymap+key_conversion. Audit cfg gates on
+  every move.
+- Feature parity: headed now owns terminal/sync/arp/lua/platform/
+  passwords/llm/mcp/native-chrome/headed features, default-on;
+  main's features forward (terminal -> ailon-core/terminal +
+  ailon-headed/terminal etc).
+- unsafe posture: headed denies crate-wide; module-scoped allows on
+  x11 FFI + app::instance env init; bin-root allow with in-situ
+  SAFETY comments.
+- Integration tests moved WITH their modules (terminal_integration,
+  sync_integration -> headed/tests/, retargeted to ailon_headed::).
+
+## Gate table (split-decision closure, 2026-11-15)
+
+| Metric | aileron-agent (core+engine+agent) | headed (GUI shell) |
+|---|---|---|
+| Direct deps | 13 | ~40 |
+| Binary | 10.3 MB release | (release build in flight) |
+| Lib tests | core 664 + engine 65 | 470 |
+| Daemon | live fleet daemon, 9543, ~60 MB RSS | headed GUI (user-launched) |
+
+The agent graph never links headed: wgpu/egui/alacritty/mlua/
+tokio-tungstenite/webkit2gtk are headed-only compile-outs.
+
+src/ residual: lib.rs (pure shims), build.rs, bin/mcp_server.rs
+(the 9543 relay — agent-side).
