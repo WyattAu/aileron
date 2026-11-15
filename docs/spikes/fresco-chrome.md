@@ -99,3 +99,33 @@ Sequencing step 2 (status bar + find bar spike inside
 aileron-headed) is now unblocked from the aileron side; it produces
 the first consumer evidence fresco#8 asks for. Palette/omnibox stay
 gated on fresco text-kit/widget-kit work landing.
+
+## Mobile implications (2026-11-15 discussion)
+
+Two-layer split:
+
+- **UI layer: Android proven.** fresco-android (winit
+  android-activity backend + window-kit softbuffer software present)
+  runs damage-tracked at 60 fps on device (M3, 8fe2112) with an
+  interactive widget screen (M4). The chrome widgets aileron builds
+  for desktop would run on this shell unchanged - scene/paint/widget
+  stacks are platform-agnostic by construction (ADR-0003 facade,
+  headless fake runner, CPU reference backend). Present path on
+  Android is CPU (softbuffer) - consistent with the chrome-on-CPU-
+  strip launch decision. iOS: winit nominally compiles there but no
+  fresco shell exists; unproven, not claimed.
+- **Content layer: the real gap.** WebKitGTK does not exist on
+  Android. Options: (a) Android System WebView via wry's JNI backend
+  - renders fine but is a native view, NOT compositable as a wgpu
+  texture, so chrome-over-content scene compositing breaks; also no
+  offscreen BGRA capture path for the agent walker. (b) Servo on
+  Android - renders to wgpu textures, composites as fresco
+  external-texture nodes, keeps the walker's pixel-readback model.
+  (b) is Architecture D - which makes Architecture D the mobile
+  unlock, not just a desktop union.
+
+Implication: desktop chrome spike (status bar -> palette -> omnibox)
+is unaffected. An Android aileron is "Architecture D on Android":
+Servo content + fresco chrome, both Android-native. iOS additionally
+needs a content engine (WKWebView via ObjC or Servo-on-iOS, both
+unsolved in-estate) - not a 2027 item.
