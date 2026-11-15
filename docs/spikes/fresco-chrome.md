@@ -69,3 +69,33 @@ browser chrome is the flagship dogfood for that claim.
 Stage 3 step 2 (headed crate extraction, current chrome untouched, this
 branch). The aileron-agent thin bin (2d-3) is unaffected: core+engine
 only, no UI.
+
+## Evidence refresh (2026-11-15, fresco repo HEAD fc9e4eb)
+
+Verified against the fresco tree today:
+
+- **Kill-switch lever still absent**: text-kit = atlas, microfont,
+  parley_backend, fake — no IME/composition, no native strip text
+  editor. widget-kit = tree/listbox/focus/checkbox-class + strip
+  renderer + a11y + AccessKit bridge — **no TextField widget**. So
+  the palette port (needs TextField) and omnibox port (needs IME)
+  are both gated on fresco-side text work. Status bar + find bar
+  remain unblocked.
+- **ADR-0004 ACCEPTED but Vello not in tree**: paint-kit ships
+  raster (CPU), strip, surface — no Vello backend module. Chrome on
+  CPU strip remains the launch path, per the spike's original call.
+- **fresco-android M3 landed**: damage-tracked rendering at 60 fps
+  on device (8fe2112) + M4 interactive widget settings screen. New
+  positive evidence: the damage-region present model is proven at
+  60 fps on mobile-class hardware — directly relevant to aileron
+  chrome damage regions over live webview textures.
+- **fresco#8 still OPEN, 1 comment (our own)** — no fresco-side
+  triage yet; solid-fx component asks (glass/blur, spinner/progress,
+  skeletons) unanswered.
+
+**Sequencing update**: stage 3 step 2 is COMPLETE (10 wedges + bin
+cutover, gate branch 215e166) — the crate boundary seam exists.
+Sequencing step 2 (status bar + find bar spike inside
+aileron-headed) is now unblocked from the aileron side; it produces
+the first consumer evidence fresco#8 asks for. Palette/omnibox stay
+gated on fresco text-kit/widget-kit work landing.

@@ -492,7 +492,7 @@ Key mechanics discovered:
 | Metric | aileron-agent (core+engine+agent) | headed (GUI shell) |
 |---|---|---|
 | Direct deps | 13 | ~40 |
-| Binary | 10.3 MB release | (release build in flight) |
+| Binary | 10.3 MB release | 18.0 MB release (449 MB debug) |
 | Lib tests | core 664 + engine 65 | 470 |
 | Daemon | live fleet daemon, 9543, ~60 MB RSS | headed GUI (user-launched) |
 
