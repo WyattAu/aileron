@@ -31,7 +31,33 @@ pub fn walker_js(epoch: u64, tier: &str, max_refs: usize) -> String {
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0;
   }};
-  const nameOf = (el) => (el.getAttribute('aria-label') || (el.innerText || '').trim().split('\n')[0] || el.value || el.getAttribute('placeholder') || el.getAttribute('alt') || el.getAttribute('title') || el.getAttribute('name') || '').toString().trim().slice(0, 80);
+  // GATE-4 naming fix: screen-reader-only text (GitHub's sr-only ", (Directory)"
+  // spans, aria-hidden icons) must not leak into the name — Chrome's AX name
+  // computation excludes it, and the mismatch destroyed set-recall on app pages
+  // (github 12% -> 70% pre-fix, file rows 0%). Strip such descendants, then
+  // prefer direct text over layout-dependent innerText.
+  const nameOf = (el) => {{
+    // accname precedence: aria-labelledby > aria-label > content. GitHub puts
+    // a ", (File)" suffix in aria-label but points aria-labelledby at the clean
+    // filename span — Chrome follows the spec, so reading aria-label first
+    // produced names Chrome never emits (github recall 12->70% page gap).
+    const lb = el.getAttribute('aria-labelledby');
+    if (lb) {{
+      const t = lb.split(/\\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ').trim();
+      if (t) return t.slice(0, 80);
+    }}
+    const labelled = el.getAttribute('aria-label');
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll('[aria-hidden="true"],[class*="sr-only"],[class*="visually-hidden"],[hidden]').forEach(n => n.remove());
+    const content = ((clone.textContent || '').trim().split('\n')[0] || '').trim();
+    // Authors append type noise to aria-labels (GitHub: ".editorconfig, (File)").
+    // Chrome's AX name uses the content in that case; when the label is just
+    // content + suffix, take the content — otherwise the label (icon buttons).
+    if (labelled && content && labelled.toString().trim().startsWith(content)) return content.slice(0, 80);
+    if (labelled) return labelled.toString().trim().slice(0, 80);
+    const t = (content || el.value || el.getAttribute('placeholder') || el.getAttribute('alt') || el.getAttribute('title') || el.getAttribute('name') || '').toString();
+    return t.trim().slice(0, 80);
+  }};
   const roleOf = (el) => {{
     const r = el.getAttribute('role');
     if (r) return r;
