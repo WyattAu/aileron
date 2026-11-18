@@ -140,6 +140,11 @@ jobs:
 
   build-windows:
     name: Windows build check
+    # Age's non-optional i18n-embed dep pulls glib via system-deps, which
+    # cannot build on Windows (no pkg-config/glib). The compile smoke still
+    # runs and reports; it just doesn't block until the age target-gate
+    # lands (issue: age/i18n-embed Windows build blocker).
+    continue-on-error: true
     runs-on: windows-latest
     timeout-minutes: 30
     steps:

@@ -1,0 +1,8 @@
+# cargo-audit config. RUSTSEC-2026-0543 (chrono unmaintained, all
+# versions) has no upgrade path — ignored with an expiry so the audit
+# stays actionable. Migration tracked in the repo issue tracker
+# (chrono -> time/jiff across core/headed).
+[advisories]
+ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained; no upgrade available; migration tracked", expires = "2027-02-18" },
+]
