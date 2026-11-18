@@ -45,3 +45,4 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+.cargo/config.toml
