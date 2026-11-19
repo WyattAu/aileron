@@ -23,7 +23,6 @@ portable-pty = { version = "0.8", optional = true }
 # sync module
 fastcdc = { version = "4.0", optional = true }
 blake3 = { version = "1.8", optional = true }
-age = { version = "0.11", features = ["armor"], optional = true }
 notify = { version = "8.2", features = ["crossbeam-channel"], optional = true }
 notify-debouncer-mini = { version = "0.7", features = ["crossbeam-channel"], optional = true }
 crossbeam-channel = "0.5"
@@ -63,6 +62,7 @@ name = "aileron"
 path = "src/bin/aileron/main.rs"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+age = { version = "0.11", features = ["armor"], optional = true }
 gtk = "0.18"
 gdkx11 = "0.18"
 glib-sys = "0.20"
