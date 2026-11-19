@@ -1048,29 +1048,32 @@ pub fn wait_mcp_nav_settled(
     pane: &uuid::Uuid,
     budget: std::time::Duration,
 ) {
-    let deadline = std::time::Instant::now() + budget;
-    let mut saw_loading = false;
     let trace = mcp_trace_enabled();
-    if trace {
-        eprintln!(
-            "[mcp-trace] wait enter nav={} settled={}",
-            core.mcp_nav_epoch.get(pane).copied().unwrap_or(0),
-            core.mcp_settled_epoch.get(pane).copied().unwrap_or(0)
-        );
-    }
-    loop {
-        let nav = *core.mcp_nav_epoch.get(pane).unwrap_or(&0);
-        let settled = *core.mcp_settled_epoch.get(pane).unwrap_or(&0);
-        if nav <= settled {
-            if trace {
-                eprintln!("[mcp-trace] wait exit: settled (load committed)");
-            }
-            return;
+
+    // Linux: live WebKitGTK load-state inside the GTK-loop poll (accurate
+    // inside frame callbacks, unlike the `loading` flag which lags until
+    // the frame loop drains events). Bounded wait; on timeout the command
+    // runs anyway (best effort, never a wedge).
+    #[cfg(target_os = "linux")]
+    {
+        let deadline = std::time::Instant::now() + budget;
+        let mut saw_loading = false;
+        if trace {
+            eprintln!(
+                "[mcp-trace] wait enter nav={} settled={}",
+                core.mcp_nav_epoch.get(pane).copied().unwrap_or(0),
+                core.mcp_settled_epoch.get(pane).copied().unwrap_or(0)
+            );
         }
-        // Live WebKitGTK load-state: accurate inside frame callbacks, unlike
-        // the `loading` flag which lags until the frame loop drains events.
-        #[cfg(target_os = "linux")]
-        {
+        loop {
+            let nav = *core.mcp_nav_epoch.get(pane).unwrap_or(&0);
+            let settled = core.mcp_settled_epoch.get(pane).copied().unwrap_or(0);
+            if nav <= settled {
+                if trace {
+                    eprintln!("[mcp-trace] wait exit: settled (load committed)");
+                }
+                return;
+            }
             let loading = panes.webview_is_loading(pane);
             if loading {
                 saw_loading = true;
@@ -1084,20 +1087,25 @@ pub fn wait_mcp_nav_settled(
             // !loading && !saw: the navigation has not started yet (or the
             // pane fires no load events) - keep polling; the deadline
             // promotes best-effort so reads never wedge.
+            if std::time::Instant::now() >= deadline {
+                let nav = *core.mcp_nav_epoch.get(pane).unwrap_or(&0);
+                core.mcp_settled_epoch.insert(*pane, nav);
+                return;
+            }
+            panes.pump();
+            std::thread::sleep(std::time::Duration::from_millis(2));
         }
-        #[cfg(not(target_os = "linux"))]
-        {
-            let nav = *core.mcp_nav_epoch.get(pane).unwrap_or(&0);
-            core.mcp_settled_epoch.insert(*pane, nav);
-            return;
-        }
-        if std::time::Instant::now() >= deadline {
-            let nav = *core.mcp_nav_epoch.get(pane).unwrap_or(&0);
-            core.mcp_settled_epoch.insert(*pane, nav);
-            return;
-        }
-        panes.pump();
-        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+
+    // Non-linux: no live load-state -> promote immediately (read-your-writes
+    // degrades to fire-and-forget until the agent targets other platforms).
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = panes;
+        let _ = budget;
+        let nav = *core.mcp_nav_epoch.get(pane).unwrap_or(&0);
+        core.mcp_settled_epoch.insert(*pane, nav);
+        let _ = trace;
     }
 }
 
