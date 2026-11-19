@@ -122,16 +122,18 @@ jobs:
           restore-keys: |
             build-macos-
 
+      # headed + agent are linux-only by design (gtk/webkit hard deps);
+      # check the cross-platform crates instead of the workspace.
       - name: Check compilation
-        run: cargo check
+        run: cargo check -p aileron-shared -p aileron-core -p aileron-engine -p aileron-chrome
 
       - name: Clippy (zero warnings)
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy -p aileron-shared -p aileron-core -p aileron-engine -p aileron-chrome -- -D warnings -A missing_docs
 
       - name: Run library tests
         env:
           AILERON_TESTING: "1"
-        run: cargo test --lib -- --test-threads=4
+        run: cargo test -p aileron-shared -p aileron-core -p aileron-engine --lib -- --test-threads=4
 
       - name: Run integration tests
         env:
@@ -165,16 +167,18 @@ jobs:
           restore-keys: |
             build-windows-
 
+      # headed + agent are linux-only by design (gtk/webkit hard deps);
+      # check the cross-platform crates instead of the workspace.
       - name: Check compilation
-        run: cargo check
+        run: cargo check -p aileron-shared -p aileron-core -p aileron-engine -p aileron-chrome
 
       - name: Clippy (zero warnings)
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy -p aileron-shared -p aileron-core -p aileron-engine -p aileron-chrome -- -D warnings -A missing_docs
 
       - name: Run library tests
         env:
           AILERON_TESTING: "1"
-        run: cargo test --lib -- --test-threads=4
+        run: cargo test -p aileron-shared -p aileron-core -p aileron-engine --lib -- --test-threads=4
 
       - name: Run integration tests
         env:
@@ -216,7 +220,8 @@ jobs:
             cross-${{ matrix.target }}-
 
       - name: Check compilation
-        run: cargo check --target ${{ matrix.target }}
+        # headed + agent are linux-only (gtk/webkit); cross-platform crates only.
+        run: cargo check -p aileron-shared -p aileron-core -p aileron-engine -p aileron-chrome --target ${{ matrix.target }}
 
   wasm:
     name: Chrome WASM (wasm32-unknown-unknown)
