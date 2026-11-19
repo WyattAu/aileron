@@ -608,3 +608,31 @@ fresco IME; Architecture D carries the fork-Servo risk mitigation.
 
 Post-merge state: workspace lib tests 1199/0, integration suite
 green on push. Local main ref = 8a19542.
+
+## CI recovery (2026-11-19): main CI root causes fixed
+
+Three stacked root causes for the week-long main CI red (predating
+the GATE-1 merge):
+
+1. Machine-local `.cargo/config.toml` (absolute target dir) tracked
+   on main -> WASM/Darwin CI ('failed to create /home/wyatt/.cache')
+   + Windows pollution (D:/home/wyatt). Untracked + gitignored
+   (9f5427d). NOTE: the gate branch was found REWOUND ~50 commits to
+   69a4c76 by the flapping tree — recovered from origin before any
+   commit.
+2. chrono RUSTSEC-2026-0543 (unmaintained, no upgrade) -> audit red.
+   `.cargo/audit.toml` ignore w/ 2027-02 expiry + aileron#17
+   (chrono->time/jiff migration tracking).
+3. age -> i18n-embed -> glib chain -> Windows/macOS red. age was
+   VESTIGIAL in core (zero usage) — dropped; headed sync crypto
+   linux-gated (linux_impl + Err stubs; aileron#16). Verified via
+   cargo tree --target {darwin,windows} -i age/-i glib-sys = EMPTY.
+
+Bonus: dependency advisory sweep — 26 vulns found once audit could
+run; 8 fixed via targeted cargo update, 18 upstream-unfixed ignored
+w/ 2027-05-18 fleet re-check (aileron#18). Daemon rebuilt w/ swept
+lock (10.3 MB) + redeployed, watchdog green.
+
+LESSON: the flapping tree also hit aileron (gate branch rewound).
+Verify-after-write + recover-from-origin are mandatory on all
+~/dev worktrees, not just clawdius.
