@@ -134,7 +134,9 @@ jobs:
       - name: Run library tests
         env:
           AILERON_TESTING: "1"
-        run: cargo test -p aileron-shared -p aileron-core -p aileron-engine --lib -- --test-threads=4
+        # engine lib tests are linux-only (OffscreenWebView API is linux-gated);
+        # engine coverage runs in the linux Rust CI job.
+        run: cargo test -p aileron-shared -p aileron-core -p aileron-chrome --lib -- --test-threads=4
 
       - name: Run integration tests
         env:
@@ -180,7 +182,9 @@ jobs:
       - name: Run library tests
         env:
           AILERON_TESTING: "1"
-        run: cargo test -p aileron-shared -p aileron-core -p aileron-engine --lib -- --test-threads=4
+        # engine lib tests are linux-only (OffscreenWebView API is linux-gated);
+        # engine coverage runs in the linux Rust CI job.
+        run: cargo test -p aileron-shared -p aileron-core -p aileron-chrome --lib -- --test-threads=4
 
       - name: Run integration tests
         env:
