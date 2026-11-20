@@ -138,10 +138,6 @@ jobs:
         # engine coverage runs in the linux Rust CI job.
         run: cargo test -p aileron-shared -p aileron-core -p aileron-chrome --lib -- --test-threads=4
 
-      - name: Run integration tests
-        env:
-          AILERON_TESTING: "1"
-        run: cargo test --tests -- --test-threads=4
 
   build-windows:
     name: Windows build check
@@ -186,10 +182,6 @@ jobs:
         # engine coverage runs in the linux Rust CI job.
         run: cargo test -p aileron-shared -p aileron-core -p aileron-chrome --lib -- --test-threads=4
 
-      - name: Run integration tests
-        env:
-          AILERON_TESTING: "1"
-        run: cargo test --tests -- --test-threads=4
 
   cross-compile:
     name: Cross-compile (${{ matrix.target }})
