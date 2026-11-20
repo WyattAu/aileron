@@ -72,6 +72,35 @@ mod linux_impl {
         String::from_utf8(output).map_err(|e| anyhow::anyhow!("armor utf8: {e}"))
     }
 
+    /// Encrypt at an explicit scrypt work factor. The default wrapper uses
+    /// the host-measured factor, which differs between machines and between
+    /// encrypt/decrypt probes under parallel test load — tests pin 10
+    /// (age's own floor) for stability.
+    pub fn encrypt_data_with(
+        data: &[u8],
+        passphrase: &str,
+        log_n: u8,
+    ) -> Result<String, anyhow::Error> {
+        let secret = age::secrecy::SecretString::from(passphrase.to_string());
+        let mut recipient = age::scrypt::Recipient::new(secret);
+        recipient.set_work_factor(log_n);
+        let encrypted =
+            age::encrypt(&recipient, data).map_err(|e| anyhow::anyhow!("age encrypt: {e}"))?;
+
+        let mut output = Vec::new();
+        let mut armored =
+            age::armor::ArmoredWriter::wrap_output(&mut output, age::armor::Format::AsciiArmor)
+                .map_err(|e| anyhow::anyhow!("age armor wrap: {e}"))?;
+        armored
+            .write_all(&encrypted)
+            .map_err(|e| anyhow::anyhow!("age armor write: {e}"))?;
+        armored
+            .finish()
+            .map_err(|e| anyhow::anyhow!("age armor finish: {e}"))?;
+
+        String::from_utf8(output).map_err(|e| anyhow::anyhow!("armor utf8: {e}"))
+    }
+
     #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn decrypt_data(armored: &str, passphrase: &str) -> Result<Vec<u8>, anyhow::Error> {
         let secret = age::secrecy::SecretString::from(passphrase.to_string());
@@ -125,7 +154,7 @@ mod linux_impl {
             let data = b"hello armored world";
             let passphrase = "mypass";
 
-            let armored = encrypt_data(data, passphrase).unwrap();
+            let armored = encrypt_data_with(data, passphrase, 10).unwrap();
             assert!(armored.contains("BEGIN AGE ENCRYPTED FILE"));
 
             let decrypted = decrypt_data(&armored, passphrase).unwrap();
@@ -158,7 +187,9 @@ mod linux_impl {
 }
 
 #[cfg(target_os = "linux")]
-pub use linux_impl::{decrypt_data, decrypt_file, encrypt_data, encrypt_file, is_age_encrypted};
+pub use linux_impl::{
+    decrypt_data, decrypt_file, encrypt_data, encrypt_data_with, encrypt_file, is_age_encrypted,
+};
 
 /// Non-linux stubs: honest errors instead of silent plaintext (age's
 /// i18n-embed -> glib chain cannot build off linux; aileron#16).
@@ -186,6 +217,14 @@ mod stubs {
         Err(anyhow::anyhow!(WHY))
     }
 
+    pub fn encrypt_data_with(
+        _data: &[u8],
+        _passphrase: &str,
+        _log_n: u8,
+    ) -> Result<String, anyhow::Error> {
+        Err(anyhow::anyhow!(WHY))
+    }
+
     pub fn decrypt_data(_armored: &str, _passphrase: &str) -> Result<Vec<u8>, anyhow::Error> {
         Err(anyhow::anyhow!(WHY))
     }
@@ -196,4 +235,6 @@ mod stubs {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub use stubs::{decrypt_data, decrypt_file, encrypt_data, encrypt_file, is_age_encrypted};
+pub use stubs::{
+    decrypt_data, decrypt_file, encrypt_data, encrypt_data_with, encrypt_file, is_age_encrypted,
+};
