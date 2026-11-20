@@ -36,7 +36,11 @@ mod linux_impl {
     ) -> Result<(), anyhow::Error> {
         let ciphertext = std::fs::read(input_path)?;
         let secret = age::secrecy::SecretString::from(passphrase.to_string());
-        let identity = age::scrypt::Identity::new(secret);
+        // Pin the accepted work factor to age's canonical scrypt log_n (18):
+        // without this, Identity::new derives max = target + 4 from the HOST
+        // CPU speed, so slow CI runners refuse files encrypted at 18.
+        let mut identity = age::scrypt::Identity::new(secret);
+        identity.set_max_work_factor(18);
         let decrypted = age::decrypt(&identity, &ciphertext)
             .map_err(|e| anyhow::anyhow!("age decrypt: {e}"))?;
 
@@ -71,7 +75,11 @@ mod linux_impl {
     #[must_use = "ignoring this value may lead to data loss or unexpected behavior"]
     pub fn decrypt_data(armored: &str, passphrase: &str) -> Result<Vec<u8>, anyhow::Error> {
         let secret = age::secrecy::SecretString::from(passphrase.to_string());
-        let identity = age::scrypt::Identity::new(secret);
+        // Pin the accepted work factor to age's canonical scrypt log_n (18):
+        // without this, Identity::new derives max = target + 4 from the HOST
+        // CPU speed, so slow CI runners refuse files encrypted at 18.
+        let mut identity = age::scrypt::Identity::new(secret);
+        identity.set_max_work_factor(18);
 
         let mut reader = age::armor::ArmoredReader::new(armored.as_bytes());
         let mut encrypted = Vec::new();
