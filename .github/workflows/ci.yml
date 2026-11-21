@@ -66,7 +66,11 @@ jobs:
         run: AILERON_TESTING=1 xvfb-run -a cargo test --tests -- --test-threads=4
 
       - name: Generate documentation
-        run: cargo doc --no-deps --all-features
+        # The cache restores target/ including target/doc; a doc dir built
+        # under a different feature/dep set makes cargo doc fail on stale
+        # index entries ("No such file or directory" on generated HTML).
+        # Doc output is not cached onward — clean it before generating.
+        run: rm -rf target/doc && cargo doc --no-deps --all-features
 
       # Install audit/coverage tools as pre-built binaries via taiki-e/install-action.
       # Compiling them from source with `cargo install ... --locked` broke on
