@@ -417,6 +417,10 @@ pub fn shutdown() {
 
 #[cfg(test)]
 mod tests {
+    /// Serializes tests that mutate process env vars (process-global under
+    /// the parallel harness).
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
     use super::*;
 
     #[test]
@@ -512,8 +516,9 @@ mod tests {
 
     #[test]
     fn test_log_file_path_env_override() {
-        // SAFETY: test-only; Rust's test harness runs single-threaded per test
-        // function, so no concurrent env var access is possible.
+        let _env = ENV_LOCK.lock().unwrap();
+        // SAFETY: test-only; the ENV_LOCK serializes process-global env
+        // mutation against the parallel default-path test below.
         unsafe { std::env::set_var("AILERON_DEBUG_FILE", "/tmp/test_debug.log") };
         let path = log_file_path();
         assert_eq!(path, PathBuf::from("/tmp/test_debug.log"));
@@ -523,7 +528,9 @@ mod tests {
 
     #[test]
     fn test_log_file_path_default() {
-        // SAFETY: test-only; single-threaded test context.
+        let _env = ENV_LOCK.lock().unwrap();
+        // SAFETY: test-only; the ENV_LOCK serializes process-global env
+        // mutation against the parallel override test above.
         unsafe { std::env::remove_var("AILERON_DEBUG_FILE") };
         let path = log_file_path();
         assert!(path.to_string_lossy().contains("aileron"));
